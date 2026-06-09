@@ -1,0 +1,211 @@
+<script setup>
+import { ref } from "vue";
+import { api } from "../composables/useApi";
+
+const emit = defineEmits(["started", "intercepted"]);
+
+const moods = ["Grateful", "Anxious", "Grieving", "Joyful", "Seeking", "Hopeful"];
+const selectedMood = ref("Grateful");
+const prayerText = ref("");
+const musicSource = ref("suno"); // "suno" | "youtube"
+const when = ref("now"); // "now" | "later"
+const scheduledAt = ref(""); // datetime-local value when scheduling for later
+const loading = ref(false);
+const error = ref("");
+
+// Identity is optional: a worshipper may give their name and/or email, or stay
+// anonymous (the backend assigns a friendly visitor name). A returning visitor is
+// remembered via localStorage so we can greet them back and pre-fill their name.
+const returningName = api.rememberedName();
+const name = ref(returningName || "");
+const email = ref("");
+
+async function begin() {
+  error.value = "";
+
+  // When scheduling, require a future time and send it as ISO so the backend holds
+  // the service until then.
+  let scheduledIso = null;
+  if (when.value === "later") {
+    if (!scheduledAt.value) {
+      error.value = "Please choose a date and time for your service.";
+      return;
+    }
+    const dt = new Date(scheduledAt.value);
+    if (isNaN(dt) || dt <= new Date()) {
+      error.value = "Please choose a time in the future.";
+      return;
+    }
+    scheduledIso = dt.toISOString();
+  }
+
+  loading.value = true;
+  try {
+    // Walk-up worshippers have no account; provision a session first, carrying
+    // their (optional) name/email and music choice, then open a service and submit
+    // intake. A returning visitor already holds a token, so this is a no-op for them.
+    await api.ensureSession({
+      name: name.value.trim() || null,
+      email: email.value.trim() || null,
+      music_source: musicSource.value,
+    });
+    await api.updateMusicSource(musicSource.value);
+    const { session_token } = await api.startService();
+    const res = await api.submitIntake(session_token, {
+      mood: selectedMood.value,
+      prayer_text: prayerText.value || null,
+      scheduled_at: scheduledIso,
+    });
+
+    if (res.intercepted) {
+      emit("intercepted", res.resource);
+    } else {
+      emit("started", session_token);
+    }
+  } catch (e) {
+    error.value = e.data?.message || "Something went wrong. Please try again.";
+  } finally {
+    loading.value = false;
+  }
+}
+</script>
+
+<template>
+  <div class="intake">
+    <h1>{{ returningName ? `Welcome back, ${returningName}` : "Welcome" }}</h1>
+    <p class="sub">
+      {{ returningName
+        ? "It's good to see you again. Let us prepare a service just for you."
+        : "Let us prepare a service just for you." }}
+    </p>
+
+    <template v-if="!returningName">
+      <label class="field-label" for="name">Your name (optional)</label>
+      <input
+        id="name"
+        v-model="name"
+        type="text"
+        class="text-input"
+        placeholder="We'll give you a visitor name if you'd rather not say"
+        autocomplete="name"
+      />
+
+      <label class="field-label" for="email">Email (optional)</label>
+      <input
+        id="email"
+        v-model="email"
+        type="email"
+        class="text-input"
+        placeholder="So we can welcome you back"
+        autocomplete="email"
+      />
+    </template>
+
+    <label class="field-label">How are you feeling today?</label>
+    <div class="mood-grid">
+      <button
+        v-for="m in moods"
+        :key="m"
+        type="button"
+        class="mood"
+        :class="{ active: selectedMood === m }"
+        @click="selectedMood = m"
+      >
+        {{ m }}
+      </button>
+    </div>
+
+    <label class="field-label" for="prayer">Prayer request (optional)</label>
+    <textarea
+      id="prayer"
+      v-model="prayerText"
+      rows="3"
+      placeholder="Share what is on your heart…"
+    ></textarea>
+
+    <label class="field-label">Music for your service</label>
+    <div class="source-row">
+      <button
+        type="button"
+        class="source"
+        :class="{ active: musicSource === 'suno' }"
+        @click="musicSource = 'suno'"
+      >
+        <strong>AI-composed</strong>
+        <span>Original worship, generated for you</span>
+      </button>
+      <button
+        type="button"
+        class="source"
+        :class="{ active: musicSource === 'youtube' }"
+        @click="musicSource = 'youtube'"
+      >
+        <strong>From YouTube</strong>
+        <span>An existing worship track</span>
+      </button>
+    </div>
+
+    <label class="field-label">When would you like your service?</label>
+    <div class="source-row">
+      <button
+        type="button"
+        class="source"
+        :class="{ active: when === 'now' }"
+        @click="when = 'now'"
+      >
+        <strong>Right now</strong>
+        <span>Begin immediately</span>
+      </button>
+      <button
+        type="button"
+        class="source"
+        :class="{ active: when === 'later' }"
+        @click="when = 'later'"
+      >
+        <strong>Schedule it</strong>
+        <span>Pick a future time</span>
+      </button>
+    </div>
+    <input
+      v-if="when === 'later'"
+      v-model="scheduledAt"
+      type="datetime-local"
+      class="schedule-input"
+      aria-label="Service date and time"
+    />
+
+    <p v-if="error" class="error">{{ error }}</p>
+
+    <button class="begin" :disabled="loading" @click="begin">
+      {{ loading ? "Preparing your service…" : (when === "later" ? "Schedule my service" : "Begin my service") }}
+    </button>
+  </div>
+</template>
+
+<style scoped>
+.intake { max-width: 460px; margin: 0 auto; }
+h1 { font-size: 1.55rem; margin: 0 0 0.35rem; letter-spacing: -0.02em; }
+.sub { color: var(--text-muted); margin: 0 0 1.5rem; line-height: 1.55; }
+.field-label { display: block; font-size: 0.85rem; color: var(--text-muted); margin: 1rem 0 0.5rem; }
+.text-input { width: 100%; padding: 0.65rem 0.75rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font: inherit; }
+.text-input::placeholder { color: var(--text-faint); }
+.text-input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.mood-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; }
+.mood { padding: 0.65rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); cursor: pointer; transition: border-color 0.12s ease, background 0.12s ease; }
+.mood:hover { border-color: var(--border-strong); }
+.mood.active { border-color: var(--primary); background: var(--primary-soft); color: var(--primary-hover); font-weight: 500; }
+textarea { width: 100%; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0.65rem 0.75rem; font: inherit; resize: vertical; background: var(--surface); color: var(--text); }
+textarea::placeholder { color: var(--text-faint); }
+textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.source-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+.source { display: flex; flex-direction: column; gap: 0.2rem; padding: 0.75rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); cursor: pointer; text-align: left; transition: border-color 0.12s ease, background 0.12s ease; }
+.source:hover { border-color: var(--border-strong); }
+.source span { font-size: 0.75rem; color: var(--text-muted); }
+.source.active { border-color: var(--primary); background: var(--primary-soft); }
+.schedule-input { width: 100%; margin-top: 0.5rem; padding: 0.65rem 0.75rem; border: 1px solid var(--border); border-radius: var(--radius-sm); font: inherit; background: var(--surface); color: var(--text); }
+.schedule-input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.begin { width: 100%; margin-top: 1.5rem; padding: 0.8rem; border: none; border-radius: var(--radius-sm); background: var(--primary); color: var(--on-primary); font-weight: 600; cursor: pointer; transition: background 0.12s ease; }
+.begin:hover:not(:disabled) { background: var(--primary-hover); }
+.begin:disabled { opacity: 0.6; cursor: default; }
+.error { color: var(--danger); font-size: 0.85rem; }
+</style>

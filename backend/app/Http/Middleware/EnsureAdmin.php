@@ -1,0 +1,21 @@
+<?php
+
+namespace App\Http\Middleware;
+
+use Closure;
+use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\Response;
+
+/**
+ * Gate for the admin console. Runs after auth:sanctum, so a user is present;
+ * rejects anyone whose account isn't flagged is_admin.
+ */
+class EnsureAdmin
+{
+    public function handle(Request $request, Closure $next): Response
+    {
+        abort_unless($request->user()?->is_admin, 403, 'Admin access required.');
+
+        return $next($request);
+    }
+}

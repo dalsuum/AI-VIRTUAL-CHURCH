@@ -1,0 +1,79 @@
+/* Design tokens. Light is the default; [data-theme="dark"] overrides the same
+   variable names so every component can paint from var(--…) and theme for free.
+   The `useTheme` composable sets data-theme on <html> and `color-scheme` lets the
+   browser theme native form controls and scrollbars to match. */
+:root {
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  --bg: #f3f4f6;
+  --surface: #ffffff;
+  --surface-2: #f7f8fa;
+  --surface-3: #eef0f3;
+
+  --text: #1a1d21;
+  --text-muted: #5f6772;
+  --text-faint: #9aa0a8;
+
+  --border: #e4e7eb;
+  --border-strong: #d3d8de;
+
+  --primary: #2563eb;
+  --primary-hover: #1d4ed8;
+  --primary-soft: #eef4ff;
+  --on-primary: #ffffff;
+
+  --success: #15803d;
+  --success-soft: #dcfce7;
+  --danger: #dc2626;
+  --danger-soft: #fee2e2;
+
+  --radius: 14px;
+  --radius-sm: 8px;
+  --shadow: 0 1px 2px rgba(16, 24, 40, 0.05), 0 10px 30px rgba(16, 24, 40, 0.06);
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06);
+
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --surface-2: #1c222b;
+  --surface-3: #232a34;
+
+  --text: #e6e8eb;
+  --text-muted: #9aa4b2;
+  --text-faint: #6b7480;
+
+  --border: #2a313c;
+  --border-strong: #3a424f;
+
+  --primary: #3b82f6;
+  --primary-hover: #60a5fa;
+  --primary-soft: #18233b;
+  --on-primary: #ffffff;
+
+  --success: #4ade80;
+  --success-soft: #133023;
+  --danger: #f87171;
+  --danger-soft: #3a1d1d;
+
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 32px rgba(0, 0, 0, 0.45);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45);
+
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+html, body { margin: 0; }
+
+body {
+  font-family: var(--font);
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+::selection { background: var(--primary-soft); }

@@ -1,17 +1,57 @@
 <script setup>
-import { ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { api } from "../composables/useApi";
 
 const emit = defineEmits(["started", "intercepted"]);
 
-const moods = ["Grateful", "Anxious", "Grieving", "Joyful", "Seeking", "Hopeful"];
+// Every music source the app knows about, with its copy. The admin decides which of
+// these actually appear (config.music_sources); we render that subset in this order.
+const MUSIC_SOURCES = [
+  { value: "hymn_sung", title: "Sung hymn", desc: "A classic hymn sung aloud, with the words on screen" },
+  { value: "hymn", title: "Instrumental hymn", desc: "The hymn played, with the words to sing along" },
+  { value: "suno", title: "AI-composed", desc: "Original worship, generated for you" },
+  { value: "youtube", title: "From YouTube", desc: "An existing worship track and sermon" },
+];
+
+// Intake options come from the backend so an admin can curate moods, music sources,
+// and scheduling without a redeploy. Sensible defaults keep the form usable if the
+// config request is slow or fails.
+const moods = ref(["Grateful", "Anxious", "Grieving", "Joyful", "Seeking", "Hopeful"]);
+const enabledSources = ref(MUSIC_SOURCES.map((s) => s.value));
+const schedulingEnabled = ref(true);
+
+// Only the admin-enabled sources, in canonical order.
+const musicSources = computed(() =>
+  MUSIC_SOURCES.filter((s) => enabledSources.value.includes(s.value)),
+);
+
 const selectedMood = ref("Grateful");
 const prayerText = ref("");
-const musicSource = ref("suno"); // "suno" | "youtube"
+const musicSource = ref("hymn_sung"); // "hymn_sung" | "hymn" | "suno" | "youtube"
 const when = ref("now"); // "now" | "later"
 const scheduledAt = ref(""); // datetime-local value when scheduling for later
 const loading = ref(false);
 const error = ref("");
+
+onMounted(async () => {
+  try {
+    const cfg = await api.getConfig();
+    if (Array.isArray(cfg.moods) && cfg.moods.length) {
+      moods.value = cfg.moods;
+      if (!moods.value.includes(selectedMood.value)) selectedMood.value = moods.value[0];
+    }
+    if (Array.isArray(cfg.music_sources) && cfg.music_sources.length) {
+      enabledSources.value = cfg.music_sources;
+      if (!enabledSources.value.includes(musicSource.value)) {
+        musicSource.value = musicSources.value[0]?.value || musicSource.value;
+      }
+    }
+    schedulingEnabled.value = cfg.scheduling_enabled !== false;
+    if (!schedulingEnabled.value) when.value = "now";
+  } catch {
+    // Keep the defaults above — the worshipper can still begin a service.
+  }
+});
 
 // Identity is optional: a worshipper may give their name and/or email, or stay
 // anonymous (the backend assigns a friendly visitor name). A returning visitor is
@@ -60,7 +100,9 @@ async function begin() {
     if (res.intercepted) {
       emit("intercepted", res.resource);
     } else {
-      emit("started", session_token);
+      // Carry the music choice so the preparing screen can size its countdown to the
+      // mode — AI-composed music takes ~2 min, YouTube returns in seconds.
+      emit("started", { token: session_token, musicSource: musicSource.value });
     }
   } catch (e) {
     error.value = e.data?.message || "Something went wrong. Please try again.";
@@ -126,53 +168,48 @@ async function begin() {
     <label class="field-label">Music for your service</label>
     <div class="source-row">
       <button
+        v-for="s in musicSources"
+        :key="s.value"
         type="button"
         class="source"
-        :class="{ active: musicSource === 'suno' }"
-        @click="musicSource = 'suno'"
+        :class="{ active: musicSource === s.value }"
+        @click="musicSource = s.value"
       >
-        <strong>AI-composed</strong>
-        <span>Original worship, generated for you</span>
-      </button>
-      <button
-        type="button"
-        class="source"
-        :class="{ active: musicSource === 'youtube' }"
-        @click="musicSource = 'youtube'"
-      >
-        <strong>From YouTube</strong>
-        <span>An existing worship track</span>
+        <strong>{{ s.title }}</strong>
+        <span>{{ s.desc }}</span>
       </button>
     </div>
 
-    <label class="field-label">When would you like your service?</label>
-    <div class="source-row">
-      <button
-        type="button"
-        class="source"
-        :class="{ active: when === 'now' }"
-        @click="when = 'now'"
-      >
-        <strong>Right now</strong>
-        <span>Begin immediately</span>
-      </button>
-      <button
-        type="button"
-        class="source"
-        :class="{ active: when === 'later' }"
-        @click="when = 'later'"
-      >
-        <strong>Schedule it</strong>
-        <span>Pick a future time</span>
-      </button>
-    </div>
-    <input
-      v-if="when === 'later'"
-      v-model="scheduledAt"
-      type="datetime-local"
-      class="schedule-input"
-      aria-label="Service date and time"
-    />
+    <template v-if="schedulingEnabled">
+      <label class="field-label">When would you like your service?</label>
+      <div class="source-row">
+        <button
+          type="button"
+          class="source"
+          :class="{ active: when === 'now' }"
+          @click="when = 'now'"
+        >
+          <strong>Right now</strong>
+          <span>Begin immediately</span>
+        </button>
+        <button
+          type="button"
+          class="source"
+          :class="{ active: when === 'later' }"
+          @click="when = 'later'"
+        >
+          <strong>Schedule it</strong>
+          <span>Pick a future time</span>
+        </button>
+      </div>
+      <input
+        v-if="when === 'later'"
+        v-model="scheduledAt"
+        type="datetime-local"
+        class="schedule-input"
+        aria-label="Service date and time"
+      />
+    </template>
 
     <p v-if="error" class="error">{{ error }}</p>
 

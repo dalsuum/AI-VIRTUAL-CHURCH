@@ -2,19 +2,24 @@
 
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\ConfigController;
 use App\Http\Controllers\OfferingController;
 use App\Http\Controllers\ServiceController;
 use App\Http\Controllers\TestimonyController;
 use App\Http\Controllers\WebhookController;
 use Illuminate\Support\Facades\Route;
 
+// Public app configuration (intake options) — read before a worshipper has a session.
+Route::get('/config', [ConfigController::class, 'show']);
+
 // Public auth
 Route::post('/guest',    [AuthController::class, 'guest']);
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login',    [AuthController::class, 'login']);
 
-// Internal worker callback (shared-secret protected, no user auth)
+// Internal worker callbacks (shared-secret protected, no user auth)
 Route::post('/internal/asset-ready', [WebhookController::class, 'assetReady']);
+Route::post('/internal/music-track', [WebhookController::class, 'musicTrack']);
 
 // Stripe offering webhook (Stripe-signature verified, no user auth)
 Route::post('/webhooks/stripe', [OfferingController::class, 'webhook']);
@@ -51,6 +56,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::patch('/users/{user}/admin', [AdminController::class, 'setAdmin']);
 
         Route::get('/donors', [AdminController::class, 'donors']);
+
+        // Global service settings (e.g. narration voice mode).
+        Route::get('/settings', [AdminController::class, 'settings']);
+        Route::patch('/settings', [AdminController::class, 'updateSettings']);
 
         // CSV report export: donations | users | testimonies
         Route::get('/export/{type}', [AdminController::class, 'export']);

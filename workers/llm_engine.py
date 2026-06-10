@@ -72,7 +72,22 @@ def _complete(system: str, user: str, max_tokens: int = 1500) -> str:
     return (resp.json()["choices"][0]["message"]["content"] or "").strip()
 
 
-def build_intake_plan(*, user_name: str, mood: str, prayer_text: str | None) -> dict:
+def _addressing(user_name: str | None) -> str:
+    """One instruction line telling the model how to address the worshipper.
+
+    Named worshippers are greeted personally. Anonymous ones (guests who declined to
+    give a name) must never be addressed by name — and the model must not invent one
+    either; it speaks to them warmly without using any name at all."""
+    name = (user_name or "").strip()
+    if name:
+        return f"Address the worshipper personally by name; their name is {name}."
+    return (
+        "The worshipper is anonymous: do NOT address them by name and do NOT invent "
+        "one. Speak to them warmly without using any name."
+    )
+
+
+def build_intake_plan(*, user_name: str | None, mood: str, prayer_text: str | None) -> dict:
     """
     First pass: derive the service's spine from the user input.
     Returns scripture reference, a Suno music prompt, and a YouTube search query.
@@ -84,13 +99,14 @@ def build_intake_plan(*, user_name: str, mood: str, prayer_text: str | None) -> 
         "no markdown fences."
     )
     user = json.dumps({
-        "user_name": user_name,
+        "user_name": user_name or "",
         "mood": mood,
         "prayer_text": prayer_text or "",
         "schema": {
             "scripture_ref": "string, e.g. 'Psalm 23:1-4'",
             "music_prompt": "string, a prompt for AI worship-music generation",
             "music_query": "string, a short YouTube search query for a worship song",
+            "preaching_query": "string, a short YouTube search query for a Christian sermon on this theme",
         },
     })
     raw = _complete(system, user, max_tokens=400).strip()
@@ -98,7 +114,7 @@ def build_intake_plan(*, user_name: str, mood: str, prayer_text: str | None) -> 
     return json.loads(raw)
 
 
-def generate_welcome(*, user_name: str, mood: str) -> str:
+def generate_welcome(*, user_name: str | None, mood: str) -> str:
     """
     A short "welcome back" greeting shown on the countdown screen while the rest of
     the service is still composing. Tuned to the feeling the worshipper chose, it is
@@ -107,26 +123,29 @@ def generate_welcome(*, user_name: str, mood: str) -> str:
     system = (
         "You are the warm voice that welcomes a returning worshipper back to their "
         "personal worship service. Write a SHORT greeting (40-70 words) that opens by "
-        "welcoming them back by name and gently meets the feeling they arrived with — "
+        "welcoming them and gently meets the feeling they arrived with — "
         "comfort if they are anxious or grieving, shared joy if grateful or joyful, "
         "encouragement if seeking or hopeful. Spoken cadence, one short paragraph, no "
         "headings, no scripture citation. Stay within mainstream Christian hope and grace."
     )
-    user = f"Name: {user_name}\nFeeling they chose today: {mood}"
+    user = f"{_addressing(user_name)}\nFeeling they chose today: {mood}"
     return _strip_formatting(_complete(system, user, max_tokens=180))
 
 
-def generate_opening_prayer(*, user_name: str, mood: str, prayer_text: str | None) -> str:
+def generate_opening_prayer(*, user_name: str | None, mood: str, prayer_text: str | None) -> str:
     system = (
         "You are a warm, pastoral voice opening a worship service. Write a personalized "
         "opening prayer (120-180 words) that gently acknowledges the person's situation "
         "without exposing sensitive detail bluntly. Spoken cadence, no headings."
     )
-    user = f"Name: {user_name}\nMood: {mood}\nWhat they shared: {prayer_text or '(nothing specific)'}"
+    user = (
+        f"{_addressing(user_name)}\nMood: {mood}\n"
+        f"What they shared: {prayer_text or '(nothing specific)'}"
+    )
     return _strip_formatting(_complete(system, user, max_tokens=500))
 
 
-def generate_sermon(*, user_name: str, mood: str, scripture_ref: str, target_minutes: int = 8) -> str:
+def generate_sermon(*, user_name: str | None, mood: str, scripture_ref: str, target_minutes: int = 8) -> str:
     """Preaching segment, built around the user's mood and the chosen passage."""
     system = (
         "You are an expository preacher writing for spoken delivery by a digital avatar. "
@@ -141,14 +160,15 @@ def generate_sermon(*, user_name: str, mood: str, scripture_ref: str, target_min
     user = (
         f"Scripture focus: {scripture_ref}\n"
         f"Listener's theme/mood: {mood}\n"
-        f"Address the listener warmly as appropriate (name: {user_name})."
+        f"{_addressing(user_name)}"
     )
     return _strip_formatting(_complete(system, user, max_tokens=2500))
 
 
-def generate_benediction(*, user_name: str, mood: str) -> str:
+def generate_benediction(*, user_name: str | None, mood: str) -> str:
     system = (
         "Write a short closing benediction (50-90 words) for spoken delivery. Personal, "
         "hopeful, sends the listener out with peace. No headings."
     )
-    return _strip_formatting(_complete(system, f"Name: {user_name}\nMood: {mood}", max_tokens=250))
+    user = f"{_addressing(user_name)}\nMood: {mood}"
+    return _strip_formatting(_complete(system, user, max_tokens=250))

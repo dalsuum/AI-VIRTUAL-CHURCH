@@ -9,7 +9,7 @@ class ServiceAsset extends Model
 {
     protected $fillable = [
         'session_id', 'segment', 'asset_type', 'storage_key', 'audio_key',
-        'provider_ref', 'text_payload', 'status', 'ready_at',
+        'provider_ref', 'text_payload', 'lyrics', 'status', 'ready_at',
     ];
     protected $casts = ['ready_at' => 'datetime'];
 

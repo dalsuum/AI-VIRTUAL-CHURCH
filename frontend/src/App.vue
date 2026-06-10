@@ -21,9 +21,45 @@ const view = ref("intake");
 const sessionToken = ref(null);
 const resource = ref(null);
 const service = ref(null);
+const musicSource = ref(null);
 const displayName = ref(api.rememberedName() || "");
 
 let pollTimer = null;
+
+// The service is reported "complete" the moment the spoken segments land (the
+// benediction is the last one generated). But two kinds of media attach AFTER that:
+//   - worship music composes in parallel and, for AI-composed (Suno), can finish
+//     well after text (its generation poll runs up to ~240s); YouTube returns in ~1s.
+//   - in a server-voice narration mode (OpenAI or Kokoro), each spoken segment's TTS
+//     mp3 is attached after its text, and the long sermon frequently lands after the
+//     music does.
+// So we must not freeze the snapshot on text-complete (or even music) alone, or that
+// late media never reaches the client. Keep polling until both have settled, but cap
+// the extra wait so a genuinely failed/absent asset doesn't poll forever (~5 min at
+// the 4s interval).
+const MEDIA_GRACE_POLLS = 75;
+let mediaGracePolls = 0;
+
+// The spoken service is "complete" once the benediction lands; worship music
+// composes in parallel (AI-composed runs ~2 min, YouTube ~1s). Both must be present
+// before we call the service composed enough to open the doors — these reactive
+// checks drive both the poll-stop below and the preparing screen's early open.
+const textComposed = computed(() => service.value?.status === "complete");
+const musicLanded = computed(() => service.value?.music_asset != null);
+// Server-voice modes attach mp3s after the text; 'browser'/'off' never do, so only
+// these gate the open on narration audio. (Kept in sync with Setting::NARRATION_MODES.)
+const SERVER_VOICE_MODES = ["openai", "kokoro"];
+const narrationSettled = computed(() => {
+  const s = service.value;
+  if (!s || !SERVER_VOICE_MODES.includes(s.narration_mode)) return true;
+  const segs = s.segments || {};
+  const auds = s.audios || {};
+  return Object.keys(segs).every((k) => auds[k]);
+});
+// Enough is composed to begin worship: spoken text and the worship music are in.
+// (Late server-voice narration fills in during playback, since the player reads the
+// still-polling service — so it doesn't gate the open.)
+const mediaReady = computed(() => textComposed.value && musicLanded.value);
 
 const isScheduled = computed(() => service.value?.status === "scheduled");
 const scheduledFor = computed(() => {
@@ -31,11 +67,13 @@ const scheduledFor = computed(() => {
   return at ? new Date(at).toLocaleString() : null;
 });
 
-function onStarted(token) {
+function onStarted({ token, musicSource: source }) {
   sessionToken.value = token;
+  musicSource.value = source;
   view.value = "preparing";
   service.value = null;
   displayName.value = api.rememberedName() || "";
+  mediaGracePolls = 0;
   // Assets are produced asynchronously by the AI pipeline; poll until they land.
   // (A later phase replaces this with the WebSocket push described in the README.)
   poll();
@@ -45,7 +83,12 @@ function onStarted(token) {
 async function poll() {
   try {
     service.value = await api.getService(sessionToken.value);
-    if (service.value?.status === "complete" && pollTimer) {
+    // Once the spoken service is composed, keep polling until both the worship music
+    // and (server-voice) narration have landed — or the grace window runs out (counted
+    // only from text-complete on). narrationSettled covers the late-arriving server mp3s
+    // (the sermon especially) that attach after their text in OpenAI/Kokoro mode.
+    const mediaSettled = musicLanded.value && narrationSettled.value;
+    if (textComposed.value && pollTimer && (mediaSettled || ++mediaGracePolls >= MEDIA_GRACE_POLLS)) {
       clearInterval(pollTimer);
       pollTimer = null;
     }
@@ -60,14 +103,19 @@ function onReady() {
 }
 
 // The worshipper ended the service from the final stage. Tear down any polling and
-// return to the start so they can begin another service.
+// return to the start so they can begin another service. Clear the session too:
+// on a shared/walk-up device the visitor won't get another chance to identify
+// themselves, so we drop the guest token and remembered name. The next person then
+// starts fresh — the intake form shows the name field, and a new guest is provisioned.
 function onExit() {
   if (pollTimer) {
     clearInterval(pollTimer);
     pollTimer = null;
   }
+  api.clearSession();
   service.value = null;
   sessionToken.value = null;
+  displayName.value = "";
   view.value = "intake";
 }
 
@@ -113,6 +161,8 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
           v-else-if="view === 'preparing'"
           :service="service"
           :display-name="displayName"
+          :music-source="musicSource"
+          :media-ready="mediaReady"
           @ready="onReady"
         />
 
@@ -120,6 +170,7 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
         <ServicePlayer
           v-else-if="view === 'service' && service"
           :service="service"
+          :display-name="displayName"
           @exit="onExit"
         />
 

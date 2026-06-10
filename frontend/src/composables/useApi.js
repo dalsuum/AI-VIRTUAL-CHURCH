@@ -77,10 +77,32 @@ export const api = {
   ensureSession,
   rememberedName,
 
-  register: (payload) => request("/register", { method: "POST", body: payload }),
-  login: (payload) => request("/login", { method: "POST", body: payload }),
+  // End the current worshipper's session entirely — drop the auth token and the
+  // remembered name. On a shared/walk-up device this lets the next visitor start
+  // fresh: the intake form shows the name field again, and ensureSession will
+  // provision a brand-new guest (carrying their new name) on the next service.
+  clearSession: () => { setToken(null); rememberName(null); },
+
+  // Register/login return { user, token }. Persist the token (and remembered name)
+  // so subsequent authed calls — the admin dashboard especially — use this account
+  // rather than any stale guest token left in localStorage.
+  register: (payload) =>
+    request("/register", { method: "POST", body: payload }).then((res) => {
+      if (res?.token) setToken(res.token);
+      if (res?.user?.name) rememberName(res.user.name);
+      return res;
+    }),
+  login: (payload) =>
+    request("/login", { method: "POST", body: payload }).then((res) => {
+      if (res?.token) setToken(res.token);
+      if (res?.user?.name) rememberName(res.user.name);
+      return res;
+    }),
   logout: () => request("/logout", { method: "POST" }).finally(() => { setToken(null); rememberName(null); }),
   me: () => request("/me"),
+
+  // Public app configuration (intake options) — fetched before any session exists.
+  getConfig: () => request("/config"),
 
   updateMusicSource: (music_source) =>
     request("/me/music-source", { method: "PATCH", body: { music_source } }),
@@ -115,5 +137,8 @@ export const api = {
   adminSetAdmin: (id, is_admin) =>
     request(`/admin/users/${id}/admin`, { method: "PATCH", body: { is_admin } }),
   adminDonors: () => request("/admin/donors"),
+  adminSettings: () => request("/admin/settings"),
+  adminUpdateSettings: (payload) =>
+    request("/admin/settings", { method: "PATCH", body: payload }),
   adminExport,
 };

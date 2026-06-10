@@ -12,6 +12,8 @@ import time
 
 import requests
 
+import storage
+
 from . import MusicResult, MusicStrategy
 
 
@@ -43,19 +45,46 @@ class SunoStrategy(MusicStrategy):
 
     def fetch(self, *, mood: str, prompt: str, query: str) -> MusicResult:
         task_id = self._submit((prompt or f"A worship song that feels {mood}")[: self.MAX_PROMPT])
-        audio_url = self._poll(task_id)
+        track = self._poll(task_id)
 
-        # KIE serves the finished track from its own CDN (tempfile.aiquickdraw.com),
-        # which drops datacenter egress — the worker can't re-download it, but the
-        # worshipper's browser can. So hand back the CDN URL directly as the playable
-        # URL (same "storage_key carries a directly-playable URL" convention as
-        # avatar.render()/narrator.narrate()) rather than restoring it locally.
+        # KIE returns the finished track under several hosts. The headline `audioUrl`
+        # lives on tempfile.aiquickdraw.com, whose Cloudflare zone resets datacenter-IP
+        # connections — so neither the worker nor a browser on the same network can
+        # fetch it. The streaming mirrors (musicfile.kie.ai / cdn1.suno.ai) are NOT
+        # blocked, so download from those and store the track locally — then hand back
+        # a directly-playable URL the browser is guaranteed to reach, the same way
+        # narrator.narrate()/avatar.render() upload_bytes()+presign() their media.
+        audio = self._download(track)
+        key = f"worship/{task_id}.mp3"
+        storage.upload_bytes(key, audio, "audio/mpeg")
+        # Return the RAW object key, not a presigned URL: the orchestrator presigns it
+        # for the browser AND registers this key in the reusable mood pool, where a
+        # presigned (and eventually expired) URL would be useless. presign() at the
+        # point of playback keeps every reuse freshly valid.
         return MusicResult(
             asset_type="audio",
-            storage_key=audio_url,
+            storage_key=key,
             provider_ref=task_id,
-            title=f"Worship ({mood})",
+            title=track.get("title") or f"Worship ({mood})",
         )
+
+    # Download hosts in preference order — the blocked tempfile CDN (`audioUrl`) is the
+    # last resort, attempted only if the reachable mirrors are both missing/unfetchable.
+    _AUDIO_FIELDS = ("streamAudioUrl", "sourceStreamAudioUrl", "audioUrl")
+
+    def _download(self, track: dict) -> bytes:
+        last_err: Exception | None = None
+        for field in self._AUDIO_FIELDS:
+            url = track.get(field)
+            if not url:
+                continue
+            try:
+                resp = requests.get(url, timeout=120)
+                resp.raise_for_status()
+                return resp.content
+            except requests.RequestException as err:  # blocked host, expiry, etc.
+                last_err = err
+        raise RuntimeError(f"Could not download Suno track from any host: {last_err}")
 
     def _submit(self, prompt: str) -> str:
         resp = requests.post(
@@ -76,7 +105,7 @@ class SunoStrategy(MusicStrategy):
             raise RuntimeError(f"Suno submit rejected: {body.get('msg')!r} ({body.get('code')})")
         return body["data"]["taskId"]
 
-    def _poll(self, task_id: str) -> str:
+    def _poll(self, task_id: str) -> dict:
         deadline = time.time() + self.POLL_TIMEOUT
         while time.time() < deadline:
             resp = requests.get(
@@ -91,9 +120,9 @@ class SunoStrategy(MusicStrategy):
             if status == "SUCCESS":
                 tracks = (data.get("response") or {}).get("sunoData") or []
                 for track in tracks:
-                    if track.get("audioUrl"):
-                        return track["audioUrl"]
-                raise RuntimeError(f"Suno job {task_id} succeeded but returned no audioUrl")
+                    if any(track.get(f) for f in self._AUDIO_FIELDS):
+                        return track
+                raise RuntimeError(f"Suno job {task_id} succeeded but returned no audio URL")
             if status in self.FAIL_STATUSES:
                 raise RuntimeError(f"Suno generation failed for {task_id}: {status}")
             time.sleep(self.POLL_INTERVAL)

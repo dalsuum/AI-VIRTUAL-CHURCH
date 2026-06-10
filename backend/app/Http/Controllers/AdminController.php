@@ -7,6 +7,7 @@ use App\Models\CrisisIntercept;
 use App\Models\FinancialLedger;
 use App\Models\ServiceIntake;
 use App\Models\ServiceSession;
+use App\Models\Setting;
 use App\Models\Testimony;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -271,6 +272,79 @@ class AdminController extends Controller
             ]);
 
         return [['Date', 'By', 'Source', 'Status', 'Content'], $rows];
+    }
+
+    /**
+     * Global service settings the admin can tune: the narration voice mode, whether
+     * AI-composed songs are reused from the mood pool, and where generated audio is
+     * stored (local disk vs S3).
+     */
+    public function settings(): JsonResponse
+    {
+        return response()->json($this->settingsPayload());
+    }
+
+    public function updateSettings(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            // off = silent text; browser = the worshipper's browser reads it aloud;
+            // openai = the worker synthesizes audio with OpenAI TTS; kokoro = the
+            // worker synthesizes audio with hexgrad/kokoro-82m via OpenRouter.
+            'narration_mode'  => ['sometimes', 'string', 'in:' . implode(',', Setting::NARRATION_MODES)],
+            // When on, a worshipper new to a mood is served a random song already
+            // composed for it instead of generating (and paying for) a fresh one.
+            'music_reuse'     => ['sometimes', 'boolean'],
+            // Where the worker stores generated audio: local disk or S3.
+            'storage_backend' => ['sometimes', 'string', 'in:' . implode(',', Setting::STORAGE_BACKENDS)],
+            // The moods offered in the intake form. Free text — a new mood flows
+            // through the whole pipeline (LLM tone, music prompt, hymn matching).
+            'moods'           => ['sometimes', 'array', 'min:1'],
+            'moods.*'         => ['string', 'max:100'],
+            // Which music sources worshippers may choose; a non-empty subset.
+            'music_sources'   => ['sometimes', 'array', 'min:1'],
+            'music_sources.*' => ['string', 'in:' . implode(',', Setting::MUSIC_SOURCES)],
+            // Whether the "schedule it" option appears in the intake form.
+            'scheduling_enabled' => ['sometimes', 'boolean'],
+        ]);
+
+        if (array_key_exists('narration_mode', $data)) {
+            Setting::set('narration_mode', $data['narration_mode']);
+        }
+        if (array_key_exists('music_reuse', $data)) {
+            Setting::set('music_reuse', $data['music_reuse'] ? '1' : '0');
+        }
+        if (array_key_exists('storage_backend', $data)) {
+            Setting::set('storage_backend', $data['storage_backend']);
+        }
+        if (array_key_exists('moods', $data)) {
+            // Trim, drop blanks, and de-duplicate while preserving order.
+            $moods = array_values(array_unique(array_filter(array_map('trim', $data['moods']))));
+            abort_if($moods === [], 422, 'At least one mood is required.');
+            Setting::setList('moods', $moods);
+        }
+        if (array_key_exists('music_sources', $data)) {
+            // Store in canonical order so the intake form is consistently ordered.
+            $sources = array_values(array_intersect(Setting::MUSIC_SOURCES, $data['music_sources']));
+            Setting::setList('music_sources', $sources);
+        }
+        if (array_key_exists('scheduling_enabled', $data)) {
+            Setting::set('scheduling_enabled', $data['scheduling_enabled'] ? '1' : '0');
+        }
+
+        return response()->json(['ok' => true] + $this->settingsPayload());
+    }
+
+    /** The settings shape shared by the read and write endpoints. */
+    private function settingsPayload(): array
+    {
+        return [
+            'narration_mode'     => Setting::get('narration_mode', 'browser'),
+            'music_reuse'        => Setting::get('music_reuse', '1') === '1',
+            'storage_backend'    => Setting::get('storage_backend', 'local'),
+            'moods'              => Setting::moods(),
+            'music_sources'      => Setting::enabledMusicSources(),
+            'scheduling_enabled' => Setting::schedulingEnabled(),
+        ];
     }
 
     /** Grant or revoke admin. Guards against an admin removing their own access. */

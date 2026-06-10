@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Jobs\DispatchServiceJob;
 use App\Models\ServiceIntake;
 use App\Models\ServiceSession;
+use App\Models\Setting;
 use App\Services\CrisisInterceptService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -49,6 +50,12 @@ class ServiceController extends Controller
             // Optional: hold the service until a chosen future moment.
             'scheduled_at' => ['nullable', 'date', 'after:now'],
         ]);
+
+        // A future time is only honoured while scheduling is enabled; otherwise the
+        // service begins now (the UI hides the option, this guards direct calls).
+        if (! empty($data['scheduled_at']) && ! Setting::schedulingEnabled()) {
+            unset($data['scheduled_at']);
+        }
 
         // SAFETY GATE — before anything is queued.
         $check = $this->crisis->inspect($session->session_token, $data['prayer_text'] ?? null);
@@ -101,22 +108,43 @@ class ServiceController extends Controller
         $assets = $session->assets;
 
         // Music: the "worship" segment drives the player. Shape it to the
-        // { asset_type, provider_ref, url } contract the Vue MusicPlayer expects.
+        // { asset_type, provider_ref, url, title } contract the Vue MusicPlayer
+        // expects. The worker stores the track's title (hymn name + author, or
+        // "Worship (mood)" for Suno) in text_payload so the player can caption it.
         $worship = $assets->firstWhere('segment', 'worship');
         $music = $worship ? [
             'asset_type'   => $worship->asset_type,
             'provider_ref' => $worship->provider_ref,   // YouTube video id
             'url'          => $worship->storage_key,     // stored-audio key (presign later)
+            'title'        => $worship->text_payload,    // track caption
+            'lyrics'       => $worship->lyrics,          // public-domain hymn verses (hymn sources)
         ] : null;
 
         // Spoken/text segments, keyed by segment name for the client to render.
         // Keyed off text_payload (not asset_type) so the words survive even after a
         // segment is enriched with an avatar video, which flips asset_type to 'video'.
-        // The "welcome" greeting is surfaced separately (countdown screen), not as a
-        // service segment, so it's excluded here.
+        // The "welcome" greeting (countdown screen) and the music segments — whose
+        // text_payload is the track title, surfaced via music_asset above — are not
+        // spoken service segments, so they're excluded here.
+        $musicSegments = ['welcome', 'worship', 'closing_hymn'];
         $segments = $assets
-            ->filter(fn ($a) => filled($a->text_payload) && $a->segment !== 'welcome')
+            ->filter(fn ($a) => filled($a->text_payload)
+                && $a->asset_type !== 'youtube'
+                && ! in_array($a->segment, $musicSegments, true))
             ->mapWithKeys(fn ($a) => [$a->segment => $a->text_payload]);
+
+        // Embedded video segments — e.g. the preaching message in YouTube mode,
+        // which is a sourced sermon clip rather than AI-written text. Keyed by
+        // segment; the player embeds provider_ref (the video id) and captions it
+        // with the title (carried in text_payload). Music segments are surfaced via
+        // music_asset above, so they're excluded here.
+        $embeds = $assets
+            ->where('asset_type', 'youtube')
+            ->filter(fn ($a) => ! in_array($a->segment, $musicSegments, true))
+            ->mapWithKeys(fn ($a) => [$a->segment => [
+                'provider_ref' => $a->provider_ref,
+                'title'        => $a->text_payload,
+            ]]);
 
         // Personalized "welcome back" greeting shown on the countdown screen while
         // the rest of the service composes. Present only for registered worshippers.
@@ -146,8 +174,12 @@ class ServiceController extends Controller
             'welcome'      => $welcome,
             'music_asset'  => $music,
             'segments'     => $segments,
+            'embeds'       => $embeds,
             'videos'       => $videos,
             'audios'       => $audios,
+            // How the player should voice spoken segments: 'openai'/'kokoro' (play the
+            // audio above), 'browser' (read via speechSynthesis), or 'off' (text only).
+            'narration_mode' => Setting::get('narration_mode', 'browser'),
             'mood'         => $session->intake?->mood,
         ]);
     }

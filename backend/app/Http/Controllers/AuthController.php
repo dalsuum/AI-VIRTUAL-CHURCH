@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Setting;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -18,7 +19,7 @@ class AuthController extends Controller
             'email'        => ['required', 'email', 'unique:users,email'],
             'password'     => ['required', Password::defaults()],
             'timezone'     => ['nullable', 'string', 'max:64'],
-            'music_source' => ['nullable', 'in:suno,youtube'],
+            'music_source' => ['nullable', 'in:hymn_sung,hymn,suno,youtube'],
         ]);
 
         $user = User::create([
@@ -26,7 +27,7 @@ class AuthController extends Controller
             'email'        => $data['email'],
             'password'     => Hash::make($data['password']),
             'timezone'     => $data['timezone'] ?? 'UTC',
-            'music_source' => $data['music_source'] ?? 'suno',
+            'music_source' => $data['music_source'] ?? 'hymn_sung',
         ]);
 
         $token = $user->createToken('api')->plainTextToken;
@@ -47,11 +48,15 @@ class AuthController extends Controller
         $data = $request->validate([
             'name'         => ['nullable', 'string', 'max:255'],
             'email'        => ['nullable', 'email', 'max:255'],
-            'music_source' => ['nullable', 'in:suno,youtube'],
+            'music_source' => ['nullable', 'in:hymn_sung,hymn,suno,youtube'],
         ]);
 
         $name = trim($data['name'] ?? '');
-        if ($name === '') {
+        // Whether the worshipper actually gave a name. If blank, we mint a friendly
+        // visitor name for display, but the service must stay anonymous in the spoken
+        // content (prayer/sermon/benediction never use this placeholder).
+        $nameProvided = $name !== '';
+        if (! $nameProvided) {
             $name = $this->uniqueVisitorName();
         }
 
@@ -65,10 +70,11 @@ class AuthController extends Controller
 
         $user = User::create([
             'name'         => $name,
+            'name_provided'=> $nameProvided,
             'email'        => $email,
             'password'     => Hash::make(Str::random(40)),
             'timezone'     => 'UTC',
-            'music_source' => $data['music_source'] ?? 'suno',
+            'music_source' => $data['music_source'] ?? 'hymn_sung',
         ]);
 
         $token = $user->createToken('api')->plainTextToken;
@@ -142,7 +148,9 @@ class AuthController extends Controller
     /** Let a logged-in user switch their default media source (Suno vs YouTube). */
     public function updateMusicSource(Request $request): JsonResponse
     {
-        $data = $request->validate(['music_source' => ['required', 'in:suno,youtube']]);
+        $data = $request->validate([
+            'music_source' => ['required', 'in:' . implode(',', Setting::enabledMusicSources())],
+        ]);
         $request->user()->update($data);
 
         return response()->json(['user' => $request->user()]);

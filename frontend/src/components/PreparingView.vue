@@ -2,8 +2,9 @@
 // The gate between intake and the service. Shows the church mark and a gentle
 // countdown while the AI pipeline composes the service in the background. For a
 // registered worshipper, the mood-aware "welcome back" greeting fades in as soon as
-// it lands. We only open the doors once BOTH the countdown has elapsed AND the
-// service is fully composed — so the worship video can play uninterrupted.
+// it lands. The doors open the moment the countdown elapses (a hard cap on the
+// wait); whatever the pipeline has composed by then plays, and any remaining
+// segments fill in afterwards since the player reads the still-polling service.
 import { computed, onMounted, onUnmounted, ref } from "vue";
 
 const props = defineProps({
@@ -12,21 +13,34 @@ const props = defineProps({
   service: { type: Object, default: null },
   // The worshipper's remembered display name, for the fallback greeting.
   displayName: { type: String, default: "" },
+  // The chosen worship-music mode, which sets how long composition takes and so
+  // how long the countdown runs: "suno" (AI-composed, ~2 min) | "youtube"/"hymn"
+  // (return in seconds — YouTube lookup / a pre-rendered public-domain hymn).
+  musicSource: { type: String, default: "" },
+  // True once the spoken service and worship music have both landed — open early.
+  mediaReady: { type: Boolean, default: false },
 });
 const emit = defineEmits(["ready"]);
 
-const COUNTDOWN_FROM = 12; // seconds of held breath before the doors open
-const remaining = ref(COUNTDOWN_FROM);
+// The countdown is a hard cap on the wait, sized to how long the chosen music mode
+// takes to compose so the doors don't open on silence before the worship music
+// lands. AI-composed (Suno) runs ~2 min; YouTube and the pre-rendered hymn
+// return in seconds.
+const COUNTDOWN_BY_SOURCE = { suno: 150, youtube: 35, hymn: 35, hymn_sung: 35 };
+const countdownFrom = computed(() => COUNTDOWN_BY_SOURCE[props.musicSource] ?? 35);
+const remaining = ref(countdownFrom.value);
 let timer = null;
 let opened = false;
 
-const composed = computed(() => props.service?.status === "complete");
+const hasService = computed(() => props.service != null);
 const welcome = computed(() => props.service?.welcome || "");
 const countdownDone = computed(() => remaining.value <= 0);
 
-// Open only when the countdown has finished AND the service is composed. If the
-// countdown beats the pipeline, we hold on "Almost ready…" until composition lands.
-const canOpen = computed(() => countdownDone.value && composed.value);
+// Open as soon as the service is composed (mediaReady), or when the countdown
+// elapses — whichever comes first. The countdown is the upper bound: whatever the
+// pipeline has composed by then plays, and any remaining segments fill in afterwards
+// since the player builds its stages reactively from the still-polling service.
+const canOpen = computed(() => (props.mediaReady || countdownDone.value) && hasService.value);
 
 function tick() {
   if (remaining.value > 0) remaining.value -= 1;
@@ -39,6 +53,7 @@ function tick() {
 }
 
 onMounted(() => {
+  remaining.value = countdownFrom.value;
   timer = setInterval(tick, 1000);
 });
 onUnmounted(() => timer && clearInterval(timer));
@@ -54,14 +69,14 @@ onUnmounted(() => timer && clearInterval(timer));
       <p v-if="welcome" class="welcome">{{ welcome }}</p>
     </transition>
 
-    <div class="count" :class="{ holding: countdownDone && !composed }">
+    <div class="count" :class="{ holding: countdownDone && !hasService }">
       <template v-if="!countdownDone">
         <span class="num">{{ remaining }}</span>
         <span class="lead">Your service begins in…</span>
       </template>
-      <template v-else-if="!composed">
+      <template v-else-if="!hasService">
         <span class="spinner" aria-hidden="true"></span>
-        <span class="lead">Almost ready — composing the final touches…</span>
+        <span class="lead">Almost ready — opening your service…</span>
       </template>
       <template v-else>
         <span class="lead">Opening the doors…</span>

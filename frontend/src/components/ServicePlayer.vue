@@ -4,15 +4,22 @@
 // worshipper can leave a testimony and give. Media-bearing stages auto-advance when
 // their audio/video finishes; a manual Previous/Next is always available so the
 // worshipper stays in control of the pace.
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import MusicPlayer from "./MusicPlayer.vue";
 import TestimonyWall from "./TestimonyWall.vue";
 import OfferingForm from "./OfferingForm.vue";
 
 const props = defineProps({
   service: { type: Object, required: true },
+  // The worshipper's display name — their own, or the friendly visitor name the
+  // backend assigned an anonymous guest. Shown alongside their mood in a strip that
+  // stays up for the whole service so the worship always feels addressed to them.
+  displayName: { type: String, default: "" },
 });
 const emit = defineEmits(["exit"]);
+
+// The mood the worshipper chose at intake, carried through on the service object.
+const mood = computed(() => props.service?.mood || "");
 
 // Spoken segments, in the order they're read during the service.
 const SEGMENTS = [
@@ -29,12 +36,17 @@ const stages = computed(() => {
   const list = [];
   if (s?.music_asset) list.push({ kind: "worship", key: "worship", label: "Worship" });
   for (const seg of SEGMENTS) {
-    if (s?.segments?.[seg.key]) {
+    const text = s?.segments?.[seg.key];
+    // A segment can be a sourced YouTube clip instead of text — the preaching
+    // message in YouTube mode. Embedded clips have no text body.
+    const embed = s?.embeds?.[seg.key] || null;
+    if (text || embed) {
       list.push({
         kind: "segment",
         key: seg.key,
         label: seg.label,
-        text: s.segments[seg.key],
+        text: text || "",
+        embed,
         video: s.videos?.[seg.key] || null,
         audio: s.audios?.[seg.key] || null,
       });
@@ -67,9 +79,23 @@ function onMediaEnded() {
 const speechSupported = typeof window !== "undefined" && "speechSynthesis" in window;
 const narrating = ref(false);
 
-// A segment falls back to browser speech only when it has no richer media.
+// The global narration voice mode the admin chose (see Admin Console → Settings):
+//   'openai'/'kokoro' — the server synthesized audio; we play it (handled below).
+//   'browser'         — no server audio; the browser reads each segment aloud.
+//   'off'             — segments stay silent text.
+// Default to 'browser' so a service without the field still reads aloud for free.
+const narrationMode = computed(() => props.service?.narration_mode || "browser");
+
+// The browser reads a segment only in 'browser' mode and only when there's no
+// richer server media (avatar video or TTS audio) to play instead.
 const usesBrowserSpeech = computed(
-  () => speechSupported && current.value?.kind === "segment" && !current.value.video && !current.value.audio,
+  () =>
+    speechSupported &&
+    narrationMode.value === "browser" &&
+    current.value?.kind === "segment" &&
+    !current.value.embed &&
+    !current.value.video &&
+    !current.value.audio,
 );
 
 function pickVoice() {
@@ -153,6 +179,50 @@ function toggleNarration() {
   else if (current.value?.kind === "segment") narrate(current.value.text);
 }
 
+// --- Server-narrated media (audio/avatar) ---------------------------------
+// When a segment carries an <audio>/<video> URL we drive it explicitly rather
+// than relying on the `autoplay` attribute alone: a bare autoplay that the
+// browser blocks (no user gesture yet) or a URL that fails to load leaves a
+// silent control bar with no explanation. Here we attempt play, and on any
+// failure say *why* — and a tap on the bar recovers it.
+const mediaEl = ref(null);
+const mediaNote = ref("");
+
+// Map an HTMLMediaElement error code to plain words.
+function describeMediaError(el) {
+  const code = el?.error?.code;
+  return (
+    {
+      1: "Playback was aborted.",
+      2: "Network error while fetching the audio.",
+      3: "The audio file could not be decoded.",
+      4: "Audio source not supported or unreachable.",
+    }[code] || "Audio failed to play."
+  );
+}
+
+function onMediaError(ev) {
+  mediaNote.value = `${describeMediaError(ev.target)} (${ev.target?.currentSrc || "no source"})`;
+}
+
+// Try to start the current stage's media. Runs after the DOM settles so we grab
+// the freshly-mounted element (the stage subtree is keyed and remounts per stage).
+async function playCurrentMedia() {
+  mediaNote.value = "";
+  await nextTick();
+  const el = mediaEl.value;
+  if (!el) return;
+  try {
+    await el.play();
+  } catch (err) {
+    // NotAllowedError = the browser is gating autoplay behind a user gesture.
+    mediaNote.value =
+      err?.name === "NotAllowedError"
+        ? "Tap ▶ on the bar to start the audio."
+        : `Couldn't start audio: ${err?.name || err}`;
+  }
+}
+
 // Read each spoken segment as it becomes active. The first stage may stay
 // silent until the worshipper interacts (browsers gate speech on a user
 // gesture); the Read-aloud button and Next/Previous paging both satisfy that.
@@ -161,6 +231,7 @@ watch(
   () => {
     stopNarration();
     if (usesBrowserSpeech.value) narrate(current.value.text);
+    else if (current.value?.audio || current.value?.video) playCurrentMedia();
   },
   { immediate: true },
 );
@@ -185,6 +256,14 @@ watch(stages, (list) => {
 
 <template>
   <section class="player-shell">
+    <!-- Who this service is for and the mood they came in with — kept up for the
+         whole service, from the first stage to "End service". -->
+    <div v-if="displayName || mood" class="identity">
+      <span v-if="displayName" class="who">{{ displayName }}</span>
+      <span v-if="displayName && mood" class="dot" aria-hidden="true">·</span>
+      <span v-if="mood" class="mood-chip">{{ mood }}</span>
+    </div>
+
     <!-- Progress: which stage of how many. -->
     <div class="rail">
       <span
@@ -206,32 +285,48 @@ watch(stages, (list) => {
       <!-- Spoken segment -->
       <template v-else-if="current.kind === 'segment'">
         <h2 class="stage-title">{{ current.label }}</h2>
-        <video
-          v-if="current.video"
-          class="avatar"
-          :src="current.video"
-          autoplay
-          controls
-          playsinline
+
+        <!-- A YouTube-sourced segment (the preaching message in YouTube mode):
+             embed the clip and auto-advance when it ends, same as worship. -->
+        <MusicPlayer
+          v-if="current.embed"
+          :asset="{ asset_type: 'youtube', provider_ref: current.embed.provider_ref, title: current.embed.title }"
           @ended="onMediaEnded"
-        ></video>
-        <audio
-          v-else-if="current.audio"
-          class="narration"
-          :src="current.audio"
-          autoplay
-          controls
-          @ended="onMediaEnded"
-        ></audio>
-        <button
-          v-else-if="usesBrowserSpeech"
-          class="read-aloud"
-          type="button"
-          @click="toggleNarration"
-        >
-          {{ narrating ? "⏸ Stop reading" : "🔊 Read aloud" }}
-        </button>
-        <p class="stage-text">{{ current.text }}</p>
+        />
+
+        <template v-else>
+          <video
+            v-if="current.video"
+            ref="mediaEl"
+            class="avatar"
+            :src="current.video"
+            autoplay
+            controls
+            playsinline
+            @ended="onMediaEnded"
+            @error="onMediaError"
+          ></video>
+          <audio
+            v-else-if="current.audio"
+            ref="mediaEl"
+            class="narration"
+            :src="current.audio"
+            autoplay
+            controls
+            @ended="onMediaEnded"
+            @error="onMediaError"
+          ></audio>
+          <p v-if="mediaNote && (current.audio || current.video)" class="media-note">{{ mediaNote }}</p>
+          <button
+            v-else-if="usesBrowserSpeech"
+            class="read-aloud"
+            type="button"
+            @click="toggleNarration"
+          >
+            {{ narrating ? "⏸ Stop reading" : "🔊 Read aloud" }}
+          </button>
+          <p class="stage-text">{{ current.text }}</p>
+        </template>
       </template>
 
       <!-- Closing: testimony + offering -->
@@ -262,6 +357,27 @@ watch(stages, (list) => {
   gap: 1.25rem;
 }
 
+.identity {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+.identity .who { font-weight: 600; color: var(--text); }
+.identity .dot { color: var(--text-faint); }
+.identity .mood-chip {
+  padding: 0.15rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--primary-soft);
+  color: var(--primary-hover);
+  font-weight: 500;
+  font-size: 0.8rem;
+}
+
 .rail { display: flex; gap: 0.4rem; justify-content: center; }
 .pip {
   width: 28px; height: 4px; border-radius: 999px;
@@ -277,6 +393,7 @@ watch(stages, (list) => {
 
 .avatar { width: 100%; border-radius: var(--radius-sm); margin-bottom: 0.9rem; background: #000; }
 .narration { width: 100%; margin-bottom: 0.9rem; }
+.media-note { color: var(--text-muted); font-size: 0.85rem; margin: 0 0 0.9rem; }
 .read-aloud {
   align-self: flex-start;
   margin-bottom: 0.9rem;

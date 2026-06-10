@@ -11,13 +11,41 @@ const email = ref("");
 const password = ref("");
 const loginError = ref("");
 
-const tab = ref("dashboard"); // dashboard | services | donors | testimonies | users
+const tab = ref("dashboard"); // dashboard | services | donors | testimonies | users | settings
 const stats = ref(null);
 const services = ref([]);
 const donors = ref([]);
 const testimonies = ref([]);
 const users = ref([]);
+const settings = ref(null);
+const savingSettings = ref(false);
 const notice = ref("");
+
+// How spoken segments are voiced across all services. Mirrors the backend's
+// Setting::NARRATION_MODES; surfaced as a single-choice selector.
+const narrationModes = [
+  { value: "browser", label: "Browser voice", hint: "The worshipper's browser reads each segment aloud — free, no API key." },
+  { value: "openai", label: "OpenAI voice", hint: "Segments are narrated with OpenAI text-to-speech. Requires a TTS key." },
+  { value: "kokoro", label: "OpenRouter Kokoro", hint: "Segments are narrated with the open hexgrad/kokoro-82m voice via OpenRouter. Uses the OpenRouter key." },
+  { value: "off", label: "Off", hint: "Segments stay as silent text — nothing is read aloud." },
+];
+
+// Where the worker stores generated audio. Mirrors Setting::STORAGE_BACKENDS.
+const storageBackends = [
+  { value: "local", label: "Local disk", hint: "Served from the app's own storage. Best for a single-machine setup." },
+  { value: "s3", label: "S3 object storage", hint: "Durable cloud storage — the reusable song library survives restarts. Needs S3 keys in the worker env." },
+];
+
+// Every music source the app can offer worshippers. Mirrors Setting::MUSIC_SOURCES;
+// the admin enables a subset, and only those appear in the intake form.
+const musicSourceOptions = [
+  { value: "hymn_sung", label: "Sung hymn", hint: "A classic hymn sung aloud, words on screen." },
+  { value: "hymn", label: "Instrumental hymn", hint: "The hymn played, with words to sing along." },
+  { value: "suno", label: "AI-composed", hint: "Original worship composed for the worshipper." },
+  { value: "youtube", label: "From YouTube", hint: "An existing worship track and sermon clip." },
+];
+
+const newMood = ref(""); // the mood being typed in the add-mood field
 
 async function login() {
   loginError.value = "";
@@ -59,6 +87,9 @@ async function loadTestimonies() {
 async function loadUsers() {
   users.value = (await api.adminUsers()).users || [];
 }
+async function loadSettings() {
+  settings.value = await api.adminSettings();
+}
 
 function show(name) {
   tab.value = name;
@@ -67,6 +98,83 @@ function show(name) {
   if (name === "donors") loadDonors();
   if (name === "testimonies") loadTestimonies();
   if (name === "users") loadUsers();
+  if (name === "settings") loadSettings();
+}
+
+// Optimistically apply one setting, persist it, and roll back the local value if the
+// write fails. `key` is the settings field; `value` the new value; `ok` the toast.
+async function saveSetting(key, value, ok) {
+  if (!settings.value || settings.value[key] === value) return;
+  savingSettings.value = true;
+  const prev = settings.value[key];
+  settings.value[key] = value; // optimistic
+  try {
+    await api.adminUpdateSettings({ [key]: value });
+    notice.value = ok;
+  } catch (e) {
+    settings.value[key] = prev; // roll back on failure
+    notice.value = e?.data?.message || "Could not update setting.";
+  } finally {
+    savingSettings.value = false;
+  }
+}
+
+const setNarrationMode = (mode) => saveSetting("narration_mode", mode, "Narration voice updated.");
+const setMusicReuse = (on) => saveSetting("music_reuse", on, "Music reuse updated.");
+const setStorageBackend = (backend) => saveSetting("storage_backend", backend, "Storage backend updated.");
+const setScheduling = (on) => saveSetting("scheduling_enabled", on, "Scheduling updated.");
+
+// Persist a list-valued setting (moods, music_sources), rolling back on failure.
+// Unlike saveSetting, this always writes — callers pass a freshly built array.
+async function saveListSetting(key, value, ok) {
+  if (!settings.value) return;
+  savingSettings.value = true;
+  const prev = settings.value[key];
+  settings.value[key] = value; // optimistic
+  try {
+    await api.adminUpdateSettings({ [key]: value });
+    notice.value = ok;
+  } catch (e) {
+    settings.value[key] = prev; // roll back on failure
+    notice.value = e?.data?.message || "Could not update setting.";
+  } finally {
+    savingSettings.value = false;
+  }
+}
+
+function addMood() {
+  const m = newMood.value.trim();
+  if (!m || !settings.value) return;
+  if (settings.value.moods.some((x) => x.toLowerCase() === m.toLowerCase())) {
+    notice.value = `"${m}" is already a mood.`;
+    newMood.value = "";
+    return;
+  }
+  saveListSetting("moods", [...settings.value.moods, m], `Added mood "${m}".`);
+  newMood.value = "";
+}
+
+function removeMood(m) {
+  if (!settings.value) return;
+  if (settings.value.moods.length <= 1) {
+    notice.value = "Keep at least one mood.";
+    return;
+  }
+  saveListSetting("moods", settings.value.moods.filter((x) => x !== m), `Removed mood "${m}".`);
+}
+
+// Flip a music source on/off, preserving canonical order and never emptying the set.
+function toggleMusicSource(value) {
+  if (!settings.value) return;
+  const on = settings.value.music_sources.includes(value);
+  if (on && settings.value.music_sources.length <= 1) {
+    notice.value = "Keep at least one music source.";
+    return;
+  }
+  const next = musicSourceOptions
+    .map((o) => o.value)
+    .filter((v) => (v === value ? !on : settings.value.music_sources.includes(v)));
+  saveListSetting("music_sources", next, "Music sources updated.");
 }
 
 async function retry(s) {
@@ -148,6 +256,7 @@ onMounted(() => { if (api.hasToken()) enter(); });
         <button :class="{ active: tab === 'donors' }" @click="show('donors')">Donors</button>
         <button :class="{ active: tab === 'testimonies' }" @click="show('testimonies')">Testimonies</button>
         <button :class="{ active: tab === 'users' }" @click="show('users')">Users</button>
+        <button :class="{ active: tab === 'settings' }" @click="show('settings')">Settings</button>
       </nav>
 
       <p v-if="notice" class="notice">{{ notice }}</p>
@@ -287,6 +396,176 @@ onMounted(() => { if (api.hasToken()) enter(); });
           </tbody>
         </table>
       </div>
+
+      <!-- Settings -->
+      <section v-else-if="tab === 'settings'" class="settings">
+        <div class="setting-block">
+          <h2>Moods</h2>
+          <p class="setting-desc">
+            The feelings a worshipper can choose at intake. Each one shapes the whole
+            service — the prayer and message tone, the music, and the hymn chosen.
+            Add your own; new moods take effect immediately.
+          </p>
+          <div v-if="settings" class="mood-editor">
+            <span v-for="m in settings.moods" :key="m" class="mood-chip">
+              {{ m }}
+              <button
+                type="button"
+                class="chip-x"
+                :disabled="savingSettings || settings.moods.length <= 1"
+                aria-label="Remove mood"
+                @click="removeMood(m)"
+              >×</button>
+            </span>
+          </div>
+          <div v-if="settings" class="mood-add">
+            <input
+              v-model="newMood"
+              type="text"
+              class="mood-input"
+              placeholder="Add a mood (e.g. Lonely)"
+              :disabled="savingSettings"
+              @keyup.enter="addMood"
+            />
+            <button type="button" class="primary add-btn" :disabled="savingSettings || !newMood.trim()" @click="addMood">
+              Add
+            </button>
+          </div>
+          <p v-else class="setting-desc">Loading…</p>
+        </div>
+
+        <div class="setting-block">
+          <h2>Music sources</h2>
+          <p class="setting-desc">
+            Which music options appear in the intake form. Turn one off to hide it from
+            worshippers. At least one must stay on.
+          </p>
+          <div v-if="settings" class="choice-row">
+            <button
+              v-for="s in musicSourceOptions"
+              :key="s.value"
+              type="button"
+              class="choice"
+              :class="{ active: settings.music_sources.includes(s.value) }"
+              :disabled="savingSettings"
+              @click="toggleMusicSource(s.value)"
+            >
+              <strong>{{ s.label }} <span class="state">{{ settings.music_sources.includes(s.value) ? "On" : "Off" }}</span></strong>
+              <span>{{ s.hint }}</span>
+            </button>
+          </div>
+          <p v-else class="setting-desc">Loading…</p>
+        </div>
+
+        <div class="setting-block">
+          <h2>Scheduling</h2>
+          <p class="setting-desc">
+            When on, worshippers can pick a future time for their service. When off, every
+            service begins right away.
+          </p>
+          <div v-if="settings" class="choice-row">
+            <button
+              type="button"
+              class="choice"
+              :class="{ active: settings.scheduling_enabled === true }"
+              :disabled="savingSettings"
+              @click="setScheduling(true)"
+            >
+              <strong>Allow scheduling</strong>
+              <span>Show the "schedule it" option at intake.</span>
+            </button>
+            <button
+              type="button"
+              class="choice"
+              :class="{ active: settings.scheduling_enabled === false }"
+              :disabled="savingSettings"
+              @click="setScheduling(false)"
+            >
+              <strong>Begin now only</strong>
+              <span>Hide scheduling; services start immediately.</span>
+            </button>
+          </div>
+          <p v-else class="setting-desc">Loading…</p>
+        </div>
+
+        <div class="setting-block">
+          <h2>Narration voice</h2>
+          <p class="setting-desc">
+            How the spoken segments — opening prayer, scripture, message, benediction —
+            are read aloud across every service.
+          </p>
+          <div v-if="settings" class="choice-row">
+            <button
+              v-for="m in narrationModes"
+              :key="m.value"
+              type="button"
+              class="choice"
+              :class="{ active: settings.narration_mode === m.value }"
+              :disabled="savingSettings"
+              @click="setNarrationMode(m.value)"
+            >
+              <strong>{{ m.label }}</strong>
+              <span>{{ m.hint }}</span>
+            </button>
+          </div>
+          <p v-else class="setting-desc">Loading…</p>
+        </div>
+
+        <div class="setting-block">
+          <h2>Music reuse</h2>
+          <p class="setting-desc">
+            When on, a worshipper who is new to a mood hears a song already composed
+            for it — instant and free. Returning worshippers always get a fresh song
+            for a mood they've had before. When off, every service composes anew.
+          </p>
+          <div v-if="settings" class="choice-row">
+            <button
+              type="button"
+              class="choice"
+              :class="{ active: settings.music_reuse === true }"
+              :disabled="savingSettings"
+              @click="setMusicReuse(true)"
+            >
+              <strong>Reuse from pool</strong>
+              <span>Serve an existing mood song when one exists.</span>
+            </button>
+            <button
+              type="button"
+              class="choice"
+              :class="{ active: settings.music_reuse === false }"
+              :disabled="savingSettings"
+              @click="setMusicReuse(false)"
+            >
+              <strong>Always compose</strong>
+              <span>Generate a brand-new song for every service.</span>
+            </button>
+          </div>
+          <p v-else class="setting-desc">Loading…</p>
+        </div>
+
+        <div class="setting-block">
+          <h2>Audio storage</h2>
+          <p class="setting-desc">
+            Where the worker keeps generated songs and narration. S3 is recommended in
+            production so the reusable song library outlives restarts.
+          </p>
+          <div v-if="settings" class="choice-row">
+            <button
+              v-for="b in storageBackends"
+              :key="b.value"
+              type="button"
+              class="choice"
+              :class="{ active: settings.storage_backend === b.value }"
+              :disabled="savingSettings"
+              @click="setStorageBackend(b.value)"
+            >
+              <strong>{{ b.label }}</strong>
+              <span>{{ b.hint }}</span>
+            </button>
+          </div>
+          <p v-else class="setting-desc">Loading…</p>
+        </div>
+      </section>
     </template>
   </main>
 </template>
@@ -343,4 +622,28 @@ onMounted(() => { if (api.hasToken()) enter(); });
 .badge { display: inline-block; font-size: 0.78rem; padding: 0.15rem 0.55rem; border-radius: 999px; background: var(--surface-3); color: var(--text-muted); text-transform: capitalize; }
 .badge.active, .badge.ready { background: var(--success-soft); color: var(--success); }
 .badge.pending, .badge.scheduled { background: var(--primary-soft); color: var(--primary-hover); }
+
+.settings { max-width: 640px; }
+.setting-block { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.4rem; box-shadow: var(--shadow-sm); }
+.setting-block h2 { font-size: 1.05rem; margin: 0 0 0.3rem; }
+.setting-desc { color: var(--text-muted); font-size: 0.9rem; line-height: 1.5; margin: 0 0 1rem; }
+.choice-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0.6rem; }
+.choice { display: flex; flex-direction: column; gap: 0.25rem; padding: 0.85rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); cursor: pointer; text-align: left; transition: border-color 0.12s ease, background 0.12s ease; }
+.choice:hover:not(:disabled) { border-color: var(--border-strong); }
+.choice span { font-size: 0.78rem; color: var(--text-muted); line-height: 1.4; }
+.choice.active { border-color: var(--primary); background: var(--primary-soft); }
+.choice.active span { color: var(--primary-hover); }
+.choice:disabled { opacity: 0.6; cursor: default; }
+.choice .state { font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); margin-left: 0.35rem; }
+.choice.active .state { color: var(--primary-hover); }
+
+.mood-editor { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.9rem; }
+.mood-chip { display: inline-flex; align-items: center; gap: 0.35rem; background: var(--primary-soft); color: var(--primary-hover); border-radius: 999px; padding: 0.3rem 0.4rem 0.3rem 0.8rem; font-size: 0.85rem; font-weight: 500; }
+.chip-x { border: 0; background: transparent; color: inherit; cursor: pointer; font-size: 1rem; line-height: 1; padding: 0 0.25rem; border-radius: 999px; }
+.chip-x:hover:not(:disabled) { background: var(--primary); color: var(--on-primary); }
+.chip-x:disabled { opacity: 0.4; cursor: default; }
+.mood-add { display: flex; gap: 0.5rem; }
+.mood-input { flex: 1; padding: 0.6rem 0.75rem; border: 1px solid var(--border); border-radius: var(--radius-sm); font: inherit; background: var(--surface); color: var(--text); }
+.mood-input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.add-btn { padding: 0.6rem 1.1rem; }
 </style>

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\MusicTrack;
 use App\Models\ServiceAsset;
 use App\Models\ServiceSession;
 use Illuminate\Http\JsonResponse;
@@ -30,6 +31,8 @@ class WebhookController extends Controller
             'audio_key'     => ['nullable', 'string'],
             'provider_ref'  => ['nullable', 'string'],
             'text_payload'  => ['nullable', 'string'],
+            // Public-domain hymn verses to show on screen (hymn music sources).
+            'lyrics'        => ['nullable', 'string'],
         ]);
 
         $session = ServiceSession::where('session_token', $data['session_token'])->firstOrFail();
@@ -51,6 +54,7 @@ class WebhookController extends Controller
                 'audio_key'    => $data['audio_key']    ?? $existing?->audio_key,
                 'provider_ref' => $data['provider_ref'] ?? $existing?->provider_ref,
                 'text_payload' => $data['text_payload'] ?? $existing?->text_payload,
+                'lyrics'       => $data['lyrics']       ?? $existing?->lyrics,
                 'status'       => 'ready',
                 'ready_at'     => now(),
             ],
@@ -60,5 +64,38 @@ class WebhookController extends Controller
         // event(new AssetReady($session->session_token, $asset));
 
         return response()->json(['ok' => true, 'asset_id' => $asset->id]);
+    }
+
+    /**
+     * Register a freshly composed Suno track in the reusable, mood-keyed pool. The
+     * worker calls this once per fresh generation; deduped by provider_ref so a
+     * retried task can't double-insert. Reused tracks already exist here, so they
+     * aren't re-posted.
+     */
+    public function musicTrack(Request $request): JsonResponse
+    {
+        abort_unless(
+            hash_equals(config('services.worker.secret', ''), (string) $request->header('X-Worker-Secret')),
+            403
+        );
+
+        $data = $request->validate([
+            'mood'         => ['required', 'string', 'max:100'],
+            'provider_ref' => ['required', 'string'],
+            'storage_key'  => ['required', 'string'],   // RAW object key, not a presigned URL
+            'title'        => ['nullable', 'string'],
+        ]);
+
+        $track = MusicTrack::firstOrCreate(
+            ['provider_ref' => $data['provider_ref']],
+            [
+                'mood'        => $data['mood'],
+                'storage_key' => $data['storage_key'],
+                'title'       => $data['title'] ?? null,
+                'source'      => 'suno',
+            ],
+        );
+
+        return response()->json(['ok' => true, 'track_id' => $track->id]);
     }
 }

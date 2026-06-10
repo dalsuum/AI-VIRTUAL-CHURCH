@@ -1,13 +1,15 @@
 """
-Dual music-source strategy.
+Music-source strategy.
 
-A service can be scored two ways depending on the user's `music_source` preference:
+A service can be scored three ways depending on the user's `music_source`:
 
+  - HymnStrategy    -> serves a pre-rendered public-domain hymn from a local
+                       library (no AI, no credit, no provider call). The default.
   - SunoStrategy    -> generates original worship music from a text prompt (AI).
   - YouTubeStrategy -> searches YouTube for an existing worship track and returns
                        an embeddable video id (no generation, no file storage).
 
-Both return a normalized `MusicResult` so the orchestrator and the Laravel webhook
+All return a normalized `MusicResult` so the orchestrator and the Laravel webhook
 treat them identically. Add a new source by implementing `MusicStrategy`.
 """
 
@@ -24,6 +26,7 @@ class MusicResult:
     storage_key: str | None = None   # object-storage key for generated audio
     provider_ref: str | None = None  # YouTube video id, or Suno job id
     title: str | None = None
+    lyrics: str | None = None  # public-domain hymn verses to show on screen (hymn sources)
 
 
 class MusicStrategy(ABC):
@@ -43,9 +46,14 @@ class MusicStrategy(ABC):
 
 def get_strategy(music_source: str) -> MusicStrategy:
     """Factory: resolve the user's preference string to a concrete strategy."""
+    from .hymn_strategy import HymnStrategy
     from .suno_strategy import SunoStrategy
     from .youtube_strategy import YouTubeStrategy
 
+    if music_source == "suno":
+        return SunoStrategy()
     if music_source == "youtube":
         return YouTubeStrategy()
-    return SunoStrategy()  # default
+    if music_source == "hymn":
+        return HymnStrategy(sung=False)  # instrumental render + on-screen lyrics
+    return HymnStrategy(sung=True)  # default `hymn_sung`: public-domain sung recording

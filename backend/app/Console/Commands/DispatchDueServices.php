@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Jobs\DispatchServiceJob;
 use App\Models\ServiceSession;
+use App\Notifications\ServiceReminderNotification;
 use Illuminate\Console\Command;
 
 /**
@@ -18,7 +19,8 @@ class DispatchDueServices extends Command
 
     public function handle(): int
     {
-        $due = ServiceSession::where('status', 'scheduled')
+        $due = ServiceSession::with('user')
+            ->where('status', 'scheduled')
             ->whereNotNull('scheduled_at')
             ->where('scheduled_at', '<=', now())
             ->get();
@@ -26,6 +28,16 @@ class DispatchDueServices extends Command
         foreach ($due as $session) {
             $session->update(['status' => 'active']);
             DispatchServiceJob::dispatch($session->id);
+
+            // Remind the worshipper their reserved time has come. Guests are given a
+            // synthetic @guest.local address we can't deliver to, so only registered
+            // users are mailed. Selecting 'scheduled' and flipping to 'active' above
+            // guarantees each session is released — and reminded — exactly once.
+            $user = $session->user;
+            if ($user && ! str_ends_with($user->email, '@guest.local')) {
+                $user->notify(new ServiceReminderNotification($session));
+            }
+
             $this->info("Dispatched scheduled service {$session->id}");
         }
 

@@ -3,7 +3,7 @@ Description=AI Church — Laravel queue worker
 After=redis-server.service mysql.service
 
 [Service]
-User=deploy
+User=simon
 Group=www-data
 WorkingDirectory=/opt/ai-church/backend
 ExecStart=/usr/bin/php artisan queue:work --tries=3 --sleep=1

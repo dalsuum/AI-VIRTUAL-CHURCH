@@ -31,6 +31,7 @@ Redis queue so neither has to know the other's serializer.
 - [Admin console](#admin-console)
 - [Scheduled services](#scheduled-services)
 - [Running locally](#running-locally)
+- [Deploying to production](#deploying-to-production)
 - [Environment variables](#environment-variables)
 - [API reference](#api-reference)
 - [Project status](#project-status)
@@ -433,6 +434,38 @@ cd backend && php artisan schedule:work
   `export XDG_RUNTIME_DIR=/run/user/$(id -u)` and
   `export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus`. Linger is enabled, so
   the user instance keeps running across logins regardless.
+
+---
+
+## Deploying to production
+
+A full, step-by-step walkthrough lives in **[DEPLOY.md](DEPLOY.md)** — a single-droplet
+(DigitalOcean) deploy that puts the app at `/opt/ai-church`, owned by an unprivileged
+`simon` user. The shape differs from local dev in one important way: the **HTTP layer is
+nginx + php-fpm** (TLS via certbot), not `php artisan serve`, so there is no `backend`
+app process — only the four background workers run as services.
+
+Those four are version-controlled as **system-level** units in
+[`.systemd/prod/`](.systemd/prod/) (the local stack instead uses `--user` units under
+`aivirtualchurch.target` — see [Running locally](#running-locally)):
+
+| Unit | Process |
+|------|---------|
+| [`aivc-queue.service`](.systemd/prod/aivc-queue.service) | Laravel `queue:work` (runs `DispatchServiceJob`) |
+| [`aivc-scheduler.service`](.systemd/prod/aivc-scheduler.service) | Laravel `schedule:work` (releases due services + reminder mail) |
+| [`aivc-workers.service`](.systemd/prod/aivc-workers.service) | Celery workers (sermon · music · avatar · narration) |
+| [`aivc-bridge.service`](.systemd/prod/aivc-bridge.service) | bridge consumer (`ai:intake` → Celery) |
+
+```bash
+# on the droplet, once the units are copied to /etc/systemd/system:
+sudo systemctl enable --now aivc-queue aivc-scheduler aivc-workers aivc-bridge
+sudo systemctl status  aivc-queue aivc-scheduler aivc-workers aivc-bridge --no-pager
+```
+
+The units assume `/opt/ai-church` and the `simon` user; if your app path or user differ,
+edit each unit's `WorkingDirectory` and `User`/`Group` before copying. DEPLOY.md also
+covers the deploy-time gotchas (the `REDIS_PREFIX=` trap, storage ownership for php-fpm,
+config caching) in a troubleshooting table.
 
 ---
 

@@ -53,16 +53,16 @@ Architecture on the box:
 
 ---
 
-## 2. First login & a deploy user
+## 2. First login & the `simon` user
 
 SSH in as root, then create an unprivileged user that owns the app and runs the units:
 
 ```bash
 ssh root@YOUR_DROPLET_IP
 
-adduser --disabled-password --gecos "" deploy
-usermod -aG sudo deploy
-rsync --archive --chown=deploy:deploy ~/.ssh /home/deploy   # copy your SSH key
+adduser --disabled-password --gecos "" simon
+usermod -aG sudo simon
+rsync --archive --chown=simon:simon ~/.ssh /home/simon   # copy your SSH key
 
 # Firewall: SSH + HTTP/HTTPS only. MySQL/Redis stay loopback-only.
 ufw allow OpenSSH
@@ -71,10 +71,10 @@ ufw allow 443
 ufw --force enable
 ```
 
-From here on, work as `deploy` unless told otherwise:
+From here on, work as `simon` unless told otherwise:
 
 ```bash
-ssh deploy@YOUR_DROPLET_IP
+ssh simon@YOUR_DROPLET_IP
 ```
 
 ---
@@ -151,7 +151,7 @@ redis-cli ping     # → PONG
 
 ```bash
 sudo mkdir -p /opt/ai-church
-sudo chown deploy:deploy /opt/ai-church
+sudo chown simon:simon /opt/ai-church
 git clone YOUR_GIT_REMOTE /opt/ai-church
 cd /opt/ai-church
 ```
@@ -161,7 +161,7 @@ If you don't have a git remote, `rsync` from your machine instead:
 # run locally, NOT on the droplet:
 rsync -az --exclude node_modules --exclude .venv --exclude vendor \
   --exclude 'backend/storage/*.key' \
-  /home/simon/ai-church/ deploy@YOUR_DROPLET_IP:/opt/ai-church/
+  /home/simon/ai-church/ simon@YOUR_DROPLET_IP:/opt/ai-church/
 ```
 
 ---
@@ -245,7 +245,7 @@ php artisan config:cache
 php artisan route:cache
 
 # Let php-fpm (www-data) read code and write to storage/cache:
-sudo chown -R deploy:www-data /opt/ai-church/backend
+sudo chown -R simon:www-data /opt/ai-church/backend
 sudo chmod -R 775 /opt/ai-church/backend/storage /opt/ai-church/backend/bootstrap/cache
 ```
 
@@ -298,8 +298,8 @@ LOCAL_MEDIA_URL=https://api.example.com/storage/media
 
 ```bash
 mkdir -p /opt/ai-church/backend/storage/app/public/media
-# Workers run as 'deploy'; keep media group-writable for www-data to serve:
-sudo chown -R deploy:www-data /opt/ai-church/backend/storage/app/public
+# Workers run as 'simon'; keep media group-writable for www-data to serve:
+sudo chown -R simon:www-data /opt/ai-church/backend/storage/app/public
 
 # Seed the public-domain hymn library (one-time; needed for hymn_sung music)
 set -a; . ./.env; set +a
@@ -387,7 +387,7 @@ Certbot installs a renewal timer automatically; verify with `sudo certbot renew 
 
 The HTTP layer is now php-fpm + nginx, so we drop the local `backend.sh`
 (artisan serve) and run only the four background workers as **system-level**
-units owned by `deploy`.
+units owned by `simon`.
 
 These units are version-controlled in the repo at
 [`.systemd/prod/`](.systemd/prod/) — just copy them (skip retyping the blocks
@@ -409,7 +409,7 @@ Description=AI Church — Laravel queue worker
 After=redis-server.service mysql.service
 
 [Service]
-User=deploy
+User=simon
 Group=www-data
 WorkingDirectory=/opt/ai-church/backend
 ExecStart=/usr/bin/php artisan queue:work --tries=3 --sleep=1
@@ -427,7 +427,7 @@ Description=AI Church — Laravel scheduler (releases due services + reminder ma
 After=mysql.service
 
 [Service]
-User=deploy
+User=simon
 Group=www-data
 WorkingDirectory=/opt/ai-church/backend
 ExecStart=/usr/bin/php artisan schedule:work
@@ -446,7 +446,7 @@ Description=AI Church — Celery workers (sermon/music/avatar/narration)
 After=redis-server.service
 
 [Service]
-User=deploy
+User=simon
 WorkingDirectory=/opt/ai-church/workers
 ExecStart=/usr/bin/env bash -lc 'set -a; . ./.env; set +a; exec .venv/bin/celery -A tasks.celery_app worker -Q ai:sermon,ai:music,ai:avatar,ai:narration -c 4'
 Restart=on-failure
@@ -464,7 +464,7 @@ Description=AI Church — bridge consumer (Redis ai:intake → Celery)
 After=aivc-workers.service redis-server.service
 
 [Service]
-User=deploy
+User=simon
 WorkingDirectory=/opt/ai-church/workers
 ExecStart=/usr/bin/env bash -lc 'set -a; . ./.env; set +a; exec .venv/bin/python bridge.py'
 Restart=always
@@ -538,8 +538,8 @@ before the restart.
 | Intake never produces segments | `ai:intake` not draining | Check `REDIS_PREFIX=` is empty in backend `.env`; check `aivc-bridge` is running |
 | Bridge/Celery can't see API keys | `.env` not loaded | They don't auto-load — units use `set -a; . ./.env`; confirm `workers/.env` exists |
 | Webhook callbacks 401/403 | secret mismatch | `WORKER_WEBHOOK_SECRET` must be identical in `backend/.env` and `workers/.env` |
-| 500 on API, blank logs | storage not writable | `chown -R deploy:www-data storage bootstrap/cache && chmod -R 775` |
-| Media mp3 404 | symlink/perms | `php artisan storage:link`; media dir owned `deploy:www-data` |
+| 500 on API, blank logs | storage not writable | `chown -R simon:www-data storage bootstrap/cache && chmod -R 775` |
+| Media mp3 404 | symlink/perms | `php artisan storage:link`; media dir owned `simon:www-data` |
 | Config changes ignored | cached config | `php artisan config:cache` after every `.env` edit |
 | `.env` edits to APP_* ignored | cached | also clear with `php artisan config:clear` then re-cache |
 

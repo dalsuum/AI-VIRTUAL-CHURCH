@@ -2,7 +2,7 @@
 
 System-level ports of the local `--user` units, for the DigitalOcean deploy in
 [`/DEPLOY.md`](../../DEPLOY.md). They assume the app lives at `/opt/ai-church`
-and runs as the `deploy` user (see DEPLOY.md §2, §6).
+and runs as the `simon` user (see DEPLOY.md §2, §6).
 
 Unlike local dev, the **HTTP layer is nginx + php-fpm** (not `php artisan serve`),
 so there is no `backend` app unit here — only the four background processes:
@@ -23,5 +23,5 @@ sudo systemctl enable --now aivc-queue aivc-scheduler aivc-workers aivc-bridge
 sudo systemctl status  aivc-queue aivc-scheduler aivc-workers aivc-bridge --no-pager
 ```
 
-If your app path or user differ from `/opt/ai-church` / `deploy`, edit the
+If your app path or user differ from `/opt/ai-church` / `simon`, edit the
 `WorkingDirectory` and `User`/`Group` lines before copying.

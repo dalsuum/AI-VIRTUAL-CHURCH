@@ -3,7 +3,7 @@ Description=AI Church — Laravel scheduler (releases due services + reminder ma
 After=mysql.service
 
 [Service]
-User=deploy
+User=simon
 Group=www-data
 WorkingDirectory=/opt/ai-church/backend
 ExecStart=/usr/bin/php artisan schedule:work

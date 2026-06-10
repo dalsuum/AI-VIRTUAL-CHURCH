@@ -5,7 +5,7 @@ Description=AI Church — bridge consumer (Redis ai:intake -> Celery)
 After=aivc-workers.service redis-server.service
 
 [Service]
-User=deploy
+User=simon
 WorkingDirectory=/opt/ai-church/workers
 ExecStart=/usr/bin/env bash -lc 'set -a; . ./.env; set +a; exec .venv/bin/python bridge.py'
 Restart=always

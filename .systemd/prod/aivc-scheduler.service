@@ -1,0 +1,14 @@
+[Unit]
+Description=AI Church — Laravel scheduler (releases due services + reminder mail)
+After=mysql.service
+
+[Service]
+User=deploy
+Group=www-data
+WorkingDirectory=/opt/ai-church/backend
+ExecStart=/usr/bin/php artisan schedule:work
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

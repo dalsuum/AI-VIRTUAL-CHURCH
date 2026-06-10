@@ -43,6 +43,37 @@ def _strip_formatting(text: str) -> str:
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
 
+
+def _strip_name(text: str, user_name: str | None) -> str:
+    """Safety net: scrub the worshipper's name out of generated prose.
+
+    The prompt tells the model not to address the listener by name, but free models
+    slip and drop it in anyway (``"Test Admin, imagine..."``). For segments that must
+    never expose the name (the sermon/message), we also remove any literal occurrence
+    of it — the full name and each of its words — and repair the punctuation/casing
+    left behind by a removed vocative."""
+    name = (user_name or "").strip()
+    if not name:
+        return text
+    # Full name first, then each word (longest-first so "Test Admin" beats "Test").
+    parts = [p for p in re.split(r"\s+", name) if len(p) >= 2]
+    for cand in sorted({name, *parts}, key=len, reverse=True):
+        c = re.escape(cand)
+        # Opening vocative — "Name, imagine ..." -> "Imagine ..." (recapitalize).
+        text = re.sub(
+            rf"(?m)(?:^|(?<=[.!?]\s)){c}\s*,\s*(\w)",
+            lambda m: m.group(1).upper(),
+            text,
+        )
+        # Trailing/inline vocative — ", Name." / ", Name," -> drop the name.
+        text = re.sub(rf",\s*{c}\b", "", text)
+        # Any remaining standalone mention.
+        text = re.sub(rf"\b{c}\b", "", text)
+    # Tidy spacing and orphaned punctuation left by the removals.
+    text = re.sub(r"\s+([,.!?;:])", r"\1", text)
+    text = re.sub(r"[ \t]{2,}", " ", text)
+    return text.strip()
+
 # We talk to OpenRouter's OpenAI-compatible Chat Completions endpoint. Any provider
 # that speaks that format (OpenRouter, OpenAI, local vLLM, …) works by changing the
 # base URL + key + model, with no code change.
@@ -160,9 +191,12 @@ def generate_sermon(*, user_name: str | None, mood: str, scripture_ref: str, tar
     user = (
         f"Scripture focus: {scripture_ref}\n"
         f"Listener's theme/mood: {mood}\n"
-        f"{_addressing(user_name)}"
+        "Do NOT address the listener by name and do NOT invent one — never write any "
+        "personal name for them anywhere in the message. Speak to them warmly using "
+        "only 'you'."
     )
-    return _strip_formatting(_complete(system, user, max_tokens=2500))
+    text = _strip_formatting(_complete(system, user, max_tokens=2500))
+    return _strip_name(text, user_name)
 
 
 def generate_benediction(*, user_name: str | None, mood: str) -> str:

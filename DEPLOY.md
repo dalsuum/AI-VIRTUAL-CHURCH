@@ -272,8 +272,9 @@ REDIS_URL=redis://127.0.0.1:6379/0
 OPENROUTER_API_KEY=sk-or-v1-xxx
 LLM_MODEL=openai/gpt-oss-120b:free
 
-# Callback into Laravel — must match backend WORKER_WEBHOOK_SECRET
-LARAVEL_WEBHOOK_URL=https://api.example.com
+# Callback into Laravel. This is the FULL asset-ready URL (used verbatim); the
+# worker derives the music-track URL from it by replacing "asset-ready".
+LARAVEL_WEBHOOK_URL=https://api.example.com/api/internal/asset-ready
 WORKER_WEBHOOK_SECRET=GENERATE_A_32_BYTE_HEX_SECRET   # SAME value as backend/.env
 
 # Music (optional — only needed for those sources)
@@ -386,7 +387,20 @@ Certbot installs a renewal timer automatically; verify with `sudo certbot renew 
 
 The HTTP layer is now php-fpm + nginx, so we drop the local `backend.sh`
 (artisan serve) and run only the four background workers as **system-level**
-units owned by `deploy`. Create each file under `/etc/systemd/system/`.
+units owned by `deploy`.
+
+These units are version-controlled in the repo at
+[`.systemd/prod/`](.systemd/prod/) — just copy them (skip retyping the blocks
+below, which are shown for reference):
+
+```bash
+sudo cp /opt/ai-church/.systemd/prod/aivc-*.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now aivc-queue aivc-scheduler aivc-workers aivc-bridge
+sudo systemctl status  aivc-queue aivc-scheduler aivc-workers aivc-bridge --no-pager
+```
+
+For reference, each file under `/etc/systemd/system/`:
 
 `/etc/systemd/system/aivc-queue.service`:
 ```ini
@@ -460,35 +474,26 @@ RestartSec=2
 WantedBy=multi-user.target
 ```
 
-Enable and start all four:
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now aivc-queue aivc-scheduler aivc-workers aivc-bridge
-sudo systemctl status aivc-queue aivc-scheduler aivc-workers aivc-bridge --no-pager
-```
-
 ---
 
 ## 12. Stripe webhook (offerings)
 
 1. Stripe Dashboard → **Developers → Webhooks → Add endpoint**.
-2. Endpoint URL: `https://api.example.com/api/...` — confirm the exact webhook
-   route in `backend/routes/api.php` (`WebhookController`), e.g.
-   `https://api.example.com/api/webhooks/stripe`.
-3. Subscribe to the events the controller handles (typically
-   `checkout.session.completed` / `payment_intent.succeeded`).
+2. Endpoint URL: **`https://api.example.com/api/webhooks/stripe`**
+   (handled by `OfferingController::webhook`).
+3. Subscribe to exactly one event: **`payment_intent.succeeded`** — it's the only
+   type the controller records; everything else is acknowledged and ignored.
 4. Copy the **Signing secret** (`whsec_...`) into `STRIPE_WEBHOOK_SECRET` in
-   `backend/.env`, then `php artisan config:cache` and
-   `sudo systemctl restart aivc-queue`.
+   `backend/.env`, then `php artisan config:cache`. (php-fpm picks up the cached
+   config on the next request; no unit restart needed for webhook verification.)
 
 ---
 
 ## 13. Smoke test (verify it actually works)
 
 ```bash
-# API is up
-curl -i https://api.example.com/api/...    # any public GET route → 200/JSON
+# API is up (public route, no auth) — returns intake-options JSON
+curl -i https://api.example.com/api/config    # → 200 + JSON
 
 # Pipeline end-to-end: register → create/intake a service from the frontend
 # at https://example.com, then watch the chain:

@@ -1,0 +1,14 @@
+[Unit]
+Description=AI Church — Celery workers (sermon/music/avatar/narration)
+After=redis-server.service
+
+[Service]
+User=deploy
+WorkingDirectory=/opt/ai-church/workers
+# Celery does NOT read .env itself, so we load it first (mirrors .systemd/workers.sh).
+ExecStart=/usr/bin/env bash -lc 'set -a; . ./.env; set +a; exec .venv/bin/celery -A tasks.celery_app worker -Q ai:sermon,ai:music,ai:avatar,ai:narration -c 4'
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

@@ -203,6 +203,10 @@ service one stage at a time.
    (+ prayer text / scripture ref), then run through `classifier.review()`. Blocked
    content is replaced with `"(content withheld pending review)"`. Surviving text is
    posted as the segment, and — if enabled — fanned out to `render_avatar` and `narrate`.
+   The **sermon** is generated *without* a name: the prompt forbids addressing the
+   listener by name, and `llm_engine._strip_name()` is a belt-and-suspenders safety net
+   that scrubs any literal name (and repairs the leftover vocative punctuation) for the
+   free models that slip one in anyway.
 3. **Music** (`generate_music`) — resolves the locked `music_source` to a strategy and
    posts the result to **both** the `worship` and `closing_hymn` segments.
 

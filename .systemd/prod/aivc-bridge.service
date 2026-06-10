@@ -1,0 +1,15 @@
+[Unit]
+Description=AI Church — bridge consumer (Redis ai:intake -> Celery)
+# Its OWN unit so a crash is seen and restarted — the whole spoken/music
+# pipeline is dead without it (mirrors .systemd/bridge.sh).
+After=aivc-workers.service redis-server.service
+
+[Service]
+User=deploy
+WorkingDirectory=/opt/ai-church/workers
+ExecStart=/usr/bin/env bash -lc 'set -a; . ./.env; set +a; exec .venv/bin/python bridge.py'
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

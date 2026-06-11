@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class ServiceSession extends Model
 {
     protected $fillable = [
-        'user_id', 'session_token', 'status', 'music_source', 'scheduled_at', 'started_at', 'ended_at',
+        'user_id', 'session_token', 'status', 'music_source', 'scheduled_at', 'contact_email', 'started_at', 'ended_at',
     ];
     protected $casts = [
         'scheduled_at' => 'datetime',

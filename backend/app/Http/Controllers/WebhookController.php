@@ -60,6 +60,18 @@ class WebhookController extends Controller
             ],
         );
 
+        // Backfill scripture_ref into the intake the first time the scripture segment
+        // arrives. The worker stores "{ref}\n\n{verse text}" in text_payload; the first
+        // line is the reference (e.g. "Psalm 23:1-4"). We only write if the intake has
+        // no ref yet so a re-run of the scripture segment doesn't clobber a manual value.
+        if ($data['segment'] === 'scripture' && !empty($data['text_payload'])) {
+            $ref = trim(explode("\n", $data['text_payload'])[0]);
+            $intake = $session->intake;
+            if ($ref && $intake && !$intake->scripture_ref) {
+                $intake->update(['scripture_ref' => $ref]);
+            }
+        }
+
         // Broadcast to the client over WebSockets (Laravel Reverb / Echo).
         // event(new AssetReady($session->session_token, $asset));
 

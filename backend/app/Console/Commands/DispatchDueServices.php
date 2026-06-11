@@ -29,13 +29,18 @@ class DispatchDueServices extends Command
             $session->update(['status' => 'active']);
             DispatchServiceJob::dispatch($session->id);
 
-            // Remind the worshipper their reserved time has come. Guests are given a
-            // synthetic @guest.local address we can't deliver to, so only registered
-            // users are mailed. Selecting 'scheduled' and flipping to 'active' above
-            // guarantees each session is released — and reminded — exactly once.
-            $user = $session->user;
-            if ($user && ! str_ends_with($user->email, '@guest.local')) {
-                $user->notify(new ServiceReminderNotification($session));
+            // Remind the worshipper their reserved time has come. Use the
+            // contact_email stored on the session (provided at scheduling time) if
+            // available — this works even when the user's account still has a
+            // synthetic @guest.local address.
+            $notifyEmail = $session->contact_email
+                ?: (! str_ends_with($session->user?->email ?? '', '@guest.local')
+                    ? $session->user?->email
+                    : null);
+
+            if ($notifyEmail) {
+                \Illuminate\Support\Facades\Notification::route('mail', $notifyEmail)
+                    ->notify(new ServiceReminderNotification($session, $session->user?->name));
             }
 
             $this->info("Dispatched scheduled service {$session->id}");

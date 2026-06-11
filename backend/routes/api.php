@@ -12,10 +12,15 @@ use Illuminate\Support\Facades\Route;
 // Public app configuration (intake options) — read before a worshipper has a session.
 Route::get('/config', [ConfigController::class, 'show']);
 
-// Public auth
-Route::post('/guest',    [AuthController::class, 'guest']);
-Route::post('/register', [AuthController::class, 'register']);
-Route::post('/login',    [AuthController::class, 'login']);
+// Public auth — rate-limited per IP to slow credential stuffing and account spam.
+Route::middleware('throttle:auth')->group(function () {
+    Route::post('/guest',    [AuthController::class, 'guest']);
+    Route::post('/register', [AuthController::class, 'register']);
+    Route::post('/login',    [AuthController::class, 'login']);
+});
+
+// Email-link session resume — public, session token acts as the credential.
+Route::get('/service/{token}/resume', [ServiceController::class, 'resume']);
 
 // Internal worker callbacks (shared-secret protected, no user auth)
 Route::post('/internal/asset-ready', [WebhookController::class, 'assetReady']);
@@ -28,10 +33,15 @@ Route::post('/webhooks/stripe', [OfferingController::class, 'webhook']);
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me', [AuthController::class, 'me']);
+    Route::patch('/me/email', [AuthController::class, 'updateEmail']);
     Route::patch('/me/music-source', [AuthController::class, 'updateMusicSource']);
+    Route::post('/me/change-password', [AuthController::class, 'changePassword']);
 
+    Route::get('/me/services', [ServiceController::class, 'myServices']);
     Route::post('/service/start', [ServiceController::class, 'start']);
-    Route::post('/service/{token}/intake', [ServiceController::class, 'intake']);
+    // Intake triggers the full AI pipeline — throttled tightly per user/IP.
+    Route::post('/service/{token}/intake', [ServiceController::class, 'intake'])
+        ->middleware('throttle:intake');
     Route::get('/service/{token}', [ServiceController::class, 'show']);
 
     // Offering segment — open a PaymentIntent; the browser confirms with Stripe.
@@ -39,7 +49,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Testimonies — read the approved wall, or share your own (held for moderation).
     Route::get('/testimonies', [TestimonyController::class, 'index']);
-    Route::post('/testimonies', [TestimonyController::class, 'store']);
+    Route::post('/testimonies', [TestimonyController::class, 'store'])
+        ->middleware('throttle:testimony');
 
     // Admin console — every route additionally requires an is_admin account.
     Route::prefix('admin')->middleware('admin')->group(function () {
@@ -47,6 +58,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
         Route::get('/services', [AdminController::class, 'services']);
         Route::post('/services/{service}/retry', [AdminController::class, 'retryService']);
+        Route::delete('/services/{service}', [AdminController::class, 'deleteService']);
 
         Route::get('/testimonies', [AdminController::class, 'testimonies']);
         Route::patch('/testimonies/{testimony}/approve', [AdminController::class, 'approveTestimony']);
@@ -54,8 +66,11 @@ Route::middleware('auth:sanctum')->group(function () {
 
         Route::get('/users', [AdminController::class, 'users']);
         Route::patch('/users/{user}/admin', [AdminController::class, 'setAdmin']);
+        Route::patch('/users/{user}/block', [AdminController::class, 'blockUser']);
+        Route::delete('/users/{user}', [AdminController::class, 'deleteUser']);
 
         Route::get('/donors', [AdminController::class, 'donors']);
+        Route::get('/prayer-requests', [AdminController::class, 'prayerRequests']);
 
         // Global service settings (e.g. narration voice mode).
         Route::get('/settings', [AdminController::class, 'settings']);

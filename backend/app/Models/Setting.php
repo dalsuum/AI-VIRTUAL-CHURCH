@@ -18,13 +18,25 @@ class Setting extends Model
     protected $fillable = ['key', 'value'];
 
     /** Allowed narration voice modes (see narration_mode setting). */
-    public const NARRATION_MODES = ['off', 'browser', 'openai', 'kokoro'];
+    public const NARRATION_MODES = ['off', 'browser', 'openai', 'kokoro', 'edge_tts'];
+
+    /** Edge TTS voice names the admin may pick from. */
+    public const EDGE_TTS_VOICES = [
+        'en-US-AriaNeural',
+        'en-US-JennyNeural',
+        'en-GB-SoniaNeural',
+        'en-AU-NatashaNeural',
+        'en-US-GuyNeural',
+        'en-US-ChristopherNeural',
+        'en-GB-RyanNeural',
+        'en-AU-WilliamNeural',
+    ];
 
     /** Where generated audio is stored (see storage_backend setting). */
     public const STORAGE_BACKENDS = ['local', 's3'];
 
     /** Every music source the app can offer; admins enable a subset (music_sources). */
-    public const MUSIC_SOURCES = ['hymn_sung', 'hymn', 'suno', 'youtube'];
+    public const MUSIC_SOURCES = ['hymn_sung', 'hymn', 'hymn_youtube', 'suno', 'youtube'];
 
     /** The moods a worshipper can pick from out of the box, before any admin edits. */
     public const DEFAULT_MOODS = ['Grateful', 'Anxious', 'Grieving', 'Joyful', 'Seeking', 'Hopeful'];
@@ -80,5 +92,12 @@ class Setting extends Model
     public static function schedulingEnabled(): bool
     {
         return static::get('scheduling_enabled', '1') === '1';
+    }
+
+    /** The music source pre-selected in the intake form. Must be in MUSIC_SOURCES. */
+    public static function defaultMusicSource(): string
+    {
+        $v = static::get('default_music_source', 'youtube');
+        return in_array($v, self::MUSIC_SOURCES, true) ? $v : 'youtube';
     }
 }

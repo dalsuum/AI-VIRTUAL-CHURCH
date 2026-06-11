@@ -10,4 +10,4 @@ Artisan::command('inspire', function () {
 
 // Release scheduled services the moment they come due. Requires the scheduler to be
 // running: `php artisan schedule:work` in dev, or a once-a-minute cron in prod.
-Schedule::command('services:dispatch-due')->everyMinute()->withoutOverlapping();
+Schedule::command('services:dispatch-due')->everyMinute();

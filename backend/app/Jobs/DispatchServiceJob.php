@@ -35,7 +35,8 @@ class DispatchServiceJob implements ShouldQueue
             // How spoken segments are voiced (global admin setting). 'openai' tells
             // the worker to synthesize TTS audio; 'browser'/'off' leave it to the
             // client (browser speech) or silent, so the worker skips narration.
-            'narration_mode'=> Setting::get('narration_mode', 'browser'),
+            'narration_mode'  => Setting::get('narration_mode', 'browser'),
+            'edge_tts_voice'  => Setting::get('edge_tts_voice', 'en-US-AriaNeural'),
             // Where generated audio is stored (local dir vs S3). null lets the worker
             // keep its own env default.
             'storage_backend'=> Setting::get('storage_backend'),

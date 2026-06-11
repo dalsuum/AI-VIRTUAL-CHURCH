@@ -104,8 +104,27 @@ export const api = {
   // Public app configuration (intake options) — fetched before any session exists.
   getConfig: () => request("/config"),
 
+  updateGuestEmail: (email) =>
+    request("/me/email", { method: "PATCH", body: { email } }),
+
   updateMusicSource: (music_source) =>
     request("/me/music-source", { method: "PATCH", body: { music_source } }),
+
+  changePassword: (current_password, new_password) =>
+    request("/me/change-password", { method: "POST", body: { current_password, new_password } }),
+
+  resumeSession: (sessionToken) =>
+    fetch(`${BASE_URL}/service/${sessionToken}/resume`, {
+      headers: { Accept: "application/json" },
+    })
+      .then(async (r) => {
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.message || "Resume failed");
+        if (data.auth_token) setToken(data.auth_token);
+        return data;
+      }),
+
+  getMyServices: () => request("/me/services"),
 
   startService: () => request("/service/start", { method: "POST" }),
   submitIntake: (sessionToken, payload) =>
@@ -128,6 +147,7 @@ export const api = {
   adminDashboard: () => request("/admin/dashboard"),
   adminServices: () => request("/admin/services"),
   adminRetryService: (id) => request(`/admin/services/${id}/retry`, { method: "POST" }),
+  adminDeleteService: (id) => request(`/admin/services/${id}`, { method: "DELETE" }),
   adminTestimonies: () => request("/admin/testimonies"),
   adminApproveTestimony: (id) =>
     request(`/admin/testimonies/${id}/approve`, { method: "PATCH" }),
@@ -136,7 +156,12 @@ export const api = {
   adminUsers: () => request("/admin/users"),
   adminSetAdmin: (id, is_admin) =>
     request(`/admin/users/${id}/admin`, { method: "PATCH", body: { is_admin } }),
+  adminBlockUser: (id, is_blocked) =>
+    request(`/admin/users/${id}/block`, { method: "PATCH", body: { is_blocked } }),
+  adminDeleteUser: (id) =>
+    request(`/admin/users/${id}`, { method: "DELETE" }),
   adminDonors: () => request("/admin/donors"),
+  adminPrayerRequests: () => request("/admin/prayer-requests"),
   adminSettings: () => request("/admin/settings"),
   adminUpdateSettings: (payload) =>
     request("/admin/settings", { method: "PATCH", body: payload }),

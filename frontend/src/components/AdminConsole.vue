@@ -11,12 +11,13 @@ const email = ref("");
 const password = ref("");
 const loginError = ref("");
 
-const tab = ref("dashboard"); // dashboard | services | donors | testimonies | users | settings
+const tab = ref("dashboard"); // dashboard | services | donors | testimonies | users | prayer | settings
 const stats = ref(null);
 const services = ref([]);
 const donors = ref([]);
 const testimonies = ref([]);
 const users = ref([]);
+const prayerRequests = ref([]);
 const settings = ref(null);
 const savingSettings = ref(false);
 const notice = ref("");
@@ -24,11 +25,25 @@ const notice = ref("");
 // How spoken segments are voiced across all services. Mirrors the backend's
 // Setting::NARRATION_MODES; surfaced as a single-choice selector.
 const narrationModes = [
+  { value: "edge_tts", label: "Edge TTS (free)", hint: "Microsoft neural voice — free, no API key, high quality. Recommended." },
   { value: "browser", label: "Browser voice", hint: "The worshipper's browser reads each segment aloud — free, no API key." },
   { value: "openai", label: "OpenAI voice", hint: "Segments are narrated with OpenAI text-to-speech. Requires a TTS key." },
   { value: "kokoro", label: "OpenRouter Kokoro", hint: "Segments are narrated with the open hexgrad/kokoro-82m voice via OpenRouter. Uses the OpenRouter key." },
   { value: "off", label: "Off", hint: "Segments stay as silent text — nothing is read aloud." },
 ];
+
+// Edge TTS voice options (shown when narration_mode === 'edge_tts').
+const edgeTtsVoices = [
+  { value: "en-US-AriaNeural",       label: "Aria",       gender: "Female", accent: "US" },
+  { value: "en-US-JennyNeural",      label: "Jenny",      gender: "Female", accent: "US" },
+  { value: "en-GB-SoniaNeural",      label: "Sonia",      gender: "Female", accent: "UK" },
+  { value: "en-AU-NatashaNeural",    label: "Natasha",    gender: "Female", accent: "AU" },
+  { value: "en-US-GuyNeural",        label: "Guy",        gender: "Male",   accent: "US" },
+  { value: "en-US-ChristopherNeural",label: "Christopher",gender: "Male",   accent: "US" },
+  { value: "en-GB-RyanNeural",       label: "Ryan",       gender: "Male",   accent: "UK" },
+  { value: "en-AU-WilliamNeural",    label: "William",    gender: "Male",   accent: "AU" },
+];
+const setEdgeTtsVoice = (v) => saveSetting("edge_tts_voice", v, "Voice updated.");
 
 // Where the worker stores generated audio. Mirrors Setting::STORAGE_BACKENDS.
 const storageBackends = [
@@ -41,11 +56,39 @@ const storageBackends = [
 const musicSourceOptions = [
   { value: "hymn_sung", label: "Sung hymn", hint: "A classic hymn sung aloud, words on screen." },
   { value: "hymn", label: "Instrumental hymn", hint: "The hymn played, with words to sing along." },
+  { value: "hymn_youtube", label: "Vocal hymn (YouTube)", hint: "A traditional hymn sung by a choir, mood-matched and embedded from YouTube." },
   { value: "suno", label: "AI-composed", hint: "Original worship composed for the worshipper." },
   { value: "youtube", label: "From YouTube", hint: "An existing worship track and sermon clip." },
 ];
 
-const newMood = ref(""); // the mood being typed in the add-mood field
+const newMood = ref("");
+
+// Password change
+const pwCurrent = ref("");
+const pwNew = ref("");
+const pwConfirm = ref("");
+const pwSaving = ref(false);
+const pwError = ref("");
+const pwOk = ref("");
+
+async function changePassword() {
+  pwError.value = "";
+  pwOk.value = "";
+  if (pwNew.value !== pwConfirm.value) { pwError.value = "New passwords don't match."; return; }
+  if (pwNew.value.length < 8) { pwError.value = "New password must be at least 8 characters."; return; }
+  pwSaving.value = true;
+  try {
+    await api.changePassword(pwCurrent.value, pwNew.value);
+    pwOk.value = "Password updated.";
+    pwCurrent.value = "";
+    pwNew.value = "";
+    pwConfirm.value = "";
+  } catch (e) {
+    pwError.value = e?.data?.message || "Could not update password.";
+  } finally {
+    pwSaving.value = false;
+  }
+}
 
 async function login() {
   loginError.value = "";
@@ -87,6 +130,9 @@ async function loadTestimonies() {
 async function loadUsers() {
   users.value = (await api.adminUsers()).users || [];
 }
+async function loadPrayerRequests() {
+  prayerRequests.value = (await api.adminPrayerRequests()).prayer_requests || [];
+}
 async function loadSettings() {
   settings.value = await api.adminSettings();
 }
@@ -98,6 +144,7 @@ function show(name) {
   if (name === "donors") loadDonors();
   if (name === "testimonies") loadTestimonies();
   if (name === "users") loadUsers();
+  if (name === "prayer") loadPrayerRequests();
   if (name === "settings") loadSettings();
 }
 
@@ -123,6 +170,7 @@ const setNarrationMode = (mode) => saveSetting("narration_mode", mode, "Narratio
 const setMusicReuse = (on) => saveSetting("music_reuse", on, "Music reuse updated.");
 const setStorageBackend = (backend) => saveSetting("storage_backend", backend, "Storage backend updated.");
 const setScheduling = (on) => saveSetting("scheduling_enabled", on, "Scheduling updated.");
+const setDefaultMusicSource = (src) => saveSetting("default_music_source", src, "Default music source updated.");
 
 // Persist a list-valued setting (moods, music_sources), rolling back on failure.
 // Unlike saveSetting, this always writes — callers pass a freshly built array.
@@ -186,6 +234,67 @@ async function retry(s) {
     notice.value = e?.data?.message || "Retry failed.";
   }
 }
+
+async function deleteService(s) {
+  if (!confirm(`Delete service #${s.id}? This cannot be undone.`)) return;
+  try {
+    await api.adminDeleteService(s.id);
+    notice.value = `Service #${s.id} deleted.`;
+    loadServices();
+  } catch (e) {
+    notice.value = e?.data?.message || "Delete failed.";
+  }
+}
+
+// Share a service resume link. On mobile/modern browsers the native share sheet
+// covers WhatsApp, Messenger, TikTok, etc. On desktop we fall back to a small
+// popover with copy-link, WhatsApp, Email, and Telegram buttons.
+const sharePopover = ref(null); // { token, link } or null
+
+function serviceLink(token) {
+  return `${window.location.origin}/?session=${token}`;
+}
+
+async function shareService(s) {
+  const link = serviceLink(s.session_token);
+  const title = "Your AI Virtual Church service";
+  const text  = s.mood ? `A personalized worship service (${s.mood})` : "A personalized worship service";
+
+  if (navigator.share) {
+    try {
+      await navigator.share({ title, text, url: link });
+    } catch {
+      // user cancelled — do nothing
+    }
+    return;
+  }
+  // Desktop fallback: show the inline popover.
+  sharePopover.value = sharePopover.value?.token === s.session_token
+    ? null
+    : { token: s.session_token, link };
+}
+
+async function copyLink(link) {
+  try {
+    await navigator.clipboard.writeText(link);
+    notice.value = "Link copied to clipboard.";
+  } catch {
+    notice.value = "Could not copy — please copy the link manually.";
+  }
+  sharePopover.value = null;
+}
+
+function shareVia(platform, link, mood) {
+  const text = mood ? `A personalized worship service (${mood})` : "A personalized worship service";
+  const urls = {
+    whatsapp : `https://wa.me/?text=${encodeURIComponent(text + "\n" + link)}`,
+    telegram : `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`,
+    email    : `mailto:?subject=${encodeURIComponent("Your AI Virtual Church service")}&body=${encodeURIComponent(text + "\n\n" + link)}`,
+    twitter  : `https://twitter.com/intent/tweet?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`,
+  };
+  window.open(urls[platform], "_blank", "noopener,noreferrer");
+  sharePopover.value = null;
+}
 async function approve(t) {
   await api.adminApproveTestimony(t.id);
   loadTestimonies();
@@ -200,6 +309,23 @@ async function toggleAdmin(u) {
     loadUsers();
   } catch (e) {
     notice.value = e?.data?.message || "Could not update.";
+  }
+}
+async function toggleBlock(u) {
+  try {
+    await api.adminBlockUser(u.id, !u.is_blocked);
+    loadUsers();
+  } catch (e) {
+    notice.value = e?.data?.message || "Could not update.";
+  }
+}
+async function deleteUser(u) {
+  if (!confirm(`Delete "${u.name}" and all their data? This cannot be undone.`)) return;
+  try {
+    await api.adminDeleteUser(u.id);
+    loadUsers();
+  } catch (e) {
+    notice.value = e?.data?.message || "Could not delete user.";
   }
 }
 
@@ -218,6 +344,17 @@ async function exportReport(type) {
   } catch (e) {
     notice.value = "Export failed.";
   }
+}
+
+const MUSIC_SOURCE_LABELS = {
+  hymn_sung: "Sung hymn",
+  hymn: "Instrumental",
+  hymn_youtube: "Vocal hymn",
+  suno: "AI-composed",
+  youtube: "YouTube",
+};
+function musicSourceLabel(v) {
+  return MUSIC_SOURCE_LABELS[v] || v;
 }
 
 function fmtDate(v) {
@@ -256,6 +393,7 @@ onMounted(() => { if (api.hasToken()) enter(); });
         <button :class="{ active: tab === 'donors' }" @click="show('donors')">Donors</button>
         <button :class="{ active: tab === 'testimonies' }" @click="show('testimonies')">Testimonies</button>
         <button :class="{ active: tab === 'users' }" @click="show('users')">Users</button>
+        <button :class="{ active: tab === 'prayer' }" @click="show('prayer')">Prayer Requests</button>
         <button :class="{ active: tab === 'settings' }" @click="show('settings')">Settings</button>
       </nav>
 
@@ -290,6 +428,11 @@ onMounted(() => { if (api.hasToken()) enter(); });
             <small>{{ stats.testimonies.approved }} approved</small>
           </div>
           <div class="card">
+            <span class="n">{{ stats.prayer_requests.total }}</span>
+            <span class="lbl">Prayer requests</span>
+            <small>{{ stats.prayer_requests.today }} today</small>
+          </div>
+          <div class="card">
             <span class="n">{{ stats.services.completed }}</span>
             <span class="lbl">Completed</span>
             <small>{{ stats.services.active }} active · {{ stats.services.scheduled }} scheduled</small>
@@ -317,15 +460,46 @@ onMounted(() => { if (api.hasToken()) enter(); });
       <!-- Services -->
       <div v-else-if="tab === 'services'" class="table-wrap">
         <table class="grid">
-          <thead><tr><th>#</th><th>User</th><th>Status</th><th>Segments</th><th></th></tr></thead>
+          <thead><tr><th>#</th><th>User</th><th>Mood</th><th>Sermon topic</th><th>Music</th><th>Status</th><th>Segments</th><th></th></tr></thead>
           <tbody>
-            <tr v-for="s in services" :key="s.id">
-              <td>{{ s.id }}</td>
-              <td>{{ s.user?.name }}<br /><small>{{ s.user?.email }}</small></td>
-              <td><span class="badge" :class="s.status">{{ s.status }}</span></td>
-              <td>{{ s.assets_count }}</td>
-              <td><button class="link" @click="retry(s)">Retry</button></td>
-            </tr>
+            <template v-for="s in services" :key="s.id">
+              <tr>
+                <td>{{ s.id }}</td>
+                <td>{{ s.user?.name }}<br /><small>{{ s.user?.email }}</small></td>
+                <td>
+                  <span v-if="s.mood" class="badge pending">{{ s.mood }}</span>
+                  <span v-else class="muted-cell">—</span>
+                </td>
+                <td><small>{{ s.sermon_topic || "—" }}</small></td>
+                <td>
+                  <span v-if="s.music_source" class="badge music-source">{{ musicSourceLabel(s.music_source) }}</span>
+                  <span v-else class="muted-cell">—</span>
+                </td>
+                <td><span class="badge" :class="s.status">{{ s.status }}</span></td>
+                <td>{{ s.assets_count }}</td>
+                <td>
+                  <button class="link" @click="shareService(s)">Share</button>
+                  <button class="link" @click="retry(s)">Retry</button>
+                  <button class="link danger" @click="deleteService(s)">Delete</button>
+                </td>
+              </tr>
+              <!-- Inline share popover — appears below the row when native share is unavailable -->
+              <tr v-if="sharePopover && sharePopover.token === s.session_token" class="share-row">
+                <td colspan="8">
+                  <div class="share-popover">
+                    <span class="share-link-text">{{ sharePopover.link }}</span>
+                    <div class="share-btns">
+                      <button class="chip" @click="copyLink(sharePopover.link)">Copy link</button>
+                      <button class="chip" @click="shareVia('whatsapp', sharePopover.link, s.mood)">WhatsApp</button>
+                      <button class="chip" @click="shareVia('telegram', sharePopover.link, s.mood)">Telegram</button>
+                      <button class="chip" @click="shareVia('email', sharePopover.link, s.mood)">Email</button>
+                      <button class="chip" @click="shareVia('twitter', sharePopover.link, s.mood)">X / Twitter</button>
+                      <button class="chip ghost" @click="sharePopover = null">Close</button>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            </template>
           </tbody>
         </table>
       </div>
@@ -358,10 +532,16 @@ onMounted(() => { if (api.hasToken()) enter(); });
           <button class="chip" @click="exportReport('testimonies')">Export CSV</button>
         </div>
         <table class="grid">
-          <thead><tr><th>By</th><th>Content</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>By</th><th>Mood</th><th>Content</th><th>Status</th><th></th></tr></thead>
           <tbody>
             <tr v-for="t in testimonies" :key="t.id">
               <td>{{ t.user?.name || "—" }}<br /><small>{{ t.source }}</small></td>
+              <td>
+                <template v-if="t.custom_moods && t.custom_moods.length">
+                  <span v-for="w in t.custom_moods" :key="w" class="badge custom-mood">{{ w }}</span>
+                </template>
+                <span v-else class="muted-cell">—</span>
+              </td>
               <td class="content">{{ t.content }}</td>
               <td><span class="badge" :class="t.approved ? 'ready' : 'pending'">{{ t.approved ? "approved" : "pending" }}</span></td>
               <td>
@@ -380,19 +560,59 @@ onMounted(() => { if (api.hasToken()) enter(); });
           <button class="chip" @click="exportReport('users')">Export CSV</button>
         </div>
         <table class="grid">
-          <thead><tr><th>Name</th><th>Email</th><th>Visits</th><th>Last seen</th><th>Admin</th><th></th></tr></thead>
+          <thead><tr><th>Name</th><th>Email</th><th>Last mood</th><th>Sermon topic</th><th>Custom words</th><th>Visits</th><th>Last seen</th><th>Admin</th><th></th></tr></thead>
           <tbody>
-            <tr v-for="u in users" :key="u.id">
+            <tr v-for="u in users" :key="u.id" :class="{ 'row-blocked': u.is_blocked }">
               <td>
                 {{ u.name }}
                 <span v-if="u.is_guest" class="tag">visitor</span>
+                <span v-if="u.is_blocked" class="tag tag-blocked">blocked</span>
               </td>
               <td><small>{{ u.email || "—" }}</small></td>
+              <td>
+                <span v-if="u.last_mood" class="badge pending">{{ u.last_mood }}</span>
+                <span v-else class="muted-cell">—</span>
+              </td>
+              <td><small>{{ u.last_sermon || "—" }}</small></td>
+              <td>
+                <template v-if="u.custom_moods && u.custom_moods.length">
+                  <span v-for="w in u.custom_moods" :key="w" class="badge custom-mood">{{ w }}</span>
+                </template>
+                <span v-else class="muted-cell">—</span>
+              </td>
               <td>{{ u.visits }}</td>
               <td><small>{{ fmtDate(u.last_seen) }}</small></td>
               <td>{{ u.is_admin ? "yes" : "no" }}</td>
-              <td><button class="link" @click="toggleAdmin(u)">{{ u.is_admin ? "Revoke" : "Make admin" }}</button></td>
+              <td class="actions">
+                <button class="link" @click="toggleAdmin(u)">{{ u.is_admin ? "Revoke admin" : "Make admin" }}</button>
+                <button class="link" @click="toggleBlock(u)">{{ u.is_blocked ? "Unblock" : "Block" }}</button>
+                <button class="link danger" @click="deleteUser(u)">Delete</button>
+              </td>
             </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Prayer Requests -->
+      <div v-else-if="tab === 'prayer'" class="table-wrap">
+        <div class="table-head">
+          <h2>Prayer Requests</h2>
+        </div>
+        <table class="grid">
+          <thead><tr><th>From</th><th>Mood</th><th>Their word</th><th>Prayer</th><th>Submitted</th></tr></thead>
+          <tbody>
+            <tr v-for="p in prayerRequests" :key="p.id">
+              <td>
+                {{ p.user_name }}
+                <span v-if="p.is_guest" class="tag">visitor</span>
+                <br /><small>{{ p.user_email || "—" }}</small>
+              </td>
+              <td><span class="badge pending">{{ p.mood }}</span></td>
+              <td><span v-if="p.custom_mood" class="badge custom-mood">{{ p.custom_mood }}</span><span v-else class="muted-cell">—</span></td>
+              <td class="content">{{ p.prayer }}</td>
+              <td><small>{{ fmtDate(p.submitted) }}</small></td>
+            </tr>
+            <tr v-if="!prayerRequests.length"><td colspan="5" class="empty">No prayer requests yet.</td></tr>
           </tbody>
         </table>
       </div>
@@ -454,6 +674,23 @@ onMounted(() => { if (api.hasToken()) enter(); });
               <span>{{ s.hint }}</span>
             </button>
           </div>
+          <template v-if="settings">
+            <p class="setting-desc" style="margin-top:1.1rem">Default selection in the intake form</p>
+            <div class="choice-row">
+              <button
+                v-for="s in musicSourceOptions.filter(o => settings.music_sources.includes(o.value))"
+                :key="s.value"
+                type="button"
+                class="choice"
+                :class="{ active: settings.default_music_source === s.value }"
+                :disabled="savingSettings"
+                @click="setDefaultMusicSource(s.value)"
+              >
+                <strong>{{ s.label }}</strong>
+                <span>{{ settings.default_music_source === s.value ? "Pre-selected ✓" : "Set as default" }}</span>
+              </button>
+            </div>
+          </template>
           <p v-else class="setting-desc">Loading…</p>
         </div>
 
@@ -508,7 +745,24 @@ onMounted(() => { if (api.hasToken()) enter(); });
               <span>{{ m.hint }}</span>
             </button>
           </div>
-          <p v-else class="setting-desc">Loading…</p>
+          <template v-if="settings && settings.narration_mode === 'edge_tts'">
+            <p class="setting-desc" style="margin-top:1rem">Voice</p>
+            <div class="choice-row">
+              <button
+                v-for="v in edgeTtsVoices"
+                :key="v.value"
+                type="button"
+                class="choice"
+                :class="{ active: (settings.edge_tts_voice || 'en-US-AriaNeural') === v.value }"
+                :disabled="savingSettings"
+                @click="setEdgeTtsVoice(v.value)"
+              >
+                <strong>{{ v.label }}</strong>
+                <span>{{ v.gender }} · {{ v.accent }}</span>
+              </button>
+            </div>
+          </template>
+          <p v-else-if="!settings" class="setting-desc">Loading…</p>
         </div>
 
         <div class="setting-block">
@@ -565,6 +819,21 @@ onMounted(() => { if (api.hasToken()) enter(); });
           </div>
           <p v-else class="setting-desc">Loading…</p>
         </div>
+
+        <div class="setting-block">
+          <h2>Change password</h2>
+          <p class="setting-desc">Update the password for your admin account.</p>
+          <div class="pw-form">
+            <input v-model="pwCurrent" type="password" placeholder="Current password" autocomplete="current-password" :disabled="pwSaving" />
+            <input v-model="pwNew" type="password" placeholder="New password" autocomplete="new-password" :disabled="pwSaving" />
+            <input v-model="pwConfirm" type="password" placeholder="Confirm new password" autocomplete="new-password" :disabled="pwSaving" @keyup.enter="changePassword" />
+            <p v-if="pwError" class="pw-error">{{ pwError }}</p>
+            <p v-if="pwOk" class="pw-ok">{{ pwOk }}</p>
+            <button class="primary pw-btn" :disabled="pwSaving || !pwCurrent || !pwNew || !pwConfirm" @click="changePassword">
+              {{ pwSaving ? "Saving…" : "Update password" }}
+            </button>
+          </div>
+        </div>
       </section>
     </template>
   </main>
@@ -619,9 +888,15 @@ onMounted(() => { if (api.hasToken()) enter(); });
 .link.danger { color: var(--danger); }
 
 .tag { display: inline-block; margin-left: 0.4rem; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); background: var(--surface-3); border-radius: 999px; padding: 0.1rem 0.5rem; vertical-align: middle; }
+.tag-blocked { background: #fee2e2; color: #b91c1c; }
+.row-blocked td { opacity: 0.55; }
+.actions { white-space: nowrap; display: flex; gap: 0.25rem; align-items: center; }
 .badge { display: inline-block; font-size: 0.78rem; padding: 0.15rem 0.55rem; border-radius: 999px; background: var(--surface-3); color: var(--text-muted); text-transform: capitalize; }
 .badge.active, .badge.ready { background: var(--success-soft); color: var(--success); }
 .badge.pending, .badge.scheduled { background: var(--primary-soft); color: var(--primary-hover); }
+.badge.custom-mood { background: #fef3c7; color: #92400e; margin: 0.1rem 0.15rem 0.1rem 0; }
+.badge.music-source { background: #ede9fe; color: #5b21b6; }
+.muted-cell { color: var(--text-faint); font-size: 0.85rem; }
 
 .settings { max-width: 640px; }
 .setting-block { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.4rem; box-shadow: var(--shadow-sm); }
@@ -643,7 +918,24 @@ onMounted(() => { if (api.hasToken()) enter(); });
 .chip-x:hover:not(:disabled) { background: var(--primary); color: var(--on-primary); }
 .chip-x:disabled { opacity: 0.4; cursor: default; }
 .mood-add { display: flex; gap: 0.5rem; }
+
+.pw-form { display: flex; flex-direction: column; gap: 0.6rem; max-width: 340px; }
+.pw-form input { padding: 0.65rem 0.75rem; border: 1px solid var(--border); border-radius: var(--radius-sm); font: inherit; background: var(--surface); color: var(--text); }
+.pw-form input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.pw-form input:disabled { opacity: 0.6; }
+.pw-btn { align-self: flex-start; padding: 0.65rem 1.25rem; }
+.pw-btn:disabled { opacity: 0.6; cursor: default; }
+.pw-error { color: var(--danger); font-size: 0.88rem; margin: 0; }
+.pw-ok { color: var(--success); font-size: 0.88rem; margin: 0; }
 .mood-input { flex: 1; padding: 0.6rem 0.75rem; border: 1px solid var(--border); border-radius: var(--radius-sm); font: inherit; background: var(--surface); color: var(--text); }
 .mood-input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
 .add-btn { padding: 0.6rem 1.1rem; }
+
+/* Share popover */
+.share-row td { background: var(--surface-2, var(--surface)); padding: 0.6rem 0.75rem !important; }
+.share-popover { display: flex; flex-direction: column; gap: 0.5rem; }
+.share-link-text { font-size: 0.78rem; color: var(--text-muted); word-break: break-all; font-family: monospace; }
+.share-btns { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.chip.ghost { background: transparent; border-color: var(--border); color: var(--text-muted); }
+.chip.ghost:hover { border-color: var(--border-strong); color: var(--text); }
 </style>

@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class ServiceIntake extends Model
 {
     protected $fillable = [
-        'session_id', 'mood', 'prayer_text', 'scripture_ref', 'music_prompt', 'music_query',
+        'session_id', 'mood', 'custom_mood', 'prayer_text', 'scripture_ref', 'music_prompt', 'music_query',
     ];
 
     public function session(): BelongsTo

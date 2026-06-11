@@ -19,7 +19,7 @@ class AuthController extends Controller
             'email'        => ['required', 'email', 'unique:users,email'],
             'password'     => ['required', Password::defaults()],
             'timezone'     => ['nullable', 'string', 'max:64'],
-            'music_source' => ['nullable', 'in:hymn_sung,hymn,suno,youtube'],
+            'music_source' => ['nullable', 'in:' . implode(',', Setting::MUSIC_SOURCES)],
         ]);
 
         $user = User::create([
@@ -48,7 +48,7 @@ class AuthController extends Controller
         $data = $request->validate([
             'name'         => ['nullable', 'string', 'max:255'],
             'email'        => ['nullable', 'email', 'max:255'],
-            'music_source' => ['nullable', 'in:hymn_sung,hymn,suno,youtube'],
+            'music_source' => ['nullable', 'in:' . implode(',', Setting::MUSIC_SOURCES)],
         ]);
 
         $name = trim($data['name'] ?? '');
@@ -134,6 +134,10 @@ class AuthController extends Controller
             return response()->json(['message' => 'Invalid credentials'], 422);
         }
 
+        if ($user->is_blocked) {
+            return response()->json(['message' => 'This account has been suspended.'], 403);
+        }
+
         $token = $user->createToken('api')->plainTextToken;
 
         return response()->json(['user' => $user, 'token' => $token]);
@@ -143,6 +147,47 @@ class AuthController extends Controller
     {
         $request->user()->currentAccessToken()->delete();
         return response()->json(['message' => 'Logged out']);
+    }
+
+    /** Change the authenticated user's password after verifying the current one. */
+    public function changePassword(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'current_password' => ['required', 'string'],
+            'new_password'     => ['required', 'string', Password::defaults(), 'different:current_password'],
+        ]);
+
+        if (! Hash::check($data['current_password'], $request->user()->password)) {
+            return response()->json(['message' => 'Current password is incorrect.'], 422);
+        }
+
+        $request->user()->update(['password' => Hash::make($data['new_password'])]);
+
+        return response()->json(['message' => 'Password updated.']);
+    }
+
+    /**
+     * Save a real email on a guest account whose email is still @guest.local.
+     * Called from the frontend when a walk-up worshipper provides an email
+     * while scheduling a service but already has a token from a prior visit.
+     */
+    public function updateEmail(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        // Only guests without a real email may use this endpoint; registered
+        // users own their email address and must not be able to change it here.
+        if (! str_ends_with($user->email, '@guest.local')) {
+            return response()->json(['message' => 'Email is already set.'], 422);
+        }
+
+        $data = $request->validate([
+            'email' => ['required', 'email', 'max:255', 'unique:users,email'],
+        ]);
+
+        $user->update(['email' => $data['email']]);
+
+        return response()->json(['user' => $user]);
     }
 
     /** Let a logged-in user switch their default media source (Suno vs YouTube). */

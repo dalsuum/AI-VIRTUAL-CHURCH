@@ -1,5 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from "vue";
+
+const localTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 import { api } from "../composables/useApi";
 
 const emit = defineEmits(["started", "intercepted"]);
@@ -9,8 +11,9 @@ const emit = defineEmits(["started", "intercepted"]);
 const MUSIC_SOURCES = [
   { value: "hymn_sung", title: "Sung hymn", desc: "A classic hymn sung aloud, with the words on screen" },
   { value: "hymn", title: "Instrumental hymn", desc: "The hymn played, with the words to sing along" },
+  { value: "hymn_youtube", title: "Sung Hymn (YouTube)", desc: "A traditional hymn sung by a choir, matched to your mood" },
   { value: "suno", title: "AI-composed", desc: "Original worship, generated for you" },
-  { value: "youtube", title: "From YouTube", desc: "An existing worship track and sermon" },
+  { value: "youtube", title: "Modern Worship (YouTube)", desc: "An existing worship track and sermon" },
 ];
 
 // Intake options come from the backend so an admin can curate moods, music sources,
@@ -26,8 +29,9 @@ const musicSources = computed(() =>
 );
 
 const selectedMood = ref("Grateful");
+const customMood = ref("");
 const prayerText = ref("");
-const musicSource = ref("hymn_sung"); // "hymn_sung" | "hymn" | "suno" | "youtube"
+const musicSource = ref("youtube"); // "hymn_sung" | "hymn" | "suno" | "youtube"
 const when = ref("now"); // "now" | "later"
 const scheduledAt = ref(""); // datetime-local value when scheduling for later
 const loading = ref(false);
@@ -42,9 +46,11 @@ onMounted(async () => {
     }
     if (Array.isArray(cfg.music_sources) && cfg.music_sources.length) {
       enabledSources.value = cfg.music_sources;
-      if (!enabledSources.value.includes(musicSource.value)) {
-        musicSource.value = musicSources.value[0]?.value || musicSource.value;
-      }
+    }
+    if (cfg.default_music_source && enabledSources.value.includes(cfg.default_music_source)) {
+      musicSource.value = cfg.default_music_source;
+    } else if (!enabledSources.value.includes(musicSource.value)) {
+      musicSource.value = musicSources.value[0]?.value || musicSource.value;
     }
     schedulingEnabled.value = cfg.scheduling_enabled !== false;
     if (!schedulingEnabled.value) when.value = "now";
@@ -58,6 +64,22 @@ onMounted(async () => {
 // remembered via localStorage so we can greet them back and pre-fill their name.
 const returningName = api.rememberedName();
 const name = ref(returningName || "");
+
+// Service history — loaded for returning users who already have an auth token.
+const history = ref([]);
+const historyLoaded = ref(false);
+if (returningName && api.hasToken()) {
+  api.getMyServices()
+    .then((res) => { history.value = res.sessions || []; })
+    .catch(() => {})
+    .finally(() => { historyLoaded.value = true; });
+}
+
+function fmtHistoryDate(v) {
+  if (!v) return "";
+  const d = new Date(v);
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
 const email = ref("");
 
 async function begin() {
@@ -67,6 +89,10 @@ async function begin() {
   // the service until then.
   let scheduledIso = null;
   if (when.value === "later") {
+    if (!email.value.trim()) {
+      error.value = "Please enter your email so we can send you a reminder when your service begins.";
+      return;
+    }
     if (!scheduledAt.value) {
       error.value = "Please choose a date and time for your service.";
       return;
@@ -89,12 +115,31 @@ async function begin() {
       email: email.value.trim() || null,
       music_source: musicSource.value,
     });
+
+    // If a token was already present (returning guest), ensureSession() is a no-op
+    // and the email from the form never reached the server. Patch it now so the
+    // scheduling reminder can be delivered to the right address.
+    if (when.value === "later" && email.value.trim()) {
+      try { await api.updateGuestEmail(email.value.trim()); } catch { /* already set or registered user */ }
+    }
+
     await api.updateMusicSource(musicSource.value);
     const { session_token } = await api.startService();
+    const trimmedCustomMood = customMood.value.trim();
+    if (trimmedCustomMood && !/^[A-Za-z]+$/.test(trimmedCustomMood)) {
+      error.value = "Your custom feeling must be a single word using only letters.";
+      loading.value = false;
+      return;
+    }
+
     const res = await api.submitIntake(session_token, {
       mood: selectedMood.value,
+      custom_mood: trimmedCustomMood || null,
       prayer_text: prayerText.value || null,
       scheduled_at: scheduledIso,
+      // Always include contact_email when scheduling so the backend can
+      // update a @guest.local account even if ensureSession was a no-op.
+      contact_email: scheduledIso ? (email.value.trim() || null) : null,
     });
 
     if (res.intercepted) {
@@ -121,6 +166,18 @@ async function begin() {
         : "Let us prepare a service just for you." }}
     </p>
 
+    <!-- Previous services for returning worshippers -->
+    <template v-if="returningName && historyLoaded && history.length">
+      <div class="history">
+        <p class="history-label">Your previous services</p>
+        <div v-for="s in history" :key="s.session_token" class="history-row">
+          <span class="history-date">{{ fmtHistoryDate(s.date) }}</span>
+          <span class="badge pending history-mood">{{ s.mood }}</span>
+          <span class="history-sermon">{{ s.sermon_topic || "—" }}</span>
+        </div>
+      </div>
+    </template>
+
     <template v-if="!returningName">
       <label class="field-label" for="name">Your name (optional)</label>
       <input
@@ -131,17 +188,20 @@ async function begin() {
         placeholder="We'll give you a visitor name if you'd rather not say"
         autocomplete="name"
       />
-
-      <label class="field-label" for="email">Email (optional)</label>
-      <input
-        id="email"
-        v-model="email"
-        type="email"
-        class="text-input"
-        placeholder="So we can welcome you back"
-        autocomplete="email"
-      />
     </template>
+
+    <label class="field-label" for="email">
+      Email <span v-if="when === 'later'">(required — we'll send you a reminder)</span><span v-else>(optional)</span>
+    </label>
+    <input
+      id="email"
+      v-model="email"
+      type="email"
+      class="text-input"
+      :placeholder="when === 'later' ? 'Enter your email to receive a reminder' : 'So we can welcome you back'"
+      autocomplete="email"
+      :required="when === 'later'"
+    />
 
     <label class="field-label">How are you feeling today?</label>
     <div class="mood-grid">
@@ -156,6 +216,17 @@ async function begin() {
         {{ m }}
       </button>
     </div>
+
+    <label class="field-label" for="custom-mood">Or describe your feeling in one word (optional)</label>
+    <input
+      id="custom-mood"
+      v-model="customMood"
+      type="text"
+      class="text-input"
+      placeholder="e.g. sad, hopeful, numb…"
+      maxlength="50"
+      autocomplete="off"
+    />
 
     <label class="field-label" for="prayer">Prayer request (optional)</label>
     <textarea
@@ -209,6 +280,7 @@ async function begin() {
         class="schedule-input"
         aria-label="Service date and time"
       />
+      <small v-if="when === 'later'" class="tz-hint">Your local time · {{ localTimezone }}</small>
     </template>
 
     <p v-if="error" class="error">{{ error }}</p>
@@ -241,8 +313,17 @@ textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 
 .source.active { border-color: var(--primary); background: var(--primary-soft); }
 .schedule-input { width: 100%; margin-top: 0.5rem; padding: 0.65rem 0.75rem; border: 1px solid var(--border); border-radius: var(--radius-sm); font: inherit; background: var(--surface); color: var(--text); }
 .schedule-input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.tz-hint { display: block; margin-top: 0.35rem; color: var(--text-muted, #888); font-size: 0.78rem; }
 .begin { width: 100%; margin-top: 1.5rem; padding: 0.8rem; border: none; border-radius: var(--radius-sm); background: var(--primary); color: var(--on-primary); font-weight: 600; cursor: pointer; transition: background 0.12s ease; }
 .begin:hover:not(:disabled) { background: var(--primary-hover); }
 .begin:disabled { opacity: 0.6; cursor: default; }
 .error { color: var(--danger); font-size: 0.85rem; }
+
+.history { margin: 1rem 0 1.25rem; padding: 0.85rem 1rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); }
+.history-label { font-size: 0.78rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 0 0 0.6rem; }
+.history-row { display: flex; align-items: center; gap: 0.55rem; padding: 0.3rem 0; border-top: 1px solid var(--border); font-size: 0.82rem; }
+.history-row:first-of-type { border-top: none; }
+.history-date { color: var(--text-muted); white-space: nowrap; min-width: 4.5rem; }
+.history-mood { flex-shrink: 0; }
+.history-sermon { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

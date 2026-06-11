@@ -1,13 +1,15 @@
 """
 Music-source strategy.
 
-A service can be scored three ways depending on the user's `music_source`:
+A service can be scored four ways depending on the user's `music_source`:
 
-  - HymnStrategy    -> serves a pre-rendered public-domain hymn from a local
-                       library (no AI, no credit, no provider call). The default.
-  - SunoStrategy    -> generates original worship music from a text prompt (AI).
-  - YouTubeStrategy -> searches YouTube for an existing worship track and returns
-                       an embeddable video id (no generation, no file storage).
+  - HymnStrategy        -> serves a pre-rendered public-domain hymn from a local
+                           library (no AI, no credit, no provider call). The default.
+  - HymnYouTubeStrategy -> selects a mood-appropriate hymn from the local catalog,
+                           then finds and embeds it from the HymnSite YouTube channel.
+  - SunoStrategy        -> generates original worship music from a text prompt (AI).
+  - YouTubeStrategy     -> searches YouTube for an existing modern worship track and
+                           returns an embeddable video id (no generation, no file storage).
 
 All return a normalized `MusicResult` so the orchestrator and the Laravel webhook
 treat them identically. Add a new source by implementing `MusicStrategy`.
@@ -47,6 +49,7 @@ class MusicStrategy(ABC):
 def get_strategy(music_source: str) -> MusicStrategy:
     """Factory: resolve the user's preference string to a concrete strategy."""
     from .hymn_strategy import HymnStrategy
+    from .hymn_youtube_strategy import HymnYouTubeStrategy
     from .suno_strategy import SunoStrategy
     from .youtube_strategy import YouTubeStrategy
 
@@ -54,6 +57,8 @@ def get_strategy(music_source: str) -> MusicStrategy:
         return SunoStrategy()
     if music_source == "youtube":
         return YouTubeStrategy()
+    if music_source == "hymn_youtube":
+        return HymnYouTubeStrategy()  # mood-matched hymn from HymnSite YouTube channel
     if music_source == "hymn":
         return HymnStrategy(sung=False)  # instrumental render + on-screen lyrics
     return HymnStrategy(sung=True)  # default `hymn_sung`: public-domain sung recording

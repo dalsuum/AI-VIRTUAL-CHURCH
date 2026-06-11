@@ -17,7 +17,7 @@ class ServiceReminderNotification extends Notification implements ShouldQueue
 {
     use Queueable;
 
-    public function __construct(public ServiceSession $session) {}
+    public function __construct(public ServiceSession $session, public ?string $recipientName = null) {}
 
     public function via(object $notifiable): array
     {
@@ -26,8 +26,10 @@ class ServiceReminderNotification extends Notification implements ShouldQueue
 
     public function toMail(object $notifiable): MailMessage
     {
-        $url = rtrim((string) config('church.frontend_url'), '/');
-        $name = $notifiable->name ?: 'friend';
+        $base = rtrim((string) config('church.frontend_url'), '/');
+        $url  = $base . '?session=' . $this->session->session_token;
+        $name = $this->recipientName
+            ?: (property_exists($notifiable, 'name') ? ($notifiable->name ?: 'friend') : 'friend');
 
         return (new MailMessage)
             ->subject('Your worship service is ready — come and attend')

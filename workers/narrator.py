@@ -4,12 +4,11 @@ Each spoken segment's words — opening prayer, scripture, message, benediction 
 sent to a text-to-speech endpoint, the returned audio is stored, and a playable URL
 is handed back so the segment can be *heard* as well as read.
 
-Entirely optional and key-gated: with no provider key the pipeline never calls in
-here, and the worshipper still gets every segment as text (and, if HeyGen is on, as
-a talking-head video). The admin picks the voice provider (Admin Console → Settings,
-the narration_mode setting); the chosen mode is threaded through on the job and
-selects one of the providers below. Both talk to an OpenAI-compatible
-/audio/speech endpoint, differing only in host, key, model and default voice:
+Providers (set via Admin Console → Settings → Narration voice):
+
+  'edge_tts' — Microsoft Edge TTS: free, no API key, high-quality neural voices.
+    EDGE_TTS_VOICE — voice name (default 'en-US-AriaNeural', a warm female narrator)
+    EDGE_TTS_RATE  — speaking rate adjustment, e.g. '-5%' to slow down (default '')
 
   'openai' — OpenAI's own (or any compatible gateway) text-to-speech:
     TTS_API_KEY    — required to enable this provider at all
@@ -30,6 +29,7 @@ selects one of the providers below. Both talk to an OpenAI-compatible
 
 from __future__ import annotations
 
+import asyncio
 import os
 import re
 
@@ -44,8 +44,7 @@ _MAX_CHARS = int(os.getenv("TTS_MAX_CHARS", "3500"))
 
 
 def _providers() -> dict[str, dict]:
-    """The voice providers keyed by narration_mode. Env is read per call so a
-    restart isn't needed to pick up newly-configured keys."""
+    """The API-based voice providers keyed by narration_mode."""
     return {
         "openai": {
             "api_key": os.getenv("TTS_API_KEY"),
@@ -66,7 +65,10 @@ def _providers() -> dict[str, dict]:
 
 
 def is_enabled(mode: str = "openai") -> bool:
-    """True only when the chosen provider's API key is configured."""
+    """True when the chosen provider is ready to use.
+    edge_tts needs no key so it is always enabled."""
+    if mode == "edge_tts":
+        return True
     cfg = _providers().get(mode)
     return bool(cfg and cfg["api_key"])
 
@@ -99,7 +101,8 @@ def _chunks(text: str) -> list[str]:
 
 
 def _speak(text: str, cfg: dict) -> bytes:
-    """Synthesize a single (already size-bounded) chunk; return the audio bytes."""
+    """Synthesize a single (already size-bounded) chunk via an OpenAI-compatible
+    /audio/speech endpoint; return the audio bytes."""
     resp = requests.post(
         f"{cfg['base_url']}/audio/speech",
         headers={
@@ -112,24 +115,49 @@ def _speak(text: str, cfg: dict) -> bytes:
             "input": text,
             "response_format": cfg["fmt"],
         },
-        timeout=120,
+        timeout=60,
     )
     resp.raise_for_status()
     return resp.content
 
 
-def narrate(session_token: str, segment: str, text: str, mode: str = "openai") -> str:
+async def _speak_edge(text: str, voice: str) -> bytes:
+    """Synthesize `text` with Microsoft Edge TTS; return mp3 bytes."""
+    import edge_tts  # imported lazily so missing package only errors for this mode
+    rate = os.getenv("EDGE_TTS_RATE", "")
+    kwargs = {"rate": rate} if rate else {}
+    communicate = edge_tts.Communicate(text, voice, **kwargs)
+    audio = b""
+    async for chunk in communicate.stream():
+        if chunk["type"] == "audio":
+            audio += chunk["data"]
+    return audio
+
+
+def _narrate_edge(text: str, voice: str) -> bytes:
+    """Run the async Edge TTS synthesis from a sync context."""
+    parts = _chunks(text)
+    return b"".join(asyncio.run(_speak_edge(chunk, voice)) for chunk in parts if chunk)
+
+
+def narrate(session_token: str, segment: str, text: str, mode: str = "openai", voice: str = "") -> str:
     """Read `text` aloud with the `mode` provider, store the audio, and return a
     playable URL.
 
     Raises on any failure — the caller logs and the segment stays text-only."""
-    cfg = _providers().get(mode)
-    if not cfg or not cfg["api_key"]:
-        raise RuntimeError(f"narration provider {mode!r} is not configured")
     clean = _clean(text)
-    audio = b"".join(_speak(chunk, cfg) for chunk in _chunks(clean) if chunk)
 
-    fmt = cfg["fmt"]
+    if mode == "edge_tts":
+        resolved_voice = voice or os.getenv("EDGE_TTS_VOICE", "en-US-AriaNeural")
+        audio = _narrate_edge(clean, resolved_voice)
+        fmt = "mp3"
+    else:
+        cfg = _providers().get(mode)
+        if not cfg or not cfg["api_key"]:
+            raise RuntimeError(f"narration provider {mode!r} is not configured")
+        audio = b"".join(_speak(chunk, cfg) for chunk in _chunks(clean) if chunk)
+        fmt = cfg["fmt"]
+
     content_type = "audio/mpeg" if fmt == "mp3" else f"audio/{fmt}"
     key = f"narration/{session_token}/{segment}.{fmt}"
     storage.upload_bytes(key, audio, content_type)

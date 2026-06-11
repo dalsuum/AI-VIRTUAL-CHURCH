@@ -11,13 +11,14 @@ class User extends Authenticatable
 {
     use HasApiTokens, Notifiable;
 
-    protected $fillable = ['name', 'name_provided', 'email', 'password', 'timezone', 'music_source', 'is_admin'];
+    protected $fillable = ['name', 'name_provided', 'email', 'password', 'timezone', 'music_source', 'is_admin', 'is_blocked'];
     protected $hidden = ['password', 'remember_token'];
     protected $casts = [
         'email_verified_at' => 'datetime',
         'password' => 'hashed',
         'is_admin' => 'boolean',
         'name_provided' => 'boolean',
+        'is_blocked' => 'boolean',
     ];
 
     public function sessions(): HasMany

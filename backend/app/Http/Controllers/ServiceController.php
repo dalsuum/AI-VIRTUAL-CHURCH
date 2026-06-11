@@ -6,6 +6,7 @@ use App\Jobs\DispatchServiceJob;
 use App\Models\ServiceIntake;
 use App\Models\ServiceSession;
 use App\Models\Setting;
+use App\Notifications\ServiceScheduledNotification;
 use App\Services\CrisisInterceptService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -45,16 +46,37 @@ class ServiceController extends Controller
             ->firstOrFail();
 
         $data = $request->validate([
-            'mood'         => ['required', 'string', 'max:100'],
-            'prayer_text'  => ['nullable', 'string', 'max:5000'],
+            'mood'          => ['required', 'string', 'max:100'],
+            // User-supplied single-word feeling, stored for admin review only.
+            'custom_mood'   => ['nullable', 'string', 'max:50', 'regex:/^[A-Za-z]+$/'],
+            'prayer_text'   => ['nullable', 'string', 'max:5000'],
             // Optional: hold the service until a chosen future moment.
-            'scheduled_at' => ['nullable', 'date', 'after:now'],
+            'scheduled_at'  => ['nullable', 'date', 'after:now'],
+            // Contact email supplied at scheduling time; used to update a guest
+            // account that still has a synthetic @guest.local address.
+            'contact_email' => ['nullable', 'email', 'max:255'],
         ]);
 
         // A future time is only honoured while scheduling is enabled; otherwise the
         // service begins now (the UI hides the option, this guards direct calls).
         if (! empty($data['scheduled_at']) && ! Setting::schedulingEnabled()) {
             unset($data['scheduled_at']);
+        }
+
+        $user = $request->user();
+
+        // A scheduled service requires a notification address. Accept either the
+        // user's stored real email or a contact_email supplied with this request.
+        // We store contact_email on the session so it survives regardless of whether
+        // the guest account's email field could be updated.
+        $contactEmail = $data['contact_email'] ?? null;
+        $notifyEmail  = $contactEmail
+            ?: (str_ends_with($user->email, '@guest.local') ? null : $user->email);
+
+        if (! empty($data['scheduled_at']) && ! $notifyEmail) {
+            return response()->json([
+                'message' => 'Please provide your email so we can send you a reminder when your service begins.',
+            ], 422);
         }
 
         // SAFETY GATE — before anything is queued.
@@ -69,13 +91,27 @@ class ServiceController extends Controller
 
         $intake = ServiceIntake::updateOrCreate(
             ['session_id' => $session->id],
-            ['mood' => $data['mood'], 'prayer_text' => $data['prayer_text'] ?? null],
+            [
+                'mood'        => $data['mood'],
+                'custom_mood' => $data['custom_mood'] ?? null,
+                'prayer_text' => $data['prayer_text'] ?? null,
+            ],
         );
 
         // Scheduled for later: hold it for the scheduler (see DispatchDueServices).
         // Otherwise dispatch now and fan out to the Python workers immediately.
         if (! empty($data['scheduled_at'])) {
-            $session->update(['status' => 'scheduled', 'scheduled_at' => $data['scheduled_at']]);
+            $session->update([
+                'status'        => 'scheduled',
+                'scheduled_at'  => $data['scheduled_at'],
+                'contact_email' => $contactEmail,
+            ]);
+
+            // Send an immediate booking confirmation to the notification address.
+            if ($notifyEmail) {
+                \Illuminate\Support\Facades\Notification::route('mail', $notifyEmail)
+                    ->notify(new ServiceScheduledNotification($session, $user->name, $notifyEmail));
+            }
 
             return response()->json([
                 'intercepted'   => false,
@@ -95,6 +131,53 @@ class ServiceController extends Controller
             'intake_id'     => $intake->id,
             'status'        => 'active',
         ], 202);
+    }
+
+    /**
+     * Public endpoint used by email links. Accepts the 64-char session token,
+     * re-issues a Sanctum token for the session owner, and returns both so the
+     * SPA can restore its auth state and jump straight into the service — even
+     * on a different device or after browser storage was cleared.
+     *
+     * The session token is a 64-char random string and acts as a single-use
+     * credential here; only the person who received the email can guess it.
+     */
+    public function resume(string $token): JsonResponse
+    {
+        $session = ServiceSession::where('session_token', $token)->firstOrFail();
+        $user    = $session->user;
+
+        $authToken = $user->createToken('api')->plainTextToken;
+
+        return response()->json([
+            'auth_token'    => $authToken,
+            'session_token' => $session->session_token,
+            'status'        => $session->status,
+            'scheduled_at'  => $session->scheduled_at?->toIso8601String(),
+        ]);
+    }
+
+    /** A user's own recent service history — up to 10 sessions, newest first. */
+    public function myServices(Request $request): JsonResponse
+    {
+        $sessions = ServiceSession::with('intake:session_id,mood,custom_mood,scripture_ref')
+            ->where('user_id', $request->user()->id)
+            ->whereNotIn('status', ['initializing', 'abandoned'])
+            ->latest()
+            ->limit(10)
+            ->get(['id', 'session_token', 'status', 'created_at', 'scheduled_at']);
+
+        return response()->json([
+            'sessions' => $sessions->map(fn ($s) => [
+                'session_token' => $s->session_token,
+                'status'        => $s->status,
+                'mood'          => $s->intake?->mood,
+                'custom_mood'   => $s->intake?->custom_mood,
+                'sermon_topic'  => $s->intake?->scripture_ref,
+                'date'          => $s->created_at,
+                'scheduled_at'  => $s->scheduled_at,
+            ]),
+        ]);
     }
 
     /** Poll endpoint (WebSocket is primary; this is the fallback). */

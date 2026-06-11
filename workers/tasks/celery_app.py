@@ -29,6 +29,7 @@ app.conf.update(
         # that Redis list is owned by the bridge consumer's raw BLPOP.)
         "tasks.orchestrate": {"queue": "ai:sermon"},
         "tasks.generate_text_segments": {"queue": "ai:sermon"},
+        "tasks.generate_welcome": {"queue": "ai:sermon"},
         "tasks.generate_music": {"queue": "ai:music"},
         "tasks.render_avatar": {"queue": "ai:avatar"},
         "tasks.narrate": {"queue": "ai:narration"},

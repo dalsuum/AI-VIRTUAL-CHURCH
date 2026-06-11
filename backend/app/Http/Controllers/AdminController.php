@@ -56,6 +56,10 @@ class AdminController extends Controller
                 'pending'  => Testimony::where('approved', false)->count(),
                 'approved' => Testimony::where('approved', true)->count(),
             ],
+            'prayer_requests' => [
+                'total' => ServiceIntake::whereNotNull('prayer_text')->count(),
+                'today' => ServiceIntake::whereNotNull('prayer_text')->whereDate('created_at', today())->count(),
+            ],
             'users' => [
                 'total'      => User::count(),
                 'registered' => User::where('email', 'not like', $guestPattern)->count(),
@@ -76,16 +80,32 @@ class AdminController extends Controller
         return round($minutes / 60, 1);
     }
 
-    /** Recent services, newest first, with their user and segment counts. */
+    /** Recent services, newest first, with their user, intake (mood + sermon topic), and segment counts. */
     public function services(): JsonResponse
     {
-        $services = ServiceSession::with('user:id,name,email')
+        $services = ServiceSession::with([
+                'user:id,name,email',
+                'intake:session_id,mood,scripture_ref',
+            ])
             ->withCount('assets')
             ->latest()
             ->limit(50)
-            ->get(['id', 'user_id', 'session_token', 'status', 'scheduled_at', 'created_at']);
+            ->get(['id', 'user_id', 'session_token', 'status', 'music_source', 'scheduled_at', 'created_at']);
 
-        return response()->json(['services' => $services]);
+        return response()->json([
+            'services' => $services->map(fn ($s) => [
+                'id'            => $s->id,
+                'session_token' => $s->session_token,
+                'user'          => $s->user ? ['name' => $s->user->name, 'email' => $s->user->email] : null,
+                'status'        => $s->status,
+                'scheduled_at'  => $s->scheduled_at,
+                'created_at'    => $s->created_at,
+                'assets_count'  => $s->assets_count,
+                'mood'          => $s->intake?->mood,
+                'sermon_topic'  => $s->intake?->scripture_ref,
+                'music_source'  => $s->music_source,
+            ]),
+        ]);
     }
 
     /** Re-run the AI pipeline for a session (e.g. after a worker outage). */
@@ -93,10 +113,22 @@ class AdminController extends Controller
     {
         abort_if($service->intake === null, 422, 'Session has no intake to regenerate from.');
 
+        // Wipe existing assets so the segment count drops to zero — visible confirmation
+        // in the admin list that regeneration is in progress and not a no-op.
+        $service->assets()->delete();
         $service->update(['status' => 'active']);
         DispatchServiceJob::dispatch($service->id);
 
         return response()->json(['ok' => true, 'status' => 'active']);
+    }
+
+    public function deleteService(ServiceSession $service): JsonResponse
+    {
+        $service->assets()->delete();
+        $service->intake()->delete();
+        $service->delete();
+
+        return response()->json(['ok' => true]);
     }
 
     /** All testimonies (pending first) for moderation. */
@@ -108,7 +140,53 @@ class AdminController extends Controller
             ->limit(100)
             ->get();
 
-        return response()->json(['testimonies' => $testimonies]);
+        $userIds = $testimonies->pluck('user_id')->filter()->unique()->all();
+        $customMoods = $this->allCustomMoodsByUser($userIds);
+
+        return response()->json([
+            'testimonies' => $testimonies->map(function ($t) use ($customMoods) {
+                $arr = $t->toArray();
+                $arr['custom_moods'] = $customMoods->get($t->user_id, []);
+                return $arr;
+            }),
+        ]);
+    }
+
+    /** All user-submitted custom mood words per user_id (deduplicated, newest first), keyed by user_id. */
+    private function allCustomMoodsByUser(array $userIds): \Illuminate\Support\Collection
+    {
+        if (empty($userIds)) {
+            return collect();
+        }
+
+        return ServiceIntake::select('service_intakes.custom_mood', 'service_sessions.user_id')
+            ->join('service_sessions', 'service_sessions.id', '=', 'service_intakes.session_id')
+            ->whereIn('service_sessions.user_id', $userIds)
+            ->whereNotNull('service_intakes.custom_mood')
+            ->orderByDesc('service_intakes.id')
+            ->get()
+            ->groupBy('user_id')
+            ->map(fn ($rows) => $rows->pluck('custom_mood')->unique()->values()->all());
+    }
+
+    /** Most recent intake per user_id — gives the last selected mood and sermon topic. */
+    private function lastIntakeByUser(array $userIds): \Illuminate\Support\Collection
+    {
+        if (empty($userIds)) {
+            return collect();
+        }
+
+        return ServiceIntake::select(
+                'service_intakes.mood',
+                'service_intakes.scripture_ref',
+                'service_sessions.user_id'
+            )
+            ->join('service_sessions', 'service_sessions.id', '=', 'service_intakes.session_id')
+            ->whereIn('service_sessions.user_id', $userIds)
+            ->orderByDesc('service_intakes.id')
+            ->get()
+            ->groupBy('user_id')
+            ->map(fn ($rows) => $rows->first());
     }
 
     public function approveTestimony(Testimony $testimony): JsonResponse
@@ -136,24 +214,34 @@ class AdminController extends Controller
             ->withMax('sessions', 'created_at')
             ->latest()
             ->limit(200)
-            ->get(['id', 'name', 'email', 'is_admin', 'music_source', 'created_at'])
-            ->map(function ($u) {
+            ->get(['id', 'name', 'email', 'is_admin', 'is_blocked', 'music_source', 'created_at']);
+
+        $userIds = $users->pluck('id')->all();
+        $customMoods  = $this->allCustomMoodsByUser($userIds);
+        $lastIntakes  = $this->lastIntakeByUser($userIds);
+
+        return response()->json([
+            'users' => $users->map(function ($u) use ($customMoods, $lastIntakes) {
                 $isGuest = str_ends_with($u->email, '@guest.local');
+                $last    = $lastIntakes->get($u->id);
 
                 return [
                     'id'           => $u->id,
                     'name'         => $u->name,
                     'email'        => $isGuest ? null : $u->email,
                     'is_admin'     => $u->is_admin,
+                    'is_blocked'   => $u->is_blocked,
                     'is_guest'     => $isGuest,
                     'music_source' => $u->music_source,
                     'visits'       => $u->sessions_count,
                     'last_seen'    => $u->sessions_max_created_at,
                     'created_at'   => $u->created_at,
+                    'custom_moods' => $customMoods->get($u->id, []),
+                    'last_mood'    => $last?->mood,
+                    'last_sermon'  => $last?->scripture_ref,
                 ];
-            });
-
-        return response()->json(['users' => $users]);
+            }),
+        ]);
     }
 
     /**
@@ -196,6 +284,33 @@ class AdminController extends Controller
         });
 
         return response()->json(['donors' => $donors]);
+    }
+
+    /** All prayer requests submitted through the intake form, newest first. */
+    public function prayerRequests(): JsonResponse
+    {
+        $intakes = ServiceIntake::with('session.user:id,name,email')
+            ->whereNotNull('prayer_text')
+            ->latest()
+            ->limit(200)
+            ->get(['id', 'session_id', 'mood', 'custom_mood', 'prayer_text', 'created_at'])
+            ->map(function ($intake) {
+                $user = $intake->session?->user;
+                $isGuest = $user && str_ends_with($user->email, '@guest.local');
+
+                return [
+                    'id'          => $intake->id,
+                    'mood'        => $intake->mood,
+                    'custom_mood' => $intake->custom_mood,
+                    'prayer'      => $intake->prayer_text,
+                    'submitted'   => $intake->created_at,
+                    'user_name'   => $user?->name ?? '—',
+                    'user_email'  => ($user && ! $isGuest) ? $user->email : null,
+                    'is_guest'    => $isGuest,
+                ];
+            });
+
+        return response()->json(['prayer_requests' => $intakes]);
     }
 
     /**
@@ -287,9 +402,9 @@ class AdminController extends Controller
     public function updateSettings(Request $request): JsonResponse
     {
         $data = $request->validate([
-            // off = silent text; browser = the worshipper's browser reads it aloud;
-            // openai = the worker synthesizes audio with OpenAI TTS; kokoro = the
-            // worker synthesizes audio with hexgrad/kokoro-82m via OpenRouter.
+            // off = silent text; browser = browser speech synthesis;
+            // edge_tts = Microsoft Edge neural TTS (free, no key);
+            // openai = OpenAI TTS; kokoro = hexgrad/kokoro-82m via OpenRouter.
             'narration_mode'  => ['sometimes', 'string', 'in:' . implode(',', Setting::NARRATION_MODES)],
             // When on, a worshipper new to a mood is served a random song already
             // composed for it instead of generating (and paying for) a fresh one.
@@ -303,12 +418,19 @@ class AdminController extends Controller
             // Which music sources worshippers may choose; a non-empty subset.
             'music_sources'   => ['sometimes', 'array', 'min:1'],
             'music_sources.*' => ['string', 'in:' . implode(',', Setting::MUSIC_SOURCES)],
+            // Edge TTS voice (used when narration_mode = 'edge_tts').
+            'edge_tts_voice'  => ['sometimes', 'string', 'in:' . implode(',', Setting::EDGE_TTS_VOICES)],
             // Whether the "schedule it" option appears in the intake form.
             'scheduling_enabled' => ['sometimes', 'boolean'],
+            // The music source pre-selected in the intake form.
+            'default_music_source' => ['sometimes', 'string', 'in:' . implode(',', Setting::MUSIC_SOURCES)],
         ]);
 
         if (array_key_exists('narration_mode', $data)) {
             Setting::set('narration_mode', $data['narration_mode']);
+        }
+        if (array_key_exists('edge_tts_voice', $data)) {
+            Setting::set('edge_tts_voice', $data['edge_tts_voice']);
         }
         if (array_key_exists('music_reuse', $data)) {
             Setting::set('music_reuse', $data['music_reuse'] ? '1' : '0');
@@ -330,6 +452,9 @@ class AdminController extends Controller
         if (array_key_exists('scheduling_enabled', $data)) {
             Setting::set('scheduling_enabled', $data['scheduling_enabled'] ? '1' : '0');
         }
+        if (array_key_exists('default_music_source', $data)) {
+            Setting::set('default_music_source', $data['default_music_source']);
+        }
 
         return response()->json(['ok' => true] + $this->settingsPayload());
     }
@@ -339,12 +464,44 @@ class AdminController extends Controller
     {
         return [
             'narration_mode'     => Setting::get('narration_mode', 'browser'),
+            'edge_tts_voice'     => Setting::get('edge_tts_voice', 'en-US-AriaNeural'),
             'music_reuse'        => Setting::get('music_reuse', '1') === '1',
             'storage_backend'    => Setting::get('storage_backend', 'local'),
-            'moods'              => Setting::moods(),
-            'music_sources'      => Setting::enabledMusicSources(),
-            'scheduling_enabled' => Setting::schedulingEnabled(),
+            'moods'                => Setting::moods(),
+            'music_sources'        => Setting::enabledMusicSources(),
+            'scheduling_enabled'   => Setting::schedulingEnabled(),
+            'default_music_source' => Setting::defaultMusicSource(),
         ];
+    }
+
+    /** Block or unblock a user. Blocked users cannot log in. Guards against self-block. */
+    public function blockUser(Request $request, User $user): JsonResponse
+    {
+        if ($user->id === $request->user()->id) {
+            return response()->json(['message' => 'You cannot block your own account.'], 422);
+        }
+
+        $data = $request->validate(['is_blocked' => ['required', 'boolean']]);
+        $user->update(['is_blocked' => $data['is_blocked']]);
+
+        return response()->json(['ok' => true, 'is_blocked' => $user->is_blocked]);
+    }
+
+    /** Delete a user and all their data. Guards against self-deletion and last-admin removal. */
+    public function deleteUser(Request $request, User $user): JsonResponse
+    {
+        if ($user->id === $request->user()->id) {
+            return response()->json(['message' => 'You cannot delete your own account.'], 422);
+        }
+
+        if ($user->is_admin && User::where('is_admin', true)->count() <= 1) {
+            return response()->json(['message' => 'Cannot delete the last admin account.'], 422);
+        }
+
+        $user->tokens()->delete();
+        $user->delete();
+
+        return response()->json(['ok' => true]);
     }
 
     /** Grant or revoke admin. Guards against an admin removing their own access. */

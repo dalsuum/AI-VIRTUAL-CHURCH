@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, onUnmounted } from "vue";
+import { computed, ref, onMounted, onUnmounted } from "vue";
 import IntakeForm from "./components/IntakeForm.vue";
 import PreparingView from "./components/PreparingView.vue";
 import ServicePlayer from "./components/ServicePlayer.vue";
@@ -23,6 +23,7 @@ const resource = ref(null);
 const service = ref(null);
 const musicSource = ref(null);
 const displayName = ref(api.rememberedName() || "");
+const resumeError = ref("");
 
 let pollTimer = null;
 
@@ -124,6 +125,37 @@ function onIntercepted(res) {
   view.value = "intercepted";
 }
 
+// If the user arrived via an email link (?session=TOKEN), restore their session
+// automatically — even on a different device or after browser storage was cleared.
+onMounted(async () => {
+  const params = new URLSearchParams(window.location.search);
+  const token  = params.get("session");
+  if (!token) return;
+
+  // Clean the token from the URL bar without a page reload.
+  window.history.replaceState({}, "", window.location.pathname + window.location.hash);
+
+  try {
+    const { session_token, status } = await api.resumeSession(token);
+    sessionToken.value = session_token;
+    displayName.value  = api.rememberedName() || "";
+    mediaGracePolls    = 0;
+
+    if (status === "scheduled") {
+      // Time hasn't arrived yet — show the "your service is scheduled" screen.
+      await poll();
+      view.value = "preparing";
+    } else {
+      // Service is active or complete — go to the preparing/player screen and poll.
+      view.value = "preparing";
+      await poll();
+      pollTimer = setInterval(poll, 4000);
+    }
+  } catch (e) {
+    resumeError.value = "This service link has expired or is no longer available. Please start a new service below.";
+  }
+});
+
 onUnmounted(() => pollTimer && clearInterval(pollTimer));
 </script>
 
@@ -141,6 +173,7 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
 
     <main class="shell">
       <div class="card">
+        <p v-if="resumeError" style="color:var(--danger);font-size:0.85rem;margin-bottom:1rem;">{{ resumeError }}</p>
         <IntakeForm
           v-if="view === 'intake'"
           @started="onStarted"
@@ -183,6 +216,17 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
         </section>
       </div>
     </main>
+
+    <footer class="site-footer">
+      <a
+        href="https://www.paypal.com/donate/?hosted_button_id=WETP5RQ7ZGJ6U"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="donate-link"
+      >
+        ☕ Buy me a coffee
+      </a>
+    </footer>
   </div>
 </template>
 
@@ -222,4 +266,26 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
 .service h1, .intercepted h1 { font-size: 1.55rem; margin: 0 0 0.35rem; letter-spacing: -0.02em; }
 .sub { color: var(--text-muted); margin: 0 0 1.5rem; line-height: 1.55; }
 .intercepted a { color: var(--primary); font-weight: 500; }
+
+.site-footer {
+  text-align: center;
+  padding: 1.25rem;
+  border-top: 1px solid var(--border);
+}
+.donate-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  text-decoration: none;
+  padding: 0.4rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  transition: color 0.15s, border-color 0.15s;
+}
+.donate-link:hover {
+  color: var(--primary);
+  border-color: var(--primary);
+}
 </style>

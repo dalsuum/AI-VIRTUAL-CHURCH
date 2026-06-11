@@ -89,11 +89,11 @@ def generate_text_segments(job: dict, plan: dict) -> None:
     ref = plan["scripture_ref"]
 
     # Synthesize TTS audio only when the admin chose a server voice provider —
-    # 'openai' (OpenAI TTS) or 'kokoro' (hexgrad/kokoro-82m via OpenRouter). In
-    # 'browser'/'off' the client handles (or skips) reading aloud, so we deliver
-    # text only. (Still key-gated by narrator.is_enabled for the chosen provider.)
+    # 'openai', 'kokoro', or 'edge_tts' — server generates audio. In 'browser'/'off'
+    # the client handles (or skips) reading aloud, so we deliver text only.
     narration_mode = job.get("narration_mode")
-    want_audio = narration_mode in ("openai", "kokoro") and narrator.is_enabled(narration_mode)
+    narration_voice = job.get("edge_tts_voice", "en-US-AriaNeural")
+    want_audio = narration_mode in ("openai", "kokoro", "edge_tts") and narrator.is_enabled(narration_mode)
 
     # Scripture: model picks the reference, the bundled public-domain Bible supplies
     # the words. If resolution fails (unparseable/missing reference), still give the
@@ -108,8 +108,16 @@ def generate_text_segments(job: dict, plan: dict) -> None:
     _post_asset(token, "scripture", asset_type="text", text_payload=scripture_payload)
     # Read the passage aloud (the verse words, not the bare reference) when narration
     # is configured. Scripture gets a voice but no avatar — it's shown as written.
+    # OpenRouter (kokoro) has tight per-minute rate limits; stagger narration calls
+    # 45 s apart so concurrent segments don't overlap and trigger provider 429s.
+    # edge_tts and openai have no meaningful rate limit, so no stagger needed.
+    _narrate_stagger = 45 if narration_mode == "kokoro" else 0
+    _narrate_slot = 0
+
     if want_audio:
-        narrate.delay(token, "scripture", scripture_text or ref, narration_mode)
+        narrate.apply_async((token, "scripture", scripture_text or ref, narration_mode, narration_voice),
+                            countdown=_narrate_slot)
+        _narrate_slot += _narrate_stagger
 
     # In YouTube mode the preaching message is an existing sermon video found on
     # YouTube (mood-based), not an AI-written sermon — this saves the LLM call plus
@@ -149,7 +157,9 @@ def generate_text_segments(job: dict, plan: dict) -> None:
         # no HeyGen the worshipper still hears the service; with both, the audio is a
         # standalone fallback to the spoken video.
         if want_audio:
-            narrate.delay(token, segment, text, narration_mode)
+            narrate.apply_async((token, segment, text, narration_mode, narration_voice),
+                                countdown=_narrate_slot)
+            _narrate_slot += _narrate_stagger
 
 
 @app.task(name="tasks.generate_music")
@@ -229,15 +239,26 @@ def render_avatar(session_token: str, segment: str, script: str) -> None:
     _post_asset(session_token, segment, asset_type="video", storage_key=video_url)
 
 
-@app.task(name="tasks.narrate")
-def narrate(session_token: str, segment: str, script: str, mode: str = "openai") -> None:
+@app.task(name="tasks.narrate", bind=True, max_retries=4, default_retry_delay=30)
+def narrate(self, session_token: str, segment: str, script: str, mode: str = "openai", voice: str = "") -> None:
     """Read `script` aloud with the `mode` voice provider and post it back as the
     segment's audio narration. The text asset was already delivered, so any failure
     here just leaves the segment without audio — never block or crash the service."""
+    import requests as _req
     if not narrator.is_enabled(mode):
         return
     try:
-        audio_url = narrator.narrate(session_token, segment, script, mode)
+        audio_url = narrator.narrate(session_token, segment, script, mode, voice=voice)
+    except _req.exceptions.HTTPError as exc:
+        if exc.response is not None and exc.response.status_code == 429:
+            # Back off and retry; countdown doubles each attempt (30 s, 60 s, 120 s, 240 s).
+            raise self.retry(exc=exc, countdown=30 * (2 ** self.request.retries))
+        print(f"[narrator] tts failed for {segment} ({session_token[:8]}…): {exc}", flush=True)
+        return
+    except (_req.exceptions.ReadTimeout, _req.exceptions.ConnectionError) as exc:
+        # OpenRouter sometimes hangs rather than returning 429 — treat like a rate-limit
+        # and retry with the same exponential backoff so we recover automatically.
+        raise self.retry(exc=exc, countdown=30 * (2 ** self.request.retries))
     except Exception as exc:  # noqa: BLE001 — degrade gracefully to the silent segment
         print(f"[narrator] tts failed for {segment} ({session_token[:8]}…): {exc}", flush=True)
         return

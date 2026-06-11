@@ -86,12 +86,13 @@ const narrating = ref(false);
 // Default to 'browser' so a service without the field still reads aloud for free.
 const narrationMode = computed(() => props.service?.narration_mode || "browser");
 
-// The browser reads a segment only in 'browser' mode and only when there's no
-// richer server media (avatar video or TTS audio) to play instead.
+// The browser reads a segment when either (a) 'browser' mode is chosen, or
+// (b) a server voice (openai/kokoro) was chosen but no audio arrived — so the
+// worshipper always hears something rather than landing in total silence.
 const usesBrowserSpeech = computed(
   () =>
     speechSupported &&
-    narrationMode.value === "browser" &&
+    narrationMode.value !== "off" &&
     current.value?.kind === "segment" &&
     !current.value.embed &&
     !current.value.video &&

@@ -62,8 +62,12 @@ def find_sermon_video(*, mood: str, query: str = "") -> dict:
 
 class YouTubeStrategy(MusicStrategy):
     def fetch(self, *, mood: str, prompt: str, query: str) -> MusicResult:
-        # Music category (10) so we get worship songs, not talks.
-        result = search_video(query=query or f"worship song {mood}", category_id="10")
+        # "modern contemporary Christian worship" keeps results away from hymns/MIDI
+        # and toward current praise & worship songs. Music category (10) filters out talks.
+        result = search_video(
+            query=query or f"modern contemporary Christian worship song {mood}",
+            category_id="10",
+        )
         return MusicResult(
             asset_type="youtube",
             provider_ref=result["video_id"],

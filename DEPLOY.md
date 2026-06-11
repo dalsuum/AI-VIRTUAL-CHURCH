@@ -315,12 +315,15 @@ cd /opt/ai-church/frontend
 npm ci         # or: npm install
 ```
 
-Create `/opt/ai-church/frontend/.env.production`:
+`frontend/.env.production` is **version-controlled** in the repo — verify it has the
+correct production values before building:
 
 ```dotenv
-VITE_API_URL=https://api.example.com/api
-VITE_STRIPE_KEY=pk_live_xxx
+VITE_API_URL=https://api.example.com/api   # must match your api.example.com
+VITE_STRIPE_KEY=pk_live_xxx               # live publishable key when ready
 ```
+
+Edit it if needed (`nano frontend/.env.production`), then build:
 
 ```bash
 npm run build         # outputs static files to dist/
@@ -542,6 +545,8 @@ before the restart.
 | Media mp3 404 | symlink/perms | `php artisan storage:link`; media dir owned `simon:www-data` |
 | Config changes ignored | cached config | `php artisan config:cache` after every `.env` edit |
 | `.env` edits to APP_* ignored | cached | also clear with `php artisan config:clear` then re-cache |
+| 429 on login/register | rate limiter | Expected under brute-force; `throttle:auth` is intentional. If you trip it during setup, wait 60s or flush the rate-limit cache: `php artisan cache:clear` |
+| CSP blocks inline scripts in the SPA | security headers | `SecurityHeaders` middleware sets a strict `default-src 'none'` on the API — the SPA origin is nginx-served (not php-fpm) so it has no CSP applied. If you add a Blade view, extend the CSP in `SecurityHeaders.php`. |
 
 Logs:
 - Laravel: `/opt/ai-church/backend/storage/logs/laravel.log`

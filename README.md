@@ -117,8 +117,8 @@ moderation, and the admin console.
 
 | Area | File |
 |------|------|
-| Auth (register / login / guest / me / music-source) | [AuthController.php](backend/app/Http/Controllers/AuthController.php) |
-| Service lifecycle (start / intake / show) | [ServiceController.php](backend/app/Http/Controllers/ServiceController.php) |
+| Auth (register / login / guest / me / music-source / email / password) | [AuthController.php](backend/app/Http/Controllers/AuthController.php) |
+| Service lifecycle (start / intake / show / resume) | [ServiceController.php](backend/app/Http/Controllers/ServiceController.php) |
 | Laravel→Python dispatch | [DispatchServiceJob.php](backend/app/Jobs/DispatchServiceJob.php) |
 | Worker callback (asset-ready) | [WebhookController.php](backend/app/Http/Controllers/WebhookController.php) |
 | Crisis safety gate | [CrisisInterceptService.php](backend/app/Services/CrisisInterceptService.php) |
@@ -126,6 +126,9 @@ moderation, and the admin console.
 | Testimonies | [TestimonyController.php](backend/app/Http/Controllers/TestimonyController.php) |
 | Admin console | [AdminController.php](backend/app/Http/Controllers/AdminController.php), [EnsureAdmin.php](backend/app/Http/Middleware/EnsureAdmin.php) |
 | Scheduled-service release | [DispatchDueServices.php](backend/app/Console/Commands/DispatchDueServices.php) |
+| Security headers (HSTS, CSP, X-Frame-Options, …) | [SecurityHeaders.php](backend/app/Http/Middleware/SecurityHeaders.php) |
+| Scheduled-service confirmation email | [ServiceScheduledNotification.php](backend/app/Notifications/ServiceScheduledNotification.php) |
+| Service-ready reminder email | [ServiceReminderNotification.php](backend/app/Notifications/ServiceReminderNotification.php) |
 | Routes | [api.php](backend/routes/api.php) |
 
 ### Workers (Python / Celery)
@@ -176,9 +179,9 @@ service one stage at a time.
 
 | Table | Purpose | Notable columns |
 |-------|---------|-----------------|
-| `users` | Worshippers (incl. guests) | `music_source` enum (`hymn_sung`/`hymn`/`suno`/`youtube`, default `hymn_sung`), `name_provided` (false ⇒ display-only placeholder, kept out of the spoken service), `is_admin`, `timezone` |
+| `users` | Worshippers (incl. guests) | `music_source` enum (`hymn_sung`/`hymn`/`suno`/`youtube`, default `hymn_sung`), `name_provided` (false ⇒ display-only placeholder, kept out of the spoken service), `is_admin`, `is_blocked`, `timezone` |
 | `service_sessions` | One worship visit | `session_token` (64), `status` (`initializing`/`active`/`completed`/`abandoned`/`scheduled`), `music_source` (locked), `scheduled_at` |
-| `service_intakes` | The user's input + the plan | `mood`, `prayer_text`, `scripture_ref`, `music_prompt`, `music_query` (1:1 with session) |
+| `service_intakes` | The user's input + the plan | `mood`, `custom_mood` (free-text when the worshipper selects "other"), `prayer_text`, `scripture_ref`, `music_prompt`, `music_query` (1:1 with session) |
 | `service_assets` | Generated segments | `segment` enum, `asset_type` (`video`/`audio`/`text`/`url`/`youtube`), `storage_key`, `audio_key`, `provider_ref`, `text_payload`, `lyrics` (hymn verses for on-screen display), `status` |
 | `music_tracks` | Mood-keyed reuse pool | `mood`, `provider_ref` (unique — dedupes), `storage_key`, `title`, `source`. Populated by the worker after each fresh Suno generation; drawn from when a worshipper is new to a mood. |
 | `settings` | Global admin key/value | `key` (PK) / `value` (string). Holds `narration_mode`, `music_reuse`, `storage_backend`, plus the admin-curated intake options: `moods` and `music_sources` (JSON lists) and `scheduling_enabled`. |
@@ -322,11 +325,12 @@ Approval and deletion happen in the admin console.
 
 `/admin` routes require an `is_admin` account (`admin` middleware → [EnsureAdmin.php](backend/app/Http/Middleware/EnsureAdmin.php)):
 
-- **Dashboard** — sessions, worship-time totals, donations, intercept counts.
-- **Services** — list + **retry** a failed/stuck service (re-dispatches the pipeline).
-- **Testimonies** — approve / delete (moderation queue).
-- **Users** — list + grant/revoke admin.
+- **Dashboard** — sessions, worship-time totals, donations, intercept counts, and prayer-request counts (total + today).
+- **Services** — list + **retry** a failed/stuck service (clears existing assets first so segment count visibly drops to zero, confirming regeneration is in progress) + **delete**.
+- **Testimonies** — approve / delete (moderation queue); each entry shows the user's custom mood words so the moderator has context.
+- **Users** — list + grant/revoke admin + **block/unblock** + **delete**.
 - **Donors** — donation rollups.
+- **Prayer requests** — paginated log of prayer-request intakes visible to admins.
 - **Settings** — global service config persisted in the `settings` table and threaded
   onto each job: `narration_mode` (`off`/`browser`/`openai`/`kokoro`), `music_reuse`
   (the Suno pool toggle), and `storage_backend` (`local` vs `s3` for generated audio).
@@ -523,12 +527,15 @@ All routes are under `/api`. Authenticated routes use a Sanctum bearer token.
 
 ### Public
 
+> Auth routes (`/guest`, `/register`, `/login`) are rate-limited per IP (`throttle:auth`) to slow credential stuffing. Intake is throttled per user (`throttle:intake`); testimony submission per user (`throttle:testimony`).
+
 | Method | Path | Purpose |
 |--------|------|---------|
 | `GET` | `/config` | Intake options — `moods`, enabled `music_sources`, `scheduling_enabled`. Read by the intake form before a session exists. |
 | `POST` | `/guest` | Start an anonymous guest session. |
 | `POST` | `/register` | Create an account. |
 | `POST` | `/login` | Log in, returns a token. |
+| `GET` | `/service/{token}/resume` | Email-link session resume — token acts as the credential, no bearer required. |
 | `POST` | `/internal/asset-ready` | **Worker callback** — `X-Worker-Secret` header, no user auth. |
 | `POST` | `/internal/music-track` | **Worker callback** — banks a fresh Suno track in the reuse pool (`X-Worker-Secret`, no user auth). |
 | `POST` | `/webhooks/stripe` | **Stripe webhook** — signature-verified, no user auth. |
@@ -540,6 +547,9 @@ All routes are under `/api`. Authenticated routes use a Sanctum bearer token.
 | `POST` | `/logout` | Revoke the current token. |
 | `GET` | `/me` | Current user. |
 | `PATCH` | `/me/music-source` | Set `hymn_sung` \| `hymn` \| `suno` \| `youtube`. |
+| `PATCH` | `/me/email` | Update email address. |
+| `POST` | `/me/change-password` | Change password. |
+| `GET` | `/me/services` | List the current user's past services. |
 | `POST` | `/service/start` | Create a session (locks music source). |
 | `POST` | `/service/{token}/intake` | Submit mood + prayer (+ optional `scheduled_at`). Runs the crisis gate. |
 | `GET` | `/service/{token}` | Poll session + assets (player fallback to WS). |
@@ -551,15 +561,19 @@ All routes are under `/api`. Authenticated routes use a Sanctum bearer token.
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| `GET` | `/admin/dashboard` | Metrics. |
+| `GET` | `/admin/dashboard` | Metrics (incl. prayer-request counts). |
 | `GET` | `/admin/services` | List services. |
-| `POST` | `/admin/services/{service}/retry` | Re-dispatch a service. |
-| `GET` | `/admin/testimonies` | Moderation queue. |
+| `POST` | `/admin/services/{service}/retry` | Re-dispatch a service (clears existing assets first). |
+| `DELETE` | `/admin/services/{service}` | Delete a service and all its assets. |
+| `GET` | `/admin/testimonies` | Moderation queue (includes per-user custom moods). |
 | `PATCH` | `/admin/testimonies/{testimony}/approve` | Approve. |
 | `DELETE` | `/admin/testimonies/{testimony}` | Delete. |
 | `GET` | `/admin/users` | List users. |
 | `PATCH` | `/admin/users/{user}/admin` | Grant/revoke admin. |
+| `PATCH` | `/admin/users/{user}/block` | Block/unblock a user. |
+| `DELETE` | `/admin/users/{user}` | Delete a user and their data. |
 | `GET` | `/admin/donors` | Donation rollups. |
+| `GET` | `/admin/prayer-requests` | Paginated log of prayer-request intakes. |
 | `GET` | `/admin/settings` | Read global settings (narration mode, music reuse, storage backend, moods, music sources, scheduling). |
 | `PATCH` | `/admin/settings` | Update any of `narration_mode` / `music_reuse` / `storage_backend` / `moods` / `music_sources` / `scheduling_enabled`. |
 | `GET` | `/admin/export/{type}` | CSV: `donations` \| `users` \| `testimonies`. |
@@ -577,6 +591,9 @@ All routes are under `/api`. Authenticated routes use a Sanctum bearer token.
   offering + ledger — **DONE**
 - **Phase 5 — Polish:** progress tracker, testimony wall, admin console, scheduled
   services — **DONE**
+- **Phase 6 — Hardening:** security headers (HSTS/CSP/X-Frame-Options), rate limiting on
+  auth/intake/testimony, user blocking + deletion, custom mood free-text, prayer-request
+  admin view, email-link session resume, service deletion + confirmation notifications — **DONE**
 
 **Known gaps / next steps:** real WebSocket push (Reverb/Echo wiring is stubbed; polling
 works today), HeyGen avatar beyond stub, a production-grade crisis classifier (vs. the

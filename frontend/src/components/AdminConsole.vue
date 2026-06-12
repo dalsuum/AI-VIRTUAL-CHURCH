@@ -5,13 +5,14 @@
 import { ref, onMounted } from "vue";
 import { api } from "../composables/useApi";
 import ThemeToggle from "./ThemeToggle.vue";
+import VoiceStudio from "./VoiceStudio.vue";
 
 const authed = ref(false);
 const email = ref("");
 const password = ref("");
 const loginError = ref("");
 
-const tab = ref("dashboard"); // dashboard | services | donors | testimonies | users | prayer | settings
+const tab = ref("dashboard"); // dashboard | services | donors | testimonies | users | prayer | settings | voice-studio
 const stats = ref(null);
 const services = ref([]);
 const donors = ref([]);
@@ -44,6 +45,18 @@ const edgeTtsVoices = [
   { value: "en-AU-WilliamNeural",    label: "William",    gender: "Male",   accent: "AU" },
 ];
 const setEdgeTtsVoice = (v) => saveSetting("edge_tts_voice", v, "Voice updated.");
+
+const narrationLanguages = [
+  { key: "narration_en", label: "English", hint: "Use the selected narration provider for English services." },
+  { key: "narration_my", label: "Myanmar", hint: "Enable only after confirming the Burmese voice is acceptable." },
+  { key: "narration_td", label: "Tedim (Zolai)", hint: "Enable only when EDGE_TTS_VOICE_TD is configured." },
+];
+
+const serviceLanguages = [
+  { key: "lang_en", label: "English", hint: "Show the English tab in the intake form. Keep at least one language on." },
+  { key: "lang_my", label: "Myanmar (မြန်မာ)", hint: "Show the Myanmar/Burmese tab. Enable once the Burmese LLM is running." },
+  { key: "lang_td", label: "Zolai (Tedim)", hint: "Show the Zolai/Tedim tab. Enable once the Tedim LLM is running." },
+];
 
 // Where the worker stores generated audio. Mirrors Setting::STORAGE_BACKENDS.
 const storageBackends = [
@@ -167,6 +180,18 @@ async function saveSetting(key, value, ok) {
 }
 
 const setNarrationMode = (mode) => saveSetting("narration_mode", mode, "Narration voice updated.");
+const setLanguageNarration = (key, on) => saveSetting(key, on, "Language narration updated.");
+
+function toggleServiceLanguage(key) {
+  if (!settings.value) return;
+  const willDisable = settings.value[key] === true;
+  const enabledCount = serviceLanguages.filter((l) => settings.value[l.key] === true).length;
+  if (willDisable && enabledCount <= 1) {
+    notice.value = "Keep at least one service language enabled.";
+    return;
+  }
+  saveSetting(key, !settings.value[key], "Service language updated.");
+}
 const setMusicReuse = (on) => saveSetting("music_reuse", on, "Music reuse updated.");
 const setAvatarEnabled = (on) => saveSetting("avatar_enabled", on, "Avatar rendering updated.");
 const setStorageBackend = (backend) => saveSetting("storage_backend", backend, "Storage backend updated.");
@@ -396,6 +421,7 @@ onMounted(() => { if (api.hasToken()) enter(); });
         <button :class="{ active: tab === 'users' }" @click="show('users')">Users</button>
         <button :class="{ active: tab === 'prayer' }" @click="show('prayer')">Prayer Requests</button>
         <button :class="{ active: tab === 'settings' }" @click="show('settings')">Settings</button>
+        <button :class="{ active: tab === 'voice-studio' }" @click="show('voice-studio')">Voice Studio</button>
       </nav>
 
       <p v-if="notice" class="notice">{{ notice }}</p>
@@ -727,6 +753,30 @@ onMounted(() => { if (api.hasToken()) enter(); });
         </div>
 
         <div class="setting-block">
+          <h2>Service languages</h2>
+          <p class="setting-desc">
+            Which language tabs appear in the intake form. Worshippers can only pick a
+            language whose tab is shown. English is on by default; enable Myanmar and
+            Zolai once the corresponding LLM workers are running. Keep at least one on.
+          </p>
+          <div v-if="settings" class="choice-row">
+            <button
+              v-for="lang in serviceLanguages"
+              :key="lang.key"
+              type="button"
+              class="choice"
+              :class="{ active: settings[lang.key] === true }"
+              :disabled="savingSettings"
+              @click="toggleServiceLanguage(lang.key)"
+            >
+              <strong>{{ lang.label }} <span class="state">{{ settings[lang.key] ? "On" : "Off" }}</span></strong>
+              <span>{{ lang.hint }}</span>
+            </button>
+          </div>
+          <p v-else class="setting-desc">Loading…</p>
+        </div>
+
+        <div class="setting-block">
           <h2>Narration voice</h2>
           <p class="setting-desc">
             How the spoken segments — opening prayer, scripture, message, benediction —
@@ -764,6 +814,23 @@ onMounted(() => { if (api.hasToken()) enter(); });
             </div>
           </template>
           <p v-else-if="!settings" class="setting-desc">Loading…</p>
+          <template v-if="settings">
+            <p class="setting-desc" style="margin-top:1rem">Languages</p>
+            <div class="choice-row">
+              <button
+                v-for="lang in narrationLanguages"
+                :key="lang.key"
+                type="button"
+                class="choice"
+                :class="{ active: settings[lang.key] === true }"
+                :disabled="savingSettings"
+                @click="setLanguageNarration(lang.key, !settings[lang.key])"
+              >
+                <strong>{{ lang.label }}<span class="state">{{ settings[lang.key] ? "on" : "off" }}</span></strong>
+                <span>{{ lang.hint }}</span>
+              </button>
+            </div>
+          </template>
         </div>
 
         <div class="setting-block">
@@ -867,6 +934,10 @@ onMounted(() => { if (api.hasToken()) enter(); });
             </button>
           </div>
         </div>
+      </section>
+
+      <section v-else-if="tab === 'voice-studio'" class="settings">
+        <VoiceStudio />
       </section>
     </template>
   </main>

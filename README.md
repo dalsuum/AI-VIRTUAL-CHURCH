@@ -23,6 +23,7 @@ Redis queue so neither has to know the other's serializer.
   - [Frontend (Vue 3)](#frontend-vue-3)
 - [Data model](#data-model)
 - [The segment pipeline in detail](#the-segment-pipeline-in-detail)
+- [Multilingual services (Myanmar & Tedim)](#multilingual-services-myanmar--tedim)
 - [Music: four sources + a reuse pool](#music-four-sources--a-reuse-pool)
 - [Narration & avatar (optional enrichments)](#narration--avatar-optional-enrichments)
 - [Safety: the crisis intercept](#safety-the-crisis-intercept)
@@ -58,7 +59,16 @@ Redis queue so neither has to know the other's serializer.
       └─── object storage (S3 / local) ◀───────────────── │ Celery workers  │   │  OpenRouter LLM  │
                                                           │ sermon · music  │   │  Bible · Suno    │
                                                           │ avatar · narr.  │   │  YouTube · TTS   │
-                                                          └─────────────────┘   └──────────────────┘
+                                                          │ tedim localize  │   └──────────────────┘
+                                                          └────────┬────────┘
+                                                                   │ HTTP (localhost)
+                                                          ┌────────▼────────┐
+                                                          │  Language APIs  │   ┌──────────────────┐
+                                                          │  FastAPI :8001  │──▶│  Ollama          │
+                                                          │  /tedim/* (td)  │   │  tedim-zolai 1b  │
+                                                          │  FastAPI :8002  │──▶│  burmese-myanmar │
+                                                          │  /burmese/* (my)│   └──────────────────┘
+                                                          └─────────────────┘
 ```
 
 **Why a Redis list and not a shared Celery broker?** Laravel and Python don't share a
@@ -130,6 +140,10 @@ moderation, and the admin console.
 | Scheduled-service confirmation email | [ServiceScheduledNotification.php](backend/app/Notifications/ServiceScheduledNotification.php) |
 | Service-ready reminder email | [ServiceReminderNotification.php](backend/app/Notifications/ServiceReminderNotification.php) |
 | Routes | [api.php](backend/routes/api.php) |
+| **Tedim** — HTTP client to the local Ollama FastAPI service | [TedimLlmService.php](backend/app/Services/TedimLlmService.php) |
+| **Tedim** — post-generation localization job (fills `tedim_text` on every asset) | [LocalizeServiceToTedim.php](backend/app/Jobs/LocalizeServiceToTedim.php) |
+| **Myanmar** — HTTP client to the local Ollama FastAPI service (port 8002) | [BurmeseLlmService.php](backend/app/Services/BurmeseLlmService.php) |
+| **Myanmar** — post-generation localization job (fills `burmese_text` on every asset) | [LocalizeServiceToBurmese.php](backend/app/Jobs/LocalizeServiceToBurmese.php) |
 
 ### Workers (Python / Celery)
 
@@ -137,18 +151,32 @@ A single Celery app with one Redis broker and **named queues that mirror the wor
 
 | Queue | Task | Does |
 |-------|------|------|
-| `ai:sermon` | `orchestrate`, `generate_text_segments`, `generate_welcome` | LLM plan + prayer / sermon / benediction + welcome greeting |
+| `ai:sermon` | `orchestrate`, `generate_text_segments`, `generate_welcome`, `localize_segment_tedim`, `localize_segment_burmese` | LLM plan + prayer / sermon / benediction + welcome greeting + Tedim / Myanmar localization |
 | `ai:music` | `generate_music` | Hymn, Suno, or YouTube, resolved per session |
 | `ai:avatar` | `render_avatar` | HeyGen talking-head video |
-| `ai:narration` | `narrate` | text-to-speech of the spoken segments |
+| `ai:narration` | `narrate`, `narrate_tedim`, `narrate_burmese` | text-to-speech of the spoken segments (English Edge/OpenAI/Kokoro; Myanmar/Tedim via local MMS-TTS) |
 
 | Module | Responsibility |
 |--------|----------------|
 | [bridge.py](workers/bridge.py) | `BLPOP ai:intake` → `orchestrate.delay()`. The Laravel↔Python seam. |
 | [tasks/\_\_init\_\_.py](workers/tasks/__init__.py) | The orchestrator and all generation tasks; posts assets back to Laravel. |
 | [tasks/celery_app.py](workers/tasks/celery_app.py) | Celery config + queue routing. |
+| [tasks/celery_tedim_tasks.py](workers/tasks/celery_tedim_tasks.py) | `localize_segment_tedim` — calls `/tedim/verse` for scripture (exact corpus, no LLM), `/tedim/translate` paragraph-by-paragraph for prose. `narrate_tedim` — native `facebook/mms-tts-ctd` via the local MMS-TTS route. |
+| [tasks/celery_burmese_tasks.py](workers/tasks/celery_burmese_tasks.py) | `localize_segment_burmese` — mirrors Tedim: `/burmese/verse` for exact Judson 1835 scripture, `/burmese/translate` paragraph-by-paragraph for prose. Fills `burmese_text` on every asset. |
+| [tedim_router.py](workers/tedim_router.py) | FastAPI router: `POST /tedim/translate`, `POST /tedim/generate`, `GET /tedim/verse?ref=`. Redis db 2 cache (30-day TTL). Single-inference semaphore. |
+| [burmese_router.py](workers/burmese_router.py) | FastAPI router: `POST /burmese/translate`, `POST /burmese/generate`, `GET /burmese/verse?ref=`. Redis db 3 cache (30-day TTL). Shares the same semaphore pattern as the Tedim router. Myanmar Unicode only — no Zawgyi. |
+| [api.py](workers/api.py) | Unified FastAPI app mounting Tedim, Burmese, and `/tts/speak` MMS-TTS routers plus `/health`. Typically run as two separate uvicorn instances: port 8001 (`aivc-tedim-api`) for Tedim/MMS requests, port 8002 (`aivc-burmese-api`) for Burmese. |
+| [hymns_my.py](workers/hymns_my.py) | Loader for the 852-song `data/hymns_my.json` Burmese library; mood-based selection for `MyanmarHymnStrategy`. |
+| [hymns_td.py](workers/hymns_td.py) | Loader for the seeded `data/hymns_td.json` ZBC Labu Lui Tedim library; mood selection + YouTube-embed priority for `TedimHymnStrategy`. |
+| [strategies/hymn_my_strategy.py](workers/strategies/hymn_my_strategy.py) | Burmese hymn strategy: sings the selected hymn's actual verses through Suno customMode, caches under `hymns_my/<slug>.mp3`. |
+| [strategies/tedim_hymn_strategy.py](workers/strategies/tedim_hymn_strategy.py) | Tedim hymn strategy: YouTube embed (real Tedim singing) → Suno customMode render (cached) → instrumental fallback. |
+| [strategies/_suno_custom.py](workers/strategies/_suno_custom.py) | Shared helper that builds and calls Suno customMode with exact lyrics for a given language/style. |
+| [tools/seed_language_data.py](workers/tools/seed_language_data.py) | One-time seeder: downloads Judson 1835 (Myanmar) and Lai Siangtho 1932 (Tedim) Bibles, book index, and Myanmar hymns into `workers/data/`. |
+| [tools/seed_tedim_hymns.py](workers/tools/seed_tedim_hymns.py) | Collects the ZBC Labu Lui hymnal from labusaal.com (~470 entries with YouTube IDs and mood tags) into `data/hymns_td.json`. Polite delay; run once per deploy. |
+| [tools/seed_tedim_midi.py](workers/tools/seed_tedim_midi.py) | Optional: instrumental fallback renders from tedimhymn.com MIDI index (needs fluidsynth + ffmpeg). |
+| [tools/import_myanmar_hymns.py](workers/tools/import_myanmar_hymns.py) | Regenerates `data/hymns_my.json` from the upstream dalsuum/myanmar-hymns source repo. |
 | [llm_engine.py](workers/llm_engine.py) | Intake plan + spoken-segment generation via an OpenAI-compatible chat endpoint (OpenRouter by default). Strips markdown / stage directions to clean spoken prose. |
-| [bible_api.py](workers/bible_api.py) | Resolves a scripture *reference* to verse *text* from a bundled public-domain Berean Standard Bible (no key, no network). The model never writes scripture. |
+| [bible_api.py](workers/bible_api.py) | Resolves a scripture *reference* to verse *text* from bundled public-domain translations: BSB (English), Judson 1835 (Myanmar), Lai Siangtho 1932 (Tedim). The model never writes scripture. |
 | [classifier.py](workers/classifier.py) | Post-generation deny-list guardrail (`review() → (ok, reason)`). |
 | [strategies/](workers/strategies/) | `MusicStrategy` interface + `HymnStrategy` / `SunoStrategy` / `YouTubeStrategy`, returning a normalized `MusicResult`. |
 | [hymns.py](workers/hymns.py) / [seed_hymns.py](workers/seed_hymns.py) | Public-domain hymn library (lyrics + recordings) and the one-time seeder that renders/downloads it into storage. |
@@ -164,7 +192,7 @@ service one stage at a time.
 | Component | Role |
 |-----------|------|
 | [App.vue](frontend/src/App.vue) | Stage machine: `intake` → `preparing` → `service`; routes `/admin` to the console. |
-| [IntakeForm.vue](frontend/src/components/IntakeForm.vue) | Mood + prayer + (optional) schedule + music-source pick. Moods, the offered music sources, and whether scheduling shows are all driven by `GET /config` so the admin can curate them. |
+| [IntakeForm.vue](frontend/src/components/IntakeForm.vue) | Mood + prayer + (optional) schedule + music-source pick + **language tab** (English / မြန်မာ / Zolai). Moods, the offered music sources, and whether scheduling shows are all driven by `GET /config` so the admin can curate them. Myanmar Unicode fonts (Padauk/Noto Sans Myanmar) loaded for Burmese UI strings. |
 | [PreparingView.vue](frontend/src/components/PreparingView.vue) | Countdown screen; shows the welcome-back greeting while segments compose. |
 | [ServicePlayer.vue](frontend/src/components/ServicePlayer.vue) | The full-screen, one-stage-at-a-time player. Auto-reads each segment (server video → server audio → browser Web Speech), auto-advances. |
 | [MusicPlayer.vue](frontend/src/components/MusicPlayer.vue) | Plays the worship track: stored audio, or an embedded YouTube `<iframe>`. |
@@ -179,10 +207,10 @@ service one stage at a time.
 
 | Table | Purpose | Notable columns |
 |-------|---------|-----------------|
-| `users` | Worshippers (incl. guests) | `music_source` enum (`hymn_sung`/`hymn`/`suno`/`youtube`, default `hymn_sung`), `name_provided` (false ⇒ display-only placeholder, kept out of the spoken service), `is_admin`, `is_blocked`, `timezone` |
-| `service_sessions` | One worship visit | `session_token` (64), `status` (`initializing`/`active`/`completed`/`abandoned`/`scheduled`), `music_source` (locked), `scheduled_at` |
+| `users` | Worshippers (incl. guests) | `music_source` enum (`hymn_sung`/`hymn`/`suno`/`youtube`, default `hymn_sung`), `presenter_gender` enum (`female`/`male`, default `female` — controls avatar and TTS voice pairing), `name_provided` (false ⇒ display-only placeholder, kept out of the spoken service), `is_admin`, `is_blocked`, `timezone` |
+| `service_sessions` | One worship visit | `session_token` (64), `status` (`initializing`/`active`/`completed`/`abandoned`/`scheduled`), `music_source` (locked), `language` (`en`/`my`/`td`), `presenter_gender` (locked from user preference at start), `tedim_status` (`null`/`pending`/`ready`), `burmese_status` (`null`/`pending`/`ready` — tracks post-generation Myanmar localization), `scheduled_at` |
 | `service_intakes` | The user's input + the plan | `mood`, `custom_mood` (free-text when the worshipper selects "other"), `prayer_text`, `scripture_ref`, `music_prompt`, `music_query` (1:1 with session) |
-| `service_assets` | Generated segments | `segment` enum, `asset_type` (`video`/`audio`/`text`/`url`/`youtube`), `storage_key`, `audio_key`, `provider_ref`, `text_payload`, `lyrics` (hymn verses for on-screen display), `status` |
+| `service_assets` | Generated segments | `segment` enum (`welcome`/`worship`/`opening_prayer`/`scripture`/`sermon`/`testimony`/`offering`/`closing_hymn`/`benediction`), `asset_type` (`video`/`audio`/`text`/`url`/`youtube`), `storage_key`, `audio_key`, `provider_ref`, `text_payload`, `tedim_text` (Tedim translation, filled by `LocalizeServiceToTedim`), `burmese_text` (Myanmar translation, filled by `LocalizeServiceToBurmese`), `lyrics` (hymn verses for on-screen display), `status` |
 | `music_tracks` | Mood-keyed reuse pool | `mood`, `provider_ref` (unique — dedupes), `storage_key`, `title`, `source`. Populated by the worker after each fresh Suno generation; drawn from when a worshipper is new to a mood. |
 | `settings` | Global admin key/value | `key` (PK) / `value` (string). Holds `narration_mode`, `music_reuse`, `storage_backend`, plus the admin-curated intake options: `moods` and `music_sources` (JSON lists) and `scheduling_enabled`. |
 | `prayer_requests` | Raw intake log + token accounting | `raw_input`, `extracted_mood`, `tokens_used` |
@@ -190,8 +218,10 @@ service one stage at a time.
 | `financial_ledger` | Offerings | `amount`, `currency`, `transaction_hash` (idempotency), `allocation_type` (`operations`/`charity`/`missions`) |
 | `crisis_intercepts` | Safety audit log | `session_hash` (sha256, not the raw token), `trigger_keyword`, `resource_served` |
 
-**Segments:** `worship`, `opening_prayer`, `scripture`, `sermon`, `testimony`,
-`offering`, `closing_hymn`, `benediction`.
+**Segments:** `welcome`, `worship`, `opening_prayer`, `scripture`, `sermon`, `testimony`,
+`offering`, `closing_hymn`, `benediction`. The `welcome` segment (registered users only) is
+fired on its own task early so the countdown screen has something personal while heavier
+segments compose.
 
 ---
 
@@ -218,6 +248,130 @@ The webhook is **idempotent per (session, segment)**: text arrives first, then a
 narration pass fills `audio_key` and a later avatar pass flips `asset_type` to `video`
 — each pass falls back to existing values for fields it doesn't carry, so nothing is
 erased.
+
+---
+
+## Multilingual services (Myanmar & Tedim)
+
+Three languages are supported. Language is chosen on the intake form and **locked per session** (like `music_source`).
+
+| Language | Code | Bible | TTS voice | LLM | Hymns |
+|----------|------|-------|-----------|-----|-------|
+| English | `en` | BSB (bundled) | `en-US-AriaNeural` / `en-US-GuyNeural` | OpenRouter (`LLM_MODEL`) | Open Hymnal (instrumental/sung) |
+| Myanmar | `my` | Judson 1835 (bundled) | `facebook/mms-tts-mya` via local MMS-TTS | OpenRouter (`LLM_MODEL_MY`) | 852-song dalsuum/myanmar-hymns — sung via Suno customMode, cached |
+| Tedim (Zolai) | `td` | Lai Siangtho 1932 (bundled) | `facebook/mms-tts-ctd` via local MMS-TTS | local Ollama (`OLLAMA_MODEL_TD`) | ZBC Labu Lui (~470 hymns) — YouTube embed → Suno → instrumental |
+
+Myanmar and Tedim server narration use the local `/tts/speak` MMS VITS route when `narration_mode=edge_tts`; this retires the old Filipino Edge TTS Tedim approximation and avoids English-biased voices skipping Burmese script. Burmese input to MMS-TTS is Myanmar Unicode only; the route rejects likely legacy-encoded Burmese and never converts text into legacy encoding.
+
+### How language flows through the pipeline
+
+```
+IntakeForm.vue  ──language: 'my'|'td'──▶  POST /service/{token}/intake
+                                           │  ServiceController validates in:en,my,td
+                                           │  locks it on service_sessions.language
+                                           ▼
+                               DispatchServiceJob → Redis ai:intake JSON {language}
+                                           │
+                                           ▼
+               tasks.orchestrate ── language threads into every consumer:
+                 ├─ llm_engine.*        prompts pinned to the service language
+                 ├─ bible_api.resolve(ref, lang)  → Judson 1835 / Lai Siangtho 1932
+                 ├─ get_strategy(src, language)   → Myanmar / Tedim hymn strategy
+                 └─ narration voice     → MMS-TTS mya / ctd when enabled
+```
+
+Scripture references stay English internally (`"Psalm 23:1-4"`) — they're worker contract, not
+worshipper-facing text. `bible_api` parses them against a canonical 66-book index and rewrites
+the on-screen heading to the translation's own book name (ဆာလံကျမ်း / Late 23…).
+
+### Myanmar LLM service (`workers/api.py` → `:8002`)
+
+Mirrors the Tedim service. [BurmeseLlmService.php](backend/app/Services/BurmeseLlmService.php)
+calls port 8002 (`BURMESE_LLM_URL`). Scripture is an exact Judson 1835 corpus lookup; prose
+is Ollama `burmese-myanmar` translation (Redis db 3 cache, 30-day TTL).
+
+| Endpoint | Purpose |
+|----------|---------|
+| `POST /burmese/translate` | Translate English prose → Burmese (Myanmar Unicode) via Ollama. |
+| `POST /burmese/generate` | Free-form Burmese devotional prose generation. |
+| `GET /burmese/verse?ref=John+3:16` | Exact Judson 1835 verse — no LLM, no network. |
+
+Post-generation localization pipeline (triggered by asset-ready webhook after the 4th text segment):
+
+```
+WebhookController::assetReady (language='my') → LocalizeServiceToBurmese::dispatch($session)
+    → BurmeseLlmService::verseToBurmese()     → GET :8002/burmese/verse   (corpus, no LLM)
+    → BurmeseLlmService::translateToBurmese() → POST :8002/burmese/translate (Ollama, para-by-para)
+    → service_assets.burmese_text filled, burmese_status = 'ready'
+```
+
+### Tedim LLM service (`workers/api.py` → `:8001`)
+
+| Endpoint | Purpose |
+|----------|---------|
+| `POST /tedim/translate` | Translate English prose → Tedim (Zolai) via Ollama. Redis db 2 cache, 30-day TTL. |
+| `POST /tedim/generate` | Free-form Tedim devotional prose generation. |
+| `GET /tedim/verse?ref=John+3:16` | Exact Lai Siangtho 1932 verse — no LLM, no network. |
+| `GET /health` | Liveness check (shared by both language routers). |
+
+Post-generation localization pipeline:
+
+```
+WebhookController::assetReady (language='td') → LocalizeServiceToTedim::dispatch($session)
+    → TedimLlmService::verseToTedim()      → GET  :8001/tedim/verse    (corpus lookup, no LLM)
+    → TedimLlmService::translateToTedim()  → POST :8001/tedim/translate (Ollama, para-by-para)
+    → service_assets.tedim_text filled, tedim_status = 'ready'
+```
+
+**Concurrency:** a single `asyncio.Semaphore(1)` gate in each router ensures only one Ollama inference runs at a time — important on the shared ARM/OCI box where Gunicorn, Redis, MySQL, and Celery compete for the same CPUs.
+
+### Initial setup (one-time)
+
+```bash
+# 1. Install Ollama
+sudo snap install ollama
+
+# 2. Add swap before pulling (prevents OOM on ≤4 GB servers)
+sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile
+sudo mkswap /swapfile && sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+
+# 3. Pull the base model and build the custom models
+ollama pull llama3.2:1b          # 1b for ≤4 GB RAM; use 3b on the 6 GB OCI box
+cp /opt/ai-church/Modelfile ~/Modelfile
+ollama create tedim-zolai -f ~/Modelfile
+cp /opt/ai-church/BurmeseModelfile ~/BurmeseModelfile
+ollama create burmese-myanmar -f ~/BurmeseModelfile
+
+# 4. Install Python deps and seed language data
+cd /opt/ai-church/workers
+source .venv/bin/activate && pip install -r requirements.txt
+python tools/seed_language_data.py        # Judson 1835 + Tedim 1932 Bibles + Myanmar hymns
+python tools/seed_tedim_hymns.py          # ZBC Labu Lui Tedim hymnal (~470 entries, polite delay)
+python tools/seed_tedim_midi.py           # optional: instrumental fallbacks (fluidsynth + ffmpeg)
+
+# 5. Start the language APIs (two processes at different ports)
+uvicorn api:app --host 127.0.0.1 --port 8001 --workers 1   # Tedim
+uvicorn api:app --host 127.0.0.1 --port 8002 --workers 1   # Burmese
+
+# 6. In production, install the systemd units
+sudo cp /opt/ai-church/aivc-tedim-api.service /etc/systemd/system/
+sudo cp /opt/ai-church/aivc-burmese-api.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now aivc-tedim-api aivc-burmese-api
+```
+
+> **Upgrading the Tedim model:** change `OLLAMA_MODEL_TD` in `workers/.env`, then `sudo systemctl restart aivc-tedim-api`.
+> **Upgrading the Burmese model:** change `OLLAMA_MODEL_MY`, then `sudo systemctl restart aivc-burmese-api`.
+> No code changes needed in either case.
+
+### Known gaps before production
+
+1. **Crisis intercept is English-keyword based** — a Burmese or Tedim prayer won't trip it. Extend `CrisisInterceptService` with Burmese and Tedim terms before promoting those language tabs.
+2. **Classifier guardrail** (`classifier.review`) reviews non-English text with an English-prompted model — spot-check its behavior on Burmese and Tedim sermons. LLM quality for these languages depends heavily on the selected model; use `LLM_MODEL_MY` and `LLM_MODEL_TD` to route to stronger multilingual models without touching the English path.
+3. **ZBC Labu Lui licensing** — `seed_tedim_hymns.py` collects the hymnal for your deployment. The generated `data/hymns_td.json` carries a `license_note`; confirm permission with ZBC / labusaal.com before production.
+4. **Player segment titles** (e.g. "Opening Prayer") are still English — the language is available on `GET /service/{token}` once `$session->language` is exposed there.
+5. **Suno Burmese-vocal quality** varies by model version. If a render is poor, delete `hymns_my/<slug>.mp3` from storage and the next service re-renders it.
 
 ---
 
@@ -274,13 +428,23 @@ and the worshipper still gets every segment as text.
     Defaults to the `OPENROUTER_*` LLM credentials; see the `KOKORO_*` env vars.
   - `off` — segments stay as silent text.
 
-  In a server-voice mode (`openai`/`kokoro`) the player waits for each segment's mp3 to
-  land, then plays it — the browser Web Speech voice is used **only** in `browser` mode,
-  never as a fallback for the realistic voices. Within a stage the player still falls
-  back through **server video → server audio → browser speech** based on what's present.
+  In a server-voice mode (`openai`/`kokoro`/`edge_tts`) the player waits for each
+  segment's audio to land, then plays it. Browser Web Speech is used only when a
+  matching browser voice exists; Myanmar and Tedim never fall back to an English
+  browser voice, because that skips or mangles their words. For Myanmar/Tedim,
+  choose `narration_mode=edge_tts`; the worker routes those languages to local
+  MMS-TTS (`facebook/mms-tts-mya` / `facebook/mms-tts-ctd`) through `MMS_TTS_URL`.
+  OpenAI/Kokoro narration is skipped for Myanmar/Tedim.
 - **Avatar** — [avatar.py](workers/avatar.py) renders a HeyGen talking-head of the
   spoken segments (submit → poll → store → URL). Requires `HEYGEN_API_KEY` +
-  `HEYGEN_AVATAR_ID` + `HEYGEN_VOICE_ID`. **Stub-level** in the current build.
+  `HEYGEN_AVATAR_ID` + `HEYGEN_VOICE_ID`. Can be toggled without touching env vars via
+  the `avatar_enabled` admin setting. **Stub-level** in the current build.
+
+**Presenter gender pairing.** Each worshipper has a `presenter_gender` preference
+(`female`/`male`, default `female`) set in their profile and locked onto the session at
+start. The sermon uses the chosen gender; all other spoken segments use the opposite
+voice — so the preacher and the liturgical support voice are always a matched pair. The
+admin can override `presenter_gender` per user in the admin console.
 
 > See the project memory notes for the known-good local narration setup (browser speech
 > works out of the box; the server S3 path needs credits + storage).
@@ -328,12 +492,13 @@ Approval and deletion happen in the admin console.
 - **Dashboard** — sessions, worship-time totals, donations, intercept counts, and prayer-request counts (total + today).
 - **Services** — list + **retry** a failed/stuck service (clears existing assets first so segment count visibly drops to zero, confirming regeneration is in progress) + **delete**.
 - **Testimonies** — approve / delete (moderation queue); each entry shows the user's custom mood words so the moderator has context.
-- **Users** — list + grant/revoke admin + **block/unblock** + **delete**.
+- **Users** — list + grant/revoke admin + **block/unblock** + **delete** + set **presenter gender** (`female`/`male`).
 - **Donors** — donation rollups.
 - **Prayer requests** — paginated log of prayer-request intakes visible to admins.
 - **Settings** — global service config persisted in the `settings` table and threaded
   onto each job: `narration_mode` (`off`/`browser`/`openai`/`kokoro`), `music_reuse`
-  (the Suno pool toggle), and `storage_backend` (`local` vs `s3` for generated audio).
+  (the Suno pool toggle), `storage_backend` (`local` vs `s3` for generated audio), and
+  `avatar_enabled` (toggle HeyGen avatar rendering on/off without touching env vars).
   Plus the worshipper-facing **intake options** an admin curates without a redeploy:
   the **moods** offered at intake (add/remove — a new mood flows through the whole
   pipeline: the prayer/sermon tone, the music prompt, and hymn matching), which
@@ -341,6 +506,12 @@ Approval and deletion happen in the admin console.
   at least one on), and whether **scheduling** is offered. These are served to the
   intake form via the public [`GET /config`](#public).
 - **Export** — CSV of `donations` | `users` | `testimonies`.
+- **Voice Studio** — in-browser TTS training-data recorder. Displays sentences from the
+  Tedim (1,500) and Burmese (1,500) bible corpora one at a time; click **Record**, speak,
+  review playback, then **Accept**. The server converts each clip to 16 kHz mono WAV via
+  ffmpeg and stores it under `storage/app/voice-studio/{lang}/`. When ready, **Export
+  Dataset** downloads a zip with `metadata.csv` + `wavs/` — the exact format expected by
+  the [MMS-VITS fine-tuning guide](TRAIN_CUSTOM_VOICE.md) for Colab training.
 
 ---
 
@@ -397,6 +568,11 @@ set -a; . ./.env; set +a
 #   Sung recordings + lyrics are plain downloads; the instrumental render additionally
 #   needs fluidsynth + a soundfont + ffmpeg (skipped with a note if absent).
 python seed_hymns.py
+
+#   Seed language data (required for Myanmar/Tedim language services):
+python tools/seed_language_data.py        # Judson 1835 + Tedim 1932 Bibles + Myanmar hymns
+python tools/seed_tedim_hymns.py          # ZBC Labu Lui Tedim hymnal (~470 entries)
+python tools/seed_tedim_midi.py           # optional: Tedim instrumental fallbacks
 
 #   3a. Bridge consumer (Redis → Celery)
 python bridge.py
@@ -455,15 +631,37 @@ Those four are version-controlled as **system-level** units in
 
 | Unit | Process |
 |------|---------|
-| [`aivc-queue.service`](.systemd/prod/aivc-queue.service) | Laravel `queue:work` (runs `DispatchServiceJob`) |
+| [`aivc-queue.service`](.systemd/prod/aivc-queue.service) | Laravel `queue:work` (runs `DispatchServiceJob`, `LocalizeServiceToTedim`) |
 | [`aivc-scheduler.service`](.systemd/prod/aivc-scheduler.service) | Laravel `schedule:work` (releases due services + reminder mail) |
-| [`aivc-workers.service`](.systemd/prod/aivc-workers.service) | Celery workers (sermon · music · avatar · narration) |
+| [`aivc-workers.service`](.systemd/prod/aivc-workers.service) | Celery workers (sermon · music · avatar · narration · tedim-localize) |
 | [`aivc-bridge.service`](.systemd/prod/aivc-bridge.service) | bridge consumer (`ai:intake` → Celery) |
+| [`aivc-tedim-api.service`](aivc-tedim-api.service) | FastAPI Tedim LLM service (Uvicorn, port 8001) |
+| [`aivc-burmese-api.service`](aivc-burmese-api.service) | FastAPI Burmese LLM service (Uvicorn, port 8002) |
 
 ```bash
 # on the droplet, once the units are copied to /etc/systemd/system:
-sudo systemctl enable --now aivc-queue aivc-scheduler aivc-workers aivc-bridge
-sudo systemctl status  aivc-queue aivc-scheduler aivc-workers aivc-bridge --no-pager
+sudo systemctl enable --now aivc-queue aivc-scheduler aivc-workers aivc-bridge aivc-tedim-api aivc-burmese-api
+sudo systemctl status  aivc-queue aivc-scheduler aivc-workers aivc-bridge aivc-tedim-api aivc-burmese-api --no-pager
+
+# After worker/backend code or prompt changes, restart the services that load code:
+sudo systemctl restart aivc-workers aivc-bridge aivc-queue aivc-tedim-api aivc-burmese-api
+sudo systemctl status  aivc-workers aivc-bridge aivc-queue aivc-tedim-api aivc-burmese-api --no-pager
+
+# After changing OLLAMA_MODEL_TD in workers/.env:
+sudo systemctl restart aivc-tedim-api
+
+# After changing OLLAMA_MODEL_MY in workers/.env:
+sudo systemctl restart aivc-burmese-api
+```
+
+For local media storage, Celery must be able to write into Laravel's served storage tree. The production worker unit should run as `User=simon` and `Group=www-data`, and the storage directory should be group-writable/setgid:
+
+```bash
+sudo chown -R simon:www-data /opt/ai-church/backend/storage/app/public
+sudo find /opt/ai-church/backend/storage/app/public -type d -exec chmod 2775 {} \;
+sudo find /opt/ai-church/backend/storage/app/public -type f -exec chmod 664 {} \;
+sudo systemctl daemon-reload
+sudo systemctl restart aivc-workers
 ```
 
 The units assume `/opt/ai-church` and the `simon` user; if your app path or user differ,
@@ -488,8 +686,10 @@ config caching) in a troubleshooting table.
 | `APP_KEY`, `APP_NAME`, `APP_URL` | Standard Laravel. `APP_NAME` affects the Redis prefix — see the trap above. |
 | `DB_*` | MySQL connection (`DB_DATABASE=ai_church` by default). |
 | `REDIS_HOST` / `REDIS_PORT` / `REDIS_PREFIX` | Queue + bus. **Keep `REDIS_PREFIX` empty.** |
-| `QUEUE_CONNECTION` | `redis` (so `DispatchServiceJob` runs via `queue:work`). |
+| `QUEUE_CONNECTION` | `redis` (so `DispatchServiceJob` and `LocalizeServiceToTedim` run via `queue:work`). |
 | `WORKER_WEBHOOK_SECRET` | Shared secret the workers send as `X-Worker-Secret`. Must match the workers' value. |
+| `TEDIM_LLM_URL` | Base URL of the local Tedim FastAPI service (default `http://127.0.0.1:8001`). Must match `workers/.env`. |
+| `BURMESE_LLM_URL` | Base URL of the local Burmese FastAPI service (default `http://127.0.0.1:8002`). Must match `workers/.env`. |
 | `STRIPE_KEY` / `STRIPE_SECRET` / `STRIPE_WEBHOOK_SECRET` / `STRIPE_CURRENCY` | Offering. `STRIPE_WEBHOOK_SECRET` is the `whsec_…` from `stripe listen`. |
 | `MAIL_MAILER` / `MAIL_HOST` / `MAIL_PORT` / … / `MAIL_FROM_*` | Scheduled-service reminder mail. Use `MAIL_MAILER=log` in dev (writes to `storage/logs/laravel.log`); `smtp` to deliver. |
 | `FRONTEND_URL` | SPA origin used for links in outbound mail (the backend is a different origin from the Vite server). |
@@ -500,7 +700,23 @@ config caching) in a troubleshooting table.
 | Var | Purpose |
 |-----|---------|
 | `REDIS_URL` | Celery broker/backend + the `ai:intake` list. |
-| `OPENROUTER_API_KEY` / `OPENROUTER_BASE_URL` / `LLM_MODEL` | The LLM. |
+| `OPENROUTER_API_KEY` / `OPENROUTER_BASE_URL` / `LLM_MODEL` | Default OpenAI-compatible chat model for generation. |
+| `LLM_MODEL_MY` | Myanmar-specific model override for OpenRouter (e.g. `WYNN747/Burmese-GPT`). Falls back to `LLM_MODEL` if unset. |
+| `LLM_MODEL_TD` | Tedim-specific model override for OpenRouter. Falls back to `LLM_MODEL` if unset (note: low-resource language — a multilingual model is recommended). |
+| `TEDIM_LLM_URL` | Base URL of the local Tedim FastAPI service (default `http://127.0.0.1:8001`). Must match in both `workers/.env` and `backend/.env`. |
+| `BURMESE_LLM_URL` | Base URL of the local Burmese FastAPI service (default `http://127.0.0.1:8002`). Must match in both `workers/.env` and `backend/.env`. |
+| `OLLAMA_MODEL_TD` | Ollama model name for Tedim (default `tedim-zolai`). Change to a fine-tuned GGUF name without any code change. |
+| `OLLAMA_MODEL_MY` | Ollama model name for Burmese (default `burmese-myanmar`). |
+| `OLLAMA_URL` | Ollama REST endpoint (default `http://127.0.0.1:11434/api/generate`). |
+| `MMS_TTS_URL` | Local MMS-TTS base URL used for Myanmar/Tedim narration (default `http://127.0.0.1:8001`). |
+| `MMS_TTS_MODEL_TD` / `MMS_TTS_MODEL_MY` | Native VITS checkpoints for Tedim/Burmese narration (defaults `facebook/mms-tts-ctd` / `facebook/mms-tts-mya`). |
+| `MMS_TTS_SEED` | Pinned VITS seed for reproducible narration (default `42`). |
+| `EDGE_TTS_VOICE_MY` / `EDGE_TTS_VOICE_TD` | Legacy Edge TTS voice overrides. English still uses Edge voices; Myanmar/Tedim now prefer MMS-TTS. |
+| `BIBLE_DATA_FILE_MY` | Override the bundled Judson 1835 Burmese Bible with another same-schema translation. |
+| `BIBLE_DATA_FILE_TD` | Override the bundled Lai Siangtho 1932 Tedim Bible. |
+| `SUNO_MY_STYLE` | Suno style prompt for Myanmar hymn rendering (default: `traditional Burmese hymn`). |
+| `SUNO_TD_STYLE` | Suno style prompt for Tedim hymn rendering (default: `Zomi choir`). |
+| `SUNO_CUSTOM_MAX_LYRICS` | Maximum lyric characters sent to Suno customMode (default `2800`). |
 | `LARAVEL_WEBHOOK_URL` | Where finished assets are posted (e.g. `http://localhost:8000/api/internal/asset-ready`). |
 | `WORKER_WEBHOOK_SECRET` | Must match the backend's. |
 | `SUNO_API_KEY` / `SUNO_API_URL` | Suno music generation (only if `music_source=suno`). |
@@ -547,11 +763,12 @@ All routes are under `/api`. Authenticated routes use a Sanctum bearer token.
 | `POST` | `/logout` | Revoke the current token. |
 | `GET` | `/me` | Current user. |
 | `PATCH` | `/me/music-source` | Set `hymn_sung` \| `hymn` \| `suno` \| `youtube`. |
+| `PATCH` | `/me/presenter-gender` | Set `female` \| `male`. Locked onto the next session at start. |
 | `PATCH` | `/me/email` | Update email address. |
 | `POST` | `/me/change-password` | Change password. |
 | `GET` | `/me/services` | List the current user's past services. |
 | `POST` | `/service/start` | Create a session (locks music source). |
-| `POST` | `/service/{token}/intake` | Submit mood + prayer (+ optional `scheduled_at`). Runs the crisis gate. |
+| `POST` | `/service/{token}/intake` | Submit mood + prayer + `language` (`en`/`my`/`td`, default `en`) + optional `scheduled_at`. Runs the crisis gate. |
 | `GET` | `/service/{token}` | Poll session + assets (player fallback to WS). |
 | `POST` | `/service/{token}/offering` | Open a Stripe PaymentIntent. |
 | `GET` | `/testimonies` | Approved testimony wall. |
@@ -571,11 +788,12 @@ All routes are under `/api`. Authenticated routes use a Sanctum bearer token.
 | `GET` | `/admin/users` | List users. |
 | `PATCH` | `/admin/users/{user}/admin` | Grant/revoke admin. |
 | `PATCH` | `/admin/users/{user}/block` | Block/unblock a user. |
+| `PATCH` | `/admin/users/{user}/presenter-gender` | Set presenter gender (`male`/`female`) for a user. |
 | `DELETE` | `/admin/users/{user}` | Delete a user and their data. |
 | `GET` | `/admin/donors` | Donation rollups. |
 | `GET` | `/admin/prayer-requests` | Paginated log of prayer-request intakes. |
-| `GET` | `/admin/settings` | Read global settings (narration mode, music reuse, storage backend, moods, music sources, scheduling). |
-| `PATCH` | `/admin/settings` | Update any of `narration_mode` / `music_reuse` / `storage_backend` / `moods` / `music_sources` / `scheduling_enabled`. |
+| `GET` | `/admin/settings` | Read global settings (narration mode, music reuse, storage backend, avatar enabled, moods, music sources, scheduling). |
+| `PATCH` | `/admin/settings` | Update any of `narration_mode` / `music_reuse` / `storage_backend` / `avatar_enabled` / `moods` / `music_sources` / `scheduling_enabled`. |
 | `GET` | `/admin/export/{type}` | CSV: `donations` \| `users` \| `testimonies`. |
 
 ---
@@ -594,7 +812,21 @@ All routes are under `/api`. Authenticated routes use a Sanctum bearer token.
 - **Phase 6 — Hardening:** security headers (HSTS/CSP/X-Frame-Options), rate limiting on
   auth/intake/testimony, user blocking + deletion, custom mood free-text, prayer-request
   admin view, email-link session resume, service deletion + confirmation notifications — **DONE**
+- **Phase 7 — Multilingual:** Myanmar (`my`) and Tedim (`td`) language selection, bundled
+  Judson 1835 (Myanmar) and Lai Siangtho 1932 (Tedim) Bible corpora, language-specific
+  narration voices, local Ollama LLM services (FastAPI + `tedim-zolai` + `burmese-myanmar`
+  models), post-generation `LocalizeServiceToTedim` and `LocalizeServiceToBurmese` jobs,
+  Myanmar 852-hymn library (Suno customMode), Tedim ZBC Labu Lui hymnal (YouTube embed →
+  Suno → instrumental), seeder tools (`seed_language_data.py`, `seed_tedim_hymns.py`,
+  `seed_tedim_midi.py`) — **DONE**
+- **Phase 8 — Presenter UX:** presenter gender selection (`female`/`male`) per worshipper,
+  locked per session, with sermon/support voice pairing; `avatar_enabled` admin toggle;
+  `welcome` segment added to the segment enum — **DONE**
 
 **Known gaps / next steps:** real WebSocket push (Reverb/Echo wiring is stubbed; polling
-works today), HeyGen avatar beyond stub, a production-grade crisis classifier (vs. the
-illustrative keyword list), and rights for a non-public-domain Bible translation.
+works today), HeyGen avatar beyond stub, a production-grade crisis classifier extended to
+Burmese and Tedim keywords, rights for a non-public-domain Bible translation, fine-tuned
+Tedim GGUF (current `tedim-zolai` uses `llama3.2:1b` as base — quality improves
+significantly with a Tedim-corpus fine-tune on a larger model), a Vue bilingual segment
+component to surface `tedim_text` / `burmese_text` alongside English in the service
+player, and ZBC Labu Lui licensing confirmation before production.

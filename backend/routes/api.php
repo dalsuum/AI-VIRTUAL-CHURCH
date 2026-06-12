@@ -6,6 +6,7 @@ use App\Http\Controllers\ConfigController;
 use App\Http\Controllers\OfferingController;
 use App\Http\Controllers\ServiceController;
 use App\Http\Controllers\TestimonyController;
+use App\Http\Controllers\VoiceStudioController;
 use App\Http\Controllers\WebhookController;
 use Illuminate\Support\Facades\Route;
 
@@ -80,5 +81,12 @@ Route::middleware('auth:sanctum')->group(function () {
 
         // CSV report export: donations | users | testimonies
         Route::get('/export/{type}', [AdminController::class, 'export']);
+
+        // Voice Studio — record custom TTS training data
+        Route::get('/voice-studio/script/{lang}',           [VoiceStudioController::class, 'script']);
+        Route::get('/voice-studio/progress/{lang}',         [VoiceStudioController::class, 'progress']);
+        Route::post('/voice-studio/recording',              [VoiceStudioController::class, 'store']);
+        Route::get('/voice-studio/export/{lang}',           [VoiceStudioController::class, 'export']);
+        Route::delete('/voice-studio/recording/{lang}/{id}',[VoiceStudioController::class, 'destroy']);
     });
 });

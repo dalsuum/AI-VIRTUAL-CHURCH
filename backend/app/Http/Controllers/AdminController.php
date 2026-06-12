@@ -214,7 +214,7 @@ class AdminController extends Controller
             ->withMax('sessions', 'created_at')
             ->latest()
             ->limit(200)
-            ->get(['id', 'name', 'email', 'is_admin', 'is_blocked', 'music_source', 'created_at']);
+            ->get(['id', 'name', 'email', 'is_admin', 'is_blocked', 'music_source', 'presenter_gender', 'created_at']);
 
         $userIds = $users->pluck('id')->all();
         $customMoods  = $this->allCustomMoodsByUser($userIds);
@@ -232,7 +232,8 @@ class AdminController extends Controller
                     'is_admin'     => $u->is_admin,
                     'is_blocked'   => $u->is_blocked,
                     'is_guest'     => $isGuest,
-                    'music_source' => $u->music_source,
+                    'music_source'     => $u->music_source,
+                    'presenter_gender' => $u->presenter_gender ?? 'female',
                     'visits'       => $u->sessions_count,
                     'last_seen'    => $u->sessions_max_created_at,
                     'created_at'   => $u->created_at,
@@ -424,6 +425,8 @@ class AdminController extends Controller
             'scheduling_enabled' => ['sometimes', 'boolean'],
             // The music source pre-selected in the intake form.
             'default_music_source' => ['sometimes', 'string', 'in:' . implode(',', Setting::MUSIC_SOURCES)],
+            // Toggle avatar video rendering on/off without touching env vars.
+            'avatar_enabled'      => ['sometimes', 'boolean'],
         ]);
 
         if (array_key_exists('narration_mode', $data)) {
@@ -455,6 +458,9 @@ class AdminController extends Controller
         if (array_key_exists('default_music_source', $data)) {
             Setting::set('default_music_source', $data['default_music_source']);
         }
+        if (array_key_exists('avatar_enabled', $data)) {
+            Setting::set('avatar_enabled', $data['avatar_enabled'] ? '1' : '0');
+        }
 
         return response()->json(['ok' => true] + $this->settingsPayload());
     }
@@ -467,6 +473,7 @@ class AdminController extends Controller
             'edge_tts_voice'     => Setting::get('edge_tts_voice', 'en-US-AriaNeural'),
             'music_reuse'        => Setting::get('music_reuse', '1') === '1',
             'storage_backend'    => Setting::get('storage_backend', 'local'),
+            'avatar_enabled'     => Setting::get('avatar_enabled', '1') === '1',
             'moods'                => Setting::moods(),
             'music_sources'        => Setting::enabledMusicSources(),
             'scheduling_enabled'   => Setting::schedulingEnabled(),
@@ -485,6 +492,15 @@ class AdminController extends Controller
         $user->update(['is_blocked' => $data['is_blocked']]);
 
         return response()->json(['ok' => true, 'is_blocked' => $user->is_blocked]);
+    }
+
+    /** Set the presenter gender (avatar + voice pair) for a specific user. */
+    public function updatePresenterGender(Request $request, User $user): JsonResponse
+    {
+        $data = $request->validate(['presenter_gender' => ['required', 'in:male,female']]);
+        $user->update($data);
+
+        return response()->json(['ok' => true, 'presenter_gender' => $user->presenter_gender]);
     }
 
     /** Delete a user and all their data. Guards against self-deletion and last-admin removal. */

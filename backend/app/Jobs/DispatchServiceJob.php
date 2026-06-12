@@ -40,6 +40,7 @@ class DispatchServiceJob implements ShouldQueue
             // the worker to synthesize TTS audio; 'browser'/'off' leave it to the
             // client (browser speech) or silent, so the worker skips narration.
             'narration_mode'  => Setting::get('narration_mode', 'browser'),
+            'avatar_enabled'  => Setting::get('avatar_enabled', '1') === '1',
             'edge_tts_voice'  => Setting::get('edge_tts_voice', 'en-US-AriaNeural'),
             // Where generated audio is stored (local dir vs S3). null lets the worker
             // keep its own env default.
@@ -52,6 +53,7 @@ class DispatchServiceJob implements ShouldQueue
             // Only hand the worker a name when the worshipper actually gave one.
             // Anonymous guests carry a display-only placeholder name that must never
             // appear in the spoken service, so we send null and the worker omits it.
+            'presenter_gender' => $session->presenter_gender ?? 'female',
             'user_name'    => $session->user->name_provided ? $session->user->name : null,
             // Registered worshippers (real email) get a personalized welcome-back
             // greeting; guests use a throwaway @guest.local address and skip it.

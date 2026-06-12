@@ -22,10 +22,11 @@ class ServiceController extends Controller
         $user = $request->user();
 
         $session = ServiceSession::create([
-            'user_id'       => $user->id,
-            'session_token' => Str::random(64),
-            'status'        => 'initializing',
-            'music_source'  => $user->music_source,
+            'user_id'          => $user->id,
+            'session_token'    => Str::random(64),
+            'status'           => 'initializing',
+            'music_source'     => $user->music_source,
+            'presenter_gender' => $user->presenter_gender ?? 'female',
         ]);
 
         return response()->json([

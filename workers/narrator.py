@@ -43,14 +43,18 @@ import storage
 _MAX_CHARS = int(os.getenv("TTS_MAX_CHARS", "3500"))
 
 
-def _providers() -> dict[str, dict]:
-    """The API-based voice providers keyed by narration_mode."""
+def _providers(gender: str = "female") -> dict[str, dict]:
+    """The API-based voice providers keyed by narration_mode.
+
+    Gender-specific voices are resolved via TTS_VOICE_MALE/FEMALE and
+    KOKORO_VOICE_MALE/FEMALE env vars, falling back to the bare TTS_VOICE/KOKORO_VOICE."""
+    suffix = gender.upper()
     return {
         "openai": {
             "api_key": os.getenv("TTS_API_KEY"),
             "base_url": os.getenv("TTS_BASE_URL", "https://api.openai.com/v1").rstrip("/"),
             "model": os.getenv("TTS_MODEL", "gpt-4o-mini-tts"),
-            "voice": os.getenv("TTS_VOICE", "onyx"),
+            "voice": os.getenv(f"TTS_VOICE_{suffix}") or os.getenv("TTS_VOICE", "onyx"),
             "fmt": os.getenv("TTS_FORMAT", "mp3"),
         },
         "kokoro": {
@@ -58,7 +62,7 @@ def _providers() -> dict[str, dict]:
             "base_url": (os.getenv("KOKORO_BASE_URL")
                          or os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")).rstrip("/"),
             "model": os.getenv("KOKORO_MODEL", "hexgrad/kokoro-82m"),
-            "voice": os.getenv("KOKORO_VOICE", "af_heart"),
+            "voice": os.getenv(f"KOKORO_VOICE_{suffix}") or os.getenv("KOKORO_VOICE", "af_heart"),
             "fmt": os.getenv("KOKORO_FORMAT") or os.getenv("TTS_FORMAT", "mp3"),
         },
     }
@@ -140,7 +144,7 @@ def _narrate_edge(text: str, voice: str) -> bytes:
     return b"".join(asyncio.run(_speak_edge(chunk, voice)) for chunk in parts if chunk)
 
 
-def narrate(session_token: str, segment: str, text: str, mode: str = "openai", voice: str = "") -> str:
+def narrate(session_token: str, segment: str, text: str, mode: str = "openai", voice: str = "", gender: str = "female") -> str:
     """Read `text` aloud with the `mode` provider, store the audio, and return a
     playable URL.
 
@@ -148,11 +152,14 @@ def narrate(session_token: str, segment: str, text: str, mode: str = "openai", v
     clean = _clean(text)
 
     if mode == "edge_tts":
-        resolved_voice = voice or os.getenv("EDGE_TTS_VOICE", "en-US-AriaNeural")
+        suffix = gender.upper()
+        resolved_voice = (voice
+                          or os.getenv(f"EDGE_TTS_VOICE_{suffix}")
+                          or os.getenv("EDGE_TTS_VOICE", "en-US-AriaNeural"))
         audio = _narrate_edge(clean, resolved_voice)
         fmt = "mp3"
     else:
-        cfg = _providers().get(mode)
+        cfg = _providers(gender=gender).get(mode)
         if not cfg or not cfg["api_key"]:
             raise RuntimeError(f"narration provider {mode!r} is not configured")
         audio = b"".join(_speak(chunk, cfg) for chunk in _chunks(clean) if chunk)

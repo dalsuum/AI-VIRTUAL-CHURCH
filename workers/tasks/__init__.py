@@ -95,22 +95,29 @@ def generate_text_segments(job: dict, plan: dict) -> None:
     # 'openai', 'kokoro', or 'edge_tts' — server generates audio. In 'browser'/'off'
     # the client handles (or skips) reading aloud, so we deliver text only.
     narration_mode = job.get("narration_mode")
-    narration_voice = job.get("edge_tts_voice", "en-US-AriaNeural")
-    # Narration must be voiced in the service's language. 'my': when the
-    # configured edge-tts voice isn't a my-MM one (the admin default is
-    # English), substitute the Burmese neural voice. 'td': edge-tts ships NO
-    # Tedim voice — narrating Tedim text with an English voice would be
-    # gibberish, so server TTS is skipped entirely unless the admin points
-    # EDGE_TTS_VOICE_TD at a voice they've judged acceptable. The text segments
-    # still display; the service runs read-along.
-    if language == "my" and not narration_voice.startswith("my-"):
-        narration_voice = os.getenv("EDGE_TTS_VOICE_MY", "my-MM-NilarNeural")
+    gender = job.get("presenter_gender", "female")
+    # 'td': edge-tts ships no Tedim voice — suppress server TTS unless the admin
+    # explicitly points EDGE_TTS_VOICE_TD at a voice they judge acceptable.
     td_voice = os.getenv("EDGE_TTS_VOICE_TD", "")
-    if language == "td":
-        narration_voice = td_voice
     want_audio = narration_mode in ("openai", "kokoro", "edge_tts") and narrator.is_enabled(narration_mode)
     if language == "td" and not td_voice:
         want_audio = False  # no Tedim TTS voice exists; read-along service
+
+    def _seg_gender(segment: str) -> str:
+        """Sermon uses the chosen presenter gender; all other segments use the opposite
+        so the preacher and the support voice are always a matched pair."""
+        return gender if segment == "sermon" else ("female" if gender == "male" else "male")
+
+    def _edge_voice(g: str) -> str:
+        import os as _os
+        # Language-specific voices take precedence over gender-based selection.
+        if language == "my":
+            return _os.getenv("EDGE_TTS_VOICE_MY", "my-MM-NilarNeural")
+        if language == "td":
+            return td_voice  # already confirmed non-empty before want_audio is True
+        suffix = g.upper()
+        default = "en-US-GuyNeural" if g == "male" else "en-US-AriaNeural"
+        return _os.getenv(f"EDGE_TTS_VOICE_{suffix}") or _os.getenv("EDGE_TTS_VOICE", default)
 
     # Scripture: model picks the reference, the bundled public-domain Bible supplies
     # the words. If resolution fails (unparseable/missing reference), still give the
@@ -136,7 +143,8 @@ def generate_text_segments(job: dict, plan: dict) -> None:
     _narrate_slot = 0
 
     if want_audio:
-        narrate.apply_async((token, "scripture", scripture_text or ref, narration_mode, narration_voice),
+        _sg = _seg_gender("scripture")
+        narrate.apply_async((token, "scripture", scripture_text or ref, narration_mode, _edge_voice(_sg), _sg),
                             countdown=_narrate_slot)
         _narrate_slot += _narrate_stagger
 
@@ -172,13 +180,14 @@ def generate_text_segments(job: dict, plan: dict) -> None:
         _post_asset(token, segment, asset_type="text", text_payload=text)
         # Optionally enrich the segment with a talking-head video. Only the spoken
         # segments get an avatar; scripture is shown as written, not performed.
-        if avatar.is_enabled():
-            render_avatar.delay(token, segment, text)
+        seg_gender = _seg_gender(segment)
+        if job.get("avatar_enabled", True) and avatar.is_enabled():
+            render_avatar.delay(token, segment, text, seg_gender)
         # Optionally read the segment aloud. Independent of the avatar: with TTS but
-        # no HeyGen the worshipper still hears the service; with both, the audio is a
+        # no D-ID/HeyGen the worshipper still hears the service; with both, the audio is a
         # standalone fallback to the spoken video.
         if want_audio:
-            narrate.apply_async((token, segment, text, narration_mode, narration_voice),
+            narrate.apply_async((token, segment, text, narration_mode, _edge_voice(seg_gender), seg_gender),
                                 countdown=_narrate_slot)
             _narrate_slot += _narrate_stagger
 
@@ -246,14 +255,14 @@ def generate_music(job: dict, plan: dict) -> None:
 
 
 @app.task(name="tasks.render_avatar")
-def render_avatar(session_token: str, segment: str, script: str) -> None:
-    """Render `script` as a HeyGen talking-head video and post it back as the
-    segment's video asset. The text asset was already delivered, so any failure
-    here just leaves the segment as text — never block or crash the service."""
+def render_avatar(session_token: str, segment: str, script: str, gender: str = "female") -> None:
+    """Render `script` as a talking-head video and post it back as the segment's video
+    asset. The text asset was already delivered, so any failure here just leaves the
+    segment as text — never block or crash the service."""
     if not avatar.is_enabled():
         return
     try:
-        video_url = avatar.render(session_token, segment, script)
+        video_url = avatar.render(session_token, segment, script, gender=gender)
     except Exception as exc:  # noqa: BLE001 — degrade gracefully to the text segment
         print(f"[avatar] render failed for {segment} ({session_token[:8]}…): {exc}", flush=True)
         return
@@ -261,7 +270,7 @@ def render_avatar(session_token: str, segment: str, script: str) -> None:
 
 
 @app.task(name="tasks.narrate", bind=True, max_retries=4, default_retry_delay=30)
-def narrate(self, session_token: str, segment: str, script: str, mode: str = "openai", voice: str = "") -> None:
+def narrate(self, session_token: str, segment: str, script: str, mode: str = "openai", voice: str = "", gender: str = "female") -> None:
     """Read `script` aloud with the `mode` voice provider and post it back as the
     segment's audio narration. The text asset was already delivered, so any failure
     here just leaves the segment without audio — never block or crash the service."""
@@ -269,7 +278,7 @@ def narrate(self, session_token: str, segment: str, script: str, mode: str = "op
     if not narrator.is_enabled(mode):
         return
     try:
-        audio_url = narrator.narrate(session_token, segment, script, mode, voice=voice)
+        audio_url = narrator.narrate(session_token, segment, script, mode, voice=voice, gender=gender)
     except _req.exceptions.HTTPError as exc:
         if exc.response is not None and exc.response.status_code == 429:
             # Back off and retry; countdown doubles each attempt (30 s, 60 s, 120 s, 240 s).

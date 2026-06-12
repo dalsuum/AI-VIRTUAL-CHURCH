@@ -200,4 +200,15 @@ class AuthController extends Controller
 
         return response()->json(['user' => $request->user()]);
     }
+
+    /** Let a logged-in user choose their presenter gender (male/female avatar+voice). */
+    public function updatePresenterGender(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'presenter_gender' => ['required', 'in:male,female'],
+        ]);
+        $request->user()->update($data);
+
+        return response()->json(['user' => $request->user()]);
+    }
 }

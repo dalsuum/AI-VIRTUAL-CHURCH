@@ -168,6 +168,7 @@ async function saveSetting(key, value, ok) {
 
 const setNarrationMode = (mode) => saveSetting("narration_mode", mode, "Narration voice updated.");
 const setMusicReuse = (on) => saveSetting("music_reuse", on, "Music reuse updated.");
+const setAvatarEnabled = (on) => saveSetting("avatar_enabled", on, "Avatar rendering updated.");
 const setStorageBackend = (backend) => saveSetting("storage_backend", backend, "Storage backend updated.");
 const setScheduling = (on) => saveSetting("scheduling_enabled", on, "Scheduling updated.");
 const setDefaultMusicSource = (src) => saveSetting("default_music_source", src, "Default music source updated.");
@@ -792,6 +793,38 @@ onMounted(() => { if (api.hasToken()) enter(); });
             >
               <strong>Always compose</strong>
               <span>Generate a brand-new song for every service.</span>
+            </button>
+          </div>
+          <p v-else class="setting-desc">Loading…</p>
+        </div>
+
+        <div class="setting-block">
+          <h2>Avatar videos</h2>
+          <p class="setting-desc">
+            Talking-head avatar videos (powered by D-ID) for the sermon, opening prayer,
+            and benediction. Disable when your D-ID subscription is inactive to fall back
+            to text and TTS narration without touching any config files.
+          </p>
+          <div v-if="settings" class="choice-row">
+            <button
+              type="button"
+              class="choice"
+              :class="{ active: settings.avatar_enabled === true }"
+              :disabled="savingSettings"
+              @click="setAvatarEnabled(true)"
+            >
+              <strong>Enabled</strong>
+              <span>Render talking-head videos via D-ID for each spoken segment.</span>
+            </button>
+            <button
+              type="button"
+              class="choice"
+              :class="{ active: settings.avatar_enabled === false }"
+              :disabled="savingSettings"
+              @click="setAvatarEnabled(false)"
+            >
+              <strong>Disabled</strong>
+              <span>Skip avatar rendering — segments stay as text and audio only.</span>
             </button>
           </div>
           <p v-else class="setting-desc">Loading…</p>

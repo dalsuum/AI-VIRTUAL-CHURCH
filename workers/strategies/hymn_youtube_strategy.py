@@ -28,8 +28,8 @@ class HymnYouTubeStrategy(MusicStrategy):
         # for grief vs. a jubilant one for gratitude). "vocal choir" keeps results
         # as sung performances rather than instrumental renders.
         mood_word = mood.lower().strip() if mood else ""
-        yt_query = f"{hymn['title']} hymn vocal choir {mood_word}".strip()
-        result = search_video(query=yt_query)
+        yt_query = f"english choir {hymn['title']} hymn vocal {mood_word} -instrumental".strip()
+        result = search_video(query=yt_query, category_id="10", english_only=True)
         return MusicResult(
             asset_type="youtube",
             provider_ref=result["video_id"],

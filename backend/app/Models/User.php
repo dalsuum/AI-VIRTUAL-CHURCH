@@ -11,7 +11,7 @@ class User extends Authenticatable
 {
     use HasApiTokens, Notifiable;
 
-    protected $fillable = ['name', 'name_provided', 'email', 'password', 'timezone', 'music_source', 'is_admin', 'is_blocked'];
+    protected $fillable = ['name', 'name_provided', 'email', 'password', 'timezone', 'music_source', 'presenter_gender', 'is_admin', 'is_blocked'];
     protected $hidden = ['password', 'remember_token'];
     protected $casts = [
         'email_verified_at' => 'datetime',

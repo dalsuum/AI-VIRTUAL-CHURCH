@@ -41,13 +41,20 @@ const stages = computed(() => {
     // message in YouTube mode. Embedded clips have no text body.
     const embed = s?.embeds?.[seg.key] || null;
     if (text || embed) {
+      // video may be a single URL or a JSON array of part URLs (long segments).
+      const rawVideo = s.videos?.[seg.key] || null;
+      let videoParts = null;
+      if (rawVideo) {
+        try { videoParts = JSON.parse(rawVideo); } catch { videoParts = [rawVideo]; }
+      }
       list.push({
         kind: "segment",
         key: seg.key,
         label: seg.label,
         text: text || "",
         embed,
-        video: s.videos?.[seg.key] || null,
+        videoParts,                          // array of part URLs, or null
+        video: videoParts?.[0] || null,      // first part for initial render
         audio: s.audios?.[seg.key] || null,
       });
     }
@@ -69,7 +76,15 @@ function prev() {
 }
 
 // A media stage that finished playing flows naturally into the next one.
+// For multi-part avatar videos, advance to the next part first.
 function onMediaEnded() {
+  const parts = current.value?.videoParts;
+  if (parts && videoPartIndex.value < parts.length - 1) {
+    videoPartIndex.value += 1;
+    nextTick(() => mediaEl.value?.play());
+    return;
+  }
+  videoPartIndex.value = 0;
   next();
 }
 
@@ -133,19 +148,22 @@ function stopNarration() {
   if (activeUtterance) {
     activeUtterance.onend = null;
     activeUtterance.onerror = null;
+    activeUtterance.onboundary = null;
     activeUtterance = null;
   }
   window.speechSynthesis.cancel();
   narrating.value = false;
+  highlightedWordIndex.value = -1;
 }
 
 // Speak `pieces` from index `i` onward, one after the next. Only the final
 // piece finishing counts as a natural end (and advances the service) — the
 // same contract <audio>/<video> have via @ended.
-function speakSequence(pieces, i) {
+function speakSequence(pieces, i, charOffset = 0) {
   if (i >= pieces.length) {
     activeUtterance = null;
     narrating.value = false;
+    highlightedWordIndex.value = -1;
     onMediaEnded();
     return;
   }
@@ -153,14 +171,19 @@ function speakSequence(pieces, i) {
   u.rate = 0.96;
   const voice = pickVoice();
   if (voice) u.voice = voice;
+  u.onboundary = (e) => {
+    if (e.name !== 'word' || activeUtterance !== u) return;
+    highlightedWordIndex.value = charToWordIndex(charOffset + e.charIndex);
+  };
   u.onend = () => {
     if (activeUtterance !== u) return; // stopped or replaced — don't continue
-    speakSequence(pieces, i + 1);
+    speakSequence(pieces, i + 1, charOffset + pieces[i].length + 1);
   };
   u.onerror = () => {
     if (activeUtterance !== u) return;
     activeUtterance = null;
     narrating.value = false;
+    highlightedWordIndex.value = -1;
   };
   activeUtterance = u;
   window.speechSynthesis.speak(u);
@@ -188,6 +211,55 @@ function toggleNarration() {
 // failure say *why* — and a tap on the bar recovers it.
 const mediaEl = ref(null);
 const mediaNote = ref("");
+const videoPartIndex = ref(0);
+const currentVideoSrc = computed(() => {
+  const parts = current.value?.videoParts;
+  if (!parts) return current.value?.video || null;
+  return parts[videoPartIndex.value] || null;
+});
+
+// --- Word highlighting ---------------------------------------------------
+const highlightedWordIndex = ref(-1);
+
+// Character start positions of every word in the current segment, used to
+// map a char offset (from onboundary or timeupdate) to a word index.
+const wordPositions = computed(() => {
+  const text = current.value?.text || '';
+  const positions = [];
+  const regex = /\S+/g;
+  let m;
+  while ((m = regex.exec(text)) !== null) positions.push(m.index);
+  return positions;
+});
+
+// Paragraphs split into words with global indices, for rendering spans.
+const paragraphs = computed(() => {
+  if (!current.value?.text) return [];
+  let idx = 0;
+  return current.value.text.split(/\n+/).filter(Boolean).map(para => ({
+    words: para.split(/\s+/).filter(Boolean).map(word => ({ word, idx: idx++ })),
+  }));
+});
+
+function charToWordIndex(charIndex) {
+  const pos = wordPositions.value;
+  let result = 0;
+  for (let i = 0; i < pos.length; i++) {
+    if (pos[i] <= charIndex) result = i;
+    else break;
+  }
+  return result;
+}
+
+function onMediaTimeUpdate() {
+  const el = mediaEl.value;
+  const total = wordPositions.value.length;
+  if (!el || !el.duration || !total) return;
+  highlightedWordIndex.value = Math.min(
+    Math.floor((el.currentTime / el.duration) * total),
+    total - 1,
+  );
+}
 
 // Map an HTMLMediaElement error code to plain words.
 function describeMediaError(el) {
@@ -224,15 +296,33 @@ async function playCurrentMedia() {
   }
 }
 
-// Read each spoken segment as it becomes active. The first stage may stay
-// silent until the worshipper interacts (browsers gate speech on a user
-// gesture); the Read-aloud button and Next/Previous paging both satisfy that.
+// Single watcher handles two distinct cases:
+//   1. Segment navigation (key changes): reset state and start appropriate audio.
+//   2. Late-arriving media on the same segment (video/audio goes null → URL):
+//      stop any browser speech fallback and switch to the media element.
 watch(
-  () => current.value?.key,
-  () => {
-    stopNarration();
-    if (usesBrowserSpeech.value) narrate(current.value.text);
-    else if (current.value?.audio || current.value?.video) playCurrentMedia();
+  () => ({
+    key:   current.value?.key,
+    video: current.value?.video,
+    audio: current.value?.audio,
+  }),
+  ({ key, video, audio }, prev) => {
+    const keyChanged = !prev || key !== prev.key;
+    if (keyChanged) {
+      highlightedWordIndex.value = -1;
+      videoPartIndex.value = 0;
+      stopNarration();
+      if (video || audio) playCurrentMedia();
+      else if (usesBrowserSpeech.value) narrate(current.value.text);
+    } else {
+      // Same segment — only act when a URL just appeared for the first time.
+      const newVideo = video && !prev.video;
+      const newAudio = audio && !prev.audio;
+      if (newVideo || newAudio) {
+        stopNarration();
+        playCurrentMedia();
+      }
+    }
   },
   { immediate: true },
 );
@@ -300,22 +390,22 @@ watch(stages, (list) => {
             v-if="current.video"
             ref="mediaEl"
             class="avatar"
-            :src="current.video"
-            autoplay
+            :src="currentVideoSrc"
             controls
             playsinline
             @ended="onMediaEnded"
             @error="onMediaError"
+            @timeupdate="onMediaTimeUpdate"
           ></video>
           <audio
             v-else-if="current.audio"
             ref="mediaEl"
             class="narration"
             :src="current.audio"
-            autoplay
             controls
             @ended="onMediaEnded"
             @error="onMediaError"
+            @timeupdate="onMediaTimeUpdate"
           ></audio>
           <p v-if="mediaNote && (current.audio || current.video)" class="media-note">{{ mediaNote }}</p>
           <button
@@ -326,7 +416,13 @@ watch(stages, (list) => {
           >
             {{ narrating ? "⏸ Stop reading" : "🔊 Read aloud" }}
           </button>
-          <p class="stage-text">{{ current.text }}</p>
+          <div class="stage-text">
+            <p v-for="(para, pi) in paragraphs" :key="pi">
+              <template v-for="({ word, idx }) in para.words" :key="idx">
+                <span :class="{ highlight: idx === highlightedWordIndex }">{{ word }}</span>{{ ' ' }}
+              </template>
+            </p>
+          </div>
         </template>
       </template>
 
@@ -408,7 +504,11 @@ watch(stages, (list) => {
   transition: border-color 0.12s ease, background 0.12s ease;
 }
 .read-aloud:hover { border-color: var(--primary); background: var(--primary-soft); }
-.stage-text { white-space: pre-wrap; line-height: 1.75; color: var(--text); margin: 0; font-size: 1.05rem; }
+.stage-text { line-height: 1.75; color: var(--text); margin: 0; font-size: 1.05rem; }
+.stage-text p { margin: 0 0 0.75rem; }
+.stage-text p:last-child { margin-bottom: 0; }
+.stage-text span { border-radius: 3px; transition: background 0.15s; }
+.stage-text span.highlight { background: rgba(99, 179, 237, 0.35); }
 
 .controls {
   position: sticky;

@@ -35,6 +35,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
     Route::patch('/me/email', [AuthController::class, 'updateEmail']);
     Route::patch('/me/music-source', [AuthController::class, 'updateMusicSource']);
+    Route::patch('/me/presenter-gender', [AuthController::class, 'updatePresenterGender']);
     Route::post('/me/change-password', [AuthController::class, 'changePassword']);
 
     Route::get('/me/services', [ServiceController::class, 'myServices']);
@@ -67,6 +68,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/users', [AdminController::class, 'users']);
         Route::patch('/users/{user}/admin', [AdminController::class, 'setAdmin']);
         Route::patch('/users/{user}/block', [AdminController::class, 'blockUser']);
+        Route::patch('/users/{user}/presenter-gender', [AdminController::class, 'updatePresenterGender']);
         Route::delete('/users/{user}', [AdminController::class, 'deleteUser']);
 
         Route::get('/donors', [AdminController::class, 'donors']);

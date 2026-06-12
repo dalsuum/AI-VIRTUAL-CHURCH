@@ -46,13 +46,28 @@ class MusicStrategy(ABC):
         raise NotImplementedError
 
 
-def get_strategy(music_source: str) -> MusicStrategy:
-    """Factory: resolve the user's preference string to a concrete strategy."""
+def get_strategy(music_source: str, language: str = "en") -> MusicStrategy:
+    """Factory: resolve the user's preference string to a concrete strategy.
+
+    `language` is the service language ('en' | 'my' | 'td'). Burmese services
+    route every hymn-flavored source to MyanmarHymnStrategy, and Tedim services
+    to TedimHymnStrategy — the English hymnal/recordings and the HymnSite
+    YouTube channel are all English-language material, so serving them inside a
+    non-English service would break the worship's language. Suno and
+    modern-worship YouTube remain language-neutral choices either way (the Suno
+    prompt and YouTube query are built from the intake plan, which the LLM writes
+    for the service's language)."""
+    from .hymn_my_strategy import MyanmarHymnStrategy
     from .hymn_strategy import HymnStrategy
+    from .tedim_hymn_strategy import TedimHymnStrategy
     from .hymn_youtube_strategy import HymnYouTubeStrategy
     from .suno_strategy import SunoStrategy
     from .youtube_strategy import YouTubeStrategy
 
+    if language == "my" and music_source in ("hymn_sung", "hymn", "hymn_youtube"):
+        return MyanmarHymnStrategy()  # mood-matched Burmese hymn, sung, lyrics on screen
+    if language == "td" and music_source in ("hymn_sung", "hymn", "hymn_youtube"):
+        return TedimHymnStrategy()  # ZBC Labu Lui hymn: YouTube embed or cached render
     if music_source == "suno":
         return SunoStrategy()
     if music_source == "youtube":

@@ -26,3 +26,7 @@ node_modules/
 
 # OS / editor
 .DS_Store
+
+# Generated/seeded language data (run workers/tools/seed_tedim_hymns.py at deploy)
+workers/data/hymns_td.json
+workers/tools/.labusaal-cache/

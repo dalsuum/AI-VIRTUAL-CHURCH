@@ -47,6 +47,11 @@ class ServiceController extends Controller
 
         $data = $request->validate([
             'mood'          => ['required', 'string', 'max:100'],
+            // Service language ('en' | 'my' | 'td'), chosen on the intake form's
+            // language tab. Locked per session like music_source; the worker keys
+            // the LLM output language, Bible translation, hymn library, and TTS
+            // voice off it.
+            'language'      => ['nullable', 'string', 'in:en,my,td'],
             // User-supplied single-word feeling, stored for admin review only.
             'custom_mood'   => ['nullable', 'string', 'max:50', 'regex:/^[A-Za-z]+$/'],
             'prayer_text'   => ['nullable', 'string', 'max:5000'],
@@ -56,6 +61,9 @@ class ServiceController extends Controller
             // account that still has a synthetic @guest.local address.
             'contact_email' => ['nullable', 'email', 'max:255'],
         ]);
+
+        // Lock the service language now, alongside the already-locked music source.
+        $session->update(['language' => $data['language'] ?? 'en']);
 
         // A future time is only honoured while scheduling is enabled; otherwise the
         // service begins now (the UI hides the option, this guards direct calls).

@@ -118,7 +118,41 @@ def _addressing(user_name: str | None) -> str:
     )
 
 
-def build_intake_plan(*, user_name: str | None, mood: str, prayer_text: str | None) -> dict:
+def _language_instruction(language: str) -> str:
+    """One system-prompt line fixing the output language of a spoken segment.
+
+    'my' services are conducted entirely in Burmese. The instruction pins the
+    script too — Myanmar Unicode only, never Zawgyi or romanization — because the
+    player renders with Unicode fonts (Padauk/Noto Sans Myanmar) and edge-tts's
+    my-MM voices expect Unicode text.
+
+    'td' services are conducted in Tedim Chin (Zolai / Zomi pau, Latin script).
+    The instruction anchors the model with the community's own Christian
+    register — Pasian (God), Topa (the Lord), Zeisu (Jesus) — the vocabulary of
+    the Lai Siangtho (1932) and the ZBC hymnal, which the scripture and hymn
+    segments already use."""
+    if language == "my":
+        return (
+            "Write your ENTIRE response in the Burmese (Myanmar) language, using "
+            "Myanmar Unicode script only (never Zawgyi, never romanized Burmese, "
+            "no English words). Use natural, reverent Burmese as spoken in a "
+            "Christian worship service."
+        )
+    if language == "td":
+        return (
+            "Write your ENTIRE response in the Tedim Chin language (Zolai / Zomi "
+            "pau), in its standard Latin orthography — no English sentences, no "
+            "Burmese script. Use the natural, reverent register of a Zomi "
+            "Christian worship service, with the community's established terms: "
+            "Pasian for God, Topa for the Lord, Zeisu for Jesus, Kha Siangtho "
+            "for the Holy Spirit, thungetna for prayer. Keep sentences short and "
+            "clear; if a precise Tedim word is uncertain, choose simpler Tedim "
+            "rather than borrowing English."
+        )
+    return ""
+
+
+def build_intake_plan(*, user_name: str | None, mood: str, prayer_text: str | None, language: str = "en") -> dict:
     """
     First pass: derive the service's spine from the user input.
     Returns scripture reference, a Suno music prompt, and a YouTube search query.
@@ -129,6 +163,24 @@ def build_intake_plan(*, user_name: str | None, mood: str, prayer_text: str | No
         "community. Avoid politics and fringe doctrine. Output ONLY valid JSON, no prose, "
         "no markdown fences."
     )
+    if language == "my":
+        # The scripture reference is part of the worker contract (bible_api parses
+        # English references and serves the Judson 1835 Burmese text), so it stays
+        # English; the music prompt and search queries face Burmese providers/users.
+        system += (
+            " This service is conducted in the Burmese (Myanmar) language. Keep "
+            "scripture_ref in ENGLISH format (e.g. 'Psalm 23:1-4'), but write "
+            "music_prompt for a Burmese-language worship song, and make music_query "
+            "and preaching_query searches for Burmese (Myanmar) Christian content."
+        )
+    elif language == "td":
+        system += (
+            " This service is conducted in the Tedim Chin (Zomi) language. Keep "
+            "scripture_ref in ENGLISH format (e.g. 'Psalm 23:1-4'), but write "
+            "music_prompt for a Tedim/Zomi-language worship song, and make "
+            "music_query and preaching_query searches for Zomi or Tedim Chin "
+            "Christian content."
+        )
     user = json.dumps({
         "user_name": user_name or "",
         "mood": mood,
@@ -145,7 +197,7 @@ def build_intake_plan(*, user_name: str | None, mood: str, prayer_text: str | No
     return json.loads(raw)
 
 
-def generate_welcome(*, user_name: str | None, mood: str) -> str:
+def generate_welcome(*, user_name: str | None, mood: str, language: str = "en") -> str:
     """
     A short "welcome back" greeting shown on the countdown screen while the rest of
     the service is still composing. Tuned to the feeling the worshipper chose, it is
@@ -159,16 +211,20 @@ def generate_welcome(*, user_name: str | None, mood: str) -> str:
         "encouragement if seeking or hopeful. Spoken cadence, one short paragraph, no "
         "headings, no scripture citation. Stay within mainstream Christian hope and grace."
     )
+    if language != "en":
+        system = f"{system} {_language_instruction(language)}"
     user = f"{_addressing(user_name)}\nFeeling they chose today: {mood}"
     return _strip_formatting(_complete(system, user, max_tokens=180))
 
 
-def generate_opening_prayer(*, user_name: str | None, mood: str, prayer_text: str | None) -> str:
+def generate_opening_prayer(*, user_name: str | None, mood: str, prayer_text: str | None, language: str = "en") -> str:
     system = (
         "You are a warm, pastoral voice opening a worship service. Write a personalized "
         "opening prayer (120-180 words) that gently acknowledges the person's situation "
         "without exposing sensitive detail bluntly. Spoken cadence, no headings."
     )
+    if language != "en":
+        system = f"{system} {_language_instruction(language)}"
     user = (
         f"{_addressing(user_name)}\nMood: {mood}\n"
         f"What they shared: {prayer_text or '(nothing specific)'}"
@@ -176,7 +232,7 @@ def generate_opening_prayer(*, user_name: str | None, mood: str, prayer_text: st
     return _strip_formatting(_complete(system, user, max_tokens=500))
 
 
-def generate_sermon(*, user_name: str | None, mood: str, scripture_ref: str, target_minutes: int = 8) -> str:
+def generate_sermon(*, user_name: str | None, mood: str, scripture_ref: str, target_minutes: int = 8, language: str = "en") -> str:
     """Preaching segment, built around the user's mood and the chosen passage."""
     system = (
         "You are an expository preacher writing for spoken delivery by a digital avatar. "
@@ -188,6 +244,8 @@ def generate_sermon(*, user_name: str | None, mood: str, scripture_ref: str, tar
         "of any kind. If the theme touches a serious medical or safety emergency, do not "
         "advise; close gently and defer to real-world help."
     )
+    if language != "en":
+        system = f"{system} {_language_instruction(language)}"
     user = (
         f"Scripture focus: {scripture_ref}\n"
         f"Listener's theme/mood: {mood}\n"
@@ -199,10 +257,12 @@ def generate_sermon(*, user_name: str | None, mood: str, scripture_ref: str, tar
     return _strip_name(text, user_name)
 
 
-def generate_benediction(*, user_name: str | None, mood: str) -> str:
+def generate_benediction(*, user_name: str | None, mood: str, language: str = "en") -> str:
     system = (
         "Write a short closing benediction (50-90 words) for spoken delivery. Personal, "
         "hopeful, sends the listener out with peace. No headings."
     )
+    if language != "en":
+        system = f"{system} {_language_instruction(language)}"
     user = f"{_addressing(user_name)}\nMood: {mood}"
     return _strip_formatting(_complete(system, user, max_tokens=250))

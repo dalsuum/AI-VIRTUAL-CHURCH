@@ -32,6 +32,10 @@ class DispatchServiceJob implements ShouldQueue
             'session_id'   => $session->id,
             'session_token'=> $session->session_token,
             'music_source' => $session->music_source, // 'hymn_sung' | 'hymn' | 'suno' | 'youtube'
+            // Service language ('en' | 'my'), locked at session start like the music
+            // source. Drives the LLM output language, the Bible translation (BSB vs
+            // Judson 1835 Burmese), the hymn library, and the narration voice.
+            'language'     => $session->language ?? 'en',
             // How spoken segments are voiced (global admin setting). 'openai' tells
             // the worker to synthesize TTS audio; 'browser'/'off' leave it to the
             // client (browser speech) or silent, so the worker skips narration.

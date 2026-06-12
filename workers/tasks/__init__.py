@@ -62,6 +62,7 @@ def orchestrate(job: dict) -> None:
     # 1. Derive the spine of the service from the user's own input.
     plan = llm_engine.build_intake_plan(
         user_name=job["user_name"], mood=job["mood"], prayer_text=job.get("prayer_text"),
+        language=job.get("language", "en"),
     )
 
     # 1b. Registered worshippers get a short, mood-aware "welcome back" greeting up
@@ -79,7 +80,8 @@ def orchestrate(job: dict) -> None:
 @app.task(name="tasks.generate_welcome")
 def generate_welcome(job: dict) -> None:
     """Short mood-aware greeting for the countdown screen (registered users only)."""
-    text = llm_engine.generate_welcome(user_name=job["user_name"], mood=job["mood"])
+    text = llm_engine.generate_welcome(user_name=job["user_name"], mood=job["mood"],
+                                       language=job.get("language", "en"))
     _post_asset(job["session_token"], "welcome", asset_type="text", text_payload=text)
 
 
@@ -87,20 +89,39 @@ def generate_welcome(job: dict) -> None:
 def generate_text_segments(job: dict, plan: dict) -> None:
     token, name, mood = job["session_token"], job["user_name"], job["mood"]
     ref = plan["scripture_ref"]
+    language = job.get("language", "en")  # 'en' | 'my' — the whole service's language
 
     # Synthesize TTS audio only when the admin chose a server voice provider —
     # 'openai', 'kokoro', or 'edge_tts' — server generates audio. In 'browser'/'off'
     # the client handles (or skips) reading aloud, so we deliver text only.
     narration_mode = job.get("narration_mode")
     narration_voice = job.get("edge_tts_voice", "en-US-AriaNeural")
+    # Narration must be voiced in the service's language. 'my': when the
+    # configured edge-tts voice isn't a my-MM one (the admin default is
+    # English), substitute the Burmese neural voice. 'td': edge-tts ships NO
+    # Tedim voice — narrating Tedim text with an English voice would be
+    # gibberish, so server TTS is skipped entirely unless the admin points
+    # EDGE_TTS_VOICE_TD at a voice they've judged acceptable. The text segments
+    # still display; the service runs read-along.
+    if language == "my" and not narration_voice.startswith("my-"):
+        narration_voice = os.getenv("EDGE_TTS_VOICE_MY", "my-MM-NilarNeural")
+    td_voice = os.getenv("EDGE_TTS_VOICE_TD", "")
+    if language == "td":
+        narration_voice = td_voice
     want_audio = narration_mode in ("openai", "kokoro", "edge_tts") and narrator.is_enabled(narration_mode)
+    if language == "td" and not td_voice:
+        want_audio = False  # no Tedim TTS voice exists; read-along service
 
     # Scripture: model picks the reference, the bundled public-domain Bible supplies
     # the words. If resolution fails (unparseable/missing reference), still give the
     # listener the reference rather than aborting the whole text segment.
     try:
-        scripture_text = bible_api.resolve(ref)
-        scripture_payload = f"{ref}\n\n{scripture_text}"
+        scripture_text = bible_api.resolve(ref, lang=language)
+        # Caption non-English scripture with the translation's own book name
+        # ('John 3:16' -> 'ရှင်ယောဟန်ခရစ်ဝင် 3:16' for 'my', 'Johan 3:16' for
+        # 'td') so no English leaks into the worshipper-facing text.
+        heading = (bible_api.book_title(ref, lang=language) or ref) if language != "en" else ref
+        scripture_payload = f"{heading}\n\n{scripture_text}"
     except Exception as exc:  # noqa: BLE001 — degrade gracefully, never block the service
         print(f"[scripture] resolve failed for {ref!r}: {exc}", flush=True)
         scripture_text = ""
@@ -134,13 +155,13 @@ def generate_text_segments(job: dict, plan: dict) -> None:
 
     spoken = [
         ("opening_prayer", llm_engine.generate_opening_prayer(
-            user_name=name, mood=mood, prayer_text=job.get("prayer_text"))),
-        ("benediction", llm_engine.generate_benediction(user_name=name, mood=mood)),
+            user_name=name, mood=mood, prayer_text=job.get("prayer_text"), language=language)),
+        ("benediction", llm_engine.generate_benediction(user_name=name, mood=mood, language=language)),
     ]
     # Only generate the sermon when we aren't sourcing it from YouTube.
     if not youtube_mode:
         spoken.insert(1, ("sermon", llm_engine.generate_sermon(
-            user_name=name, mood=mood, scripture_ref=ref)))
+            user_name=name, mood=mood, scripture_ref=ref, language=language)))
 
     for segment, text in spoken:
         ok, reason = classifier.review(text)
@@ -182,7 +203,7 @@ def generate_music(job: dict, plan: dict) -> None:
             title=reuse.get("title"),
         )
     else:
-        strategy = get_strategy(job["music_source"])
+        strategy = get_strategy(job["music_source"], language=job.get("language", "en"))
         # Music depends on external providers (YouTube/Suno + S3 upload). If their
         # keys are missing or the call fails, skip music rather than crash the task.
         try:

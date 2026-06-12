@@ -74,15 +74,78 @@ def _strip_name(text: str, user_name: str | None) -> str:
     text = re.sub(r"[ \t]{2,}", " ", text)
     return text.strip()
 
+
+def _ensure_exact_name(text: str, user_name: str | None) -> str:
+    """Keep worshipper names literal in personalized segments.
+
+    Burmese and Tedim services still use the exact name the worshipper typed. If a
+    low-resource model drops or localizes it despite the prompt, prefix the cleaned
+    prose with the original string so we never store a translated/transliterated
+    replacement as the only visible/spoken name.
+    """
+    name = (user_name or "").strip()
+    if not name or name in text:
+        return text
+    return f"{name}, {text}".strip()
+
+
 # We talk to OpenRouter's OpenAI-compatible Chat Completions endpoint. Any provider
 # that speaks that format (OpenRouter, OpenAI, local vLLM, …) works by changing the
 # base URL + key + model, with no code change.
 API_KEY = os.environ["OPENROUTER_API_KEY"]
 BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 MODEL = os.getenv("LLM_MODEL", "meta-llama/llama-3.3-70b-instruct:free")
+LOCAL_LLM_TIMEOUT = int(os.getenv("LOCAL_LLM_TIMEOUT", "45"))
 
 
-def _complete(system: str, user: str, max_tokens: int = 1500) -> str:
+def _model_for(language: str = "en") -> str:
+    """Allow stronger models for low-resource service languages.
+
+    Some free English-first models emit Burmese-looking text that is not natural
+    Myanmar. Operators can set LLM_MODEL_MY or LLM_MODEL_TD without changing the
+    English service model. Placeholder/example values are ignored so a copied
+    .env cannot break generation with an invalid OpenRouter model id.
+    """
+    override = (os.getenv(f"LLM_MODEL_{language.upper()}") or "").strip()
+    if override and not override.startswith(("your-", "change-me", "example")):
+        return override
+    return MODEL
+
+
+def _local_llm_url(language: str) -> tuple[str, str] | None:
+    if language == "my":
+        base = (os.getenv("BURMESE_LLM_URL") or "").rstrip("/")
+        return (base, "/burmese/generate") if base else None
+    if language == "td":
+        base = (os.getenv("TEDIM_LLM_URL") or "").rstrip("/")
+        return (base, "/tedim/generate") if base else None
+    return None
+
+
+def _should_use_local_llm(system: str, language: str) -> bool:
+    # The intake plan must stay on the chat model because it is a strict JSON
+    # contract. Local low-resource generators are used for prose segments only.
+    return language in ("my", "td") and "Output ONLY valid JSON" not in system
+
+
+def _complete_local(system: str, user: str, max_tokens: int, language: str) -> str:
+    endpoint = _local_llm_url(language)
+    if not endpoint:
+        raise RuntimeError(f"No local LLM URL configured for language {language!r}")
+    base, path = endpoint
+    resp = requests.post(
+        f"{base}{path}",
+        json={"system": system, "prompt": user, "max_tokens": max_tokens},
+        timeout=LOCAL_LLM_TIMEOUT,
+    )
+    resp.raise_for_status()
+    return (resp.json().get("text") or "").strip()
+
+
+def _complete(system: str, user: str, max_tokens: int = 1500, language: str = "en") -> str:
+    if _should_use_local_llm(system, language):
+        return _complete_local(system, user, max_tokens, language)
+
     resp = requests.post(
         f"{BASE_URL}/chat/completions",
         headers={
@@ -90,7 +153,7 @@ def _complete(system: str, user: str, max_tokens: int = 1500) -> str:
             "Content-Type": "application/json",
         },
         json={
-            "model": MODEL,
+            "model": _model_for(language),
             "max_tokens": max_tokens,
             "messages": [
                 {"role": "system", "content": system},
@@ -111,11 +174,84 @@ def _addressing(user_name: str | None) -> str:
     either; it speaks to them warmly without using any name at all."""
     name = (user_name or "").strip()
     if name:
-        return f"Address the worshipper personally by name; their name is {name}."
+        return (
+            f"Address the worshipper personally by name. Their exact name is: {name}. "
+            "Even when the service language is Burmese or Tedim/Zolai, copy that name "
+            "exactly as written, character-for-character. Do not translate it, "
+            "transliterate it, change its script, localize it, shorten it, or add "
+            "language-specific honorifics to it."
+        )
     return (
         "The worshipper is anonymous: do NOT address them by name and do NOT invent "
         "one. Speak to them warmly without using any name."
     )
+
+
+
+def _fallback_opening_prayer(user_name: str | None, mood: str, language: str) -> str:
+    name_line = f"{user_name} အတွက် " if user_name else ""
+    if language == "my":
+        return (
+            f"ကရုဏာတော်ရှင် ဘုရားသခင်၊ ယနေ့ {name_line}ကိုယ်တော်ထံသို့ နီးကပ်စွာ ချဉ်းကပ်ပါသည်။ "
+            "ဝမ်းနည်းခြင်း၊ ပင်ပန်းခြင်း၊ မတည်ငြိမ်ခြင်းများရှိနေပါက ကိုယ်တော်၏ ငြိမ်သက်ခြင်းဖြင့် ဖုံးလွှမ်းပေးပါ။ "
+            "ကျွန်ုပ်တို့၏နှလုံးကို နားထောင်တတ်သော နှလုံးဖြစ်စေပြီး၊ သမ္မာတရား၏ အလင်းကို မြင်နိုင်စေပါ။ "
+            "ယခု ဝတ်ပြုချိန်တွင် စကားလုံးတိုင်း၊ ဆုတောင်းခြင်းတိုင်း၊ သီချင်းတိုင်းသည် မျှော်လင့်ခြင်းနှင့် ယုံကြည်ခြင်းကို ပြန်လည်ထူထောင်စေပါ။ "
+            "ယေရှုခရစ်တော်၏ နာမတော်၌ ဆုတောင်းပါသည်။ အာမင်။"
+        )
+    if language == "td":
+        return (
+            "Aw Topa Pasian, tuni in ka lungtang hong khol in na kiangah ka hong pai hi. "
+            "Lungkhamna leh dahna om leh, na lungdamna leh na nopna in hong tuam in. "
+            "Hih biakna hun sungah na Thu Siangtho in lam hong lak hen. "
+            "Zeisu Krist min in ka thungen hi. Amen."
+        )
+    return "Lord, meet us with mercy and peace as this service begins. Amen."
+
+
+def _fallback_sermon(mood: str, scripture_ref: str, language: str) -> str:
+    if language == "my":
+        try:
+            import bible_api
+            verse = bible_api.resolve(scripture_ref, lang="my")
+            title = bible_api.book_title(scripture_ref, lang="my") or scripture_ref
+        except Exception:
+            verse = ""
+            title = scripture_ref
+        verse_line = f"{title} တွင် ဤသို့ သတိပေးထားပါသည်။ {verse} " if verse else "ဘုရားသခင်၏ သမ္မာတရားသည် ကျွန်ုပ်တို့ကို မျှော်လင့်ခြင်းထဲသို့ ပြန်ခေါ်ပါသည်။ "
+        return (
+            "ယနေ့ သင်၏နှလုံးသည် ဝမ်းနည်းခြင်းနှင့် ပင်ပန်းခြင်းကြားတွင် ရှိနေနိုင်ပါသည်။ "
+            "သို့သော် ခရစ်တော်၏ သတင်းကောင်းသည် ကျွန်ုပ်တို့၏ ခံစားချက်ကို မငြင်းပယ်ဘဲ၊ ထိုနေရာထဲသို့ပင် မေတ္တာတော်ဖြင့် ဝင်လာသည်ဟု သွန်သင်ပါသည်။ "
+            + verse_line +
+            "ဤစကားသည် နာကျင်နေသောသူအတွက် ဘုရားသခင်သည် ဝေးကွာနေသူ မဟုတ်ကြောင်း ပြောနေပါသည်။ "
+            "နှလုံးကြေကွဲသောအချိန်တွင် ကိုယ်တော်သည် နီးတော်မူသည်။ စကားမပြောနိုင်သော ဆုတောင်းခြင်းကိုပင် ကိုယ်တော် နားထောင်တော်မူသည်။ "
+            "ထို့ကြောင့် ယနေ့ သင်သည် အားကြီးနေစရာ မလိုပါ။ ကိုယ်တော်ရှေ့တွင် ရိုးသားစွာ ရပ်နိုင်ပါသည်။ "
+            "ခြေလှမ်းသေးသေးတစ်လှမ်းဖြင့် စတင်ပါ။ အသက်ရှူပါ။ ကိုယ်တော်၏ ကရုဏာတော်သည် ယနေ့အတွက် လုံလောက်သည်ဟု ယုံကြည်ပါ။ "
+            "ဘုရားသခင်သည် သင့်ကို မေ့ထားတော်မမူ။ သင့်ဝမ်းနည်းခြင်းသည် နောက်ဆုံးစကား မဟုတ်ပါ။ ခရစ်တော်၌ မျှော်လင့်ခြင်းသည် ပြန်လည်ထွန်းလင်းနိုင်ပါသည်။"
+        )
+    if language == "td":
+        return (
+            "Tuni in na lungtang a dah leh a gim mahmah thei hi. Ahihhang Topa Pasian in na kiang pan gamla om lo hi. "
+            "Thu Siangtho in, Topa in lungkiam mite kiangah nai hi ci in hong theisak hi. "
+            "Na thugen zawhloh thungetna zong Topa in za hi. Tuni in thahat sak kul lo; Topa maiah diktak in ding thei hi. "
+            "Zeisu Krist sungah lungdamna leh lam-etna om hi. Pasian in nang hong mangngilh lo hi."
+        )
+    return "God is near to the brokenhearted, and Christ gives hope for the next step."
+
+
+def _fallback_benediction(user_name: str | None, mood: str, language: str) -> str:
+    name = f"{user_name}၊ " if user_name else ""
+    if language == "my":
+        return (
+            f"{name}ထာဝရဘုရား၏ ငြိမ်သက်ခြင်းသည် သင့်နှလုံးကို စောင့်ရှောက်ပါစေ။ "
+            "ခရစ်တော်၏ မေတ္တာသည် သင့်ကို ချီးမြှောက်ပြီး၊ သန့်ရှင်းသောဝိညာဉ်တော်သည် သင်၏ နောက်ခြေလှမ်းကို လမ်းပြပါစေ။ "
+            "ဝမ်းနည်းခြင်းအလယ်၌ပင် မျှော်လင့်ခြင်းကို တွေ့နိုင်ပါစေ။ အာမင်။"
+        )
+    if language == "td":
+        return (
+            f"{user_name + ', ' if user_name else ''}Topa Pasian nopna in na lungtang kem hen. "
+            "Zeisu Krist itna in hong thahat sak hen, Kha Siangtho in na lam hong makaih hen. Amen."
+        )
+    return "May the peace of Christ guard your heart and guide your next step. Amen."
 
 
 def _language_instruction(language: str) -> str:
@@ -135,33 +271,198 @@ def _language_instruction(language: str) -> str:
         return (
             "Write your ENTIRE response in the Burmese (Myanmar) language, using "
             "Myanmar Unicode script only (never Zawgyi, never romanized Burmese, "
-            "no English words). Use natural, reverent Burmese as spoken in a "
-            "Christian worship service."
+            "no English words, except a worshipper's proper name when one is provided). "
+            "Compose directly in natural Myanmar Burmese; do not translate English "
+            "idioms word-for-word. Use simple, meaningful sentences and a reverent "
+            "Christian worship register that ordinary Myanmar readers can understand. "
+            "For narration, spell out numbers and Bible references in Burmese words; "
+            "do not leave raw forms like 'Jn 3:16' or '2026'."
         )
     if language == "td":
         return (
-            "Write your ENTIRE response in the Tedim Chin language (Zolai / Zomi "
-            "pau), in its standard Latin orthography — no English sentences, no "
-            "Burmese script. Use the natural, reverent register of a Zomi "
-            "Christian worship service, with the community's established terms: "
-            "Pasian for God, Topa for the Lord, Zeisu for Jesus, Kha Siangtho "
-            "for the Holy Spirit, thungetna for prayer. Keep sentences short and "
-            "clear; if a precise Tedim word is uncertain, choose simpler Tedim "
-            "rather than borrowing English."
+            "Write your ENTIRE response in the Tedim Chin language (also called Zolai or Zomi pau). "
+            "Use standard Tedim Latin orthography only — no English sentences except a worshipper's proper name when one is provided, no Burmese script. "
+            "CRITICAL: Tedim is NOT Mizo, NOT Falam Chin, and NOT Haka Chin. Do NOT use Mizo words. "
+            "These Tedim words are REQUIRED — use them exactly: "
+            "Pasian (God) — NOT Pathian; "
+            "Topa (the Lord) — NOT Lal or Lalpa; "
+            "Zeisu Krist (Jesus Christ) — NOT Isua; "
+            "Kha Siangtho (Holy Spirit); "
+            "thungetna (prayer) — NOT tawngtaina; "
+            "koici (church) — NOT kohhran; "
+            "zangtal (salvation); "
+            "lungdamna (grace/blessing); "
+            "Thu Siangtho (Holy Scripture); "
+            "Siangtho (holy/sacred); "
+            "Zomi (the Tedim people). "
+            "Common Tedim sentence patterns: 'Pasian in i hiam' (God loves you), "
+            "'Topa in na ngaih' (the Lord hears you), 'Zeisu in zangtal piak' (Jesus gives salvation). "
+            "Keep sentences short and clear. Compose directly in Tedim; do not translate English idioms word-for-word. "
+            "For narration, spell out numbers and Bible references in Tedim words; do not leave raw forms like 'Jn 3:16' or '2026'."
         )
     return ""
+
+
+def _fallback_music_lyrics(mood: str, language: str) -> str:
+    """Guaranteed customMode lyrics for AI-composed worship when the plan omits them."""
+    if language == "my":
+        return (
+            "အပိုဒ် ၁\n"
+            "ကိုယ်တော်ရှင်၊ ယနေ့ ကျွန်ုပ်၏နှလုံးသားထဲသို့ ကြွလာပါ။\n"
+            "ပင်ပန်းသောစိတ်ကို ငြိမ်သက်ခြင်းဖြင့် ဖေးမပါ။\n"
+            "ကိုယ်တော်၏မေတ္တာသည် မကုန်ဆုံးသောအလင်းဖြစ်သည်။\n"
+            "ယုံကြည်ခြင်းဖြင့် ကျွန်ုပ် ကိုယ်တော်ထံ ခိုလှုံပါသည်။\n\n"
+            "သံပြိုင်\n"
+            "ယေရှုဘုရား၊ ကိုယ်တော်ကို ချီးမွမ်းပါသည်။\n"
+            "ကျေးဇူးတော်ထဲတွင် ကျွန်ုပ် အသက်ရှင်ပါသည်။\n"
+            "လမ်းပြတော်မူပါ၊ ဖေးမတော်မူပါ။\n"
+            "ကိုယ်တော်၏ငြိမ်သက်ခြင်းဖြင့် ကျွန်ုပ်ကို ပြည့်စေပါ။\n\n"
+            "အပိုဒ် ၂\n"
+            "မျှော်လင့်ခြင်းနည်းသောအချိန်တွင် ကိုယ်တော်သည် နီးပါသည်။\n"
+            "ကြောက်ရွံ့ခြင်းထဲမှ ကျွန်ုပ်ကို လက်ကမ်းခေါ်ပါ။\n"
+            "နေ့ရက်တိုင်းတွင် ကိုယ်တော်၏ကရုဏာကို မြင်စေပါ။\n"
+            "ကျွန်ုပ်၏အသက်တာသည် ကိုယ်တော်အတွက် သီချင်းဖြစ်ပါစေ။"
+        )
+    if language == "td":
+        _mood = (mood or "").lower()
+        # Mood-appropriate Tedim fallback lyrics so the static fallback varies by feeling.
+        if any(w in _mood for w in ("griev", "sad", "mourn", "loss", "broken", "sorr")):
+            return (
+                "Topa, ka lungkim ngai khat mama hi.\n"
+                "Lungkhamna sungah nang hong naih zel hi.\n"
+                "Ka thil suah ding hi nang kianga hi.\n"
+                "Na lungdamna in ka lungtang hong kem sak in.\n\n"
+                "Topa aw, hong kem in, hong kem in.\n"
+                "Ka lungkhamna sungah nang om zel hi.\n"
+                "Ka siamna tawm ahihhang nang in ka za hi.\n"
+                "Zeisu Krist, na itna in hong khen sak in.\n\n"
+                "Lauhna sungpan na khut in hong kai hi.\n"
+                "Ka nuntakna hong makaih in hong kem in.\n"
+                "Ni simin na hehpihna ka mu thei hi.\n"
+                "Ka nuntakna in Nang ading lasa suak hen."
+            )
+        if any(w in _mood for w in ("joy", "grateful", "thankful", "celebrat", "nop")):
+            return (
+                "Nopna tawh Topa na min hong phat hi.\n"
+                "Na hehpihna mama hi, na lungdamna lian hi.\n"
+                "Pasian, tuni na kianga hong pai hi.\n"
+                "Na lungdamna sungah ka lungtang dim hi.\n\n"
+                "Topa aw, ka phat ding hi nang.\n"
+                "Na nopna in ka lungtang a dim hi.\n"
+                "Zeisu Krist, na min phat ding hi.\n"
+                "Na lungdamna sungah ka nungta hi.\n\n"
+                "Ni simin na kilemna ka mu hi.\n"
+                "Ka nuntakna in Nang ading lasa suak hi.\n"
+                "Pasian in hong hehpih zel hi.\n"
+                "Ka nuntakna in Nang ading lasa suak hen."
+            )
+        # Default (anxious / seeking / general)
+        return (
+            "Topa, tuni ka lungtang sungah hong om in.\n"
+            "Ka lunggimna sungah na lungdamna in hong kem in.\n"
+            "Pasian itna in khuavak bangin hong taang hi.\n"
+            "Zeisu Krist tungah ka muang in ka bia hi.\n\n"
+            "Topa aw, Nang kong phat hi.\n"
+            "Na lungdamna sungah ka nungta hi.\n"
+            "Hong makaih in, hong kem in.\n"
+            "Na kilemna in ka lungtang hong dim sak in.\n\n"
+            "Lam-etna tawm hunah nang hong naih zel hi.\n"
+            "Lauhna sungpan na khut in hong kai hi.\n"
+            "Ni simin na hehpihna ka mu sak in.\n"
+            "Ka nuntakna in Nang ading lasa suak hen."
+        )
+    return (
+        "Verse 1\n"
+        "Lord, meet me in this moment,\n"
+        "With mercy kind and near.\n"
+        "Lift my heart toward Your promise,\n"
+        "And quiet every fear.\n\n"
+        "Chorus\n"
+        "I will worship, I will trust You,\n"
+        "In Your grace I stand today.\n"
+        "Jesus, lead me, Jesus, hold me,\n"
+        "Guide my heart along Your way.\n\n"
+        "Verse 2\n"
+        "When hope feels small and distant,\n"
+        "Your love is still my song.\n"
+        "You are faithful in the waiting,\n"
+        "And Your peace will make me strong."
+    )
+
+
+def _lyrics_match_language(lyrics: str, language: str) -> bool:
+    """Lightweight guard so Suno customMode receives lyrics in the service language."""
+    text = (lyrics or "").strip()
+    if not text:
+        return False
+    lower = text.lower()
+    if language == "my":
+        return bool(re.search(r"[\u1000-\u109f]", text))
+    if language == "td":
+        # Reject common non-Tedim Chin worship terms that often indicate Mizo/Falam/Haka drift.
+        forbidden_hits = sum(
+            1
+            for word in (
+                "pathian", "lalpa", "isua", "kohhran", "tawngtaina", "tawngtai",
+                "ka lawm e", "halleluiah", "i lawm e",
+            )
+            if word in lower
+        )
+        if forbidden_hits > 0:
+            return False
+
+        tedim_hits = sum(
+            1
+            for word in (
+                "pasian", "topa", "zeisu", "krist", "lungdamna", "kilemna",
+                "hehpihna", "nang", "hong", "ka ", "kong", "na ", "sungah",
+                "tuni", "nuntakna", "lametna", "bia", "phat",
+            )
+            if word in lower
+        )
+        core_hits = sum(1 for word in ("pasian", "topa", "zeisu", "krist") if word in lower)
+        english_hits = sum(
+            1
+            for word in (
+                "lord", "jesus", "grace", "mercy", "worship", "trust",
+                "heart", "promise", "fear", "peace", "love", "hope",
+            )
+            if word in lower
+        )
+        # Tedim declarative sentences end with "hi"; benedictive endings use "hen".
+        # These are the most reliable Tedim-specific markers — Mizo and English never
+        # use them as sentence-final particles. Count lines/phrases that end with them.
+        terminal_tedim = (
+            lower.count(" hi\n") + lower.count(" hi.")
+            + lower.count(" hi!") + lower.count(" hen\n")
+            + lower.count(" hen.") + lower.count(" hen!")
+        )
+        if lower.rstrip().endswith((" hi", " hen")):
+            terminal_tedim += 1
+        # The lyric body must clearly be Tedim/Zolai: sufficient vocabulary, the core
+        # Zomi theological terms, no English worship words, and the unmistakable Tedim
+        # sentence-final particles that prove the grammar is genuinely Zolai.
+        return (
+            tedim_hits >= 5
+            and core_hits >= 2
+            and english_hits == 0
+            and terminal_tedim >= 2
+        )
+    return True
 
 
 def build_intake_plan(*, user_name: str | None, mood: str, prayer_text: str | None, language: str = "en") -> dict:
     """
     First pass: derive the service's spine from the user input.
-    Returns scripture reference, a Suno music prompt, and a YouTube search query.
+    Returns scripture reference, a Suno music prompt, optional Suno custom-mode
+    lyrics, and YouTube search queries.
     """
     system = (
         "You are the Liturgical Context Engine for a personalized worship service. "
         "Stay within mainstream historical Christian theology: grace, hope, redemption, "
         "community. Avoid politics and fringe doctrine. Output ONLY valid JSON, no prose, "
-        "no markdown fences."
+        "no markdown fences. music_lyrics is REQUIRED for every language and must be "
+        "singable worship lyrics, not a description."
     )
     if language == "my":
         # The scripture reference is part of the worker contract (bible_api parses
@@ -170,16 +471,39 @@ def build_intake_plan(*, user_name: str | None, mood: str, prayer_text: str | No
         system += (
             " This service is conducted in the Burmese (Myanmar) language. Keep "
             "scripture_ref in ENGLISH format (e.g. 'Psalm 23:1-4'), but write "
-            "music_prompt for a Burmese-language worship song, and make music_query "
-            "and preaching_query searches for Burmese (Myanmar) Christian content."
+            "music_prompt and music_lyrics for a Burmese-language worship song in Myanmar "
+            "Unicode, and make music_query and preaching_query searches for Burmese "
+            "(Myanmar) Christian content."
         )
     elif language == "td":
         system += (
-            " This service is conducted in the Tedim Chin (Zomi) language. Keep "
+            " This service is conducted in the Tedim Chin (Zolai / Zomi pau) language. Keep "
             "scripture_ref in ENGLISH format (e.g. 'Psalm 23:1-4'), but write "
-            "music_prompt for a Tedim/Zomi-language worship song, and make "
-            "music_query and preaching_query searches for Zomi or Tedim Chin "
+            "music_prompt and music_lyrics entirely in Tedim/Zolai, and "
+            "make music_query and preaching_query searches for Zomi or Tedim Chin "
             "Christian content."
+            " CRITICAL GRAMMAR RULE: Every Tedim sentence MUST end with 'hi' (declarative) "
+            "or 'hen' (benedictive). This is non-negotiable — a line like "
+            "'Pasian itna in khuavak bangin hong taang hi.' is correct; ending with an "
+            "English word is WRONG."
+            " Required Tedim vocabulary — use EXACTLY these forms: "
+            "Pasian (God, NOT Pathian), Topa (the Lord, NOT Lalpa), "
+            "Zeisu Krist (Jesus Christ, NOT Isua), Kha Siangtho (Holy Spirit); "
+            "thungetna (prayer), lungdamna (grace/blessing), nuntakna (life), "
+            "lungtang (heart), tuni (today)."
+            " Key grammar particles: ka (I/my), na (you/your), nang (you), hong (come/causative), "
+            "in (subject marker), sungah (in/inside), -sak (causative suffix), "
+            "-zel (continuous suffix)."
+            " DO NOT use Mizo, Falam, or Haka words. music_lyrics must NOT contain: "
+            "Pathian, Lalpa, Isua, kohhran, tawngtaina, lord, jesus, grace, mercy, worship."
+            " Example Tedim lyric lines (copy this exact structure and grammar): "
+            "'Topa, tuni ka lungtang sungah hong om in. / "
+            "Ka lunggimna sungah na lungdamna in hong kem in. / "
+            "Pasian itna in khuavak bangin hong taang hi. / "
+            "Zeisu Krist tungah ka muang in ka bia hi. / "
+            "Topa aw, Nang kong phat hi. / "
+            "Na lungdamna sungah ka nungta hi.' "
+            "Write 2 short verses and 1 chorus in this same structure."
         )
     user = json.dumps({
         "user_name": user_name or "",
@@ -187,14 +511,45 @@ def build_intake_plan(*, user_name: str | None, mood: str, prayer_text: str | No
         "prayer_text": prayer_text or "",
         "schema": {
             "scripture_ref": "string, e.g. 'Psalm 23:1-4'",
-            "music_prompt": "string, a prompt for AI worship-music generation",
+            "music_prompt": "string, a short style prompt for AI worship-music generation",
+            "music_lyrics": "string, original singable worship lyrics, 2 short verses and a chorus, in the service language",
             "music_query": "string, a short YouTube search query for a worship song",
             "preaching_query": "string, a short YouTube search query for a Christian sermon on this theme",
         },
     })
-    raw = _complete(system, user, max_tokens=400).strip()
-    raw = raw.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-    return json.loads(raw)
+    try:
+        raw = _complete(system, user, max_tokens=900, language=language).strip()
+        raw = raw.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+        plan = json.loads(raw)
+    except Exception as exc:
+        print(f"[llm] intake plan fallback for {language}: {exc}", flush=True)
+        plan = {}
+
+    plan.setdefault("scripture_ref", "Psalm 23:1-3")
+    plan.setdefault("music_prompt", f"A reverent Christian worship song for someone feeling {mood}")
+    if not _lyrics_match_language(str(plan.get("music_lyrics") or ""), language):
+        plan["music_lyrics"] = _fallback_music_lyrics(mood, language)
+    if language == "td":
+        plan["music_prompt"] = (
+            f"Modern contemporary Zomi/Tedim Christian worship song for someone feeling {mood}, "
+            "in a live contemporary worship style with uplifting congregational energy, "
+            "with warm choir and acoustic-band arrangement. Sing the provided Tedim lyrics exactly."
+        )
+    elif language == "my":
+        plan["music_prompt"] = (
+            f"Modern contemporary Burmese Christian worship song for someone feeling {mood}, "
+            "in a live contemporary worship style with uplifting congregational energy, "
+            "with warm choir and acoustic-band arrangement. Sing the provided Myanmar Unicode lyrics exactly."
+        )
+    else:
+        plan["music_prompt"] = (
+            f"Modern contemporary Christian worship song for someone feeling {mood}, "
+            "in a live contemporary worship style with uplifting congregational energy, "
+            "with warm choir and acoustic-band arrangement. Sing the provided lyrics exactly."
+        )
+    plan.setdefault("music_query", f"Christian worship song {mood}")
+    plan.setdefault("preaching_query", f"Christian sermon {mood}")
+    return plan
 
 
 def generate_welcome(*, user_name: str | None, mood: str, language: str = "en") -> str:
@@ -214,7 +569,10 @@ def generate_welcome(*, user_name: str | None, mood: str, language: str = "en") 
     if language != "en":
         system = f"{system} {_language_instruction(language)}"
     user = f"{_addressing(user_name)}\nFeeling they chose today: {mood}"
-    return _strip_formatting(_complete(system, user, max_tokens=180))
+    return _ensure_exact_name(
+        _strip_formatting(_complete(system, user, max_tokens=180, language=language)),
+        user_name,
+    )
 
 
 def generate_opening_prayer(*, user_name: str | None, mood: str, prayer_text: str | None, language: str = "en") -> str:
@@ -229,7 +587,16 @@ def generate_opening_prayer(*, user_name: str | None, mood: str, prayer_text: st
         f"{_addressing(user_name)}\nMood: {mood}\n"
         f"What they shared: {prayer_text or '(nothing specific)'}"
     )
-    return _strip_formatting(_complete(system, user, max_tokens=500))
+    try:
+        return _ensure_exact_name(
+            _strip_formatting(_complete(system, user, max_tokens=500, language=language)),
+            user_name,
+        )
+    except Exception as exc:
+        if language in ("my", "td"):
+            print(f"[llm] {language} opening prayer fallback: {exc}", flush=True)
+            return _ensure_exact_name(_fallback_opening_prayer(user_name, mood, language), user_name)
+        raise
 
 
 def generate_sermon(*, user_name: str | None, mood: str, scripture_ref: str, target_minutes: int = 8, language: str = "en") -> str:
@@ -253,7 +620,17 @@ def generate_sermon(*, user_name: str | None, mood: str, scripture_ref: str, tar
         "personal name for them anywhere in the message. Speak to them warmly using "
         "only 'you'."
     )
-    text = _strip_formatting(_complete(system, user, max_tokens=2500))
+    # Local Myanmar/Tedim Ollama models on small CPU boxes are much slower than the
+    # hosted English chat model. Keep those messages shorter so the text pages land
+    # reliably and narration is not asked to synthesize an eight-minute segment.
+    max_tokens = 900 if language in ("my", "td") else 2500
+    try:
+        text = _strip_formatting(_complete(system, user, max_tokens=max_tokens, language=language))
+    except Exception as exc:
+        if language in ("my", "td"):
+            print(f"[llm] {language} sermon fallback: {exc}", flush=True)
+            return _fallback_sermon(mood, scripture_ref, language)
+        raise
     return _strip_name(text, user_name)
 
 
@@ -265,4 +642,13 @@ def generate_benediction(*, user_name: str | None, mood: str, language: str = "e
     if language != "en":
         system = f"{system} {_language_instruction(language)}"
     user = f"{_addressing(user_name)}\nMood: {mood}"
-    return _strip_formatting(_complete(system, user, max_tokens=250))
+    try:
+        return _ensure_exact_name(
+            _strip_formatting(_complete(system, user, max_tokens=250, language=language)),
+            user_name,
+        )
+    except Exception as exc:
+        if language in ("my", "td"):
+            print(f"[llm] {language} benediction fallback: {exc}", flush=True)
+            return _ensure_exact_name(_fallback_benediction(user_name, mood, language), user_name)
+        raise

@@ -33,6 +33,8 @@ Redis queue so neither has to know the other's serializer.
 - [Scheduled services](#scheduled-services)
 - [Running locally](#running-locally)
 - [Deploying to production](#deploying-to-production)
+- [Server Restart Runbook](#server-restart-runbook)
+- [Suno Pool CRUD Manual](#suno-pool-crud-manual)
 - [Environment variables](#environment-variables)
 - [API reference](#api-reference)
 - [Project status](#project-status)
@@ -192,7 +194,7 @@ service one stage at a time.
 |-----------|------|
 | [App.vue](frontend/src/App.vue) | Stage machine: `intake` → `preparing` → `service`; routes `/admin` to the console. |
 | [IntakeForm.vue](frontend/src/components/IntakeForm.vue) | Mood + prayer + (optional) schedule + music-source pick + **language tab** (English / မြန်မာ / Zolai). Moods, the offered music sources, and whether scheduling shows are all driven by `GET /config` so the admin can curate them. Myanmar Unicode fonts (Padauk/Noto Sans Myanmar) loaded for Burmese UI strings. |
-| [PreparingView.vue](frontend/src/components/PreparingView.vue) | Countdown screen; shows the welcome-back greeting while segments compose. |
+| [PreparingView.vue](frontend/src/components/PreparingView.vue) | Countdown screen; shows the welcome-back greeting while segments compose, rotates admin-managed encouragement/testimony cards, then opens only after the worship media and opening-prayer narration are ready (with longer Myanmar/Tedim countdowns). |
 | [ServicePlayer.vue](frontend/src/components/ServicePlayer.vue) | The full-screen, one-stage-at-a-time player. Auto-reads each segment (server video → server audio → browser Web Speech), auto-advances. |
 | [MusicPlayer.vue](frontend/src/components/MusicPlayer.vue) | Plays the worship track: stored audio, or an embedded YouTube `<iframe>`. |
 | [OfferingForm.vue](frontend/src/components/OfferingForm.vue) | Stripe PaymentIntent confirmation. |
@@ -210,8 +212,8 @@ service one stage at a time.
 | `service_sessions` | One worship visit | `session_token` (64), `status` (`initializing`/`active`/`completed`/`abandoned`/`scheduled`), `music_source` (locked), `language` (`en`/`my`/`td`), `presenter_gender` (locked from user preference at start), `tedim_status` / `burmese_status` (legacy readiness markers kept for older UI/admin paths), `scheduled_at` |
 | `service_intakes` | The user's input + the plan | `mood`, `custom_mood` (free-text when the worshipper selects "other"), `prayer_text`, `scripture_ref`, `music_prompt`, `music_query` (1:1 with session) |
 | `service_assets` | Generated segments | `segment` enum (`welcome`/`worship`/`opening_prayer`/`scripture`/`sermon`/`testimony`/`offering`/`closing_hymn`/`benediction`), `asset_type` (`video`/`audio`/`text`/`url`/`youtube`), `storage_key`, `audio_key`, `provider_ref`, `text_payload` (already in the service language for new `my`/`td` sessions), legacy `tedim_text` / `burmese_text`, `lyrics` (hymn verses or AI-composed lyrics for on-screen display), `status` |
-| `music_tracks` | Mood-keyed reuse pool | `mood`, `provider_ref` (unique — dedupes), `storage_key`, `title`, `lyrics`, `source`. Populated by the worker after each fresh Suno generation; drawn from when a worshipper is new to a mood. |
-| `settings` | Global admin key/value | `key` (PK) / `value` (string). Holds `narration_mode`, per-language narration toggles (`narration_en`/`narration_my`/`narration_td`), `text_highlight_enabled`, language-tab toggles (`lang_en`/`lang_my`/`lang_td`), `music_reuse`, `storage_backend`, `avatar_enabled`, plus admin-curated intake options: `moods`, `music_sources`, `default_music_source`, and `scheduling_enabled`. |
+| `music_tracks` | Language-and-mood-keyed reuse pool | `mood`, `language`, `provider_ref` (unique — dedupes), `storage_key`, `title`, `lyrics`, `source`. Populated by the worker after each fresh Suno generation; drawn from when a worshipper is new to a mood. |
+| `settings` | Global admin key/value | `key` (PK) / `value` (string). Holds `narration_mode`, per-language narration toggles (`narration_en`/`narration_my`/`narration_td`), `text_highlight_enabled`, language-tab toggles (`lang_en`/`lang_my`/`lang_td`), countdown-card controls (`countdown_content_enabled`, `countdown_content_source`, `countdown_banners`), `music_reuse`, `storage_backend`, `avatar_enabled`, plus admin-curated intake options: `moods`, `music_sources`, `default_music_source`, and `scheduling_enabled`. |
 | `prayer_requests` | Raw intake log + token accounting | `raw_input`, `extracted_mood`, `tokens_used` |
 | `testimonies` | Shared testimonies | `content`, `source` (`user_submitted`/`ai_generated`), `approved` |
 | `financial_ledger` | Offerings | `amount`, `currency`, `transaction_hash` (idempotency), `allocation_type` (`operations`/`charity`/`missions`) |
@@ -283,6 +285,12 @@ Scripture references stay English internally (`"Psalm 23:1-4"`) — they're work
 worshipper-facing text. `bible_api` parses them against a canonical 66-book index and rewrites
 the on-screen heading to the translation's own book name (ဆာလံကျမ်း / Late 23…).
 
+Worshipper names are treated as literal personal data, not translation text. If a user
+types a name, the worker prompts every personalized segment to copy it exactly as entered
+for English, Myanmar, and Zolai/Tedim, and `llm_engine._ensure_exact_name()` repairs model
+output that drops or localizes it. Auto-generated guest placeholder names remain
+display-only (`name_provided=false`) and are not sent to the LLM or narrator.
+
 ### Myanmar LLM service (`workers/api.py` → `:8002`)
 
 Mirrors the Tedim service. Scripture is an exact Judson 1835 corpus lookup; prose
@@ -313,6 +321,14 @@ marks `burmese_status=ready` for older UI/admin compatibility.
 New Tedim services do **not** run a post-generation localization job. The Python
 worker writes Tedim directly into `service_assets.text_payload`, and the webhook only
 marks `tedim_status=ready` for older UI/admin compatibility.
+
+**Suno lyric guard:** When `music_source=suno`, `llm_engine.build_intake_plan` asks the
+OpenRouter model to write Tedim/Zolai worship lyrics. Because English-first models can
+drift into Mizo or other Chin dialects, `_lyrics_match_language` validates the output against
+strict criteria: core Zomi theological vocabulary (Pasian, Topa, Zeisu Krist), zero English
+worship words, and at least two Tedim sentence-final particles (` hi` / ` hen`) that are
+grammatically impossible in any other language. Lyrics that fail are replaced with
+mood-specific hardcoded Tedim fallbacks before being sent to Suno.
 
 **Concurrency:** a single `asyncio.Semaphore(1)` gate in each router ensures only one Ollama inference runs at a time — important on the shared ARM/OCI box where Gunicorn, Redis, MySQL, and Celery compete for the same CPUs.
 
@@ -383,6 +399,9 @@ the player are all source-agnostic. Add a source by implementing one class in
 - **suno** — original worship music **generated by AI** in Suno customMode. The
   worker sends generated lyrics to Suno, stores the MP3 in object storage, and
   shows the same lyrics in the player for English, Burmese, and Zolai/Tedim services.
+  If the planning model returns English-looking lyrics for a Burmese or Zolai/Tedim
+  service, the worker replaces them with service-language fallback lyrics before
+  calling Suno.
 - **youtube** — an existing worship track found via the YouTube Data API and embedded via
   the official player (`videoEmbeddable` + `videoSyndicated`, Music category, strict
   safe-search). **No audio is downloaded or stored** — downloading would violate YouTube's
@@ -392,16 +411,40 @@ The hymn library (lyrics, sung recordings, instrumental renders) is produced ahe
 time by `seed_hymns.py` and read from the same storage backend the worker uses — see
 [Running locally](#running-locally).
 
+**Opening readiness.** The countdown screen no longer opens the player on text alone.
+For music-backed services (`hymn_sung`, `hymn`, `youtube`, `suno`), it waits for the
+worship asset; in server-voice narration modes it also waits for the opening-prayer
+audio. This is especially important for Myanmar and Zolai/Tedim, where MMS-TTS is
+staggered and can arrive after the text. AI-composed (`suno`) services use a longer
+Myanmar/Tedim countdown so the Suno track and first narrated prayer are ready before
+worship starts, while polling continues for later narration during the song.
+
+**Countdown content.** The same screen can rotate randomized short cards while the worshipper
+waits. Admin Settings controls whether cards show and whether the source is custom
+banners, approved testimonies, a Bible verse, or all sources together. Custom banners
+are stored as plain text plus an optional source label. Testimony cards come only from
+already-approved testimonies and, when a service mood/language is known, are randomly selected from
+worshippers who have service history for that same mood/language. Bible cards follow the
+service language: English uses the fixed allowlisted `bible-api.com` WEB endpoint with a
+short timeout and local BSB fallback; Myanmar and Zolai/Tedim use the bundled Judson
+1835 and Lai Siangtho 1932 data, so they do not depend on an English online provider.
+Admins cannot enter arbitrary URLs. The public `/config` endpoint returns text-only
+`countdown_cards`, and Vue renders the content with normal text bindings rather than
+HTML to avoid script injection.
+
 **The Suno reuse pool.** Composing fresh AI music costs money and time, so completed Suno
-tracks are banked in `music_tracks`, keyed by mood (deduped by `provider_ref` via the
+tracks are banked in `music_tracks`, keyed by language + mood (deduped by `provider_ref` via the
 [`/internal/music-track`](#public) webhook). When the pool is enabled
 (`music_reuse` setting, on by default), [DispatchServiceJob](backend/app/Jobs/DispatchServiceJob.php)
 decides per service: if **this** worshipper has heard **this** mood before, it composes a
 fresh song so a returning visitor never gets a repeat; if they're **new** to the mood, it
 hands them a random track already composed for it — instant and free. Reuse only
-selects Suno tracks that have saved lyrics, so older lyric-less pool entries are skipped
-and a fresh lyric-backed song is composed instead. Hymn and YouTube sources never touch
-the pool.
+selects Suno tracks that match both the service language and mood and have saved lyrics,
+then performs a lightweight lyric-language check before handing a track to the worker.
+This second guard prevents older or mislabeled pool rows from crossing languages, so
+Burmese, Zolai/Tedim, and English songs never cross-reuse each other. Older lyric-less
+or language-mismatched pool entries are skipped and a fresh lyric-backed song is
+composed instead. Hymn and YouTube sources never touch the pool.
 
 ---
 
@@ -513,7 +556,9 @@ The console is at `/#admin`. Access is role-based:
 - **Settings** — global service config persisted in the `settings` table and threaded
   onto each job: `narration_mode` (`off`/`browser`/`openai`/`kokoro`/`edge_tts`),
   per-language narration toggles (`narration_en`/`narration_my`/`narration_td`),
-  `text_highlight_enabled` (word-by-word highlight on/off in the player), `music_reuse`
+  countdown-card settings (`countdown_content_enabled`, `countdown_content_source`,
+  `countdown_banners`; source may be custom banners, approved testimonies, or the
+  fixed online verse provider), `text_highlight_enabled` (word-by-word highlight on/off in the player), `music_reuse`
   (the Suno pool toggle), `storage_backend` (`local` vs `s3` for generated audio), and
   `avatar_enabled` (toggle HeyGen avatar rendering on/off without touching env vars).
   Plus the worshipper-facing **intake options** an admin curates without a redeploy:
@@ -688,6 +733,28 @@ config caching) in a troubleshooting table.
 
 ---
 
+## Server Restart Runbook
+
+Production restart/check procedures are documented in
+[**SERVICE_RESTART_RUNBOOK.md**](SERVICE_RESTART_RUNBOOK.md).
+
+Use it for:
+- code/prompt deploy restarts
+- post-reboot recovery
+- queue/worker/bridge health checks
+- log-based troubleshooting
+
+## Suno Pool CRUD Manual
+
+Manual create/read/update/delete procedures for `music_tracks` (Suno reuse pool) are in
+[**SUNO_POOL_CRUD_MANUAL.md**](SUNO_POOL_CRUD_MANUAL.md).
+
+This includes:
+- safe pre-edit steps (disable pool + backup)
+- SQL + Tinker CRUD commands
+- post-edit validation queries
+- Tedim/Burmese/English language-safety notes
+
 ## Environment variables
 
 > **Note:** the LLM path uses an OpenAI-compatible chat endpoint and is configured with
@@ -767,7 +834,7 @@ All routes are under `/api`. Authenticated routes use a Sanctum bearer token.
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| `GET` | `/config` | Intake options — `moods`, enabled `music_sources`, `scheduling_enabled`. Read by the intake form before a session exists. |
+| `GET` | `/config` | Intake/preparing options — `moods`, enabled `music_sources`, `scheduling_enabled`, `enabled_languages`, and text-only `countdown_cards`. Optional `mood`/`language` query params make countdown testimonies and Bible cards contextual. Read before a session exists. |
 | `POST` | `/guest` | Start an anonymous guest session. |
 | `POST` | `/register` | Create an account. |
 | `POST` | `/login` | Log in, returns a token. |
@@ -812,8 +879,8 @@ All routes are under `/api`. Authenticated routes use a Sanctum bearer token.
 | `DELETE` | `/admin/users/{user}` | Delete a user and their data. |
 | `GET` | `/admin/donors` | Donation rollups. |
 | `GET` | `/admin/prayer-requests` | Paginated log of prayer-request intakes. |
-| `GET` | `/admin/settings` | Read global settings (narration mode, per-language narration, text highlighting, language tabs, music reuse, storage backend, avatar enabled, moods, music sources, scheduling). |
-| `PATCH` | `/admin/settings` | Update any of `narration_mode` / `narration_en` / `narration_my` / `narration_td` / `text_highlight_enabled` / `lang_en` / `lang_my` / `lang_td` / `music_reuse` / `storage_backend` / `avatar_enabled` / `moods` / `music_sources` / `default_music_source` / `scheduling_enabled`. |
+| `GET` | `/admin/settings` | Read global settings (narration mode, per-language narration, text highlighting, language tabs, countdown cards, music reuse, storage backend, avatar enabled, moods, music sources, scheduling). |
+| `PATCH` | `/admin/settings` | Update any of `narration_mode` / `narration_en` / `narration_my` / `narration_td` / `text_highlight_enabled` / `lang_en` / `lang_my` / `lang_td` / `countdown_content_enabled` / `countdown_content_source` / `countdown_banners` / `music_reuse` / `storage_backend` / `avatar_enabled` / `moods` / `music_sources` / `default_music_source` / `scheduling_enabled`. |
 | `GET` | `/admin/export/{type}` | CSV: `donations` \| `users` \| `testimonies`. |
 
 ---

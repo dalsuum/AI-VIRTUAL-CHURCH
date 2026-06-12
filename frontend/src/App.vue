@@ -4,6 +4,7 @@ import IntakeForm from "./components/IntakeForm.vue";
 import PreparingView from "./components/PreparingView.vue";
 import ServicePlayer from "./components/ServicePlayer.vue";
 import AdminConsole from "./components/AdminConsole.vue";
+import PasswordReset from "./components/PasswordReset.vue";
 import ThemeToggle from "./components/ThemeToggle.vue";
 import { api } from "./composables/useApi";
 
@@ -13,11 +14,21 @@ window.addEventListener("hashchange", () => {
   isAdminRoute.value = window.location.hash === "#admin";
 });
 
-// view: "intake" | "preparing" | "service" | "intercepted"
-//   intake    — the form
-//   preparing — countdown + welcome while the AI composes (PreparingView)
-//   service   — the full-screen, one-stage-at-a-time player (ServicePlayer)
+// view: "intake" | "preparing" | "service" | "intercepted" | "reset"
 const view = ref("intake");
+
+// Pre-fill reset token from URL hash: #reset?token=XXX
+const resetToken = ref("");
+function checkResetHash() {
+  const hash = window.location.hash;
+  if (hash.startsWith("#reset")) {
+    const params = new URLSearchParams(hash.split("?")[1] || "");
+    resetToken.value = params.get("token") || "";
+    view.value = "reset";
+  }
+}
+checkResetHash();
+window.addEventListener("hashchange", checkResetHash);
 const sessionToken = ref(null);
 const resource = ref(null);
 const service = ref(null);
@@ -28,39 +39,28 @@ const resumeError = ref("");
 let pollTimer = null;
 
 // The service is reported "complete" the moment the spoken segments land (the
-// benediction is the last one generated). But two kinds of media attach AFTER that:
-//   - worship music composes in parallel and, for AI-composed (Suno), can finish
-//     well after text (its generation poll runs up to ~240s); YouTube returns in ~1s.
-//   - in a server-voice narration mode (OpenAI or Kokoro), each spoken segment's TTS
-//     mp3 is attached after its text, and the long sermon frequently lands after the
-//     music does.
-// So we must not freeze the snapshot on text-complete (or even music) alone, or that
-// late media never reaches the client. Keep polling until both have settled, but cap
-// the extra wait so a genuinely failed/absent asset doesn't poll forever (~5 min at
-// the 4s interval).
+// benediction is the last one generated). Music and server narration attach after
+// that, and either can be slow or absent. Open the player on text-complete, then
+// keep polling briefly so late media can fill in while the worshipper is already
+// able to move through every page.
 const MEDIA_GRACE_POLLS = 75;
 let mediaGracePolls = 0;
 
-// The spoken service is "complete" once the benediction lands; worship music
-// composes in parallel (AI-composed runs ~2 min, YouTube ~1s). Both must be present
-// before we call the service composed enough to open the doors — these reactive
-// checks drive both the poll-stop below and the preparing screen's early open.
 const textComposed = computed(() => service.value?.status === "complete");
 const musicLanded = computed(() => service.value?.music_asset != null);
 // Server-voice modes attach mp3s after the text; 'browser'/'off' never do, so only
 // these gate the open on narration audio. (Kept in sync with Setting::NARRATION_MODES.)
-const SERVER_VOICE_MODES = ["openai", "kokoro"];
+const SERVER_VOICE_MODES = ["openai", "kokoro", "edge_tts"];
 const narrationSettled = computed(() => {
   const s = service.value;
-  if (!s || !SERVER_VOICE_MODES.includes(s.narration_mode)) return true;
+  if (!s || s.narration_enabled === false || !SERVER_VOICE_MODES.includes(s.narration_mode)) return true;
   const segs = s.segments || {};
   const auds = s.audios || {};
   return Object.keys(segs).every((k) => auds[k]);
 });
-// Enough is composed to begin worship: spoken text and the worship music are in.
-// (Late server-voice narration fills in during playback, since the player reads the
-// still-polling service — so it doesn't gate the open.)
-const mediaReady = computed(() => textComposed.value && musicLanded.value);
+// Enough is composed to begin worship: all spoken text pages are in. Optional
+// music/narration should never hide the service pages when a provider is slow.
+const mediaReady = computed(() => textComposed.value);
 
 const isScheduled = computed(() => service.value?.status === "scheduled");
 const scheduledFor = computed(() => {
@@ -168,7 +168,9 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
         <span class="brand-mark" aria-hidden="true">✝</span>
         <span class="brand-name">AI Virtual Church</span>
       </a>
-      <ThemeToggle />
+      <div class="topbar-right">
+        <ThemeToggle />
+      </div>
     </header>
 
     <main class="shell">
@@ -214,10 +216,17 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
             {{ resource.label || "Get support" }}
           </a>
         </section>
+
+        <PasswordReset
+          v-else-if="view === 'reset'"
+          :initial-token="resetToken"
+          @back="view = 'intake'"
+        />
       </div>
     </main>
 
     <footer class="site-footer">
+      <span class="ai-disclaimer">AI can make mistakes. Please verify important information.</span>
       <a
         href="https://www.paypal.com/donate/?hosted_button_id=WETP5RQ7ZGJ6U"
         target="_blank"
@@ -246,6 +255,7 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
   backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--border);
 }
+.topbar-right { display: flex; align-items: center; gap: 0.75rem; }
 .brand { display: inline-flex; align-items: center; gap: 0.55rem; text-decoration: none; color: var(--text); font-weight: 600; }
 .brand-mark {
   display: inline-flex; align-items: center; justify-content: center;
@@ -268,9 +278,20 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
 .intercepted a { color: var(--primary); font-weight: 500; }
 
 .site-footer {
-  text-align: center;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 1.25rem;
   padding: 1.25rem;
   border-top: 1px solid var(--border);
+}
+.ai-disclaimer {
+  width: 100%;
+  text-align: center;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  opacity: 0.7;
 }
 .donate-link {
   display: inline-flex;

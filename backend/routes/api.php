@@ -15,9 +15,11 @@ Route::get('/config', [ConfigController::class, 'show']);
 
 // Public auth — rate-limited per IP to slow credential stuffing and account spam.
 Route::middleware('throttle:auth')->group(function () {
-    Route::post('/guest',    [AuthController::class, 'guest']);
-    Route::post('/register', [AuthController::class, 'register']);
-    Route::post('/login',    [AuthController::class, 'login']);
+    Route::post('/guest',          [AuthController::class, 'guest']);
+    Route::post('/register',       [AuthController::class, 'register']);
+    Route::post('/login',          [AuthController::class, 'login']);
+    Route::post('/forgot-password',[AuthController::class, 'forgotPassword']);
+    Route::post('/reset-password', [AuthController::class, 'resetPassword']);
 });
 
 // Email-link session resume — public, session token acts as the credential.
@@ -34,10 +36,11 @@ Route::post('/webhooks/stripe', [OfferingController::class, 'webhook']);
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me', [AuthController::class, 'me']);
-    Route::patch('/me/email', [AuthController::class, 'updateEmail']);
-    Route::patch('/me/music-source', [AuthController::class, 'updateMusicSource']);
+    Route::patch('/me/name',             [AuthController::class, 'updateName']);
+    Route::patch('/me/email',            [AuthController::class, 'updateEmail']);
+    Route::patch('/me/music-source',     [AuthController::class, 'updateMusicSource']);
     Route::patch('/me/presenter-gender', [AuthController::class, 'updatePresenterGender']);
-    Route::post('/me/change-password', [AuthController::class, 'changePassword']);
+    Route::post('/me/change-password',   [AuthController::class, 'changePassword']);
 
     Route::get('/me/services', [ServiceController::class, 'myServices']);
     Route::post('/service/start', [ServiceController::class, 'start']);
@@ -54,8 +57,19 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/testimonies', [TestimonyController::class, 'store'])
         ->middleware('throttle:testimony');
 
-    // Admin console — every route additionally requires an is_admin account.
-    Route::prefix('admin')->middleware('admin')->group(function () {
+    // Voice Studio — any authenticated user can record their own training data.
+    Route::prefix('voice-studio')->group(function () {
+        Route::get('/script/{lang}',           [VoiceStudioController::class, 'script']);
+        Route::get('/progress/{lang}',         [VoiceStudioController::class, 'progress']);
+        Route::post('/recording',              [VoiceStudioController::class, 'store']);
+        Route::get('/export/{lang}',           [VoiceStudioController::class, 'export']);
+        Route::delete('/recording/{lang}/{id}',[VoiceStudioController::class, 'destroy']);
+    });
+
+    // Staff console — accessible to admin, moderator, and presenter roles.
+    // Each controller method enforces its own fine-grained permission check via
+    // PermissionService::require(), so entry here doesn't grant blanket access.
+    Route::prefix('admin')->middleware('staff')->group(function () {
         Route::get('/dashboard', [AdminController::class, 'dashboard']);
 
         Route::get('/services', [AdminController::class, 'services']);
@@ -66,14 +80,17 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::patch('/testimonies/{testimony}/approve', [AdminController::class, 'approveTestimony']);
         Route::delete('/testimonies/{testimony}', [AdminController::class, 'deleteTestimony']);
 
+        Route::get('/donors', [AdminController::class, 'donors']);
+        Route::get('/prayer-requests', [AdminController::class, 'prayerRequests']);
+    });
+
+    // Admin-only routes — full admin role required for sensitive management.
+    Route::prefix('admin')->middleware('admin')->group(function () {
         Route::get('/users', [AdminController::class, 'users']);
         Route::patch('/users/{user}/admin', [AdminController::class, 'setAdmin']);
         Route::patch('/users/{user}/block', [AdminController::class, 'blockUser']);
         Route::patch('/users/{user}/presenter-gender', [AdminController::class, 'updatePresenterGender']);
         Route::delete('/users/{user}', [AdminController::class, 'deleteUser']);
-
-        Route::get('/donors', [AdminController::class, 'donors']);
-        Route::get('/prayer-requests', [AdminController::class, 'prayerRequests']);
 
         // Global service settings (e.g. narration voice mode).
         Route::get('/settings', [AdminController::class, 'settings']);
@@ -82,11 +99,13 @@ Route::middleware('auth:sanctum')->group(function () {
         // CSV report export: donations | users | testimonies
         Route::get('/export/{type}', [AdminController::class, 'export']);
 
-        // Voice Studio — record custom TTS training data
-        Route::get('/voice-studio/script/{lang}',           [VoiceStudioController::class, 'script']);
-        Route::get('/voice-studio/progress/{lang}',         [VoiceStudioController::class, 'progress']);
-        Route::post('/voice-studio/recording',              [VoiceStudioController::class, 'store']);
-        Route::get('/voice-studio/export/{lang}',           [VoiceStudioController::class, 'export']);
-        Route::delete('/voice-studio/recording/{lang}/{id}',[VoiceStudioController::class, 'destroy']);
+        // Role management, user creation, password resets
+        Route::post('/users',                      [AdminController::class, 'createUser']);
+        Route::patch('/users/{user}/role',         [AdminController::class, 'assignRole']);
+        Route::post('/users/{user}/force-reset',   [AdminController::class, 'forcePasswordReset']);
+
+        // Role-based permission matrix management
+        Route::get('/permissions',   [AdminController::class, 'getPermissions']);
+        Route::patch('/permissions', [AdminController::class, 'updatePermissions']);
     });
 });

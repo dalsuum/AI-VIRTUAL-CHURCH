@@ -2,26 +2,54 @@
 // Admin console, reached at #admin. Logs in with an admin account, then exposes the
 // dashboard plus moderation (testimonies), donor insight, user management, service
 // retry, and CSV exports.
-import { ref, onMounted } from "vue";
+import { ref, computed, onMounted } from "vue";
 import { api } from "../composables/useApi";
 import ThemeToggle from "./ThemeToggle.vue";
 import VoiceStudio from "./VoiceStudio.vue";
+import PermissionsMatrix from "./PermissionsMatrix.vue";
 
-const authed = ref(false);
-const email = ref("");
-const password = ref("");
-const loginError = ref("");
+const authed      = ref(false);
+const currentUser = ref(null); // { id, name, role, permissions: string[] }
+const email       = ref("");
+const password    = ref("");
+const loginError  = ref("");
 
-const tab = ref("dashboard"); // dashboard | services | donors | testimonies | users | prayer | settings | voice-studio
+// Returns true if the current user has the given "feature.action" permission.
+// Admin role bypasses the permissions check.
+function can(permission) {
+  if (!currentUser.value) return false;
+  if (currentUser.value.role === "admin") return true;
+  return (currentUser.value.permissions ?? []).includes(permission);
+}
+const isAdminUser = computed(() => currentUser.value?.role === "admin");
+
+// First tab the current user is allowed to see — determines landing tab after login.
+function firstAllowedTab() {
+  const candidates = [
+    { name: "dashboard",   check: () => can("dashboard.view") },
+    { name: "services",    check: () => can("services.view") },
+    { name: "donors",      check: () => can("donors.view") },
+    { name: "testimonies", check: () => can("testimonies.view") },
+    { name: "users",       check: () => isAdminUser.value },
+    { name: "prayer",      check: () => can("prayer_requests.view") },
+    { name: "settings",    check: () => isAdminUser.value },
+    { name: "voice-studio",check: () => can("voice_studio.view") },
+    { name: "permissions", check: () => isAdminUser.value },
+  ];
+  return (candidates.find((c) => c.check()) ?? candidates[0]).name;
+}
+
+const tab = ref("dashboard"); // dashboard | services | donors | testimonies | users | prayer | settings | voice-studio | permissions
 const stats = ref(null);
 const services = ref([]);
 const donors = ref([]);
 const testimonies = ref([]);
 const users = ref([]);
 const prayerRequests = ref([]);
-const settings = ref(null);
-const savingSettings = ref(false);
-const notice = ref("");
+const settings        = ref(null);
+const savingSettings  = ref(false);
+const notice          = ref("");
+const permissionsData = ref(null); // { permissions, available, roles }
 
 // How spoken segments are voiced across all services. Mirrors the backend's
 // Setting::NARRATION_MODES; surfaced as a single-choice selector.
@@ -48,7 +76,7 @@ const setEdgeTtsVoice = (v) => saveSetting("edge_tts_voice", v, "Voice updated."
 
 const narrationLanguages = [
   { key: "narration_en", label: "English", hint: "Use the selected narration provider for English services." },
-  { key: "narration_my", label: "Myanmar", hint: "Enable only after confirming the Burmese voice is acceptable." },
+  { key: "narration_my", label: "Myanmar", hint: "Uses my-MM-NilarNeural (female) / my-MM-ThihaNeural (male) via Edge TTS. Requires narration mode set to Edge TTS." },
   { key: "narration_td", label: "Tedim (Zolai)", hint: "Enable only when EDGE_TTS_VOICE_TD is configured." },
 ];
 
@@ -113,22 +141,42 @@ async function login() {
   }
 }
 
-// Verify the logged-in account actually has admin rights by loading the dashboard.
+// Verify the account has staff access (admin/moderator/presenter) via /me,
+// then navigate to the first tab that this user's permissions allow.
 async function enter() {
   try {
-    stats.value = await api.adminDashboard();
-    authed.value = true;
+    const meRes = await api.me();
+    const user  = meRes.user;
+    const staffRoles = ["admin", "moderator", "presenter"];
+    if (!staffRoles.includes(user.role)) {
+      loginError.value = "This account does not have staff access.";
+      return;
+    }
+    currentUser.value = user;
+    authed.value      = true;
+
+    // Load dashboard stats in the background if accessible.
+    if (can("dashboard.view")) {
+      api.adminDashboard().then((res) => { stats.value = res; }).catch(() => {});
+    }
+
+    const startTab = firstAllowedTab();
+    tab.value = startTab;
+    // Load data for the start tab (if it's not dashboard — dashboard loads above).
+    if (startTab !== "dashboard") show(startTab);
   } catch (e) {
-    loginError.value = e?.status === 403 ? "This account is not an admin." : "Could not load admin.";
+    loginError.value = e?.data?.message || "Could not authenticate.";
     authed.value = false;
   }
 }
 
 function logout() {
   api.logout();
-  authed.value = false;
-  email.value = "";
-  password.value = "";
+  authed.value      = false;
+  currentUser.value = null;
+  stats.value       = null;
+  email.value       = "";
+  password.value    = "";
 }
 
 async function loadServices() {
@@ -149,16 +197,24 @@ async function loadPrayerRequests() {
 async function loadSettings() {
   settings.value = await api.adminSettings();
 }
+async function loadPermissions() {
+  permissionsData.value = await api.adminGetPermissions();
+}
 
 function show(name) {
-  tab.value = name;
+  tab.value    = name;
   notice.value = "";
-  if (name === "services") loadServices();
-  if (name === "donors") loadDonors();
+  if (name === "services")    loadServices();
+  if (name === "donors")      loadDonors();
   if (name === "testimonies") loadTestimonies();
-  if (name === "users") loadUsers();
-  if (name === "prayer") loadPrayerRequests();
-  if (name === "settings") loadSettings();
+  if (name === "users")       loadUsers();
+  if (name === "prayer")      loadPrayerRequests();
+  if (name === "settings")    loadSettings();
+  if (name === "permissions") loadPermissions();
+  // Dashboard stats loaded on demand if not yet fetched.
+  if (name === "dashboard" && !stats.value && can("dashboard.view")) {
+    api.adminDashboard().then((res) => { stats.value = res; }).catch(() => {});
+  }
 }
 
 // Optimistically apply one setting, persist it, and roll back the local value if the
@@ -194,6 +250,7 @@ function toggleServiceLanguage(key) {
 }
 const setMusicReuse = (on) => saveSetting("music_reuse", on, "Music reuse updated.");
 const setAvatarEnabled = (on) => saveSetting("avatar_enabled", on, "Avatar rendering updated.");
+const setTextHighlightEnabled = (on) => saveSetting("text_highlight_enabled", on, "Text highlighting updated.");
 const setStorageBackend = (backend) => saveSetting("storage_backend", backend, "Storage backend updated.");
 const setScheduling = (on) => saveSetting("scheduling_enabled", on, "Scheduling updated.");
 const setDefaultMusicSource = (src) => saveSetting("default_music_source", src, "Default music source updated.");
@@ -329,12 +386,12 @@ async function remove(t) {
   await api.adminDeleteTestimony(t.id);
   loadTestimonies();
 }
-async function toggleAdmin(u) {
+async function assignRole(u, role) {
   try {
-    await api.adminSetAdmin(u.id, !u.is_admin);
+    await api.adminAssignRole(u.id, role);
     loadUsers();
   } catch (e) {
-    notice.value = e?.data?.message || "Could not update.";
+    notice.value = e?.data?.message || "Could not update role.";
   }
 }
 async function toggleBlock(u) {
@@ -352,6 +409,52 @@ async function deleteUser(u) {
     loadUsers();
   } catch (e) {
     notice.value = e?.data?.message || "Could not delete user.";
+  }
+}
+
+const resetLink = ref(null); // { name, url, expires_at }
+async function forceReset(u) {
+  try {
+    const res = await api.adminForcePasswordReset(u.id);
+    resetLink.value = { name: u.name, url: res.reset_url, expires_at: res.expires_at };
+  } catch (e) {
+    notice.value = e?.data?.message || "Could not generate reset link.";
+  }
+}
+
+const showCreateUser  = ref(false);
+const createUserForm  = ref({ name: "", email: "", role: "member", password: "" });
+const creatingUser    = ref(false);
+const createUserError = ref("");
+const createUserLink  = ref(null); // reset URL when no password given
+
+function openCreateUser() {
+  createUserForm.value  = { name: "", email: "", role: "member", password: "" };
+  createUserError.value = "";
+  createUserLink.value  = null;
+  showCreateUser.value  = true;
+}
+
+async function submitCreateUser() {
+  createUserError.value = "";
+  createUserLink.value  = null;
+  creatingUser.value    = true;
+  try {
+    const payload = { ...createUserForm.value };
+    if (!payload.password) delete payload.password;
+    const res = await api.adminCreateUser(payload);
+    if (res.reset_url) {
+      createUserLink.value = { url: res.reset_url, expires_at: res.expires_at };
+    } else {
+      showCreateUser.value = false;
+    }
+    loadUsers();
+  } catch (e) {
+    createUserError.value = e?.data?.message || e?.data?.errors
+      ? Object.values(e.data.errors).flat().join(" ")
+      : "Could not create user.";
+  } finally {
+    creatingUser.value = false;
   }
 }
 
@@ -414,14 +517,18 @@ onMounted(() => { if (api.hasToken()) enter(); });
 
     <template v-else>
       <nav class="tabs">
-        <button :class="{ active: tab === 'dashboard' }" @click="show('dashboard')">Dashboard</button>
-        <button :class="{ active: tab === 'services' }" @click="show('services')">Services</button>
-        <button :class="{ active: tab === 'donors' }" @click="show('donors')">Donors</button>
-        <button :class="{ active: tab === 'testimonies' }" @click="show('testimonies')">Testimonies</button>
-        <button :class="{ active: tab === 'users' }" @click="show('users')">Users</button>
-        <button :class="{ active: tab === 'prayer' }" @click="show('prayer')">Prayer Requests</button>
-        <button :class="{ active: tab === 'settings' }" @click="show('settings')">Settings</button>
-        <button :class="{ active: tab === 'voice-studio' }" @click="show('voice-studio')">Voice Studio</button>
+        <button v-if="can('dashboard.view')"        :class="{ active: tab === 'dashboard' }"   @click="show('dashboard')">Dashboard</button>
+        <button v-if="can('services.view')"         :class="{ active: tab === 'services' }"    @click="show('services')">Services</button>
+        <button v-if="can('donors.view')"           :class="{ active: tab === 'donors' }"      @click="show('donors')">Donors</button>
+        <button v-if="can('testimonies.view')"      :class="{ active: tab === 'testimonies' }" @click="show('testimonies')">Testimonies</button>
+        <button v-if="isAdminUser"                  :class="{ active: tab === 'users' }"       @click="show('users')">Users</button>
+        <button v-if="can('prayer_requests.view')"  :class="{ active: tab === 'prayer' }"      @click="show('prayer')">Prayer Requests</button>
+        <button v-if="isAdminUser"                  :class="{ active: tab === 'settings' }"    @click="show('settings')">Settings</button>
+        <button v-if="can('voice_studio.view')"     :class="{ active: tab === 'voice-studio'}" @click="show('voice-studio')">Voice Studio</button>
+        <button v-if="isAdminUser"                  :class="{ active: tab === 'permissions' }" @click="show('permissions')">Permissions</button>
+        <span v-if="currentUser" class="staff-role-badge" :class="'role-' + currentUser.role">
+          {{ currentUser.role }}
+        </span>
       </nav>
 
       <p v-if="notice" class="notice">{{ notice }}</p>
@@ -476,7 +583,7 @@ onMounted(() => { if (api.hasToken()) enter(); });
           </div>
         </div>
 
-        <div class="exports">
+        <div v-if="isAdminUser" class="exports">
           <span class="exports-label">Export report</span>
           <button class="chip" @click="exportReport('donations')">Donations CSV</button>
           <button class="chip" @click="exportReport('users')">Users CSV</button>
@@ -506,8 +613,8 @@ onMounted(() => { if (api.hasToken()) enter(); });
                 <td>{{ s.assets_count }}</td>
                 <td>
                   <button class="link" @click="shareService(s)">Share</button>
-                  <button class="link" @click="retry(s)">Retry</button>
-                  <button class="link danger" @click="deleteService(s)">Delete</button>
+                  <button v-if="can('services.retry')"  class="link" @click="retry(s)">Retry</button>
+                  <button v-if="can('services.delete')" class="link danger" @click="deleteService(s)">Delete</button>
                 </td>
               </tr>
               <!-- Inline share popover — appears below the row when native share is unavailable -->
@@ -535,7 +642,7 @@ onMounted(() => { if (api.hasToken()) enter(); });
       <div v-else-if="tab === 'donors'" class="table-wrap">
         <div class="table-head">
           <h2>Donors</h2>
-          <button class="chip" @click="exportReport('donations')">Export CSV</button>
+          <button v-if="isAdminUser" class="chip" @click="exportReport('donations')">Export CSV</button>
         </div>
         <table class="grid">
           <thead><tr><th>Donor</th><th>Given</th><th>Gifts</th><th>Testimony</th><th>Prayer note</th></tr></thead>
@@ -556,7 +663,7 @@ onMounted(() => { if (api.hasToken()) enter(); });
       <div v-else-if="tab === 'testimonies'" class="table-wrap">
         <div class="table-head">
           <h2>Testimonies</h2>
-          <button class="chip" @click="exportReport('testimonies')">Export CSV</button>
+          <button v-if="isAdminUser" class="chip" @click="exportReport('testimonies')">Export CSV</button>
         </div>
         <table class="grid">
           <thead><tr><th>By</th><th>Mood</th><th>Content</th><th>Status</th><th></th></tr></thead>
@@ -572,8 +679,8 @@ onMounted(() => { if (api.hasToken()) enter(); });
               <td class="content">{{ t.content }}</td>
               <td><span class="badge" :class="t.approved ? 'ready' : 'pending'">{{ t.approved ? "approved" : "pending" }}</span></td>
               <td>
-                <button v-if="!t.approved" class="link" @click="approve(t)">Approve</button>
-                <button class="link danger" @click="remove(t)">Delete</button>
+                <button v-if="!t.approved && can('testimonies.approve')" class="link" @click="approve(t)">Approve</button>
+                <button v-if="can('testimonies.delete')" class="link danger" @click="remove(t)">Delete</button>
               </td>
             </tr>
           </tbody>
@@ -584,10 +691,77 @@ onMounted(() => { if (api.hasToken()) enter(); });
       <div v-else-if="tab === 'users'" class="table-wrap">
         <div class="table-head">
           <h2>Users &amp; visitors</h2>
-          <button class="chip" @click="exportReport('users')">Export CSV</button>
+          <div style="display:flex;gap:.5rem;">
+            <button class="chip primary-chip" @click="openCreateUser">+ Add User</button>
+            <button class="chip" @click="exportReport('users')">Export CSV</button>
+          </div>
         </div>
+
+        <!-- Create user form -->
+        <div v-if="showCreateUser" class="create-user-panel">
+          <h3 class="cu-title">Add New User</h3>
+
+          <!-- First-login link (shown after successful create without password) -->
+          <div v-if="createUserLink" class="cu-success">
+            <p>User created. Share this first-login link — it expires {{ fmtDate(createUserLink.expires_at) }}.</p>
+            <input class="reset-url-input" :value="createUserLink.url" readonly @click="$event.target.select()" />
+            <div style="display:flex;gap:.5rem;margin-top:.5rem;">
+              <button class="chip" @click="navigator.clipboard?.writeText(createUserLink.url)">Copy link</button>
+              <button class="chip" @click="showCreateUser = false; createUserLink = null">Done</button>
+            </div>
+          </div>
+
+          <form v-else @submit.prevent="submitCreateUser" class="cu-form">
+            <div class="cu-row">
+              <label class="cu-label">Name</label>
+              <input v-model="createUserForm.name" type="text" class="cu-input" placeholder="Full name" required />
+            </div>
+            <div class="cu-row">
+              <label class="cu-label">Email</label>
+              <input v-model="createUserForm.email" type="email" class="cu-input" placeholder="email@example.com" required />
+            </div>
+            <div class="cu-row">
+              <label class="cu-label">Role</label>
+              <select v-model="createUserForm.role" class="cu-input">
+                <option value="member">Member</option>
+                <option value="presenter">Presenter</option>
+                <option value="moderator">Moderator</option>
+                <option value="admin">Admin</option>
+              </select>
+            </div>
+            <div class="cu-row">
+              <label class="cu-label">Password</label>
+              <input v-model="createUserForm.password" type="password" class="cu-input"
+                     placeholder="Leave blank to send a first-login link" autocomplete="new-password" />
+            </div>
+            <p v-if="createUserError" class="cu-error">{{ createUserError }}</p>
+            <div class="cu-actions">
+              <button type="submit" class="chip primary-chip" :disabled="creatingUser">
+                {{ creatingUser ? "Creating…" : "Create User" }}
+              </button>
+              <button type="button" class="chip" @click="showCreateUser = false">Cancel</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Reset-link modal -->
+        <div v-if="resetLink" class="reset-modal">
+          <p><strong>Reset link for {{ resetLink.name }}</strong></p>
+          <p class="reset-note">Share this link with the user. Expires {{ fmtDate(resetLink.expires_at) }}.</p>
+          <input class="reset-url-input" :value="resetLink.url" readonly @click="$event.target.select()" />
+          <div style="display:flex;gap:.5rem;margin-top:.5rem;">
+            <button class="chip" @click="navigator.clipboard?.writeText(resetLink.url)">Copy</button>
+            <button class="chip" @click="resetLink = null">Dismiss</button>
+          </div>
+        </div>
+
         <table class="grid">
-          <thead><tr><th>Name</th><th>Email</th><th>Last mood</th><th>Sermon topic</th><th>Custom words</th><th>Visits</th><th>Last seen</th><th>Admin</th><th></th></tr></thead>
+          <thead>
+            <tr>
+              <th>Name</th><th>Email</th><th>Role</th><th>Last mood</th>
+              <th>Visits</th><th>Last seen</th><th>Actions</th>
+            </tr>
+          </thead>
           <tbody>
             <tr v-for="u in users" :key="u.id" :class="{ 'row-blocked': u.is_blocked }">
               <td>
@@ -597,21 +771,27 @@ onMounted(() => { if (api.hasToken()) enter(); });
               </td>
               <td><small>{{ u.email || "—" }}</small></td>
               <td>
-                <span v-if="u.last_mood" class="badge pending">{{ u.last_mood }}</span>
-                <span v-else class="muted-cell">—</span>
+                <select
+                  v-if="!u.is_guest"
+                  class="role-select"
+                  :value="u.role"
+                  @change="assignRole(u, $event.target.value)"
+                >
+                  <option value="member">Member</option>
+                  <option value="presenter">Presenter</option>
+                  <option value="moderator">Moderator</option>
+                  <option value="admin">Admin</option>
+                </select>
+                <span v-else class="tag">guest</span>
               </td>
-              <td><small>{{ u.last_sermon || "—" }}</small></td>
               <td>
-                <template v-if="u.custom_moods && u.custom_moods.length">
-                  <span v-for="w in u.custom_moods" :key="w" class="badge custom-mood">{{ w }}</span>
-                </template>
+                <span v-if="u.last_mood" class="badge pending">{{ u.last_mood }}</span>
                 <span v-else class="muted-cell">—</span>
               </td>
               <td>{{ u.visits }}</td>
               <td><small>{{ fmtDate(u.last_seen) }}</small></td>
-              <td>{{ u.is_admin ? "yes" : "no" }}</td>
               <td class="actions">
-                <button class="link" @click="toggleAdmin(u)">{{ u.is_admin ? "Revoke admin" : "Make admin" }}</button>
+                <button v-if="!u.is_guest" class="link" @click="forceReset(u)">Reset pw</button>
                 <button class="link" @click="toggleBlock(u)">{{ u.is_blocked ? "Unblock" : "Block" }}</button>
                 <button class="link danger" @click="deleteUser(u)">Delete</button>
               </td>
@@ -866,6 +1046,36 @@ onMounted(() => { if (api.hasToken()) enter(); });
         </div>
 
         <div class="setting-block">
+          <h2>Text highlighting</h2>
+          <p class="setting-desc">
+            Word-by-word highlighting while narration plays in the service player.
+          </p>
+          <div v-if="settings" class="choice-row">
+            <button
+              type="button"
+              class="choice"
+              :class="{ active: settings.text_highlight_enabled === true }"
+              :disabled="savingSettings"
+              @click="setTextHighlightEnabled(true)"
+            >
+              <strong>Enabled</strong>
+              <span>Highlight each word as narration plays.</span>
+            </button>
+            <button
+              type="button"
+              class="choice"
+              :class="{ active: settings.text_highlight_enabled === false }"
+              :disabled="savingSettings"
+              @click="setTextHighlightEnabled(false)"
+            >
+              <strong>Disabled</strong>
+              <span>Show plain text without moving highlights.</span>
+            </button>
+          </div>
+          <p v-else class="setting-desc">Loading…</p>
+        </div>
+
+        <div class="setting-block">
           <h2>Avatar videos</h2>
           <p class="setting-desc">
             Talking-head avatar videos (powered by D-ID) for the sermon, opening prayer,
@@ -939,6 +1149,10 @@ onMounted(() => { if (api.hasToken()) enter(); });
       <section v-else-if="tab === 'voice-studio'" class="settings">
         <VoiceStudio />
       </section>
+
+      <section v-else-if="tab === 'permissions' && isAdminUser" class="settings">
+        <PermissionsMatrix :initial-data="permissionsData" />
+      </section>
     </template>
   </main>
 </template>
@@ -959,10 +1173,18 @@ onMounted(() => { if (api.hasToken()) enter(); });
 .error { color: var(--danger); }
 .notice { background: var(--primary-soft); color: var(--primary-hover); padding: 0.55rem 0.85rem; border-radius: var(--radius-sm); }
 
-.tabs { display: flex; gap: 0.25rem; margin-bottom: 1.5rem; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.tabs { display: flex; gap: 0.25rem; margin-bottom: 1.5rem; border-bottom: 1px solid var(--border); flex-wrap: wrap; align-items: flex-end; }
 .tabs button { padding: 0.6rem 0.9rem; border: 0; background: transparent; cursor: pointer; color: var(--text-muted); border-bottom: 2px solid transparent; font: inherit; }
 .tabs button:hover { color: var(--text); }
 .tabs button.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 500; }
+.staff-role-badge {
+  margin-left: auto; margin-bottom: 0.25rem; padding: 0.15rem 0.65rem;
+  border-radius: 999px; font-size: 0.72rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.role-admin     { background: #fee2e2; color: #b91c1c; }
+.role-moderator { background: #fef3c7; color: #92400e; }
+.role-presenter { background: #ede9fe; color: #5b21b6; }
 
 .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; }
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.1rem 1.2rem; display: flex; flex-direction: column; gap: 0.15rem; box-shadow: var(--shadow-sm); }
@@ -995,6 +1217,42 @@ onMounted(() => { if (api.hasToken()) enter(); });
 .tag-blocked { background: #fee2e2; color: #b91c1c; }
 .row-blocked td { opacity: 0.55; }
 .actions { white-space: nowrap; display: flex; gap: 0.25rem; align-items: center; }
+.role-select {
+  font-size: 0.8rem; padding: 0.2rem 0.4rem; border: 1px solid var(--border);
+  border-radius: 5px; background: var(--surface); color: var(--text); cursor: pointer;
+}
+.reset-modal {
+  margin-bottom: 1rem; padding: 1rem; background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: 8px;
+}
+.reset-note { font-size: 0.82rem; color: var(--text-muted); margin: 0.2rem 0 0.6rem; }
+.reset-url-input {
+  width: 100%; padding: 0.4rem 0.6rem; font-size: 0.82rem;
+  border: 1px solid var(--border); border-radius: 5px;
+  background: var(--surface); color: var(--text); cursor: text;
+}
+.primary-chip {
+  background: var(--primary, #2563eb); color: var(--on-primary, #fff);
+  border-color: var(--primary, #2563eb);
+}
+.primary-chip:hover { background: var(--primary-hover, #1d4ed8); border-color: var(--primary-hover, #1d4ed8); }
+.create-user-panel {
+  margin-bottom: 1.25rem; padding: 1.25rem;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px;
+}
+.cu-title { margin: 0 0 1rem; font-size: 1rem; }
+.cu-form { display: flex; flex-direction: column; gap: .75rem; }
+.cu-row { display: grid; grid-template-columns: 90px 1fr; align-items: center; gap: .5rem; }
+.cu-label { font-size: .85rem; color: var(--text-muted); font-weight: 500; }
+.cu-input {
+  padding: .45rem .65rem; border: 1px solid var(--border); border-radius: 5px;
+  background: var(--surface); color: var(--text); font-size: .875rem; width: 100%;
+}
+.cu-input:focus { outline: none; border-color: var(--primary); }
+.cu-error { font-size: .82rem; color: #dc2626; margin: 0; }
+.cu-actions { display: flex; gap: .5rem; padding-top: .25rem; }
+.cu-success { font-size: .875rem; }
+.cu-success p { margin: 0 0 .5rem; }
 .badge { display: inline-block; font-size: 0.78rem; padding: 0.15rem 0.55rem; border-radius: 999px; background: var(--surface-3); color: var(--text-muted); text-transform: capitalize; }
 .badge.active, .badge.ready { background: var(--success-soft); color: var(--success); }
 .badge.pending, .badge.scheduled { background: var(--primary-soft); color: var(--primary-hover); }

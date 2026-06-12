@@ -10,6 +10,9 @@ use App\Models\ServiceSession;
 use App\Models\Setting;
 use App\Models\Testimony;
 use App\Models\User;
+use App\Services\PermissionService;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Str;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -23,6 +26,7 @@ class AdminController extends Controller
     /** At-a-glance operational dashboard. */
     public function dashboard(): JsonResponse
     {
+        PermissionService::require(request()->user(), 'dashboard.view');
         $guestPattern = 'guest_%@guest.local';
 
         return response()->json([
@@ -83,6 +87,7 @@ class AdminController extends Controller
     /** Recent services, newest first, with their user, intake (mood + sermon topic), and segment counts. */
     public function services(): JsonResponse
     {
+        PermissionService::require(request()->user(), 'services.view');
         $services = ServiceSession::with([
                 'user:id,name,email',
                 'intake:session_id,mood,scripture_ref',
@@ -111,6 +116,7 @@ class AdminController extends Controller
     /** Re-run the AI pipeline for a session (e.g. after a worker outage). */
     public function retryService(ServiceSession $service): JsonResponse
     {
+        PermissionService::require(request()->user(), 'services.retry');
         abort_if($service->intake === null, 422, 'Session has no intake to regenerate from.');
 
         // Wipe existing assets so the segment count drops to zero — visible confirmation
@@ -124,6 +130,7 @@ class AdminController extends Controller
 
     public function deleteService(ServiceSession $service): JsonResponse
     {
+        PermissionService::require(request()->user(), 'services.delete');
         $service->assets()->delete();
         $service->intake()->delete();
         $service->delete();
@@ -134,6 +141,7 @@ class AdminController extends Controller
     /** All testimonies (pending first) for moderation. */
     public function testimonies(): JsonResponse
     {
+        PermissionService::require(request()->user(), 'testimonies.view');
         $testimonies = Testimony::with('user:id,name')
             ->orderBy('approved')
             ->latest()
@@ -191,6 +199,7 @@ class AdminController extends Controller
 
     public function approveTestimony(Testimony $testimony): JsonResponse
     {
+        PermissionService::require(request()->user(), 'testimonies.approve');
         $testimony->update(['approved' => true]);
 
         return response()->json(['ok' => true]);
@@ -198,6 +207,7 @@ class AdminController extends Controller
 
     public function deleteTestimony(Testimony $testimony): JsonResponse
     {
+        PermissionService::require(request()->user(), 'testimonies.delete');
         $testimony->delete();
 
         return response()->json(['ok' => true]);
@@ -229,7 +239,8 @@ class AdminController extends Controller
                     'id'           => $u->id,
                     'name'         => $u->name,
                     'email'        => $isGuest ? null : $u->email,
-                    'is_admin'     => $u->is_admin,
+                    'role'         => $u->role(),
+                    'is_admin'     => $u->isAdmin(),
                     'is_blocked'   => $u->is_blocked,
                     'is_guest'     => $isGuest,
                     'music_source'     => $u->music_source,
@@ -252,6 +263,7 @@ class AdminController extends Controller
      */
     public function donors(): JsonResponse
     {
+        PermissionService::require(request()->user(), 'donors.view');
         $totals = FinancialLedger::whereNotNull('user_id')
             ->selectRaw('user_id, COUNT(*) as gifts, SUM(amount) as total, MAX(currency) as currency, MAX(created_at) as last_gift')
             ->groupBy('user_id')
@@ -290,6 +302,7 @@ class AdminController extends Controller
     /** All prayer requests submitted through the intake form, newest first. */
     public function prayerRequests(): JsonResponse
     {
+        PermissionService::require(request()->user(), 'prayer_requests.view');
         $intakes = ServiceIntake::with('session.user:id,name,email')
             ->whereNotNull('prayer_text')
             ->latest()
@@ -427,6 +440,17 @@ class AdminController extends Controller
             'default_music_source' => ['sometimes', 'string', 'in:' . implode(',', Setting::MUSIC_SOURCES)],
             // Toggle avatar video rendering on/off without touching env vars.
             'avatar_enabled'      => ['sometimes', 'boolean'],
+            // Toggle karaoke-style word highlighting in the service player.
+            'text_highlight_enabled' => ['sometimes', 'boolean'],
+            // Per-language narration toggles. English defaults on; Myanmar and Tedim
+            // default off (no Tedim edge-tts voice exists; Myanmar quality may vary).
+            'narration_en'        => ['sometimes', 'boolean'],
+            'narration_my'        => ['sometimes', 'boolean'],
+            'narration_td'        => ['sometimes', 'boolean'],
+            // Which service languages appear as tabs in the intake form.
+            'lang_en'             => ['sometimes', 'boolean'],
+            'lang_my'             => ['sometimes', 'boolean'],
+            'lang_td'             => ['sometimes', 'boolean'],
         ]);
 
         if (array_key_exists('narration_mode', $data)) {
@@ -461,6 +485,19 @@ class AdminController extends Controller
         if (array_key_exists('avatar_enabled', $data)) {
             Setting::set('avatar_enabled', $data['avatar_enabled'] ? '1' : '0');
         }
+        if (array_key_exists('text_highlight_enabled', $data)) {
+            Setting::set('text_highlight_enabled', $data['text_highlight_enabled'] ? '1' : '0');
+        }
+        foreach (['narration_en', 'narration_my', 'narration_td'] as $key) {
+            if (array_key_exists($key, $data)) {
+                Setting::set($key, $data[$key] ? '1' : '0');
+            }
+        }
+        foreach (['lang_en', 'lang_my', 'lang_td'] as $key) {
+            if (array_key_exists($key, $data)) {
+                Setting::set($key, $data[$key] ? '1' : '0');
+            }
+        }
 
         return response()->json(['ok' => true] + $this->settingsPayload());
     }
@@ -474,6 +511,16 @@ class AdminController extends Controller
             'music_reuse'        => Setting::get('music_reuse', '1') === '1',
             'storage_backend'    => Setting::get('storage_backend', 'local'),
             'avatar_enabled'     => Setting::get('avatar_enabled', '1') === '1',
+            'text_highlight_enabled' => Setting::get('text_highlight_enabled', '1') === '1',
+            // Per-language narration: English on by default; Myanmar and Tedim off
+            // by default (Tedim has no edge-tts voice; Myanmar quality may vary).
+            'narration_en'       => Setting::get('narration_en', '1') === '1',
+            'narration_my'       => Setting::get('narration_my', '0') === '1',
+            'narration_td'       => Setting::get('narration_td', '0') === '1',
+            // Which service languages appear in the intake form.
+            'lang_en'            => Setting::get('lang_en', '1') === '1',
+            'lang_my'            => Setting::get('lang_my', '0') === '1',
+            'lang_td'            => Setting::get('lang_td', '0') === '1',
             'moods'                => Setting::moods(),
             'music_sources'        => Setting::enabledMusicSources(),
             'scheduling_enabled'   => Setting::schedulingEnabled(),
@@ -532,5 +579,118 @@ class AdminController extends Controller
         $user->update(['is_admin' => $data['is_admin']]);
 
         return response()->json(['ok' => true, 'is_admin' => $user->is_admin]);
+    }
+
+    /** Assign a role to a user. Guards against demoting yourself from admin. */
+    public function assignRole(Request $request, User $user): JsonResponse
+    {
+        $data = $request->validate([
+            'role' => ['required', 'string', 'in:' . implode(',', User::ASSIGNABLE_ROLES)],
+        ]);
+
+        if ($user->id === $request->user()->id && $data['role'] !== User::ROLE_ADMIN) {
+            return response()->json(['message' => 'You cannot remove your own admin role.'], 422);
+        }
+
+        $isAdmin = $data['role'] === User::ROLE_ADMIN;
+        $user->update(['role' => $data['role'], 'is_admin' => $isAdmin]);
+
+        return response()->json(['ok' => true, 'role' => $data['role']]);
+    }
+
+    /**
+     * Generate a one-time password-reset token for a user. The admin can share
+     * this link with the user out-of-band (copy + paste or email).
+     * Token is valid for 24 hours.
+     */
+    public function forcePasswordReset(User $user): JsonResponse
+    {
+        $token   = Str::random(64);
+        $expires = Carbon::now()->addHours(24);
+        $user->update([
+            'password_reset_token'      => $token,
+            'password_reset_expires_at' => $expires,
+        ]);
+
+        $resetUrl = config('app.url') . '/#reset?token=' . $token;
+
+        return response()->json([
+            'ok'        => true,
+            'token'     => $token,
+            'reset_url' => $resetUrl,
+            'expires_at'=> $expires->toIso8601String(),
+        ]);
+    }
+
+    /** Return the current permissions matrix for all configurable roles. */
+    public function getPermissions(): JsonResponse
+    {
+        return response()->json([
+            'permissions' => PermissionService::all(),
+            'available'   => PermissionService::PERMISSIONS,
+            'roles'       => PermissionService::CONFIGURABLE_ROLES,
+        ]);
+    }
+
+    /** Persist a new permissions matrix. Accepts partial updates per role. */
+    public function updatePermissions(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'permissions'             => ['required', 'array'],
+            'permissions.moderator'   => ['sometimes', 'array'],
+            'permissions.moderator.*' => ['string', 'in:' . implode(',', PermissionService::PERMISSIONS)],
+            'permissions.presenter'   => ['sometimes', 'array'],
+            'permissions.presenter.*' => ['string', 'in:' . implode(',', PermissionService::PERMISSIONS)],
+        ]);
+
+        PermissionService::save($data['permissions']);
+
+        return response()->json(['ok' => true, 'permissions' => PermissionService::all()]);
+    }
+
+    /**
+     * Create a new user account directly from the admin console.
+     * Returns the user and (optionally) a password-reset link when no
+     * password is supplied, so the admin can share a first-login link.
+     */
+    public function createUser(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'name'     => ['required', 'string', 'max:255'],
+            'email'    => ['required', 'email', 'max:255', 'unique:users,email'],
+            'role'     => ['required', 'string', 'in:' . implode(',', User::ASSIGNABLE_ROLES)],
+            'password' => ['nullable', 'string', 'min:8'],
+        ]);
+
+        $hasPassword = ! empty($data['password']);
+        $user = User::create([
+            'name'          => $data['name'],
+            'email'         => $data['email'],
+            'password'      => \Illuminate\Support\Facades\Hash::make(
+                $hasPassword ? $data['password'] : Str::random(32)
+            ),
+            'role'          => $data['role'],
+            'is_admin'      => $data['role'] === User::ROLE_ADMIN,
+            'name_provided' => true,
+            'timezone'      => 'UTC',
+            'music_source'  => 'hymn_sung',
+        ]);
+
+        $result = ['ok' => true, 'user_id' => $user->id, 'reset_url' => null];
+
+        // When no password was given, generate a first-login reset link so the
+        // admin can share it with the new user — they set their own password.
+        if (! $hasPassword) {
+            $token   = Str::random(64);
+            $expires = Carbon::now()->addHours(48);
+            $user->update([
+                'password_reset_token'      => $token,
+                'password_reset_expires_at' => $expires,
+            ]);
+            $result['reset_url']  = config('app.url') . '/#reset?token=' . $token;
+            $result['expires_at'] = $expires->toIso8601String();
+        }
+
+        return response()->json($result, 201);
     }
 }

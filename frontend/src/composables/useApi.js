@@ -101,6 +101,16 @@ export const api = {
   logout: () => request("/logout", { method: "POST" }).finally(() => { setToken(null); rememberName(null); }),
   me: () => request("/me"),
 
+  // Account self-service
+  updateName: (name) =>
+    request("/me/name", { method: "PATCH", body: { name } }),
+  changePassword: (current_password, new_password) =>
+    request("/me/change-password", { method: "POST", body: { current_password, new_password } }),
+  forgotPassword: (email) =>
+    request("/forgot-password", { method: "POST", body: { email } }),
+  resetPassword: (token, new_password) =>
+    request("/reset-password", { method: "POST", body: { token, new_password } }),
+
   // Public app configuration (intake options) — fetched before any session exists.
   getConfig: () => request("/config"),
 
@@ -160,21 +170,30 @@ export const api = {
     request(`/admin/users/${id}/block`, { method: "PATCH", body: { is_blocked } }),
   adminDeleteUser: (id) =>
     request(`/admin/users/${id}`, { method: "DELETE" }),
+  adminCreateUser: (payload) =>
+    request("/admin/users", { method: "POST", body: payload }),
+  adminAssignRole: (id, role) =>
+    request(`/admin/users/${id}/role`, { method: "PATCH", body: { role } }),
+  adminForcePasswordReset: (id) =>
+    request(`/admin/users/${id}/force-reset`, { method: "POST" }),
   adminDonors: () => request("/admin/donors"),
   adminPrayerRequests: () => request("/admin/prayer-requests"),
   adminSettings: () => request("/admin/settings"),
   adminUpdateSettings: (payload) =>
     request("/admin/settings", { method: "PATCH", body: payload }),
+  adminGetPermissions: () => request("/admin/permissions"),
+  adminUpdatePermissions: (permissions) =>
+    request("/admin/permissions", { method: "PATCH", body: { permissions } }),
   adminExport,
 
-  // Voice Studio
-  adminVoiceScript:   (lang) => request(`/admin/voice-studio/script/${lang}`),
-  adminVoiceProgress: (lang) => request(`/admin/voice-studio/progress/${lang}`),
-  adminVoiceDelete:   (lang, id) => request(`/admin/voice-studio/recording/${lang}/${id}`, { method: "DELETE" }),
+  // Voice Studio — available to all authenticated users (each user's data is isolated).
+  voiceScript:   (lang) => request(`/voice-studio/script/${lang}`),
+  voiceProgress: (lang) => request(`/voice-studio/progress/${lang}`),
+  voiceDelete:   (lang, id) => request(`/voice-studio/recording/${lang}/${id}`, { method: "DELETE" }),
 
   // Multipart upload — cannot use the JSON request() helper.
-  adminVoiceStore: async (formData) => {
-    const res = await fetch(`${BASE_URL}/admin/voice-studio/recording`, {
+  voiceStore: async (formData) => {
+    const res = await fetch(`${BASE_URL}/voice-studio/recording`, {
       method: "POST",
       headers: {
         Accept: "application/json",
@@ -189,8 +208,8 @@ export const api = {
   },
 
   // Blob download — needs auth header, returns Blob.
-  adminVoiceExport: async (lang) => {
-    const res = await fetch(`${BASE_URL}/admin/voice-studio/export/${lang}`, {
+  voiceExport: async (lang) => {
+    const res = await fetch(`${BASE_URL}/voice-studio/export/${lang}`, {
       headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     });
     if (!res.ok) throw Object.assign(new Error("Export failed"), { status: res.status });

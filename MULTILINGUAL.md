@@ -9,7 +9,7 @@ whole service follows it:
 | Prayers / sermon / benediction | LLM writes Burmese (Myanmar Unicode only) | LLM writes Tedim (Latin script, Pasian/Topa/Zeisu register) |
 | Scripture | **Judson 1835 သမ္မာကျမ်း** (public domain) | **Lai Siangtho 1932** (public domain) |
 | Hymns | 852-song dalsuum/myanmar-hymns library, sung via Suno customMode, cached | **ZBC Labu Lui** (~470 hymns, seeded from labusaal.com): YouTube embed of real Tedim singing preferred → Suno render cached → tedimhymn.com instrumental |
-| Narration | edge-tts **my-MM-NilarNeural** | none exists in edge-tts → read-along service (text on screen), unless `EDGE_TTS_VOICE_TD` is set |
+| Narration | Native MMS-TTS `facebook/mms-tts-mya` when Admin enables Myanmar narration | Native MMS-TTS `facebook/mms-tts-ctd` when Admin enables Tedim narration |
 | UI | Padauk / Noto Sans Myanmar | Latin script |
 
 English services are completely unchanged.
@@ -28,7 +28,7 @@ IntakeForm.vue ──language: 'my'|'td'──▶  POST /service/{token}/intake
                 ├─ llm_engine.*        prompts pinned to the service language
                 ├─ bible_api.resolve(ref, lang)  → Judson 1835 / Lai Siangtho 1932
                 ├─ get_strategy(src, language)   → Myanmar/Tedim hymn strategy
-                └─ narration voice     → my-MM-NilarNeural / EDGE_TTS_VOICE_TD or skip
+                └─ narration voice     → local MMS-TTS mya / ctd when enabled
 ```
 
 Design notes:
@@ -56,10 +56,12 @@ Design notes:
   Suno customMode render cached under `hymns_td/<slug>.mp3` → instrumental
   render of the matching Tedim Hymn 7th Edition tune (optional
   `tools/seed_tedim_midi.py`, fluidsynth) → music segment skipped gracefully.
-- **Tedim narration is off by default** — edge-tts has no Tedim voice, and an
-  English voice reading Tedim text would be gibberish. The service runs
-  read-along (all text on screen). Set `EDGE_TTS_VOICE_TD` only if you find a
-  voice you judge acceptable.
+- **Myanmar/Tedim narration is controlled per language in Admin Settings.** Keep
+  `narration_mode=edge_tts`; English uses Edge voices, while Myanmar/Tedim are
+  routed to the local MMS-TTS service (`facebook/mms-tts-mya` / `facebook/mms-tts-ctd`).
+  English browser voices are never used as a fallback for Myanmar/Tedim because they
+  skip or mangle the text. Non-English MMS jobs are staggered; message audio is
+  deferred until after benediction so the last prayer is not blocked by a long sermon.
 
 ## What's in this bundle
 
@@ -135,14 +137,19 @@ python workers/tools/seed_tedim_midi.py
 |---|---|---|
 | `BIBLE_DATA_FILE_MY` | `workers/data/judson1835.json` | swap the Burmese translation |
 | `BIBLE_DATA_FILE_TD` | `workers/data/tedim1932.json` | swap the Tedim translation |
-| `EDGE_TTS_VOICE_MY` | `my-MM-NilarNeural` | Burmese narration voice (`my-MM-ThihaNeural` = male) |
-| `EDGE_TTS_VOICE_TD` | *(empty = narration off)* | Tedim narration voice, if you find one acceptable |
+| `MMS_TTS_URL` | `http://127.0.0.1:8001` | local MMS-TTS base URL used for Myanmar/Tedim narration |
+| `MMS_TTS_MODEL_MY` / `MMS_TTS_MODEL_TD` | `facebook/mms-tts-mya` / `facebook/mms-tts-ctd` | native VITS checkpoints |
+| `MMS_TTS_TIMEOUT` | `180` | per-request MMS timeout so long message audio cannot hang forever |
+| `MMS_TTS_STAGGER_SECONDS` | `60` | delay between non-English narration jobs |
+| `LOCAL_LLM_TIMEOUT` | `45` | local prose-generation timeout before safe fallback text |
+| `EDGE_TTS_VOICE_MY` / `EDGE_TTS_VOICE_TD` | legacy overrides | English still uses Edge voices; Myanmar/Tedim prefer MMS-TTS |
 | `SUNO_MY_STYLE` / `SUNO_TD_STYLE` | traditional hymn / choir | Suno style prompt per language |
 | `SUNO_CUSTOM_MAX_LYRICS` | `2800` | lyric chars sent to Suno customMode |
 
-`SUNO_API_KEY` (already configured for the suno source) is required for Burmese
-hymn audio; without it the music segment is skipped gracefully and the service
-still runs with all spoken segments in Burmese.
+`SUNO_API_KEY` is required only when a path actually renders new Suno audio
+(`music_source=suno`, or an uncached Myanmar/Tedim hymn fallback that has no local/
+YouTube option). Hymn/YouTube paths remain free at service time when a local/cached
+or embeddable hymn is available.
 
 ## Verified in this environment
 
@@ -170,6 +177,33 @@ still runs with all spoken segments in Burmese.
 - tedimhymn.com MIDI index parsed: 448 tunes discoverable by the seeder.
 - IntakeForm with three tabs compiles under @vue/compiler-sfc.
 
+## RBAC / Permission System (2026-06-12)
+
+Five roles: `guest < member < presenter < moderator < admin`.
+
+Staff roles (`presenter`, `moderator`, `admin`) can access the console at `#admin`.
+The **Permissions** tab (admin-only) shows a matrix to configure what each
+configurable role (`moderator`, `presenter`) can do:
+
+| Feature | Actions configurable |
+|---|---|
+| Dashboard | View |
+| Services | View, Retry, Delete |
+| Testimonies | View, Approve, Delete |
+| Prayer Requests | View |
+| Donors | View |
+| Voice Studio | View (tab in admin console) |
+
+Admin always has all permissions. User management, Settings, Permissions, and
+CSV exports are **admin-only** and do not appear in the matrix.
+
+Permissions are stored as JSON in the `settings` table key `role_permissions`.
+Default: moderators get full read + testimony moderation + service retry;
+presenters get dashboard + voice studio only.
+
+Backend enforcement: `EnsureStaff` middleware on staff routes; each controller
+method calls `PermissionService::require($user, 'feature.action')`.
+
 ## Known gaps to close before production
 
 1. **Crisis intercept is English-keyword based.** A Burmese or Tedim prayer
@@ -177,18 +211,16 @@ still runs with all spoken segments in Burmese.
    (see PATCHES.md note) before promoting the tabs.
 2. **Classifier guardrail** (`classifier.review`) reviews non-English text with
    an English-prompted model — spot-check its behavior on Burmese and Tedim
-   sermons. **LLM Tedim quality is the bigger open question**: Tedim is very
-   low-resource, so `meta-llama/llama-3.3-70b-instruct:free` may produce weak
-   or mixed-language Tedim. Review a few generated services with native
-   speakers; consider pointing `LLM_MODEL` at a stronger model, or running the
-   Tedim tab with LLM segments in English + scripture/hymns in Tedim until
-   you're satisfied.
+   sermons. **LLM Myanmar/Tedim quality depends heavily on the selected model**:
+   the current local models can be slow or low quality. `llm_engine.py` now falls
+   back to short safe Myanmar/Tedim text if a local prose request times out or
+   fails validation, so pages still appear, but native-speaker review is required
+   before production.
 2b. **ZBC Labu Lui licensing** — the seeder's output is for your deployment;
    confirm permission with ZBC / labusaal.com (the data file carries a
    license_note reminding you).
 3. **Player chrome** (ServicePlayer segment titles like "Opening Prayer") is
-   still English; same STRINGS-dict pattern applies if you want it localized —
-   the language is available on `GET /service/{token}` once you expose
-   `$session->language` there.
+   still English; same STRINGS-dict pattern applies if you want it localized.
+   The service API already exposes `language` and `text_highlight_enabled`.
 4. Suno's Burmese-vocal quality varies by model version; if a render is poor,
    delete `hymns_my/<slug>.mp3` from storage and the next service re-renders it.

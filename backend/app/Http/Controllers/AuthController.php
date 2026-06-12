@@ -4,8 +4,10 @@ namespace App\Http\Controllers;
 
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\PermissionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password;
@@ -109,16 +111,97 @@ class AuthController extends Controller
     public function me(Request $request): JsonResponse
     {
         $user = $request->user();
+        $isGuest = str_ends_with($user->email, '@guest.local');
 
         return response()->json([
             'user' => [
                 'id'           => $user->id,
                 'name'         => $user->name,
-                'email'        => $user->email,
-                'is_admin'     => $user->is_admin,
+                'email'        => $isGuest ? null : $user->email,
+                'is_admin'     => $user->isAdmin(),
+                'role'         => $user->role(),
+                'is_guest'     => $isGuest,
                 'music_source' => $user->music_source,
+                'permissions'  => PermissionService::forUser($user),
             ],
         ]);
+    }
+
+    /** Let a registered user update their display name. */
+    public function updateName(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'name' => ['required', 'string', 'min:2', 'max:255'],
+        ]);
+
+        $request->user()->update(['name' => $data['name'], 'name_provided' => true]);
+
+        return response()->json(['ok' => true, 'name' => $data['name']]);
+    }
+
+    /**
+     * Generate a password-reset token and store it. If the app has outbound
+     * mail configured (MAIL_MAILER != 'log'/'array') the link is emailed;
+     * otherwise the token is returned so an admin can share it out-of-band.
+     */
+    public function forgotPassword(Request $request): JsonResponse
+    {
+        $data = $request->validate(['email' => ['required', 'email']]);
+
+        $user = User::where('email', $data['email'])->first();
+
+        // Never reveal whether the email exists — same response either way.
+        if (! $user || str_ends_with($user->email, '@guest.local')) {
+            return response()->json(['message' => 'If that address is registered, a reset link has been sent.']);
+        }
+
+        $token   = Str::random(64);
+        $expires = Carbon::now()->addHours(2);
+        $user->update([
+            'password_reset_token'      => $token,
+            'password_reset_expires_at' => $expires,
+        ]);
+
+        // Send email if a real mailer is configured.
+        $mailer = config('mail.default', 'log');
+        if (! in_array($mailer, ['log', 'array'])) {
+            try {
+                \Illuminate\Support\Facades\Notification::route('mail', $user->email)
+                    ->notify(new \App\Notifications\PasswordResetNotification($token, $user->name));
+            } catch (\Throwable) {
+                // Mail failed — fall through, token is still stored.
+            }
+        }
+
+        return response()->json(['message' => 'If that address is registered, a reset link has been sent.']);
+    }
+
+    /** Use a valid reset token to set a new password. */
+    public function resetPassword(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'token'        => ['required', 'string', 'size:64'],
+            'new_password' => ['required', 'string', Password::defaults()],
+        ]);
+
+        $user = User::where('password_reset_token', $data['token'])
+            ->where('password_reset_expires_at', '>', Carbon::now())
+            ->first();
+
+        if (! $user) {
+            return response()->json(['message' => 'This reset link is invalid or has expired.'], 422);
+        }
+
+        $user->update([
+            'password'                  => Hash::make($data['new_password']),
+            'password_reset_token'      => null,
+            'password_reset_expires_at' => null,
+        ]);
+
+        // Invalidate all existing sessions so the old password can no longer be used.
+        $user->tokens()->delete();
+
+        return response()->json(['message' => 'Password updated. Please log in with your new password.']);
     }
 
     public function login(Request $request): JsonResponse

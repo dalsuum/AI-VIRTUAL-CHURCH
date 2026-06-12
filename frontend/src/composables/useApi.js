@@ -166,4 +166,34 @@ export const api = {
   adminUpdateSettings: (payload) =>
     request("/admin/settings", { method: "PATCH", body: payload }),
   adminExport,
+
+  // Voice Studio
+  adminVoiceScript:   (lang) => request(`/admin/voice-studio/script/${lang}`),
+  adminVoiceProgress: (lang) => request(`/admin/voice-studio/progress/${lang}`),
+  adminVoiceDelete:   (lang, id) => request(`/admin/voice-studio/recording/${lang}/${id}`, { method: "DELETE" }),
+
+  // Multipart upload — cannot use the JSON request() helper.
+  adminVoiceStore: async (formData) => {
+    const res = await fetch(`${BASE_URL}/admin/voice-studio/recording`, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        // No Content-Type — browser sets multipart boundary automatically.
+      },
+      body: formData,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw Object.assign(new Error(data.message || "Upload failed"), { status: res.status, data });
+    return data;
+  },
+
+  // Blob download — needs auth header, returns Blob.
+  adminVoiceExport: async (lang) => {
+    const res = await fetch(`${BASE_URL}/admin/voice-studio/export/${lang}`, {
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    });
+    if (!res.ok) throw Object.assign(new Error("Export failed"), { status: res.status });
+    return res.blob();
+  },
 };

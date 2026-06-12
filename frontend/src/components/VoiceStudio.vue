@@ -153,11 +153,11 @@ async function loadScript(code) {
   recordedIds.value = new Set();
   cursor.value = 0;
   try {
-    const res = await api.get(`/admin/voice-studio/script/${code}`);
-    sentences.value = res.data.sentences;
-    recordedIds.value = new Set(res.data.recorded_ids);
+    const res = await api.adminVoiceScript(code);
+    sentences.value = res.sentences;
+    recordedIds.value = new Set(res.recorded_ids);
   } catch (e) {
-    showStatus("Failed to load script: " + (e.response?.data?.error ?? e.message), "error");
+    showStatus("Failed to load script: " + (e.data?.error ?? e.message), "error");
   } finally {
     loading.value = false;
   }
@@ -165,8 +165,8 @@ async function loadScript(code) {
 
 async function loadProgress(code) {
   try {
-    const res = await api.get(`/admin/voice-studio/progress/${code}`);
-    progress.value[code] = res.data;
+    const res = await api.adminVoiceProgress(code);
+    progress.value[code] = res;
   } catch {}
 }
 
@@ -267,9 +267,7 @@ async function acceptRecording() {
     form.append("text", currentSentence.value.text);
     form.append("audio", audioBlob.value, "recording.webm");
 
-    await api.post("/admin/voice-studio/recording", form, {
-      headers: { "Content-Type": "multipart/form-data" },
-    });
+    await api.adminVoiceStore(form);
 
     recordedIds.value.add(currentSentence.value.id);
     await loadProgress(lang.value);
@@ -277,7 +275,7 @@ async function acceptRecording() {
     showStatus("Saved!", "ok");
     goNext();
   } catch (e) {
-    showStatus("Save failed: " + (e.response?.data?.error ?? e.message), "error");
+    showStatus("Save failed: " + (e.data?.error ?? e.message), "error");
   } finally {
     saving.value = false;
   }
@@ -286,7 +284,7 @@ async function acceptRecording() {
 async function deleteRecording() {
   if (!currentSentence.value) return;
   try {
-    await api.delete(`/admin/voice-studio/recording/${lang.value}/${currentSentence.value.id}`);
+    await api.adminVoiceDelete(lang.value, currentSentence.value.id);
     recordedIds.value.delete(currentSentence.value.id);
     await loadProgress(lang.value);
     showStatus("Deleted.", "ok");
@@ -298,15 +296,15 @@ async function deleteRecording() {
 async function exportDataset() {
   exporting.value = true;
   try {
-    const res = await api.get(`/admin/voice-studio/export/${lang.value}`, { responseType: "blob" });
-    const url  = URL.createObjectURL(res.data);
+    const blob = await api.adminVoiceExport(lang.value);
+    const url  = URL.createObjectURL(blob);
     const a    = document.createElement("a");
     a.href     = url;
     a.download = `${lang.value}_voice_dataset.zip`;
     a.click();
     URL.revokeObjectURL(url);
   } catch (e) {
-    showStatus("Export failed: " + (e.response?.data?.error ?? e.message), "error");
+    showStatus("Export failed: " + (e.message ?? "unknown error"), "error");
   } finally {
     exporting.value = false;
   }

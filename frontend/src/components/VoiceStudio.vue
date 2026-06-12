@@ -14,7 +14,7 @@
         @click="switchLang(l.code)"
       >
         {{ l.label }}
-        <span class="lang-count" v-if="progress[l.code] !== undefined">
+        <span class="lang-count" v-if="progress[l.code]">
           {{ progress[l.code].recorded }}/{{ progress[l.code].total }}
         </span>
       </button>

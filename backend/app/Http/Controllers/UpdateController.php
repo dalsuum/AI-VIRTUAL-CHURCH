@@ -33,6 +33,7 @@ class UpdateController extends Controller
     private const ALLOWED_SERVICES = [
         'aivc-workers', 'aivc-workers-music', 'aivc-bridge',
         'aivc-queue', 'aivc-scheduler', 'aivc-tedim-api', 'aivc-burmese-api',
+        'aivc-mms-tts',
     ];
 
     /** Return the cached snapshot, or a no-data sentinel if the cache is absent. */

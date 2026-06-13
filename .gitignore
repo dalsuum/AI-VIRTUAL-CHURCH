@@ -24,6 +24,9 @@ backend/public/storage
 # Node
 node_modules/
 
+# PHP dependencies
+vendor/
+
 # OS / editor
 .DS_Store
 

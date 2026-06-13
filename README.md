@@ -168,7 +168,8 @@ A single Celery app with one Redis broker and **named queues that mirror the wor
 | [tasks/celery_burmese_tasks.py](workers/tasks/celery_burmese_tasks.py) | Legacy Myanmar localization/narration tasks kept for compatibility. New services use `generate_text_segments(..., language='my')` and `tasks.narrate(..., language='my')`. |
 | [tedim_router.py](workers/tedim_router.py) | FastAPI router: `POST /tedim/translate`, `POST /tedim/generate`, `GET /tedim/verse?ref=`. Redis db 2 cache (30-day TTL). Single-inference semaphore. `_validate_tedim()` rejects model output that is too short (<60 chars) or lacks Tedim markers (returns HTTP 502 so `llm_engine` falls back to hardcoded Tedim content instead of storing degenerate output). |
 | [burmese_router.py](workers/burmese_router.py) | FastAPI router: `POST /burmese/translate`, `POST /burmese/generate`, `GET /burmese/verse?ref=`. Redis db 3 cache (30-day TTL). Shares the same semaphore pattern as the Tedim router. Myanmar Unicode only — no Zawgyi. |
-| [api.py](workers/api.py) | Unified FastAPI app mounting Tedim, Burmese, and `/tts/speak` MMS-TTS routers plus `/health`. Typically run as two separate uvicorn instances: port 8001 (`aivc-tedim-api`) for Tedim/MMS requests, port 8002 (`aivc-burmese-api`) for Burmese. |
+| [api.py](workers/api.py) | Unified FastAPI app mounting Tedim, Burmese, `/tts/speak` MMS-TTS, and `/stt/transcribe` MMS-ASR routers plus `/health`. Typically run as two separate uvicorn instances: port 8001 (`aivc-tedim-api`) for Tedim/MMS requests, port 8002 (`aivc-burmese-api`) for Burmese. |
+| [mms_tts_api.py](workers/mms_tts_api.py) | Dedicated MMS speech app on port 8003. Mounts only `/tts/*` and `/stt/*` so PyTorch speech work can run separately from Ollama LLM inference. |
 | [hymns_my.py](workers/hymns_my.py) | Loader for the 852-song `data/hymns_my.json` Burmese library; mood-based selection for `MyanmarHymnStrategy`. |
 | [hymns_td.py](workers/hymns_td.py) | Loader for the seeded `data/hymns_td.json` ZBC Labu Lui Tedim library; mood selection + YouTube-embed priority for `TedimHymnStrategy`. |
 | [strategies/hymn_my_strategy.py](workers/strategies/hymn_my_strategy.py) | Burmese hymn strategy: sings the selected hymn's actual verses through Suno customMode, caches under `hymns_my/<slug>.mp3`. Used for `hymn_sung`, `hymn`, `hymn_youtube`, and `youtube` sources in Myanmar services — `youtube` mode is redirected here because generic YouTube search cannot reliably filter Myanmar Christian content from pop music. |
@@ -514,7 +515,7 @@ and the worshipper still gets every segment as text.
     (`127.0.0.1:17493`). See **[Voicebox TTS (optional)](#voicebox-tts-optional)** below.
   - `off` — segments stay as silent text.
 
-  Myanmar defaults to `edge_tts` (cloud); Tedim defaults to `mms_tts` (native local).
+  Myanmar and Tedim default to `mms_tts` (native local).
   Both are free and configurable per-language in Admin Console → Settings.
 
   In a server-voice mode (`openai`/`kokoro`/`edge_tts`/`mms_tts`) the player waits for
@@ -549,9 +550,10 @@ English narration. It runs as a Docker container on the same server.
 
 **1. Start the container**
 
-The compose file pulls the pre-built image (`ghcr.io/jamiepine/voicebox:latest`) and
-maps host port `17493` to container port `8000`. The CPU backend variant is used; adjust
-`VOICEBOX_BACKEND_VARIANT` in `voicebox/docker-compose.yml` for GPU hosts.
+The compose file builds a tiny local image on top of
+`ghcr.io/jamiepine/voicebox:latest` so the missing `qwen-tts` Python package is present,
+then maps host port `17493` to container port `8000`. The CPU backend variant is used;
+adjust `VOICEBOX_BACKEND_VARIANT` in `voicebox/docker-compose.yml` for GPU hosts.
 
 ```bash
 cd /opt/ai-church/voicebox
@@ -575,14 +577,15 @@ Add to `workers/.env`:
 VOICEBOX_URL=http://127.0.0.1:17493
 VOICEBOX_PROFILE_ID_FEMALE=<paste UUID from admin panel>
 VOICEBOX_PROFILE_ID_MALE=<paste UUID from admin panel>
-VOICEBOX_ENGINE=kokoro          # or: qwen, luxtts, chatterbox, chatterbox_turbo
+VOICEBOX_ENGINE=qwen            # Qwen3-TTS 0.6B on this CPU server
+# VOICEBOX_ENGINE=qwen_1_7b      # optional, heavier 1.7B model
 VOICEBOX_TIMEOUT=180
 ```
 
 **4. Activate in the admin console**
 
 Go to **Admin Console → Settings → Narration voice → Voicebox (local)**.
-Choose the engine (Kokoro is the fastest; Qwen3-TTS gives the best quality).
+Choose the Qwen model size. The 0.6B model is recommended for this CPU server.
 Enable English narration. Burmese/Tedim continue to use MMS-TTS unchanged.
 
 ### Monitoring
@@ -693,15 +696,19 @@ The console is at `/#admin`. Access is role-based:
   - The cache lives at `/tmp/aivc_update_status.json`, refreshed by the `aivc-update-checker`
     systemd timer (every hour, 5 min after boot) and on demand via the **Refresh now** button.
     The dashboard auto-polls every 30 s while the tab is open (4 s while a check is running).
-- **Voice Studio** — in-browser TTS training-data recorder. Displays sentences from the
-  Tedim (1,500) and Burmese (1,500) bible corpora one at a time; click **Record**, speak,
-  review playback, then **Accept**. The server converts each clip to 16 kHz mono WAV via
-  ffmpeg and stores it under `storage/app/voice-studio/{lang}/`. **Jump to unrecorded**
+- **Voice Studio** — in-browser TTS training-data recorder and automatic MMS/VITS
+  fine-tune feeder. Displays Tedim and Burmese recording-script sentences one at
+  a time; click **Record**, speak, review playback, optionally run **STT check**
+  through local MMS-ASR, then **Accept**. The server converts each clip to 16 kHz
+  mono WAV via ffmpeg, stores it under `storage/app/voice-studio/{user_id}/{lang}/`,
+  and immediately refreshes `dataset/metadata.csv` + `dataset/wavs/`. **Jump to unrecorded**
   skips to the next sentence without a recording; **Go to #** lets you jump directly to
   any sentence by number, and auto-starts at the first unrecorded phrase when you open a
-  language. When ready, **Export Dataset** downloads a zip with `metadata.csv` + `wavs/`
-  — the exact format expected by the [MMS-VITS fine-tuning guide](TRAIN_CUSTOM_VOICE.md)
-  for Colab training.
+  language. The scheduler runs `voice-studio:train-due` every 30 minutes between
+  2AM and 6AM; if the dataset has enough clips and server load is below
+  `VOICE_TRAIN_MAX_LOAD`, it launches the configured MMS/VITS fine-tune command.
+  **Export Dataset** remains available for inspection/debugging, but training no
+  longer depends on manual export.
 
 ---
 
@@ -825,17 +832,18 @@ Those units are version-controlled as **system-level** units in
 | [`aivc-scheduler.service`](.systemd/prod/aivc-scheduler.service) | Laravel `schedule:work` (releases due services + reminder mail) |
 | [`aivc-workers.service`](.systemd/prod/aivc-workers.service) | Celery workers (sermon · music · avatar · narration) |
 | [`aivc-bridge.service`](.systemd/prod/aivc-bridge.service) | bridge consumer (`ai:intake` → Celery) |
-| [`aivc-tedim-api.service`](.systemd/prod/aivc-tedim-api.service) | FastAPI Tedim LLM + MMS-TTS service (Uvicorn, port 8001) |
+| [`aivc-tedim-api.service`](.systemd/prod/aivc-tedim-api.service) | FastAPI Tedim LLM service (Uvicorn, port 8001) |
 | [`aivc-burmese-api.service`](.systemd/prod/aivc-burmese-api.service) | FastAPI Burmese LLM service (Uvicorn, port 8002) |
+| [`aivc-mms-tts.service`](.systemd/prod/aivc-mms-tts.service) | Dedicated MMS speech service: TTS + STT (Uvicorn, port 8003) |
 
 ```bash
 # on the droplet, once the units are copied to /etc/systemd/system:
-sudo systemctl enable --now aivc-queue aivc-scheduler aivc-workers aivc-bridge aivc-tedim-api aivc-burmese-api
-sudo systemctl status  aivc-queue aivc-scheduler aivc-workers aivc-bridge aivc-tedim-api aivc-burmese-api --no-pager
+sudo systemctl enable --now aivc-queue aivc-scheduler aivc-workers aivc-bridge aivc-tedim-api aivc-burmese-api aivc-mms-tts
+sudo systemctl status  aivc-queue aivc-scheduler aivc-workers aivc-bridge aivc-tedim-api aivc-burmese-api aivc-mms-tts --no-pager
 
 # After worker/backend code or prompt changes, restart the services that load code:
-sudo systemctl restart aivc-workers aivc-bridge aivc-queue aivc-tedim-api aivc-burmese-api
-sudo systemctl status  aivc-workers aivc-bridge aivc-queue aivc-tedim-api aivc-burmese-api --no-pager
+sudo systemctl restart aivc-workers aivc-bridge aivc-queue aivc-tedim-api aivc-burmese-api aivc-mms-tts
+sudo systemctl status  aivc-workers aivc-bridge aivc-queue aivc-tedim-api aivc-burmese-api aivc-mms-tts --no-pager
 
 # After changing OLLAMA_MODEL_TD in workers/.env:
 sudo systemctl restart aivc-tedim-api
@@ -920,11 +928,18 @@ This includes:
 | `OLLAMA_MODEL_TD` | Ollama model name for Tedim (default `tedim-zolai`). Change to a fine-tuned GGUF name without any code change. |
 | `OLLAMA_MODEL_MY` | Ollama model name for Burmese (default `burmese-myanmar`). |
 | `OLLAMA_URL` | Ollama REST endpoint (default `http://127.0.0.1:11434/api/generate`). |
-| `MMS_TTS_URL` | Local MMS-TTS base URL used for Myanmar/Tedim narration (default `http://127.0.0.1:8003`). |
+| `MMS_SPEECH_URL` / `MMS_TTS_URL` | Local MMS speech base URL used for Myanmar/Tedim narration and Voice Studio transcript checks (default `http://127.0.0.1:8003`). |
 | `MMS_TTS_MODEL_TD` / `MMS_TTS_MODEL_MY` | Native VITS checkpoints for Tedim/Burmese narration (defaults `facebook/mms-tts-ctd` / `facebook/mms-tts-mya`). |
 | `MMS_TTS_SEED` | Pinned VITS seed for reproducible narration (default `42`). |
 | `MMS_TTS_TIMEOUT` | Per-request timeout for local MMS-TTS (default `180` seconds). Long message audio may be skipped/left text-only if the CPU model cannot finish in time. |
 | `MMS_TTS_STAGGER_SECONDS` | Delay between Myanmar/Tedim MMS narration tasks (default `60`; keeps the small server from running several VITS generations at once). |
+| `MMS_TTS_AUTO_ACTIVE` / `MMS_TTS_ACTIVE_MODELS_FILE` | Lets MMS-TTS automatically prefer the latest successful Voice Studio fine-tuned model from `active_models.json` before falling back to the stock checkpoints. |
+| `MMS_ASR_MODEL` | MMS speech-to-text model used by Voice Studio transcript checks (default `facebook/mms-1b-all`; target languages `ctd` and `mya`). |
+| `VOICE_TRAIN_ENABLED` | Enables the automatic Voice Studio trainer (default `true`). |
+| `VOICE_TRAIN_WINDOW_START` / `VOICE_TRAIN_WINDOW_END` | Nightly training window (default `02:00` to `06:00`). |
+| `VOICE_TRAIN_MAX_LOAD` | Maximum 1-minute load average allowed before a training run starts (default `2.0`). |
+| `VOICE_TRAIN_MIN_CLIPS` / `VOICE_TRAIN_MIN_NEW_CLIPS` | Minimum dataset size and new clips since last successful model before training starts (defaults `300` / `25`). |
+| `VOICE_TRAIN_COMMAND` | Shell script launched by `voice-studio:train-due` (default `workers/tools/run_mms_vits_finetune.sh`). |
 | `LOCAL_LLM_TIMEOUT` | Timeout for local Myanmar/Tedim prose generation before fallback text is used (default `45` seconds). Increase if your ARM box is slow and the local model returns good text; keep low when fallback is preferable to waiting. |
 | `EDGE_TTS_VOICE_MY` / `EDGE_TTS_VOICE_TD` | Legacy Edge TTS voice overrides. English still uses Edge voices; Myanmar/Tedim use MMS-TTS. |
 | `BIBLE_DATA_FILE_MY` | Override the bundled Judson 1835 Burmese Bible with another same-schema translation. |
@@ -1069,11 +1084,12 @@ following providers make it possible to run a full AI worship pipeline at zero A
 | **[Ollama](https://ollama.com)** | Local inference host for the `tedim-zolai` and `burmese-myanmar` custom Modelfiles | Runs quantized LLaMA-family models on CPU with no GPU, no cloud cost, and no data leaving the server — essential for low-resource Chin and Burmese generation |
 | **[Meta — Llama 3.2 1B](https://llama.meta.com)** | Base model for both the Tedim (`tedim-zolai`) and Burmese (`burmese-myanmar`) Ollama Modelfiles | Released under the Meta Llama Community License for free commercial and research use; small enough to run on a shared ARM/OCI box with 4 GB RAM |
 
-### Free TTS (Text-to-Speech)
+### Free Speech
 
 | Provider | What we use it for | Why we're grateful |
 |----------|-------------------|--------------------|
 | **[Facebook MMS-TTS](https://huggingface.co/facebook/mms-tts)** | Native narration for Myanmar (`facebook/mms-tts-mya`) and Tedim/Zolai (`facebook/mms-tts-ctd`) | Part of Meta's Massively Multilingual Speech project — one of the very few publicly available TTS systems that supports Tedim (Chin) and Burmese with a proper VITS voice, not an English voice guessing at the script |
+| **[Facebook MMS-ASR](https://huggingface.co/facebook/mms-1b-all)** | Optional Voice Studio transcript checks for Tedim (`ctd`) and Burmese (`mya`) clips | Lets us catch silent/mismatched recordings before they enter a fine-tuning dataset |
 | **[Microsoft Edge TTS](https://github.com/rany2/edge-tts)** | English narration (`en-US-AriaNeural` / `en-US-GuyNeural`) in `edge_tts` mode | High-quality neural voices available free via the Edge read-aloud API, with no key required for reasonable usage |
 | **[Browser Web Speech API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Speech_API)** | Client-side narration (`browser` mode) — works out of the box on any modern browser, no server or key needed | Zero cost, zero setup; the default narration mode for local development |
 | **[Hugging Face Hub](https://huggingface.co)** | Model distribution for MMS-TTS checkpoints (`transformers` auto-download on first use) | Hosts and serves all the MMS-VITS model weights for free, making multilingual TTS accessible without self-hosting model files |

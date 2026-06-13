@@ -293,19 +293,33 @@ KOKORO_BASE_URL=https://openrouter.ai/api/v1
 KOKORO_MODEL=hexgrad/kokoro-82m
 KOKORO_VOICE=af_heart
 
-# Local Myanmar/Tedim LLM + MMS-TTS services
+# Local Myanmar/Tedim LLM + MMS speech services
 TEDIM_LLM_URL=http://127.0.0.1:8001
 BURMESE_LLM_URL=http://127.0.0.1:8002
 OLLAMA_URL=http://127.0.0.1:11434/api/generate
 OLLAMA_MODEL_TD=tedim-zolai
 OLLAMA_MODEL_MY=burmese-myanmar
 LOCAL_LLM_TIMEOUT=45
+MMS_SPEECH_URL=http://127.0.0.1:8003
 MMS_TTS_URL=http://127.0.0.1:8003
 MMS_TTS_MODEL_MY=facebook/mms-tts-mya
 MMS_TTS_MODEL_TD=facebook/mms-tts-ctd
 MMS_TTS_SEED=42
 MMS_TTS_TIMEOUT=180
 MMS_TTS_STAGGER_SECONDS=60
+MMS_TTS_AUTO_ACTIVE=1
+MMS_TTS_ACTIVE_MODELS_FILE=/opt/ai-church/backend/storage/app/voice-studio/active_models.json
+MMS_ASR_MODEL=facebook/mms-1b-all
+VOICE_TRAIN_ENABLED=true
+VOICE_TRAIN_WINDOW_START=02:00
+VOICE_TRAIN_WINDOW_END=06:00
+VOICE_TRAIN_MAX_LOAD=2.0
+VOICE_TRAIN_MIN_CLIPS=300
+VOICE_TRAIN_MIN_NEW_CLIPS=25
+VOICE_TRAIN_COMMAND=/opt/ai-church/workers/tools/run_mms_vits_finetune.sh
+VOICE_TRAIN_EPOCHS=120
+VOICE_TRAIN_BATCH_SIZE=8
+VOICE_TRAIN_LEARNING_RATE=2e-5
 
 # Local media storage (served by nginx via the storage symlink)
 LOCAL_MEDIA_DIR=/opt/ai-church/backend/storage/app/public/media
@@ -415,8 +429,8 @@ below, which are shown for reference):
 ```bash
 sudo cp /opt/ai-church/.systemd/prod/aivc-*.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now aivc-queue aivc-scheduler aivc-workers aivc-bridge aivc-tedim-api aivc-burmese-api
-sudo systemctl status  aivc-queue aivc-scheduler aivc-workers aivc-bridge aivc-tedim-api aivc-burmese-api --no-pager
+sudo systemctl enable --now aivc-queue aivc-scheduler aivc-workers aivc-bridge aivc-tedim-api aivc-burmese-api aivc-mms-tts
+sudo systemctl status  aivc-queue aivc-scheduler aivc-workers aivc-bridge aivc-tedim-api aivc-burmese-api aivc-mms-tts --no-pager
 ```
 
 For reference, each file under `/etc/systemd/system/`:

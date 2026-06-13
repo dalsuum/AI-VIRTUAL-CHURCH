@@ -34,6 +34,16 @@ return [
         'url' => env('BURMESE_LLM_URL', 'http://127.0.0.1:8002'),
     ],
 
+    /*
+     * MMS speech — local FastAPI service for native Myanmar/Tedim TTS and optional
+     * ASR transcript checks from Voice Studio. Defaults to the dedicated speech
+     * process; MMS_TTS_URL is kept as a backwards-compatible env name.
+     */
+    'mms_speech' => [
+        'url' => env('MMS_SPEECH_URL', env('MMS_TTS_URL', 'http://127.0.0.1:8003')),
+        'asr_timeout' => (int) env('MMS_ASR_TIMEOUT', 300),
+    ],
+
     'stripe' => [
         'key'            => env('STRIPE_KEY'),
         'secret'         => env('STRIPE_SECRET'),

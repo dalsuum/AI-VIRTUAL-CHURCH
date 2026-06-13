@@ -15,7 +15,7 @@ Providers (set via Admin Console → Settings → Narration voice):
   'mms_tts' — Local Facebook MMS-TTS (free, offline). Best native quality for
     Burmese and Tedim. Requires the aivc-mms-tts container (port 8003).
     Myanmar: facebook/mms-tts-mya  |  Tedim: facebook/mms-tts-ctd
-    MMS_TTS_URL — service base URL (default http://127.0.0.1:8003)
+    MMS_SPEECH_URL / MMS_TTS_URL — service base URL (default http://127.0.0.1:8003)
 
   'openai' — OpenAI's own (or any compatible gateway) text-to-speech:
     TTS_API_KEY    — required to enable this provider at all
@@ -32,6 +32,10 @@ Providers (set via Admin Console → Settings → Narration voice):
     KOKORO_MODEL    — speech model (default hexgrad/kokoro-82m)
     KOKORO_VOICE    — the voice to read with (default 'af_heart')
     KOKORO_FORMAT   - audio container (default: TTS_FORMAT or mp3)
+
+  'voicebox' — Local Voicebox container on port 17493. The current Docker image
+    exposes POST /generate and GET /audio/{generation_id}; model choice is Qwen
+    0.6B by default, or 1.7B via VOICEBOX_ENGINE=qwen_1_7b / VOICEBOX_MODEL_SIZE=1.7B.
 """
 
 from __future__ import annotations
@@ -125,7 +129,7 @@ def _speak_mms(text: str, language: str) -> bytes:
     lang = _mms_lang(language)
     if not lang:
         raise RuntimeError(f"MMS TTS does not support language {language!r}")
-    base_url = os.getenv("MMS_TTS_URL", "http://127.0.0.1:8003").rstrip("/")
+    base_url = (os.getenv("MMS_SPEECH_URL") or os.getenv("MMS_TTS_URL", "http://127.0.0.1:8003")).rstrip("/")
     seed = int(os.getenv("MMS_TTS_SEED", "42"))
     resp = requests.post(
         f"{base_url}/tts/speak",
@@ -176,8 +180,24 @@ def _narrate_edge(text: str, voice: str) -> bytes:
     return b"".join(asyncio.run(_speak_edge(chunk, voice)) for chunk in parts if chunk)
 
 
+def _voicebox_model_size(engine: str = "") -> str:
+    """Map the admin's Voicebox choice onto the Docker image's Qwen model_size."""
+    raw = (engine or os.getenv("VOICEBOX_ENGINE", "")).strip().lower()
+    if raw in {"qwen_1_7b", "qwen-1.7b", "qwen-tts-1.7b", "1.7b"}:
+        return "1.7B"
+    if raw in {"qwen_0_6b", "qwen-0.6b", "qwen-tts-0.6b", "0.6b"}:
+        return "0.6B"
+
+    configured = os.getenv("VOICEBOX_MODEL_SIZE", "").strip()
+    if configured in {"1.7B", "0.6B"}:
+        return configured
+
+    # The production box is CPU-only; 0.6B is the practical default.
+    return "0.6B"
+
+
 def _speak_voicebox(text: str, gender: str = "female", engine_override: str = "") -> bytes:
-    """Synthesize text via local Voicebox /generate/stream; return WAV bytes.
+    """Synthesize text via local Voicebox /generate; return WAV bytes.
 
     engine_override lets the orchestrator pass the admin-chosen engine from the
     database setting (via the job payload) instead of the env var default.
@@ -187,15 +207,32 @@ def _speak_voicebox(text: str, gender: str = "female", engine_override: str = ""
     profile_id = os.getenv(env_key) or os.getenv("VOICEBOX_PROFILE_ID")
     if not profile_id:
         raise RuntimeError(f"Voicebox profile not configured ({env_key} unset)")
-    engine = engine_override or os.getenv("VOICEBOX_ENGINE", "qwen")
+    model_size = _voicebox_model_size(engine_override)
     timeout = int(os.getenv("VOICEBOX_TIMEOUT", "180"))
+
     resp = requests.post(
-        f"{base_url}/generate/stream",
-        json={"profile_id": profile_id, "text": text, "language": "en", "engine": engine},
+        f"{base_url}/generate",
+        json={
+            "profile_id": profile_id,
+            "text": text,
+            "language": "en",
+            "model_size": model_size,
+        },
         timeout=timeout,
     )
+    if resp.status_code == 202:
+        detail = resp.json().get("detail", {})
+        message = detail.get("message") if isinstance(detail, dict) else str(detail)
+        raise RuntimeError(message or f"Voicebox model {model_size} is still downloading")
     resp.raise_for_status()
-    return resp.content  # WAV bytes
+
+    generation_id = resp.json().get("id")
+    if not generation_id:
+        raise RuntimeError("Voicebox did not return a generation id")
+
+    audio_resp = requests.get(f"{base_url}/audio/{generation_id}", timeout=timeout)
+    audio_resp.raise_for_status()
+    return audio_resp.content  # WAV bytes
 
 
 def narrate(

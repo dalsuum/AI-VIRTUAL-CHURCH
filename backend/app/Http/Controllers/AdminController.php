@@ -559,8 +559,9 @@ class AdminController extends Controller
             'music_sources.*' => ['string', 'in:' . implode(',', Setting::MUSIC_SOURCES)],
             // Edge TTS voice (used when narration_mode = 'edge_tts').
             'edge_tts_voice'  => ['sometimes', 'string', 'in:' . implode(',', Setting::EDGE_TTS_VOICES)],
-            // Voicebox TTS engine (used when narration_mode = 'voicebox').
-            'voicebox_engine' => ['sometimes', 'string', 'in:qwen,kokoro,luxtts,chatterbox,chatterbox_turbo'],
+            // Voicebox TTS model (used when narration_mode = 'voicebox').
+            // Current Docker image exposes Qwen model sizes through POST /generate.
+            'voicebox_engine' => ['sometimes', 'string', 'in:qwen,qwen_1_7b'],
             // Whether the "schedule it" option appears in the intake form.
             'scheduling_enabled' => ['sometimes', 'boolean'],
             // The music source pre-selected in the intake form.
@@ -570,7 +571,7 @@ class AdminController extends Controller
             // Toggle karaoke-style word highlighting in the service player.
             'text_highlight_enabled' => ['sometimes', 'boolean'],
             // Per-language narration toggles. All languages default on.
-            // Myanmar and Tedim are routed through MMS-TTS (edge_tts mode).
+            // Myanmar and Tedim can use native local MMS-TTS through mms_tts mode.
             'narration_en'        => ['sometimes', 'boolean'],
             'narration_my'        => ['sometimes', 'boolean'],
             'narration_td'        => ['sometimes', 'boolean'],
@@ -584,6 +585,9 @@ class AdminController extends Controller
             'countdown_banners'         => ['sometimes', 'array', 'max:12'],
             'countdown_banners.*.text'  => ['required_with:countdown_banners', 'string', 'max:300'],
             'countdown_banners.*.source'=> ['nullable', 'string', 'max:80'],
+            // Keywords rejected from YouTube results to enforce Christian-only content.
+            'content_filter_keywords'   => ['sometimes', 'array'],
+            'content_filter_keywords.*' => ['string', 'max:100'],
         ]);
 
         foreach (['narration_mode_en', 'narration_mode_my', 'narration_mode_td'] as $key) {
@@ -655,6 +659,10 @@ class AdminController extends Controller
             abort_if($banners === [], 422, 'At least one countdown banner is required.');
             Setting::setList('countdown_banners', $banners);
         }
+        if (array_key_exists('content_filter_keywords', $data)) {
+            $keywords = array_values(array_unique(array_filter(array_map('trim', $data['content_filter_keywords']))));
+            Setting::setList('content_filter_keywords', $keywords);
+        }
 
         return response()->json(['ok' => true] + $this->settingsPayload());
     }
@@ -688,6 +696,7 @@ class AdminController extends Controller
             'countdown_content_enabled' => Setting::get('countdown_content_enabled', '1') === '1',
             'countdown_content_source'  => Setting::get('countdown_content_source', 'both'),
             'countdown_banners'         => Setting::countdownBanners(),
+            'content_filter_keywords'   => Setting::filterKeywords(),
         ];
     }
 

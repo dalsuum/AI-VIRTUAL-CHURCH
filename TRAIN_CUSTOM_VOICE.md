@@ -4,8 +4,14 @@ Use this only if the stock MMS voices aren't good enough or you want a
 specific voice (e.g., your pastor's) for aivirtual.church. Otherwise the
 stock checkpoints in `mms_tts_service.py` are usable today. In this app,
 Admin must also enable the language narration toggle (`narration_my` or
-`narration_td`) and set `narration_mode=edge_tts`; the worker then routes
-Myanmar/Tedim text to MMS-TTS through `MMS_TTS_URL`.
+`narration_td`) and set the language's narration mode to `mms_tts`; the worker
+then routes Myanmar/Tedim text to MMS-TTS through `MMS_TTS_URL`.
+
+Voice Studio records training data and refreshes the dataset snapshot after every
+accepted clip. Laravel's scheduler then starts the MMS/VITS fine-tune
+automatically between 2AM and 6AM when the server load is below the configured
+threshold. The optional STT check calls the local MMS-ASR endpoint to spot-check
+a clip before you accept it.
 
 ## What TTS training actually needs
 
@@ -18,8 +24,8 @@ Your two LLMs participate in three places only:
    from tedim_text.jsonl / your Burmese corpus (script below).
 2. **Text normalization** — at inference, numbers/refs/loanwords must be
    spelled out before hitting VITS.
-3. **QC loop** — transcribe synthesized audio with MMS-ASR
-   (facebook/mms-1b-all supports ctd and mya) and diff against input.
+3. **QC loop** — transcribe recorded or synthesized audio with MMS-ASR
+   (`facebook/mms-1b-all`, target languages `ctd` and `mya`) and diff against input.
 
 ## Step 1 — Recording scripts from your corpus
 
@@ -48,22 +54,18 @@ Record with Audacity: 48 kHz mono WAV, one sentence per file
 (`0001.wav` ... `1200.wav`), quiet room, pop filter, consistent distance.
 ~1200 short sentences ≈ 2–2.5 hours of audio ≈ 2 evenings of recording.
 
-## Step 2 — Dataset assembly
+## Step 2 — Dataset assembly happens automatically
+
+Each accepted browser recording is converted to 16 kHz mono WAV and copied into:
 
 ```
-dataset/
-  metadata.csv        # file_name,text
+backend/storage/app/voice-studio/{user_id}/{lang}/dataset/
+  metadata.csv
   wavs/0001.wav ...
 ```
 
-```bash
-# resample to 16 kHz (MMS-VITS native rate), trim silence
-for f in raw/*.wav; do
-  ffmpeg -i "$f" -ar 16000 -ac 1 -af \
-    "silenceremove=start_periods=1:start_threshold=-45dB,areverse,silenceremove=start_periods=1:start_threshold=-45dB,areverse" \
-    "dataset/wavs/$(basename "$f")"
-done
-```
+Manual export is still available for inspection, but it is not part of the normal
+training path.
 
 If you instead use LONG recordings (e.g., existing sermon audio of one
 speaker), segment + align first with MMS forced alignment:
@@ -72,61 +74,38 @@ facebook/mms-1b-all (ctd/mya adapters) to draft transcripts, then
 hand-correct. NOTE: do NOT scrape bible.is / FCBH audio — it is
 copyrighted; record your own readers or get written permission.
 
-## Step 3 — Fine-tune (Colab T4, ~2-4 h)
+## Step 3 — Fine-tune automatically during low-load hours
 
-Uses the HF-maintained VITS finetuning repo (handles discriminator
-checkpoints that the base MMS release omits):
+The scheduler runs `voice-studio:train-due` every 30 minutes between 2AM and 6AM.
+The command starts at most one training run if:
 
-```bash
-git clone https://github.com/ylacombe/finetune-hf-vits && cd finetune-hf-vits
-pip install -r requirements.txt
+- `VOICE_TRAIN_ENABLED=true`
+- one language dataset has at least `VOICE_TRAIN_MIN_CLIPS`
+- at least `VOICE_TRAIN_MIN_NEW_CLIPS` were added since the last successful model
+- the 1-minute load average is at or below `VOICE_TRAIN_MAX_LOAD`
 
-# pull base checkpoint WITH discriminator for your language
-python convert_original_discriminator_checkpoint.py \
-  --language_code ctd --pytorch_dump_folder_path ./mms-ctd-train
-# (use --language_code mya for the Burmese voice)
-```
-
-`finetune_ctd.json`:
-```json
-{
-  "model_name_or_path": "./mms-ctd-train",
-  "dataset_name": "./dataset",
-  "audio_column_name": "audio",
-  "text_column_name": "text",
-  "train_split_name": "train",
-  "output_dir": "./tedim-voice-pastor",
-  "per_device_train_batch_size": 8,
-  "gradient_accumulation_steps": 2,
-  "learning_rate": 2e-5,
-  "num_train_epochs": 200,
-  "fp16": true,
-  "do_train": true, "do_eval": true,
-  "weight_disc": 3, "weight_fmaps": 1, "weight_gen": 1,
-  "weight_kl": 1.5, "weight_duration": 1, "weight_mel": 35
-}
-```
+The default command is:
 
 ```bash
-accelerate launch run_vits_finetuning.py finetune_ctd.json
+/opt/ai-church/workers/tools/run_mms_vits_finetune.sh
 ```
 
-Checkpoint every ~50 epochs and listen — VITS overfits small datasets;
-best voice is often NOT the last epoch.
+It clones/updates the HF-maintained VITS finetuning repo, converts the MMS
+checkpoint with discriminator weights for `ctd` or `mya`, writes the fine-tune
+config, and launches training with `accelerate`.
 
-## Step 4 — Deploy
+## Step 4 — Activation
 
-Push the folder to your private HF repo (or scp), then in
-`mms_tts_service.py` change:
+When a scheduled fine-tune succeeds, Laravel writes the finished model path to:
 
-```python
-MODELS = {
-    "tedim": "dalsuum/tedim-voice-pastor",   # your fine-tune
-    "burmese": "facebook/mms-tts-mya",
-}
+```
+backend/storage/app/voice-studio/active_models.json
 ```
 
-Same VITS size, same ARM CPU speed. Nothing else in the pipeline changes.
+The MMS-TTS service reads that file when `MMS_TTS_AUTO_ACTIVE=1`, prefers the
+fine-tuned local model for that language, and falls back to the stock checkpoint
+if no trained model exists. The trainer also calls `/tts/reload` so the next
+narration request can use the new model without waiting for a manual restart.
 
 ## Step 5 — QC loop (where the LLM earns its keep)
 

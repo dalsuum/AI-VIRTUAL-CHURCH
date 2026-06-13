@@ -164,10 +164,10 @@ def generate_text_segments(job: dict, plan: dict) -> None:
     language = job.get("language", "en")  # 'en' | 'my' | 'td' — the whole service's language
 
     # Synthesize TTS audio only when the admin chose a server voice provider —
-    # 'openai', 'kokoro', or 'edge_tts' — server generates audio. In 'browser'/'off'
+    # 'openai', 'kokoro', 'edge_tts', 'mms_tts', or 'voicebox'. In 'browser'/'off'
     # the client handles (or skips) reading aloud, so we deliver text only.
     narration_mode = job.get("narration_mode")
-    voicebox_engine = job.get("voicebox_engine", "kokoro")
+    voicebox_engine = job.get("voicebox_engine", "qwen")
     gender = job.get("presenter_gender", "female")
     want_audio = _wants_server_narration(job)
     def _seg_gender(segment: str) -> str:
@@ -279,7 +279,7 @@ def repair_missing_narration(job: dict) -> None:
     token = job["session_token"]
     language = job.get("language", "en")
     mode = job.get("narration_mode", "openai")
-    voicebox_engine = job.get("voicebox_engine", "kokoro")
+    voicebox_engine = job.get("voicebox_engine", "qwen")
     presenter_gender = job.get("presenter_gender", "female")
     storage.set_backend(job.get("storage_backend"))
 

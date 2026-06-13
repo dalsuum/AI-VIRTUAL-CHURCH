@@ -1,0 +1,5 @@
+{
+    "require": {
+        "resend/resend-laravel": "^1.4"
+    }
+}

@@ -70,11 +70,12 @@ class ConfigController extends Controller
         $mood = mb_substr($mood, 0, 100);
 
         return response()->json([
-            'moods'              => Setting::moods(),
-            'music_sources'      => Setting::enabledMusicSources(),
-            'scheduling_enabled' => Setting::schedulingEnabled(),
-            'enabled_languages'  => Setting::enabledLanguages(),
-            'countdown_cards'    => $this->countdownCards($mood, $language),
+            'moods'                   => Setting::moods(),
+            'music_sources'           => Setting::enabledMusicSources(),
+            'scheduling_enabled'      => Setting::schedulingEnabled(),
+            'enabled_languages'       => Setting::enabledLanguages(),
+            'countdown_cards'         => $this->countdownCards($mood, $language),
+            'content_filter_keywords' => Setting::filterKeywords(),
         ]);
     }
 

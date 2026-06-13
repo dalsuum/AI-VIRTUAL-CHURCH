@@ -102,6 +102,6 @@ def narrate_tedim(session_token: str, segment_name: str, tedim_text: str) -> str
         session_token,
         segment_name,
         tedim_text,
-        mode="edge_tts",
+        mode="mms_tts",
         language="td",
     )

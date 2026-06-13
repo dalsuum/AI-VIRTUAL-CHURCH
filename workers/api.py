@@ -23,19 +23,21 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from fastapi import FastAPI
+from mms_asr_service import router as mms_asr_router
 from burmese_router import router as burmese_router
 from mms_tts_service import router as mms_tts_router
 from tedim_router import router as tedim_router
 
 app = FastAPI(
-    title="AI Church — Language LLM API",
-    description="Wraps local Ollama models (Tedim Zolai, Burmese Myanmar) for the worship pipeline.",
-    version="1.1.0",
+    title="AI Church — Language LLM + Speech API",
+    description="Wraps local Ollama models and MMS speech routes for the worship pipeline.",
+    version="1.2.0",
 )
 
 app.include_router(tedim_router)
 app.include_router(burmese_router)
 app.include_router(mms_tts_router)
+app.include_router(mms_asr_router)
 
 
 @app.get("/health")

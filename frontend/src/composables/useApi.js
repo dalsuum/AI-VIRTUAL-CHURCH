@@ -83,9 +83,13 @@ async function ensureSession(opts = {}) {
   const body = typeof opts === "string" ? { music_source: opts } : opts;
   if (!guestInflight) {
     guestInflight = request("/guest", { method: "POST", body })
-      .then(({ user }) => {
+      .then(async ({ user }) => {
         markSession();
         if (user?.name) rememberName(user.name);
+        // session()->regenerate() rotates the CSRF _token; re-fetch the csrf
+        // cookie so document.cookie reflects the post-regeneration token before
+        // the caller makes any further mutating requests.
+        await fetch(`${APP_URL}/sanctum/csrf-cookie`, { credentials: "include" });
       })
       .finally(() => {
         guestInflight = null;
@@ -243,6 +247,9 @@ export const api = {
   adminGetPermissions: () => request("/admin/permissions"),
   adminUpdatePermissions: (permissions) =>
     request("/admin/permissions", { method: "PATCH", body: { permissions } }),
+  adminVoiceTrainingStatus: () => request("/admin/voice-training/status"),
+  adminVoiceTrainingStart: (payload = {}) =>
+    request("/admin/voice-training/start", { method: "POST", body: payload }),
   adminExport,
 
   // Voice Studio — available to all authenticated users (each user's data is isolated).
@@ -270,11 +277,13 @@ export const api = {
   },
 
   voiceTranscribe: async (formData) => {
+    await ensureCsrf();
     const res = await fetch(`${BASE_URL}/voice-studio/transcribe`, {
       method: "POST",
+      credentials: "include",
       headers: {
         Accept: "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        "X-XSRF-TOKEN": getCsrfToken(),
       },
       body: formData,
     });

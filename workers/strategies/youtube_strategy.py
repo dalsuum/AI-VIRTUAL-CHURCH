@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 import random
+import time
 from typing import Callable
 
 import requests
@@ -47,7 +48,10 @@ _SOUTH_ASIAN_CHANNEL_KEYWORDS = [
 _EXCLUDED_CHANNEL_KEYWORDS = ["tamil", "hindi", "telugu", "malayalam", "kannada", "bengali"]
 
 # Non-Christian religious terms — rejected regardless of query.
-_NON_CHRISTIAN_REJECT = [
+# This list is the built-in default; admins extend/trim it via the
+# Content Filter panel in the Admin Console. The live list is fetched
+# from the backend every 5 minutes and falls back to these defaults.
+_DEFAULT_FILTER_KEYWORDS = [
     "buddhism", "buddhist", "buddha", "dharma", "sangha",
     "monk", "monks", "monastery", "zen",
     "hindu", "hinduism", "vedic",
@@ -56,6 +60,39 @@ _NON_CHRISTIAN_REJECT = [
     "new age", "wicca", "pagan", "occult", "astrology",
     "mindfulness", "chakra", "reincarnation",
 ]
+# Backward-compat alias used in older imports.
+_NON_CHRISTIAN_REJECT = _DEFAULT_FILTER_KEYWORDS
+
+_filter_cache: list[str] = []
+_filter_cache_ts: float = 0.0
+_FILTER_TTL = 300  # seconds
+
+
+def _get_filter_keywords() -> list[str]:
+    """Return the admin-managed keyword reject list, refreshed every 5 minutes.
+
+    Derives the backend config URL from LARAVEL_WEBHOOK_URL, calls /api/config,
+    and caches the result in-process. Falls back to the built-in defaults on any
+    network/parse error so filtering never stops working.
+    """
+    global _filter_cache, _filter_cache_ts
+    now = time.monotonic()
+    if _filter_cache and (now - _filter_cache_ts) < _FILTER_TTL:
+        return _filter_cache
+    try:
+        webhook = os.environ.get("LARAVEL_WEBHOOK_URL", "")
+        if "/api/" in webhook:
+            config_url = webhook.split("/api/")[0] + "/api/config"
+            resp = requests.get(config_url, timeout=5)
+            resp.raise_for_status()
+            keywords = resp.json().get("content_filter_keywords") or []
+            if isinstance(keywords, list) and keywords:
+                _filter_cache = [str(k).lower().strip() for k in keywords if k]
+                _filter_cache_ts = now
+                return _filter_cache
+    except Exception:
+        pass  # network error or env not set — use cached/default list
+    return _filter_cache or _DEFAULT_FILTER_KEYWORDS
 
 
 # ── per-language search configuration ────────────────────────────────────────
@@ -127,7 +164,7 @@ _LANG_CONFIG: dict[str, dict] = {
 def _is_christian_result(item: dict) -> bool:
     snippet = item["snippet"]
     text = (snippet.get("title", "") + " " + snippet.get("channelTitle", "")).lower()
-    return not any(kw in text for kw in _NON_CHRISTIAN_REJECT)
+    return not any(kw in text for kw in _get_filter_keywords())
 
 
 def _passes_language_filter(item: dict, cfg: dict) -> bool:

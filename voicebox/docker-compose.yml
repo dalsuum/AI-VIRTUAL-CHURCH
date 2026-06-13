@@ -1,6 +1,7 @@
 services:
   voicebox:
-    image: ghcr.io/jamiepine/voicebox:latest
+    build: .
+    image: aivc-voicebox:local
     container_name: voicebox
     restart: unless-stopped
     ports:
@@ -17,7 +18,7 @@ services:
       resources:
         limits:
           cpus: '2'
-          memory: 2G
+          memory: 4G
 
 volumes:
   voicebox-data:

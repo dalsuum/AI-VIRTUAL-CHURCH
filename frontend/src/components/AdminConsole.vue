@@ -35,13 +35,14 @@ function firstAllowedTab() {
     { name: "settings",    check: () => isAdminUser.value },
     { name: "music-pool",  check: () => isAdminUser.value },
     { name: "voice-studio",check: () => can("voice_studio.view") },
+    { name: "voice-training", check: () => isAdminUser.value },
     { name: "permissions", check: () => isAdminUser.value },
     { name: "system",      check: () => isAdminUser.value },
   ];
   return (candidates.find((c) => c.check()) ?? candidates[0]).name;
 }
 
-const tab = ref("dashboard"); // dashboard | services | donors | testimonies | users | prayer | settings | music-pool | voice-studio | permissions
+const tab = ref("dashboard"); // dashboard | services | donors | testimonies | users | prayer | settings | music-pool | voice-studio | voice-training | permissions
 const stats = ref(null);
 const services = ref([]);
 const donors = ref([]);
@@ -72,6 +73,11 @@ const musicPoolLanguages = [
   { value: "td", label: "Tedim (Zolai)" },
 ];
 
+const voiceTraining = ref(null);
+const voiceTrainingBusy = ref(false);
+const voiceTrainingError = ref("");
+let voiceTrainingTimer = null;
+
 // How spoken segments are voiced across all services. Mirrors the backend's
 // Setting::NARRATION_MODES; surfaced as a single-choice selector.
 const narrationModes = [
@@ -84,11 +90,8 @@ const narrationModes = [
 ];
 
 const voiceboxEngines = [
-  { value: "qwen",             label: "Qwen3-TTS",          hint: "High quality voice cloning (0.6B / 1.7B). Available in the CPU Docker build." },
-  { value: "kokoro",           label: "Kokoro",             hint: "82M model, fast CPU inference. Not available in the default Docker image." },
-  { value: "chatterbox",       label: "Chatterbox",         hint: "Multilingual (23 languages), good for non-English accents." },
-  { value: "luxtts",           label: "LuxTTS",             hint: "Lightweight English-only, 48 kHz, 150× realtime on CPU." },
-  { value: "chatterbox_turbo", label: "Chatterbox Turbo",   hint: "Fast 350M English model with paralinguistic emotion tags." },
+  { value: "qwen",       label: "Qwen3-TTS 0.6B", hint: "CPU-friendly model used by the local Docker image. Recommended for this server." },
+  { value: "qwen_1_7b",  label: "Qwen3-TTS 1.7B", hint: "Higher quality, much heavier. Use only with enough RAM or GPU headroom." },
 ];
 const setVoiceboxEngine = (v) => saveSetting("voicebox_engine", v, "Voicebox engine updated.");
 
@@ -108,13 +111,13 @@ const setEdgeTtsVoice = (v) => saveSetting("edge_tts_voice", v, "Voice updated."
 // Myanmar narration modes: real Edge TTS (cloud) or local MMS-TTS.
 const narrationModesMY = [
   { value: "edge_tts", label: "Edge TTS (cloud, free)", hint: "Microsoft my-MM-NilarNeural (female) / my-MM-ThihaNeural (male) — high-quality neural Burmese, no server needed. Configure EDGE_TTS_VOICE_MY_FEMALE / _MALE in workers/.env to override." },
-  { value: "mms_tts",  label: "MMS-TTS (local, free)",  hint: "Local facebook/mms-tts-mya via the aivc-mms-tts container. Best offline quality; requires the MMS-TTS service on port 8003." },
+  { value: "mms_tts",  label: "MMS-TTS (local, free)",  hint: "Local facebook/mms-tts-mya via the aivc-mms-tts service. Best offline quality; requires MMS speech on port 8003." },
   { value: "off",      label: "Off",                    hint: "Segments stay as silent text — nothing is read aloud." },
 ];
 
 // Tedim/Zolai narration modes: local MMS-TTS (native) or Edge TTS (no native Zolai voice).
 const narrationModesTD = [
-  { value: "mms_tts",  label: "MMS-TTS (local, free)",  hint: "Local facebook/mms-tts-ctd — the only native Zolai TTS. Requires aivc-mms-tts container on port 8003." },
+  { value: "mms_tts",  label: "MMS-TTS (local, free)",  hint: "Local facebook/mms-tts-ctd — the only native Zolai TTS. Requires MMS speech on port 8003." },
   { value: "edge_tts", label: "Edge TTS (cloud, free)", hint: "Microsoft cloud TTS — no native Zolai voice; reads Tedim text phonetically using EDGE_TTS_VOICE_TD (default en-US-AriaNeural). Free but accent will be English." },
   { value: "off",      label: "Off",                    hint: "Segments stay as silent text — nothing is read aloud." },
 ];
@@ -143,6 +146,7 @@ const musicSourceOptions = [
 ];
 
 const newMood = ref("");
+const newFilterKeyword = ref("");
 const newCountdownBanner = ref({ text: "", source: "" });
 const countdownSourceOptions = [
   { value: "all", label: "All sources", hint: "Rotate banners, approved testimonies, and mood-matched Scripture from the local Bible." },
@@ -211,6 +215,10 @@ async function enter() {
 
     const startTab = firstAllowedTab();
     tab.value = startTab;
+    if (startTab === "voice-training" && isAdminUser.value) {
+      loadVoiceTrainingStatus();
+      scheduleVoiceTrainingPoll();
+    }
     // Load data for the start tab (if it's not dashboard — dashboard loads above).
     if (startTab !== "dashboard") show(startTab);
   } catch (e) {
@@ -224,6 +232,9 @@ function logout() {
   authed.value      = false;
   currentUser.value = null;
   stats.value       = null;
+  voiceTraining.value = null;
+  voiceTrainingError.value = "";
+  clearInterval(voiceTrainingTimer);
   email.value       = "";
   password.value    = "";
 }
@@ -263,6 +274,7 @@ async function loadMusicTracks() {
 
 function show(name) {
   if (name !== "system") { clearInterval(updateTimer); clearInterval(vbTimer); }
+  if (name !== "voice-training") clearInterval(voiceTrainingTimer);
   tab.value    = name;
   notice.value = "";
   if (name === "services")    loadServices();
@@ -272,6 +284,7 @@ function show(name) {
   if (name === "prayer")      loadPrayerRequests();
   if (name === "settings")    loadSettings();
   if (name === "music-pool")  loadMusicTracks();
+  if (name === "voice-training") { loadVoiceTrainingStatus(); scheduleVoiceTrainingPoll(); }
   if (name === "permissions") loadPermissions();
   if (name === "system")      { loadUpdateStatus(); scheduleUpdatePoll(); loadVoiceboxStatus(); scheduleVoiceboxPoll(); }
   // Dashboard stats loaded on demand if not yet fetched.
@@ -356,6 +369,33 @@ function removeMood(m) {
     return;
   }
   saveListSetting("moods", settings.value.moods.filter((x) => x !== m), `Removed mood "${m}".`);
+}
+
+function addFilterKeyword() {
+  const kw = newFilterKeyword.value.trim().toLowerCase();
+  if (!kw || !settings.value) return;
+  const current = Array.isArray(settings.value.content_filter_keywords)
+    ? settings.value.content_filter_keywords
+    : [];
+  if (current.includes(kw)) {
+    notice.value = `"${kw}" is already in the filter list.`;
+    newFilterKeyword.value = "";
+    return;
+  }
+  saveListSetting("content_filter_keywords", [...current, kw], `Added filter keyword "${kw}".`);
+  newFilterKeyword.value = "";
+}
+
+function removeFilterKeyword(kw) {
+  if (!settings.value) return;
+  const current = Array.isArray(settings.value.content_filter_keywords)
+    ? settings.value.content_filter_keywords
+    : [];
+  saveListSetting(
+    "content_filter_keywords",
+    current.filter((x) => x !== kw),
+    `Removed filter keyword "${kw}".`,
+  );
 }
 
 function addCountdownBanner() {
@@ -671,6 +711,50 @@ function fmtMoney(amount, currency) {
   return `${Number(amount).toFixed(2)} ${(currency || "usd").toUpperCase()}`;
 }
 
+async function loadVoiceTrainingStatus() {
+  if (!isAdminUser.value) return;
+  try {
+    voiceTraining.value = await api.adminVoiceTrainingStatus();
+    voiceTrainingError.value = "";
+  } catch (e) {
+    voiceTrainingError.value = e?.data?.message || "Could not load voice training status.";
+  }
+}
+
+function scheduleVoiceTrainingPoll() {
+  clearInterval(voiceTrainingTimer);
+  voiceTrainingTimer = setInterval(loadVoiceTrainingStatus, 30000);
+}
+
+async function startVoiceTraining(row) {
+  if (!row?.can_start) return;
+  voiceTrainingBusy.value = true;
+  try {
+    await api.adminVoiceTrainingStart({ user_id: row.user_id, lang: row.lang });
+    notice.value = "Voice training queued. Status will update when the worker starts it.";
+    setTimeout(loadVoiceTrainingStatus, 1200);
+  } catch (e) {
+    notice.value = e?.data?.message || "Could not start voice training.";
+    await loadVoiceTrainingStatus();
+  } finally {
+    voiceTrainingBusy.value = false;
+  }
+}
+
+function trainingBadgeClass(status) {
+  if (status === "succeeded") return "ready";
+  if (status === "running") return "active";
+  if (status === "failed") return "failed";
+  if (status === "stale") return "scheduled";
+  return "pending";
+}
+
+function shortPath(path) {
+  if (!path) return "—";
+  const parts = String(path).split("/");
+  return parts.slice(-3).join("/");
+}
+
 // ─── System Monitor ────────────────────────────────────────────────────────────
 
 const updateStatus   = ref(null);   // { checked_at, checking, packages, services, git }
@@ -822,7 +906,11 @@ async function restartSvc(svcName) {
 
 // If a token is already stored (e.g. a returning admin), try to enter directly.
 onMounted(() => { if (api.hasToken()) enter(); });
-onUnmounted(() => clearInterval(updateTimer));
+onUnmounted(() => {
+  clearInterval(updateTimer);
+  clearInterval(vbTimer);
+  clearInterval(voiceTrainingTimer);
+});
 </script>
 
 <template>
@@ -854,6 +942,7 @@ onUnmounted(() => clearInterval(updateTimer));
         <button v-if="isAdminUser"                  :class="{ active: tab === 'settings' }"    @click="show('settings')">Settings</button>
         <button v-if="isAdminUser"                  :class="{ active: tab === 'music-pool' }"  @click="show('music-pool')">Suno Pool</button>
         <button v-if="can('voice_studio.view')"     :class="{ active: tab === 'voice-studio'}" @click="show('voice-studio')">Voice Studio</button>
+        <button v-if="isAdminUser"                  :class="{ active: tab === 'voice-training'}" @click="show('voice-training')">Voice Training</button>
         <button v-if="isAdminUser"                  :class="{ active: tab === 'permissions' }" @click="show('permissions')">Permissions</button>
         <button v-if="isAdminUser"                  :class="{ active: tab === 'system' }"      @click="show('system')">System</button>
         <span v-if="currentUser" class="staff-role-badge" :class="'role-' + currentUser.role">
@@ -1431,6 +1520,52 @@ onUnmounted(() => clearInterval(updateTimer));
         </div>
 
         <div class="setting-block">
+          <h2>Content Filter</h2>
+          <p class="setting-desc">
+            Keywords rejected from YouTube search results to keep non-Christian religious
+            content out of services (Baptist / Assemblies of God context). Any video whose
+            title or channel name contains one of these words is skipped — even if the
+            search query already says "Christian". Add terms like <em>buddhism</em>,
+            <em>monk</em>, or <em>allah</em>; remove any that are too aggressive for your
+            congregation's content needs. Changes take effect within 5 minutes for running
+            workers.
+          </p>
+          <div v-if="settings" class="mood-editor">
+            <span
+              v-for="kw in settings.content_filter_keywords"
+              :key="kw"
+              class="mood-chip filter-chip"
+            >
+              {{ kw }}
+              <button
+                type="button"
+                class="chip-x"
+                :disabled="savingSettings"
+                aria-label="Remove keyword"
+                @click="removeFilterKeyword(kw)"
+              >×</button>
+            </span>
+          </div>
+          <div v-if="settings" class="mood-add">
+            <input
+              v-model="newFilterKeyword"
+              type="text"
+              class="mood-input"
+              placeholder="Add a keyword to reject (e.g. shaman)"
+              :disabled="savingSettings"
+              @keyup.enter="addFilterKeyword"
+            />
+            <button
+              type="button"
+              class="primary add-btn"
+              :disabled="savingSettings || !newFilterKeyword.trim()"
+              @click="addFilterKeyword"
+            >Add</button>
+          </div>
+          <p v-else class="setting-desc">Loading…</p>
+        </div>
+
+        <div class="setting-block">
           <h2>Service languages</h2>
           <p class="setting-desc">
             Which language tabs appear in the intake form. Worshippers can only pick a
@@ -1690,6 +1825,93 @@ onUnmounted(() => clearInterval(updateTimer));
         <VoiceStudio />
       </section>
 
+      <section v-else-if="tab === 'voice-training' && isAdminUser" class="voice-training-page">
+        <div class="voice-train-panel">
+          <div class="voice-train-head">
+            <div>
+              <h2>Voice Training</h2>
+              <p v-if="voiceTraining?.checked_at" class="sys-meta">
+                Last checked: {{ fmtDate(voiceTraining.checked_at) }}
+              </p>
+              <p v-else class="sys-meta">Loading training status.</p>
+            </div>
+            <button class="chip" :disabled="voiceTrainingBusy" @click="loadVoiceTrainingStatus">Refresh</button>
+          </div>
+          <p v-if="voiceTrainingError" class="sys-notice">{{ voiceTrainingError }}</p>
+
+          <template v-if="voiceTraining">
+            <div class="voice-train-summary">
+              <span class="svc-status" :class="voiceTraining.load?.server_free ? 'svc-active' : 'svc-inactive'">
+                Load {{ voiceTraining.load?.current ?? "n/a" }} / {{ voiceTraining.load?.max }}
+              </span>
+              <span class="badge" :class="voiceTraining.window?.inside ? 'ready' : 'scheduled'">
+                {{ voiceTraining.window?.start }}-{{ voiceTraining.window?.end }} server
+              </span>
+              <span class="badge" :class="voiceTraining.enabled ? 'ready' : 'failed'">
+                {{ voiceTraining.enabled ? "enabled" : "disabled" }}
+              </span>
+              <span class="badge" :class="voiceTraining.running_jobs?.length ? 'active' : 'pending'">
+                {{ voiceTraining.running_jobs?.length || 0 }} running
+              </span>
+            </div>
+
+            <div v-if="voiceTraining.active_models" class="voice-train-models">
+              <span v-for="(model, lang) in voiceTraining.active_models" :key="lang">
+                <strong>{{ lang.toUpperCase() }}</strong>
+                {{ model.exists ? shortPath(model.path) : "stock MMS" }}
+              </span>
+            </div>
+
+            <div v-if="voiceTraining.datasets?.length" class="pkg-table-wrap">
+              <table class="pkg-table voice-train-table">
+                <thead>
+                  <tr>
+                    <th>Dataset</th>
+                    <th>Clips</th>
+                    <th>Status</th>
+                    <th>Last Success</th>
+                    <th>Model</th>
+                    <th>Reason</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="row in voiceTraining.datasets" :key="`${row.user_id}-${row.lang}`">
+                    <td>
+                      <strong>{{ row.label }}</strong><br />
+                      <small>{{ row.user_name || `User ${row.user_id}` }} · {{ row.user_email || "no email" }}</small>
+                    </td>
+                    <td>
+                      {{ row.recordings }}
+                      <small v-if="row.last_success_recordings"> · +{{ row.new_recordings_since_success }}</small>
+                    </td>
+                    <td>
+                      <span class="badge" :class="trainingBadgeClass(row.status)">{{ row.status }}</span>
+                      <small v-if="row.running"> pid {{ row.pid }}</small>
+                    </td>
+                    <td><small>{{ fmtDate(row.last_success_at) }}</small></td>
+                    <td><code class="voice-train-path">{{ shortPath(row.model_dir) }}</code></td>
+                    <td class="voice-train-reason">{{ row.reason }}</td>
+                    <td>
+                      <button
+                        class="chip"
+                        :class="row.can_start && voiceTraining.load?.server_free ? 'primary-chip' : 'disabled-chip'"
+                        :disabled="voiceTrainingBusy || !row.can_start || !voiceTraining.load?.server_free"
+                        :title="row.can_start ? 'Start training now' : row.reason"
+                        @click="startVoiceTraining(row)"
+                      >
+                        {{ row.can_start && voiceTraining.load?.server_free ? (voiceTrainingBusy ? "Queued…" : "Start now") : "Waiting" }}
+                      </button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p v-else class="sys-empty">No Voice Studio datasets yet.</p>
+          </template>
+        </div>
+      </section>
+
       <section v-else-if="tab === 'permissions' && isAdminUser" class="settings">
         <PermissionsMatrix :initial-data="permissionsData" />
       </section>
@@ -1795,6 +2017,9 @@ onUnmounted(() => clearInterval(updateTimer));
           <!-- Profile list -->
           <template v-if="vbProfiles.length">
             <p class="setting-desc" style="margin-bottom:0.4rem">Voice profiles</p>
+            <p v-if="vbProfiles.some((p) => !p.sample_count)" class="sys-notice">
+              One or more profiles has no sample recordings. Add at least one sample in Voicebox before enabling voice-cloned narration.
+            </p>
             <table class="pkg-table" style="margin-bottom:0.5rem">
               <thead>
                 <tr>
@@ -1950,10 +2175,25 @@ onUnmounted(() => clearInterval(updateTimer));
 .card .lbl { font-size: 0.9rem; color: var(--text); font-weight: 500; margin-top: 0.2rem; }
 .card small { color: var(--text-muted); font-size: 0.78rem; }
 
+.voice-train-panel {
+  margin-top: 1.75rem; background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow-sm);
+}
+.voice-training-page .voice-train-panel { margin-top: 0; }
+.voice-train-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 0.75rem; }
+.voice-train-head h2 { font-size: 1.05rem; margin: 0 0 0.2rem; }
+.voice-train-summary, .voice-train-models { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-bottom: 0.75rem; }
+.voice-train-models { color: var(--text-muted); font-size: 0.82rem; }
+.voice-train-models span { background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 0.2rem 0.55rem; }
+.voice-train-table td { vertical-align: top; }
+.voice-train-path { font-size: 0.72rem; color: var(--text-muted); }
+.voice-train-reason { min-width: 180px; color: var(--text-muted); font-size: 0.82rem; line-height: 1.4; }
+
 .exports { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-top: 1.75rem; }
 .exports-label { color: var(--text-muted); font-size: 0.85rem; margin-right: 0.25rem; }
 .chip { border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 999px; padding: 0.4rem 0.85rem; font-size: 0.85rem; cursor: pointer; }
 .chip:hover { border-color: var(--primary); color: var(--primary-hover); }
+.chip:disabled { opacity: 0.55; cursor: default; pointer-events: none; }
 .pool-filters { display: grid; grid-template-columns: 1fr 180px 1.3fr auto; gap: 0.6rem; margin: 0.9rem 0 1rem; }
 .pool-editor { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 0.85rem; margin-bottom: 1rem; }
 .pool-editor h3 { margin: 0 0 0.65rem; font-size: 0.95rem; }
@@ -2002,6 +2242,12 @@ onUnmounted(() => clearInterval(updateTimer));
   border-color: var(--primary, #2563eb);
 }
 .primary-chip:hover { background: var(--primary-hover, #1d4ed8); border-color: var(--primary-hover, #1d4ed8); }
+.disabled-chip,
+.disabled-chip:hover {
+  background: var(--surface-3);
+  color: var(--text-muted);
+  border-color: var(--border);
+}
 .create-user-panel {
   margin-bottom: 1.25rem; padding: 1.25rem;
   background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px;
@@ -2022,6 +2268,7 @@ onUnmounted(() => clearInterval(updateTimer));
 .badge { display: inline-block; font-size: 0.78rem; padding: 0.15rem 0.55rem; border-radius: 999px; background: var(--surface-3); color: var(--text-muted); text-transform: capitalize; }
 .badge.active, .badge.ready { background: var(--success-soft); color: var(--success); }
 .badge.pending, .badge.scheduled { background: var(--primary-soft); color: var(--primary-hover); }
+.badge.failed { background: #fee2e2; color: #b91c1c; }
 .badge.custom-mood { background: #fef3c7; color: #92400e; margin: 0.1rem 0.15rem 0.1rem 0; }
 .badge.music-source { background: #ede9fe; color: #5b21b6; }
 .muted-cell { color: var(--text-faint); font-size: 0.85rem; }
@@ -2045,6 +2292,7 @@ onUnmounted(() => clearInterval(updateTimer));
 .chip-x { border: 0; background: transparent; color: inherit; cursor: pointer; font-size: 1rem; line-height: 1; padding: 0 0.25rem; border-radius: 999px; }
 .chip-x:hover:not(:disabled) { background: var(--primary); color: var(--on-primary); }
 .chip-x:disabled { opacity: 0.4; cursor: default; }
+.mood-chip.filter-chip { background: #fff0f0; color: #b00; }
 .mood-add { display: flex; gap: 0.5rem; }
 .banner-list { display: flex; flex-direction: column; gap: 0.75rem; }
 .banner-row, .banner-add { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0.75rem; background: var(--surface-2); }

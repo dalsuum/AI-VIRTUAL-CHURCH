@@ -101,6 +101,6 @@ def narrate_burmese(session_token: str, segment_name: str, burmese_text: str) ->
         session_token,
         segment_name,
         burmese_text,
-        mode="edge_tts",
+        mode="mms_tts",
         language="my",
     )

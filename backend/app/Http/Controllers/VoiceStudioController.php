@@ -2,18 +2,18 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\VoiceStudioDatasetService;
 use Illuminate\Http\Request;
-use ZipArchive;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class VoiceStudioController extends Controller
 {
+    public function __construct(private readonly VoiceStudioDatasetService $datasets) {}
+
     private function langCode(string $lang): string
     {
-        return match ($lang) {
-            'tedim', 'td' => 'td',
-            'burmese', 'my' => 'my',
-            default => abort(404, 'Unknown language'),
-        };
+        return $this->datasets->langCode($lang);
     }
 
     private function scriptPath(string $lang): string
@@ -23,30 +23,55 @@ class VoiceStudioController extends Controller
 
     private function recordingsDir(string $lang): string
     {
-        return storage_path("app/voice-studio/" . auth()->id() . "/{$lang}/");
+        return $this->datasets->languageDir(auth()->id(), $lang) . '/';
     }
 
     private function manifestPath(string $lang): string
     {
-        return storage_path("app/voice-studio/" . auth()->id() . "/{$lang}/manifest.json");
+        return $this->datasets->manifestPath(auth()->id(), $lang);
+    }
+
+    private function speechUrl(): string
+    {
+        return rtrim((string) config('services.mms_speech.url', 'http://127.0.0.1:8003'), '/');
+    }
+
+    private function scriptSentences(string $lang): array
+    {
+        $path = $this->scriptPath($lang);
+        if (!file_exists($path)) {
+            return [];
+        }
+
+        $sentences = json_decode(file_get_contents($path), true);
+        return is_array($sentences) ? $sentences : [];
+    }
+
+    private function sentenceFor(string $lang, int $id): ?array
+    {
+        foreach ($this->scriptSentences($lang) as $sentence) {
+            if ((int) ($sentence['id'] ?? 0) === $id) {
+                return $sentence;
+            }
+        }
+
+        return null;
     }
 
     private function loadManifest(string $lang): array
     {
-        $path = $this->manifestPath($lang);
-        if (!file_exists($path)) {
-            return [];
-        }
-        return json_decode(file_get_contents($path), true) ?? [];
+        return $this->datasets->loadManifest(auth()->id(), $lang);
     }
 
     private function saveManifest(string $lang, array $manifest): void
     {
-        $dir = $this->recordingsDir($lang);
-        if (!is_dir($dir)) {
-            mkdir($dir, 0775, true);
-        }
-        file_put_contents($this->manifestPath($lang), json_encode($manifest, JSON_UNESCAPED_UNICODE));
+        $this->datasets->saveManifest(auth()->id(), $lang, $manifest);
+    }
+
+    private function ffmpegAvailable(): bool
+    {
+        exec('command -v ffmpeg 2>/dev/null', $out, $code);
+        return $code === 0 && !empty($out);
     }
 
     public function script(string $lang)
@@ -58,7 +83,7 @@ class VoiceStudioController extends Controller
             return response()->json(['error' => 'Script not found. Contact admin.'], 404);
         }
 
-        $sentences = json_decode(file_get_contents($path), true);
+        $sentences = $this->scriptSentences($lang);
         $manifest  = $this->loadManifest($lang);
         $recordedIds = array_column($manifest, 'id');
 
@@ -73,19 +98,29 @@ class VoiceStudioController extends Controller
         $req->validate([
             'lang'  => 'required|in:td,my',
             'id'    => 'required|integer|min:1',
-            'text'  => 'required|string|max:500',
+            'text'  => 'nullable|string|max:2000',
             'audio' => 'required|file|max:10240',
         ]);
 
         $lang  = $req->input('lang');
         $id    = (int) $req->input('id');
-        $text  = $req->input('text');
         $audio = $req->file('audio');
+
+        $sentence = $this->sentenceFor($lang, $id);
+        if (!$sentence) {
+            return response()->json(['error' => 'Sentence not found in the recording script.'], 422);
+        }
+        $text = (string) $sentence['text'];
+
+        if (!$this->ffmpegAvailable()) {
+            return response()->json(['error' => 'ffmpeg is not installed on the backend server.'], 503);
+        }
 
         $dir = $this->recordingsDir($lang);
         if (!is_dir($dir)) {
             mkdir($dir, 0775, true);
         }
+        @chmod($dir, 0775);
 
         $tmpIn   = $audio->getRealPath();
         $outFile = sprintf('%s%04d.wav', $dir, $id);
@@ -108,7 +143,7 @@ class VoiceStudioController extends Controller
         exec($cmd, $output, $code);
 
         if ($code !== 0) {
-            \Illuminate\Support\Facades\Log::error('Audio conversion failed', ['output' => $output]);
+            Log::error('Audio conversion failed', ['output' => $output]);
             return response()->json(['error' => 'Audio conversion failed'], 500);
         }
 
@@ -130,11 +165,65 @@ class VoiceStudioController extends Controller
         $manifest = $this->loadManifest($lang);
         // replace if re-recording same sentence
         $manifest = array_values(array_filter($manifest, fn($r) => $r['id'] !== $id));
-        $manifest[] = ['id' => $id, 'text' => $text, 'file' => sprintf('%04d.wav', $id)];
+        $manifest[] = [
+            'id' => $id,
+            'text' => $text,
+            'file' => sprintf('%04d.wav', $id),
+            'recorded_at' => now()->toIso8601String(),
+        ];
         usort($manifest, fn($a, $b) => $a['id'] - $b['id']);
         $this->saveManifest($lang, $manifest);
+        $snapshot = $this->datasets->syncSnapshot(auth()->id(), $lang);
 
-        return response()->json(['ok' => true, 'total' => count($manifest)]);
+        return response()->json([
+            'ok' => true,
+            'total' => count($manifest),
+            'dataset' => [
+                'recordings' => $snapshot['recordings'],
+                'dataset_hash' => $snapshot['dataset_hash'],
+                'synced_at' => $snapshot['synced_at'],
+            ],
+        ]);
+    }
+
+    public function transcribe(Request $req)
+    {
+        $req->validate([
+            'lang'  => 'required|in:td,my',
+            'audio' => 'required|file|max:10240',
+        ]);
+
+        $lang = $req->input('lang');
+        $audio = $req->file('audio');
+        $handle = fopen($audio->getRealPath(), 'r');
+
+        try {
+            $res = Http::timeout((int) config('services.mms_speech.asr_timeout', 300))
+                ->attach('audio', $handle, $audio->getClientOriginalName() ?: 'recording.webm')
+                ->post($this->speechUrl() . '/stt/transcribe', [
+                    'lang' => VoiceStudioDatasetService::LANGUAGES[$lang]['speech_lang'],
+                ]);
+        } finally {
+            if (is_resource($handle)) {
+                fclose($handle);
+            }
+        }
+
+        if (!$res->successful()) {
+            Log::warning('Voice Studio transcription failed', [
+                'status' => $res->status(),
+                'body' => $res->body(),
+            ]);
+
+            return response()->json([
+                'error' => $res->json('detail') ?: 'Transcription service failed.',
+            ], $res->status() >= 400 ? $res->status() : 502);
+        }
+
+        return response()->json([
+            'text' => $res->json('text', ''),
+            'lang' => $lang,
+        ]);
     }
 
     public function progress(string $lang)
@@ -142,15 +231,72 @@ class VoiceStudioController extends Controller
         $lang     = $this->langCode($lang);
         $manifest = $this->loadManifest($lang);
 
-        $scriptPath = $this->scriptPath($lang);
-        $total = 0;
-        if (file_exists($scriptPath)) {
-            $total = count(json_decode(file_get_contents($scriptPath), true));
-        }
+        $total = count($this->scriptSentences($lang));
 
         return response()->json([
             'recorded' => count($manifest),
             'total'    => $total,
+        ]);
+    }
+
+    public function status()
+    {
+        $speech = [
+            'url' => $this->speechUrl(),
+            'reachable' => false,
+            'error' => null,
+        ];
+
+        try {
+            $res = Http::timeout(2)->get($this->speechUrl() . '/health');
+            $speech['reachable'] = $res->successful();
+            if (!$res->successful()) {
+                $speech['error'] = 'HTTP ' . $res->status();
+            }
+        } catch (\Throwable $exc) {
+            $speech['error'] = $exc->getMessage();
+        }
+
+        $languages = [];
+        foreach (VoiceStudioDatasetService::LANGUAGES as $code => $meta) {
+            $training = $this->datasets->loadTrainingStatus(auth()->id(), $code);
+            $languages[] = [
+                'code' => $code,
+                'label' => $meta['label'],
+                'script_total' => count($this->scriptSentences($code)),
+                'recorded' => count($this->loadManifest($code)),
+                'tts_model' => $code === 'td'
+                    ? env('MMS_TTS_MODEL_TD', 'facebook/mms-tts-ctd')
+                    : env('MMS_TTS_MODEL_MY', 'facebook/mms-tts-mya'),
+                'stt_lang' => $meta['mms_code'],
+                'training' => [
+                    'status' => $training['status'] ?? 'never',
+                    'recordings' => $training['recordings'] ?? null,
+                    'last_success_at' => $training['last_success_at'] ?? null,
+                    'last_error' => $training['last_error'] ?? null,
+                    'model_dir' => $training['model_dir'] ?? null,
+                ],
+            ];
+        }
+
+        return response()->json([
+            'training' => [
+                'in_app' => true,
+                'mode' => 'scheduled_server',
+                'dataset_export' => true,
+                'automatic_fine_tune' => (bool) config('voice_studio.training.enabled'),
+                'window_start' => config('voice_studio.training.window_start'),
+                'window_end' => config('voice_studio.training.window_end'),
+                'max_load' => config('voice_studio.training.max_load'),
+                'min_clips' => config('voice_studio.training.min_clips'),
+                'min_new_clips' => config('voice_studio.training.min_new_clips'),
+            ],
+            'tools' => [
+                'ffmpeg' => $this->ffmpegAvailable(),
+                'zip' => class_exists(\ZipArchive::class),
+            ],
+            'speech' => $speech,
+            'languages' => $languages,
         ]);
     }
 
@@ -163,25 +309,12 @@ class VoiceStudioController extends Controller
             return response()->json(['error' => 'No recordings yet.'], 400);
         }
 
-        $dir     = $this->recordingsDir($lang);
-        $zipPath = storage_path("app/voice-studio/" . auth()->id() . "/{$lang}_dataset.zip");
-
-        $zip = new ZipArchive();
-        $zip->open($zipPath, ZipArchive::CREATE | ZipArchive::OVERWRITE);
-
-        $csv = "file_name,text\n";
-        foreach ($manifest as $row) {
-            $wavFile = $dir . $row['file'];
-            if (file_exists($wavFile)) {
-                $safeText = str_replace(['"', ',', "\n"], ['\\"', ' ', ' '], $row['text']);
-                $csv .= "wavs/{$row['file']},\"{$safeText}\"\n";
-                $zip->addFile($wavFile, "wavs/{$row['file']}");
-            }
+        $snapshot = $this->datasets->syncSnapshot(auth()->id(), $lang, writeZip: true);
+        if (($snapshot['recordings'] ?? 0) === 0) {
+            return response()->json(['error' => 'No WAV files found for export.'], 400);
         }
-        $zip->addFromString('metadata.csv', $csv);
-        $zip->close();
 
-        return response()->download($zipPath, "{$lang}_voice_dataset.zip");
+        return response()->download($snapshot['zip_path'], "{$lang}_voice_dataset.zip");
     }
 
     public function destroy(string $lang, int $id)
@@ -202,6 +335,7 @@ class VoiceStudioController extends Controller
 
         $manifest = array_values(array_filter($manifest, fn($r) => $r['id'] !== $id));
         $this->saveManifest($lang, $manifest);
+        $this->datasets->syncSnapshot(auth()->id(), $lang);
 
         return response()->json(['ok' => true]);
     }

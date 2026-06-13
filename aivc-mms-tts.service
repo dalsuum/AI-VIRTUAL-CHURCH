@@ -1,5 +1,5 @@
 [Unit]
-Description=AI Church — MMS TTS (Tedim + Burmese native speech synthesis)
+Description=AI Church — MMS Speech (Tedim + Burmese TTS/STT)
 # Start after the LLM APIs so the models in /root/.cache/huggingface are
 # already warm if they share disk, but this service is otherwise independent.
 After=redis-server.service
@@ -7,7 +7,7 @@ After=redis-server.service
 [Service]
 User=simon
 WorkingDirectory=/opt/ai-church/workers
-# One uvicorn worker: MMS_TTS_CONCURRENCY semaphore serialises synthesis anyway.
+# One uvicorn worker: MMS semaphores serialize CPU-heavy speech work anyway.
 ExecStart=/usr/bin/env bash -lc 'set -a; . ./.env; set +a; exec .venv/bin/uvicorn mms_tts_api:app --host 127.0.0.1 --port 8003 --workers 1'
 Restart=always
 RestartSec=3

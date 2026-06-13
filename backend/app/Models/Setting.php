@@ -51,6 +51,20 @@ class Setting extends Model
     /** The moods a worshipper can pick from out of the box, before any admin edits. */
     public const DEFAULT_MOODS = ['Grateful', 'Anxious', 'Grieving', 'Joyful', 'Seeking', 'Hopeful'];
 
+    /**
+     * Default non-Christian religious keywords rejected from YouTube search results.
+     * Admin can extend or trim this list via the Content Filter settings panel.
+     */
+    public const DEFAULT_FILTER_KEYWORDS = [
+        'buddhism', 'buddhist', 'buddha', 'dharma', 'sangha',
+        'monk', 'monks', 'monastery', 'zen',
+        'hindu', 'hinduism', 'vedic',
+        'islam', 'islamic', 'muslim', 'quran', 'quranic', 'allah', 'mosque',
+        'rabbi', 'synagogue', 'jewish', 'judaism', 'torah',
+        'new age', 'wicca', 'pagan', 'occult', 'astrology',
+        'mindfulness', 'chakra', 'reincarnation',
+    ];
+
     /** Admin-curated cards shown while the service is preparing. */
     public const DEFAULT_COUNTDOWN_BANNERS = [
         ['text' => 'Take a quiet breath. God meets us with mercy before we have the right words.', 'source' => 'Pastoral encouragement'],
@@ -178,5 +192,16 @@ class Setting extends Model
     {
         $v = static::get('default_music_source', 'youtube');
         return in_array($v, self::MUSIC_SOURCES, true) ? $v : 'youtube';
+    }
+
+    /**
+     * Keywords rejected from YouTube search results to keep non-Christian religious
+     * content out of the service. Admin-editable; falls back to the built-in defaults.
+     */
+    public static function filterKeywords(): array
+    {
+        $list = static::getList('content_filter_keywords', self::DEFAULT_FILTER_KEYWORDS);
+        $clean = array_values(array_unique(array_filter(array_map('trim', $list))));
+        return $clean ?: self::DEFAULT_FILTER_KEYWORDS;
     }
 }

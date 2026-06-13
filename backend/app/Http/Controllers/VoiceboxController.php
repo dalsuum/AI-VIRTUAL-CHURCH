@@ -58,14 +58,20 @@ class VoiceboxController extends Controller
             }
 
             $profiles = json_decode($body, true) ?? [];
-            // Trim to only the fields the dashboard needs.
-            $slim = array_map(fn($p) => [
-                'id'           => $p['id'] ?? '',
-                'name'         => $p['name'] ?? '',
-                'voice_type'   => $p['voice_type'] ?? '',
-                'language'     => $p['language'] ?? '',
-                'sample_count' => $p['sample_count'] ?? 0,
-            ], is_array($profiles) ? $profiles : []);
+            // Voicebox's /profiles response does not include sample_count in the
+            // current Docker image, so enrich each profile from /profiles/{id}/samples.
+            $slim = array_map(function ($p) {
+                $id = $p['id'] ?? '';
+                $samples = $id ? $this->getJson(self::BASE . "/profiles/{$id}/samples") : [];
+
+                return [
+                    'id'           => $id,
+                    'name'         => $p['name'] ?? '',
+                    'voice_type'   => $p['voice_type'] ?? 'clone',
+                    'language'     => $p['language'] ?? '',
+                    'sample_count' => is_array($samples) ? count($samples) : 0,
+                ];
+            }, is_array($profiles) ? $profiles : []);
 
             return response()->json(['status' => 'ok', 'profiles' => $slim]);
         } catch (\Throwable) {
@@ -110,5 +116,21 @@ class VoiceboxController extends Controller
             CURLOPT_HTTPGET        => true,
         ]);
         return $ch;
+    }
+
+    /** Fetch and decode JSON from Voicebox, returning [] on any local failure. */
+    private function getJson(string $url): array
+    {
+        $ch = $this->curl($url);
+        $body = curl_exec($ch);
+        $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if ($body === false || $code !== 200) {
+            return [];
+        }
+
+        $data = json_decode($body, true);
+        return is_array($data) ? $data : [];
     }
 }

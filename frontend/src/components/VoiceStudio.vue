@@ -2,7 +2,7 @@
   <div class="voice-studio">
     <div class="vs-header">
       <h2>Voice Studio</h2>
-      <p class="vs-sub">Record your voice to train a custom TTS model for your language.</p>
+      <p class="vs-sub">Record clean clips, export a fine-tuning dataset, and check speech with local MMS.</p>
     </div>
 
     <!-- Language selector -->
@@ -24,12 +24,23 @@
       </button>
     </div>
 
+    <div class="vs-health" v-if="studioStatus">
+      <span class="health-pill" :class="{ ok: studioStatus.tools?.ffmpeg }">ffmpeg</span>
+      <span class="health-pill" :class="{ ok: studioStatus.tools?.zip }">zip</span>
+      <span class="health-pill" :class="{ ok: studioStatus.speech?.reachable }">MMS speech</span>
+      <span class="health-pill ok">dataset export</span>
+    </div>
+
     <!-- Progress bar -->
     <div class="vs-progress" v-if="currentProgress">
       <div class="progress-track">
         <div class="progress-fill" :style="{ width: progressPct + '%' }"></div>
       </div>
       <span class="progress-label">{{ currentProgress.recorded }} / {{ currentProgress.total }} recorded ({{ progressPct }}%)</span>
+      <span v-if="currentTraining" class="progress-label training-label">
+        Training: {{ currentTraining.status || 'never' }}
+        <template v-if="currentTraining.last_success_at"> · last model {{ formatDate(currentTraining.last_success_at) }}</template>
+      </span>
     </div>
 
     <!-- Loading -->
@@ -67,7 +78,14 @@
         <!-- Playback -->
         <div v-if="audioBlob" class="playback">
           <audio ref="audioEl" :src="audioBlobUrl" controls></audio>
+          <div v-if="transcriptText || transcriptError" class="transcript" :class="{ error: transcriptError }">
+            <strong>Transcript</strong>
+            <span>{{ transcriptText || transcriptError }}</span>
+          </div>
           <div class="playback-actions">
+            <button class="action-btn check" @click="checkTranscript" :disabled="saving || transcribing || !speechReady">
+              {{ transcribing ? 'Checking…' : 'STT check' }}
+            </button>
             <button class="action-btn accept" @click="acceptRecording" :disabled="saving">
               {{ saving ? 'Saving…' : '✓ Accept' }}
             </button>
@@ -133,9 +151,13 @@ const cursor     = ref(0);
 const loading    = ref(false);
 const saving     = ref(false);
 const exporting  = ref(false);
+const transcribing = ref(false);
 const statusMsg  = ref("");
 const statusClass = ref("ok");
+const studioStatus = ref(null);
 const progress   = ref({ td: null, my: null });
+const transcriptText = ref("");
+const transcriptError = ref("");
 
 const jumpIndex = ref("");
 
@@ -166,6 +188,10 @@ const isRecorded      = computed(() =>
   currentSentence.value ? recordedIds.value.has(currentSentence.value.id) : false
 );
 const currentProgress = computed(() => progress.value[lang.value]);
+const speechReady     = computed(() => studioStatus.value?.speech?.reachable === true);
+const currentTraining = computed(() =>
+  studioStatus.value?.languages?.find((l) => l.code === lang.value)?.training ?? null
+);
 const progressPct     = computed(() => {
   const p = currentProgress.value;
   if (!p || p.total === 0) return 0;
@@ -195,6 +221,12 @@ async function loadProgress(code) {
   try {
     const res = await api.voiceProgress(code);
     progress.value[code] = res;
+  } catch {}
+}
+
+async function loadStatus() {
+  try {
+    studioStatus.value = await api.voiceStatus();
   } catch {}
 }
 
@@ -243,6 +275,10 @@ async function toggleRecord() {
 
 async function startRecording() {
   try {
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      showStatus("Recording is not supported in this browser.", "error");
+      return;
+    }
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     chunks = [];
     const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
@@ -282,7 +318,27 @@ function discardRecording() {
   audioBlob.value    = null;
   audioBlobUrl.value = null;
   recTimer.value     = 0;
+  transcriptText.value = "";
+  transcriptError.value = "";
   chunks = [];
+}
+
+async function checkTranscript() {
+  if (!audioBlob.value) return;
+  transcribing.value = true;
+  transcriptText.value = "";
+  transcriptError.value = "";
+  try {
+    const form = new FormData();
+    form.append("lang", lang.value);
+    form.append("audio", audioBlob.value, "recording.webm");
+    const res = await api.voiceTranscribe(form);
+    transcriptText.value = res.text || "(no transcript)";
+  } catch (e) {
+    transcriptError.value = e.data?.error ?? e.data?.message ?? e.message;
+  } finally {
+    transcribing.value = false;
+  }
 }
 
 async function acceptRecording() {
@@ -299,6 +355,7 @@ async function acceptRecording() {
 
     recordedIds.value.add(currentSentence.value.id);
     await loadProgress(lang.value);
+    await loadStatus();
     discardRecording();
     showStatus("Saved!", "ok");
     goNext();
@@ -316,6 +373,7 @@ async function deleteRecording() {
     await api.voiceDelete(lang.value, currentSentence.value.id);
     recordedIds.value.delete(currentSentence.value.id);
     await loadProgress(lang.value);
+    await loadStatus();
     showStatus("Deleted.", "ok");
   } catch (e) {
     showStatus("Delete failed.", "error");
@@ -345,8 +403,14 @@ function showStatus(msg, cls = "ok") {
   setTimeout(() => { statusMsg.value = ""; }, 3500);
 }
 
+function formatDate(value) {
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? value : d.toLocaleString();
+}
+
 onMounted(async () => {
   await Promise.all([
+    loadStatus(),
     loadScript("td"),
     loadProgress("td"),
     loadProgress("my"),
@@ -376,10 +440,21 @@ onMounted(async () => {
 }
 .export-btn:hover { background: var(--surface-3, #e5e7eb); }
 
+.vs-health {
+  display: flex; gap: .4rem; flex-wrap: wrap; margin: -.35rem 0 1rem;
+}
+.health-pill {
+  border: 1px solid var(--border, #d1d5db); border-radius: 999px;
+  padding: .22rem .55rem; font-size: .72rem; color: var(--text-muted, #666);
+  background: var(--surface-2, #f3f4f6);
+}
+.health-pill.ok { color: #166534; border-color: #86efac; background: #dcfce7; }
+
 .vs-progress { margin-bottom: 1.25rem; }
 .progress-track { height: 8px; border-radius: 4px; background: var(--surface-2, #e5e7eb); overflow: hidden; margin-bottom: .3rem; }
 .progress-fill  { height: 100%; background: var(--primary, #2563eb); transition: width .3s; border-radius: 4px; }
 .progress-label { font-size: .75rem; color: var(--text-muted, #666); }
+.training-label { display: block; margin-top: .2rem; }
 
 .vs-loading, .vs-empty { text-align: center; padding: 2rem; color: var(--text-muted, #888); }
 
@@ -424,9 +499,18 @@ onMounted(async () => {
 .playback audio { width: 100%; border-radius: 8px; }
 .playback-actions { display: flex; gap: .75rem; }
 
+.transcript {
+  width: 100%; border: 1px solid var(--border, #d1d5db); border-radius: 6px;
+  padding: .65rem .75rem; font-size: .85rem; line-height: 1.45;
+  background: var(--surface-2, #f9fafb);
+}
+.transcript strong { display: block; margin-bottom: .25rem; font-size: .75rem; color: var(--text-muted, #666); }
+.transcript.error { border-color: #fecaca; background: #fef2f2; color: #991b1b; }
+
 .action-btn {
   padding: .5rem 1.25rem; border-radius: 6px; border: none; cursor: pointer; font-size: .9rem;
 }
+.action-btn.check { background: var(--surface-2, #f3f4f6); border: 1px solid var(--border, #ccc); }
 .action-btn.accept { background: #16a34a; color: #fff; }
 .action-btn.retry  { background: var(--surface-2, #f3f4f6); border: 1px solid var(--border, #ccc); }
 .action-btn:disabled { opacity: .5; cursor: default; }

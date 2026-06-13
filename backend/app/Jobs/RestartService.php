@@ -18,7 +18,8 @@ use Illuminate\Queue\SerializesModels;
  *     /bin/systemctl restart aivc-queue.service, \
  *     /bin/systemctl restart aivc-scheduler.service, \
  *     /bin/systemctl restart aivc-tedim-api.service, \
- *     /bin/systemctl restart aivc-burmese-api.service
+ *     /bin/systemctl restart aivc-burmese-api.service, \
+ *     /bin/systemctl restart aivc-mms-tts.service
  */
 class RestartService implements ShouldQueue
 {
@@ -35,6 +36,7 @@ class RestartService implements ShouldQueue
         'aivc-scheduler',
         'aivc-tedim-api',
         'aivc-burmese-api',
+        'aivc-mms-tts',
     ];
 
     public function __construct(public readonly string $service) {}

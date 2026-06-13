@@ -9,6 +9,7 @@ use App\Http\Controllers\TestimonyController;
 use App\Http\Controllers\UpdateController;
 use App\Http\Controllers\VoiceboxController;
 use App\Http\Controllers\VoiceStudioController;
+use App\Http\Controllers\VoiceTrainingController;
 use App\Http\Controllers\WebhookController;
 use Illuminate\Support\Facades\Route;
 
@@ -63,9 +64,11 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Voice Studio — any authenticated user can record their own training data.
     Route::prefix('voice-studio')->group(function () {
+        Route::get('/status',                 [VoiceStudioController::class, 'status']);
         Route::get('/script/{lang}',           [VoiceStudioController::class, 'script']);
         Route::get('/progress/{lang}',         [VoiceStudioController::class, 'progress']);
         Route::post('/recording',              [VoiceStudioController::class, 'store']);
+        Route::post('/transcribe',             [VoiceStudioController::class, 'transcribe']);
         Route::get('/export/{lang}',           [VoiceStudioController::class, 'export']);
         Route::delete('/recording/{lang}/{id}',[VoiceStudioController::class, 'destroy']);
     });
@@ -129,5 +132,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/voicebox/health',   [VoiceboxController::class, 'health']);
         Route::get('/voicebox/profiles', [VoiceboxController::class, 'profiles']);
         Route::get('/voicebox/queue',    [VoiceboxController::class, 'queue']);
+
+        // Voice Studio fine-tune monitor and manual launch controls.
+        Route::get('/voice-training/status', [VoiceTrainingController::class, 'status']);
+        Route::post('/voice-training/start', [VoiceTrainingController::class, 'start']);
     });
 });

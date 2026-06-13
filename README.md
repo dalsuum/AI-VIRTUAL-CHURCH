@@ -304,8 +304,18 @@ text so the remaining pages still appear.
 | Endpoint | Purpose |
 |----------|---------|
 | `POST /burmese/translate` | Translate English prose → Burmese (Myanmar Unicode) via Ollama. |
-| `POST /burmese/generate` | Free-form Burmese devotional prose generation. |
+| `POST /burmese/generate` | Free-form Burmese devotional prose generation (injects church vocab hints). |
 | `GET /burmese/verse?ref=John+3:16` | Exact Judson 1835 verse — no LLM, no network. |
+| `GET /burmese/lookup?word=grace` | English→Myanmar dictionary lookup — no LLM (~22k entries, soeminnminn/EngMyanDictionary). |
+| `GET /burmese/church_vocab` | Pre-extracted church vocabulary map (73 worship terms, English→Myanmar). |
+
+**Local dictionary** (`workers/data/eng_myan_dict.db`, 34 MB SQLite): sourced from
+[soeminnminn/EngMyanDictionary](https://github.com/soeminnminn/EngMyanDictionary), a 21,984-entry
+English–Myanmar dictionary (Myanmar Unicode). The module `workers/myanmar_dict.py` provides
+`lookup(word)` → `DictEntry` and `CHURCH_VOCAB` (73 pre-extracted worship terms). The
+`/burmese/generate` endpoint injects a compact church vocabulary snippet into every system
+prompt so Ollama always has verified Myanmar translations for grace, mercy, salvation, prayer,
+faith, hope, peace, blessing, and other worship terms.
 
 New Myanmar services do **not** run a post-generation localization job. The Python
 worker writes Myanmar directly into `service_assets.text_payload`, and the webhook only

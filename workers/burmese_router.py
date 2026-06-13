@@ -5,9 +5,11 @@ Mount this router in workers/api.py:
     app.include_router(burmese_router.router)
 
 Routes:
-  POST /burmese/translate   {"text": "...", "direction": "en2my"|"my2en"}
-  POST /burmese/generate    {"prompt": "...", "system": "..."}  (free-form Burmese prose)
-  GET  /burmese/verse?ref=John+3:16  exact Myanmar Bible lookup (no LLM)
+  POST /burmese/translate        {"text": "...", "direction": "en2my"|"my2en"}
+  POST /burmese/generate         {"prompt": "...", "system": "..."}  (free-form Burmese prose)
+  GET  /burmese/verse?ref=John+3:16   exact Myanmar Bible lookup (no LLM)
+  GET  /burmese/lookup?word=grace     English→Myanmar dictionary lookup (no LLM, ~22k entries)
+  GET  /burmese/church_vocab          full pre-extracted church vocabulary map
 
 Redis cache (db 3) with 30-day TTL keeps repeated sermon segments instant.
 Semaphore limits inference to one concurrent request — shared with the Tedim
@@ -108,13 +110,40 @@ async def translate(body: TranslateIn):
 
 @router.post("/generate")
 async def generate(body: GenerateIn):
+    from myanmar_dict import church_vocab_prompt_snippet  # noqa: PLC0415
+
+    vocab_hint = church_vocab_prompt_snippet(max_terms=25)
     system = body.system or (
         "You are a Burmese (Myanmar) language assistant for a virtual church. "
         "Write devotional content in natural Myanmar Burmese using Myanmar Unicode "
-        "script only. Never use Zawgyi encoding or romanized Burmese."
+        "script only. Never use Zawgyi encoding or romanized Burmese. "
+        f"Reference vocabulary: {vocab_hint}."
     )
     out = _validate_myanmar(await _ollama(body.prompt, system=system, max_tokens=body.max_tokens))
     return {"text": out}
+
+
+@router.get("/lookup")
+async def lookup_word(word: str):
+    """
+    Look up an English word in the local Eng-Myanmar dictionary (~22k entries).
+    Returns the Myanmar definition. Useful for translation verification.
+    Does not use the LLM — deterministic, zero inference cost.
+    """
+    from myanmar_dict import lookup as dict_lookup  # noqa: PLC0415
+
+    entry = dict_lookup(word.strip())
+    if not entry or not entry.burmese:
+        raise HTTPException(status_code=404, detail=f"Word not found: {word!r}")
+    return {"word": entry.word, "title": entry.title, "burmese": entry.burmese}
+
+
+@router.get("/church_vocab")
+async def get_church_vocab():
+    """Return the pre-extracted church/worship vocabulary mapping (English → Myanmar)."""
+    from myanmar_dict import CHURCH_VOCAB  # noqa: PLC0415
+
+    return {"vocab": CHURCH_VOCAB, "count": len(CHURCH_VOCAB)}
 
 
 @router.get("/verse")

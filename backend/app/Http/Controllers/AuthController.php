@@ -8,6 +8,7 @@ use App\Services\PermissionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password;
@@ -32,17 +33,18 @@ class AuthController extends Controller
             'music_source' => $data['music_source'] ?? 'hymn_sung',
         ]);
 
-        $token = $user->createToken('api')->plainTextToken;
+        Auth::login($user);
+        $request->session()->regenerate();
 
-        return response()->json(['user' => $user, 'token' => $token], 201);
+        return response()->json(['user' => $user], 201);
     }
 
     /**
      * Provision a walk-up worshipper so the intake flow needs no login. Name and
      * email are both optional: a worshipper may introduce themselves, give an email
      * so we can welcome them back, or stay anonymous — in which case we assign a
-     * friendly, non-duplicate visitor name. Mints a Sanctum token either way; the
-     * guest may later register to claim the account. Honors an optional
+     * friendly, non-duplicate visitor name. Establishes an HttpOnly session cookie;
+     * the guest may later register to claim the account. Honors an optional
      * music_source so the choice survives the very first session.
      */
     public function guest(Request $request): JsonResponse
@@ -79,9 +81,10 @@ class AuthController extends Controller
             'music_source' => $data['music_source'] ?? 'hymn_sung',
         ]);
 
-        $token = $user->createToken('api')->plainTextToken;
+        Auth::login($user);
+        $request->session()->regenerate();
 
-        return response()->json(['user' => $user, 'token' => $token], 201);
+        return response()->json(['user' => $user], 201);
     }
 
     /**
@@ -221,14 +224,17 @@ class AuthController extends Controller
             return response()->json(['message' => 'This account has been suspended.'], 403);
         }
 
-        $token = $user->createToken('api')->plainTextToken;
+        Auth::login($user);
+        $request->session()->regenerate();
 
-        return response()->json(['user' => $user, 'token' => $token]);
+        return response()->json(['user' => $user]);
     }
 
     public function logout(Request $request): JsonResponse
     {
-        $request->user()->currentAccessToken()->delete();
+        Auth::logout();
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
         return response()->json(['message' => 'Logged out']);
     }
 

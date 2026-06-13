@@ -1,14 +1,23 @@
-// Thin API client. Stores the Sanctum token in memory + localStorage and exposes
-// the endpoints Phase 1 needs. Swap BASE_URL via Vite env (VITE_API_URL).
+// Thin API client. Uses Sanctum SPA session-cookie auth: HttpOnly session cookie
+// set by the server + XSRF-TOKEN header for CSRF protection. No bearer tokens are
+// stored or sent from the browser. Swap BASE_URL via Vite env (VITE_API_URL).
 
 const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
+// Sanctum csrf-cookie lives at the app root, not under /api.
+const APP_URL = BASE_URL.replace(/\/api$/, "");
 
-let token = sessionStorage.getItem("token") || null;
+// Non-sensitive flag: a session has been established this browser tab. Lets
+// ensureSession() skip the guest-provision call for returning visitors without
+// storing any credential in JS memory.
+let sessionEstablished = !!sessionStorage.getItem("session_established");
 
-function setToken(t) {
-  token = t;
-  if (t) sessionStorage.setItem("token", t);
-  else sessionStorage.removeItem("token");
+function markSession() {
+  sessionEstablished = true;
+  sessionStorage.setItem("session_established", "1");
+}
+function dropSession() {
+  sessionEstablished = false;
+  sessionStorage.removeItem("session_established");
 }
 
 // The worshipper's display name, remembered locally so returning visitors can be
@@ -21,13 +30,39 @@ function rememberedName() {
   return localStorage.getItem("display_name");
 }
 
+// Read the XSRF-TOKEN cookie that Sanctum sets after /sanctum/csrf-cookie.
+function getCsrfToken() {
+  const match = document.cookie
+    .split(";")
+    .find((c) => c.trim().startsWith("XSRF-TOKEN="));
+  return match ? decodeURIComponent(match.split("=").slice(1).join("=")) : null;
+}
+
+// Fetch the CSRF cookie once per tab; concurrent callers share one in-flight request.
+let csrfInflight = null;
+async function ensureCsrf() {
+  if (getCsrfToken()) return;
+  if (!csrfInflight) {
+    csrfInflight = fetch(`${APP_URL}/sanctum/csrf-cookie`, {
+      credentials: "include",
+    }).finally(() => {
+      csrfInflight = null;
+    });
+  }
+  return csrfInflight;
+}
+
 async function request(path, { method = "GET", body } = {}) {
+  const mutating = method !== "GET" && method !== "HEAD";
+  if (mutating) await ensureCsrf();
+
   const res = await fetch(`${BASE_URL}${path}`, {
     method,
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(mutating ? { "X-XSRF-TOKEN": getCsrfToken() } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
   });
@@ -38,67 +73,70 @@ async function request(path, { method = "GET", body } = {}) {
 }
 
 // Lazily provision an anonymous worshipper the first time we need auth, so the
-// walk-up intake flow never hits a login wall. A registered/guest token in
-// localStorage short-circuits this. Concurrent callers share one in-flight request.
+// walk-up intake flow never hits a login wall. An existing session short-circuits
+// this. Concurrent callers share one in-flight request.
 let guestInflight = null;
 async function ensureSession(opts = {}) {
-  if (token) return;
+  if (sessionEstablished) return;
   // Accept either a bare music_source string (legacy callers) or an options object
   // carrying the worshipper's optional name/email.
   const body = typeof opts === "string" ? { music_source: opts } : opts;
   if (!guestInflight) {
     guestInflight = request("/guest", { method: "POST", body })
-      .then(({ token: t, user }) => {
-        setToken(t);
+      .then(({ user }) => {
+        markSession();
         if (user?.name) rememberName(user.name);
       })
-      .finally(() => { guestInflight = null; });
+      .finally(() => {
+        guestInflight = null;
+      });
   }
   return guestInflight;
 }
 
-// Admin CSV export. Exports need the Bearer token, so we can't use a plain <a
-// href> download — fetch the file with auth and hand back a Blob for the caller
-// to save.
+// Admin CSV export — fetch with session cookie and hand back a Blob for the
+// caller to save.
 async function adminExport(type) {
+  await ensureCsrf();
   const res = await fetch(`${BASE_URL}/admin/export/${type}`, {
-    headers: {
-      Accept: "text/csv",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
+    credentials: "include",
+    headers: { Accept: "text/csv" },
   });
   if (!res.ok) throw Object.assign(new Error("Export failed"), { status: res.status });
   return res.blob();
 }
 
 export const api = {
-  setToken,
-  hasToken: () => !!token,
+  // hasToken kept for component compatibility; now checks the session flag.
+  hasToken: () => sessionEstablished,
   ensureSession,
   rememberedName,
 
-  // End the current worshipper's session entirely — drop the auth token and the
-  // remembered name. On a shared/walk-up device this lets the next visitor start
-  // fresh: the intake form shows the name field again, and ensureSession will
-  // provision a brand-new guest (carrying their new name) on the next service.
-  clearSession: () => { setToken(null); rememberName(null); },
+  // End the current worshipper's session — drop the session flag and the remembered
+  // name. On a shared/walk-up device this lets the next visitor start fresh:
+  // the intake form shows the name field again, and ensureSession will provision a
+  // brand-new guest (carrying their new name) on the next service.
+  clearSession: () => { dropSession(); rememberName(null); },
 
-  // Register/login return { user, token }. Persist the token (and remembered name)
-  // so subsequent authed calls — the admin dashboard especially — use this account
-  // rather than any stale guest token left in localStorage.
+  // Auth flows establish a server-side session (HttpOnly cookie set in response).
+  // The frontend stores only the display name for greeting purposes.
   register: (payload) =>
     request("/register", { method: "POST", body: payload }).then((res) => {
-      if (res?.token) setToken(res.token);
+      markSession();
       if (res?.user?.name) rememberName(res.user.name);
       return res;
     }),
   login: (payload) =>
     request("/login", { method: "POST", body: payload }).then((res) => {
-      if (res?.token) setToken(res.token);
+      markSession();
       if (res?.user?.name) rememberName(res.user.name);
       return res;
     }),
-  logout: () => request("/logout", { method: "POST" }).finally(() => { setToken(null); rememberName(null); }),
+  logout: () =>
+    request("/logout", { method: "POST" }).finally(() => {
+      dropSession();
+      rememberName(null);
+    }),
   me: () => request("/me"),
 
   // Account self-service
@@ -127,19 +165,18 @@ export const api = {
   updateMusicSource: (music_source) =>
     request("/me/music-source", { method: "PATCH", body: { music_source } }),
 
-  changePassword: (current_password, new_password) =>
-    request("/me/change-password", { method: "POST", body: { current_password, new_password } }),
-
+  // Email-link resume: server establishes the session via the URL token and sets
+  // the HttpOnly cookie; frontend marks session established and reads metadata.
   resumeSession: (sessionToken) =>
     fetch(`${BASE_URL}/service/${sessionToken}/resume`, {
+      credentials: "include",
       headers: { Accept: "application/json" },
-    })
-      .then(async (r) => {
-        const data = await r.json();
-        if (!r.ok) throw new Error(data.message || "Resume failed");
-        if (data.auth_token) setToken(data.auth_token);
-        return data;
-      }),
+    }).then(async (r) => {
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.message || "Resume failed");
+      markSession();
+      return data;
+    }),
 
   getMyServices: () => request("/me/services"),
 
@@ -209,23 +246,40 @@ export const api = {
   adminExport,
 
   // Voice Studio — available to all authenticated users (each user's data is isolated).
+  voiceStatus:   () => request("/voice-studio/status"),
   voiceScript:   (lang) => request(`/voice-studio/script/${lang}`),
   voiceProgress: (lang) => request(`/voice-studio/progress/${lang}`),
   voiceDelete:   (lang, id) => request(`/voice-studio/recording/${lang}/${id}`, { method: "DELETE" }),
 
   // Multipart upload — cannot use the JSON request() helper.
   voiceStore: async (formData) => {
+    await ensureCsrf();
     const res = await fetch(`${BASE_URL}/voice-studio/recording`, {
       method: "POST",
+      credentials: "include",
       headers: {
         Accept: "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        "X-XSRF-TOKEN": getCsrfToken(),
         // No Content-Type — browser sets multipart boundary automatically.
       },
       body: formData,
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw Object.assign(new Error(data.message || "Upload failed"), { status: res.status, data });
+    return data;
+  },
+
+  voiceTranscribe: async (formData) => {
+    const res = await fetch(`${BASE_URL}/voice-studio/transcribe`, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: formData,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw Object.assign(new Error(data.error || data.message || "Transcription failed"), { status: res.status, data });
     return data;
   },
 
@@ -243,10 +297,11 @@ export const api = {
   adminVoiceboxProfiles: () => request("/admin/voicebox/profiles"),
   adminVoiceboxQueue:    () => request("/admin/voicebox/queue"),
 
-  // Blob download — needs auth header, returns Blob.
+  // Blob download — returns Blob.
   voiceExport: async (lang) => {
     const res = await fetch(`${BASE_URL}/voice-studio/export/${lang}`, {
-      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      credentials: "include",
+      headers: { Accept: "application/octet-stream" },
     });
     if (!res.ok) throw Object.assign(new Error("Export failed"), { status: res.status });
     return res.blob();

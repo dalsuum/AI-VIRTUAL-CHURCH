@@ -84,7 +84,8 @@ contract between the two worlds is "a JSON object on a list," nothing more.
 ## The service flow, end to end
 
 1. **Auth.** The worshipper registers, logs in, or starts as a **guest** (an anonymous
-   `*@guest.local` account is minted). Auth is Laravel Sanctum bearer tokens.
+   `*@guest.local` account is minted). Auth uses Sanctum SPA session cookies (HttpOnly,
+   CSRF-protected); no bearer tokens are stored in JS.
 2. **Start a session.** `POST /service/start` creates a `service_sessions` row and
    **locks the music source** (`hymn_sung` | `hymn` | `suno` | `youtube`) from the
    user's saved preference, so the choice can't drift mid-service.
@@ -953,7 +954,9 @@ This includes:
 
 ## API reference
 
-All routes are under `/api`. Authenticated routes use a Sanctum bearer token.
+All routes are under `/api`. Authenticated routes use Sanctum SPA session-cookie auth
+(HttpOnly cookie + `X-XSRF-TOKEN` header). The frontend calls `GET /sanctum/csrf-cookie`
+before any state-changing request to bootstrap CSRF protection.
 
 ### Public
 
@@ -964,8 +967,8 @@ All routes are under `/api`. Authenticated routes use a Sanctum bearer token.
 | `GET` | `/config` | Intake/preparing options — `moods`, enabled `music_sources`, `scheduling_enabled`, `enabled_languages`, and text-only `countdown_cards`. Optional `mood`/`language` query params make countdown testimonies and Bible cards contextual. Read before a session exists. |
 | `POST` | `/guest` | Start an anonymous guest session. |
 | `POST` | `/register` | Create an account. |
-| `POST` | `/login` | Log in, returns a token. |
-| `GET` | `/service/{token}/resume` | Email-link session resume — token acts as the credential, no bearer required. |
+| `POST` | `/login` | Log in; establishes HttpOnly session cookie. |
+| `GET` | `/service/{token}/resume` | Email-link session resume — URL token acts as the credential, establishes HttpOnly session cookie. |
 | `POST` | `/internal/asset-ready` | **Worker callback** — `X-Worker-Secret` header, no user auth. |
 | `POST` | `/internal/music-track` | **Worker callback** — banks a fresh Suno track in the reuse pool (`X-Worker-Secret`, no user auth). |
 | `POST` | `/webhooks/stripe` | **Stripe webhook** — signature-verified, no user auth. |

@@ -10,6 +10,7 @@ use App\Notifications\ServiceScheduledNotification;
 use App\Services\CrisisInterceptService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Str;
 
@@ -147,22 +148,22 @@ class ServiceController extends Controller
 
     /**
      * Public endpoint used by email links. Accepts the 64-char session token,
-     * re-issues a Sanctum token for the session owner, and returns both so the
-     * SPA can restore its auth state and jump straight into the service — even
-     * on a different device or after browser storage was cleared.
+     * establishes an HttpOnly session cookie for the session owner, and returns
+     * service metadata so the SPA can jump straight into the service — even on
+     * a different device or after browser storage was cleared.
      *
-     * The session token is a 64-char random string and acts as a single-use
-     * credential here; only the person who received the email can guess it.
+     * The session token is a 64-char random string and acts as the credential
+     * here; only the person who received the email can guess it.
      */
-    public function resume(string $token): JsonResponse
+    public function resume(Request $request, string $token): JsonResponse
     {
         $session = ServiceSession::where('session_token', $token)->firstOrFail();
         $user    = $session->user;
 
-        $authToken = $user->createToken('api', ['*'], now()->addHours(24))->plainTextToken;
+        Auth::login($user);
+        $request->session()->regenerate();
 
         return response()->json([
-            'auth_token'    => $authToken,
             'session_token' => $session->session_token,
             'status'        => $session->status,
             'scheduled_at'  => $session->scheduled_at?->toIso8601String(),

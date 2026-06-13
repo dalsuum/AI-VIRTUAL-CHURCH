@@ -33,6 +33,15 @@ app.conf.update(
         "tasks.generate_music": {"queue": "ai:music"},
         "tasks.render_avatar": {"queue": "ai:avatar"},
         "tasks.narrate": {"queue": "ai:narration"},
+        # Tedim localization: paragraph-by-paragraph Ollama inference.
+        # Runs on ai:sermon so the same worker pool handles it — inference
+        # is serialized by the semaphore in tedim_router.py anyway.
+        "tasks.localize_segment_tedim": {"queue": "ai:sermon"},
+        "tasks.narrate_tedim": {"queue": "ai:narration"},
+        # Burmese (Myanmar) localization: same Ollama-backed pattern as Tedim.
+        # Serialized by the semaphore in burmese_router.py.
+        "tasks.localize_segment_burmese": {"queue": "ai:sermon"},
+        "tasks.narrate_burmese": {"queue": "ai:narration"},
     },
     task_acks_late=True,
     worker_prefetch_multiplier=1,

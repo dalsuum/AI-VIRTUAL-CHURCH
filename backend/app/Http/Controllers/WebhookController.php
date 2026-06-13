@@ -75,11 +75,24 @@ class WebhookController extends Controller
         // Broadcast to the client over WebSockets (Laravel Reverb / Echo).
         // event(new AssetReady($session->session_token, $asset));
 
+        // Myanmar/Tedim services are now generated directly in their target language
+        // by the Python worker. Do not dispatch the old post-generation localization
+        // jobs here: they can run for many minutes and block DispatchServiceJob on the
+        // single Laravel queue, leaving new services with no pages. Keep the status
+        // markers ready for older UI/admin code that still reads them.
+        if ($session->language === 'td' && $session->tedim_status === null) {
+            $session->update(['tedim_status' => 'ready']);
+        }
+
+        if ($session->language === 'my' && $session->burmese_status === null) {
+            $session->update(['burmese_status' => 'ready']);
+        }
+
         return response()->json(['ok' => true, 'asset_id' => $asset->id]);
     }
 
     /**
-     * Register a freshly composed Suno track in the reusable, mood-keyed pool. The
+     * Register a freshly composed Suno track in the reusable, language-and-mood-keyed pool. The
      * worker calls this once per fresh generation; deduped by provider_ref so a
      * retried task can't double-insert. Reused tracks already exist here, so they
      * aren't re-posted.
@@ -93,17 +106,25 @@ class WebhookController extends Controller
 
         $data = $request->validate([
             'mood'         => ['required', 'string', 'max:100'],
+            'language'     => ['nullable', 'string', 'max:5'],
             'provider_ref' => ['required', 'string'],
             'storage_key'  => ['required', 'string'],   // RAW object key, not a presigned URL
             'title'        => ['nullable', 'string'],
+            'lyrics'       => ['nullable', 'string'],
         ]);
 
-        $track = MusicTrack::firstOrCreate(
+        $language = in_array($data['language'] ?? 'en', ['en', 'my', 'td'], true)
+            ? ($data['language'] ?? 'en')
+            : 'en';
+
+        $track = MusicTrack::updateOrCreate(
             ['provider_ref' => $data['provider_ref']],
             [
                 'mood'        => $data['mood'],
+                'language'    => $language,
                 'storage_key' => $data['storage_key'],
                 'title'       => $data['title'] ?? null,
+                'lyrics'      => $data['lyrics'] ?? null,
                 'source'      => 'suno',
             ],
         );

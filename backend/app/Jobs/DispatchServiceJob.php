@@ -40,6 +40,10 @@ class DispatchServiceJob implements ShouldQueue
             // the worker to synthesize TTS audio; 'browser'/'off' leave it to the
             // client (browser speech) or silent, so the worker skips narration.
             'narration_mode'  => Setting::get('narration_mode', 'browser'),
+            // Per-language narration gate. English on by default; Myanmar and Tedim
+            // off by default (no Tedim edge-tts voice; Myanmar quality may vary).
+            // Admin can flip each independently via the dashboard.
+            'narration_enabled' => Setting::get('narration_' . ($session->language ?? 'en'), $session->language === 'en' || !$session->language ? '1' : '0') === '1',
             'avatar_enabled'  => Setting::get('avatar_enabled', '1') === '1',
             'edge_tts_voice'  => Setting::get('edge_tts_voice', 'en-US-AriaNeural'),
             // Where generated audio is stored (local dir vs S3). null lets the worker
@@ -68,9 +72,10 @@ class DispatchServiceJob implements ShouldQueue
      * Decide whether to serve a previously composed song from the mood pool.
      *
      * Reuse only applies to AI-composed (suno) services with the pool enabled. The
-     * rule: if THIS worshipper has used THIS mood before, compose a fresh song so a
-     * returning visitor never hears a repeat. If they're new to the mood, hand them
-     * a random track another worshipper already generated for it — instant and free.
+     * rule: if THIS worshipper has used THIS mood in THIS language before, compose
+     * a fresh song so a returning visitor never hears a repeat. If they're new to
+     * the mood/language pair, hand them a random track another worshipper already
+     * generated for it — instant and free.
      * Returns null (compose fresh) when reuse is off, the mood is a repeat for this
      * user, or the pool has nothing for the mood yet.
      */
@@ -80,20 +85,95 @@ class DispatchServiceJob implements ShouldQueue
             return null;
         }
 
+        $language = $session->language ?? 'en';
+
         $heardMoodBefore = ServiceSession::where('user_id', $session->user_id)
             ->where('id', '!=', $session->id)
+            ->where('language', $language)
             ->whereHas('intake', fn ($q) => $q->where('mood', $intake->mood))
             ->exists();
         if ($heardMoodBefore) {
             return null;
         }
 
-        $track = MusicTrack::where('mood', $intake->mood)->inRandomOrder()->first();
+        $tracks = MusicTrack::where('mood', $intake->mood)
+            ->where('language', $language)
+            ->whereNotNull('lyrics')
+            ->where('lyrics', '!=', '')
+            ->inRandomOrder()
+            ->limit(20)
+            ->get();
+
+        $track = $tracks->first(fn (MusicTrack $track) => $this->lyricsMatchLanguage($track->lyrics, $language));
 
         return $track ? [
             'storage_key'  => $track->storage_key,   // raw object key; worker re-presigns
             'provider_ref' => $track->provider_ref,
+            'language'     => $track->language,
             'title'        => $track->title,
+            'lyrics'       => $track->lyrics,
         ] : null;
+    }
+
+    /** Refuse cross-language Suno reuse even when older rows were mislabeled. */
+    private function lyricsMatchLanguage(?string $lyrics, string $language): bool
+    {
+        $text = trim((string) $lyrics);
+        if ($text === '') {
+            return false;
+        }
+
+        if ($language === 'my') {
+            return preg_match('/[\x{1000}-\x{109F}]/u', $text) === 1;
+        }
+
+        if ($language === 'td') {
+            $lower = mb_strtolower($text);
+
+            $forbiddenHits = 0;
+            foreach ([
+                'pathian', 'lalpa', 'isua', 'kohhran', 'tawngtaina', 'tawngtai',
+                'ka lawm e', 'halleluiah', 'i lawm e',
+            ] as $word) {
+                if (str_contains($lower, $word)) {
+                    $forbiddenHits++;
+                }
+            }
+            if ($forbiddenHits > 0) {
+                return false;
+            }
+
+            $tedimHits = 0;
+            foreach ([
+                'pasian', 'topa', 'zeisu', 'krist', 'lungdamna', 'kilemna',
+                'hehpihna', 'nang', 'hong', 'ka ', 'kong', 'na ', 'sungah',
+                'tuni', 'nuntakna', 'lametna', 'bia', 'phat',
+            ] as $word) {
+                if (str_contains($lower, $word)) {
+                    $tedimHits++;
+                }
+            }
+
+            $coreHits = 0;
+            foreach (['pasian', 'topa', 'zeisu', 'krist'] as $word) {
+                if (str_contains($lower, $word)) {
+                    $coreHits++;
+                }
+            }
+
+            $englishHits = 0;
+            foreach ([
+                'lord', 'jesus', 'grace', 'mercy', 'worship', 'trust',
+                'heart', 'promise', 'fear', 'peace', 'love', 'hope',
+            ] as $word) {
+                if (str_contains($lower, $word)) {
+                    $englishHits++;
+                }
+            }
+
+            return $tedimHits >= 4 && $coreHits >= 2 && $englishHits <= 1;
+        }
+
+        return true;
     }
 }

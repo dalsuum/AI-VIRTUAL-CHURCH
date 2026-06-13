@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Jobs\DispatchServiceJob;
 use App\Models\CrisisIntercept;
 use App\Models\FinancialLedger;
+use App\Models\MusicTrack;
 use App\Models\ServiceIntake;
 use App\Models\ServiceSession;
 use App\Models\Setting;
@@ -69,6 +70,15 @@ class AdminController extends Controller
                 'registered' => User::where('email', 'not like', $guestPattern)->count(),
                 'visitors'   => User::where('email', 'like', $guestPattern)->count(),
                 'admins'     => User::where('is_admin', true)->count(),
+            ],
+            'musicgen' => [
+                'total' => ServiceSession::where('music_source', 'musicgen')->count(),
+                'today' => ServiceSession::where('music_source', 'musicgen')
+                            ->whereDate('created_at', today())->count(),
+                // Default 1500 tokens ÷ 50 tokens-per-second = 30 s per generation.
+                'audio_minutes' => round(
+                    ServiceSession::where('music_source', 'musicgen')->count() * 30 / 60, 1
+                ),
             ],
         ]);
     }
@@ -328,6 +338,115 @@ class AdminController extends Controller
     }
 
     /**
+     * Manual CRUD surface for the Suno reuse pool (music_tracks).
+     * Admin-only route group; supports filtering by mood/language/search.
+     */
+    public function musicTracks(Request $request): JsonResponse
+    {
+        $q = MusicTrack::query()->where('source', 'suno')->orderByDesc('id');
+
+        $mood = trim((string) $request->query('mood', ''));
+        if ($mood !== '') {
+            $q->where('mood', $mood);
+        }
+
+        $language = trim((string) $request->query('language', ''));
+        if (in_array($language, ['en', 'my', 'td'], true)) {
+            $q->where('language', $language);
+        }
+
+        $search = trim((string) $request->query('search', ''));
+        if ($search !== '') {
+            $q->where(function ($sub) use ($search) {
+                $sub->where('provider_ref', 'like', "%{$search}%")
+                    ->orWhere('title', 'like', "%{$search}%")
+                    ->orWhere('storage_key', 'like', "%{$search}%")
+                    ->orWhere('mood', 'like', "%{$search}%");
+            });
+        }
+
+        $limit = (int) $request->query('limit', 100);
+        $limit = max(1, min(200, $limit));
+
+        $tracks = $q->limit($limit)->get([
+            'id', 'mood', 'language', 'provider_ref', 'storage_key',
+            'title', 'lyrics', 'source', 'created_at', 'updated_at',
+        ]);
+
+        return response()->json(['tracks' => $tracks]);
+    }
+
+    public function createMusicTrack(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'mood'         => ['required', 'string', 'max:100'],
+            'language'     => ['required', 'string', 'in:en,my,td'],
+            'provider_ref' => ['required', 'string', 'max:255', 'unique:music_tracks,provider_ref'],
+            'storage_key'  => ['required', 'string', 'max:500'],
+            'title'        => ['nullable', 'string', 'max:255'],
+            'lyrics'       => ['nullable', 'string'],
+            'source'       => ['nullable', 'string', 'in:suno'],
+        ]);
+
+        $track = MusicTrack::create([
+            'mood'         => trim($data['mood']),
+            'language'     => $data['language'],
+            'provider_ref' => trim($data['provider_ref']),
+            'storage_key'  => trim($data['storage_key']),
+            'title'        => isset($data['title']) ? trim((string) $data['title']) : null,
+            'lyrics'       => $data['lyrics'] ?? null,
+            'source'       => 'suno',
+        ]);
+
+        return response()->json(['ok' => true, 'track' => $track], 201);
+    }
+
+    public function updateMusicTrack(Request $request, MusicTrack $musicTrack): JsonResponse
+    {
+        $data = $request->validate([
+            'mood'         => ['sometimes', 'string', 'max:100'],
+            'language'     => ['sometimes', 'string', 'in:en,my,td'],
+            'provider_ref' => ['sometimes', 'string', 'max:255', 'unique:music_tracks,provider_ref,' . $musicTrack->id],
+            'storage_key'  => ['sometimes', 'string', 'max:500'],
+            'title'        => ['nullable', 'string', 'max:255'],
+            'lyrics'       => ['nullable', 'string'],
+            'source'       => ['sometimes', 'string', 'in:suno'],
+        ]);
+
+        if (array_key_exists('mood', $data)) {
+            $musicTrack->mood = trim($data['mood']);
+        }
+        if (array_key_exists('language', $data)) {
+            $musicTrack->language = $data['language'];
+        }
+        if (array_key_exists('provider_ref', $data)) {
+            $musicTrack->provider_ref = trim($data['provider_ref']);
+        }
+        if (array_key_exists('storage_key', $data)) {
+            $musicTrack->storage_key = trim($data['storage_key']);
+        }
+        if (array_key_exists('title', $data)) {
+            $musicTrack->title = $data['title'] !== null ? trim((string) $data['title']) : null;
+        }
+        if (array_key_exists('lyrics', $data)) {
+            $musicTrack->lyrics = $data['lyrics'];
+        }
+        if (array_key_exists('source', $data)) {
+            $musicTrack->source = 'suno';
+        }
+
+        $musicTrack->save();
+
+        return response()->json(['ok' => true, 'track' => $musicTrack->fresh()]);
+    }
+
+    public function deleteMusicTrack(MusicTrack $musicTrack): JsonResponse
+    {
+        $musicTrack->delete();
+        return response()->json(['ok' => true]);
+    }
+
+    /**
      * Stream a report as CSV for download. Supported reports: donations, users,
      * testimonies. Generated on the fly so exports always reflect live data.
      */
@@ -451,6 +570,12 @@ class AdminController extends Controller
             'lang_en'             => ['sometimes', 'boolean'],
             'lang_my'             => ['sometimes', 'boolean'],
             'lang_td'             => ['sometimes', 'boolean'],
+            // Cards shown during the preparation countdown.
+            'countdown_content_enabled' => ['sometimes', 'boolean'],
+            'countdown_content_source'  => ['sometimes', 'string', 'in:banners,testimonies,online,both,all,off'],
+            'countdown_banners'         => ['sometimes', 'array', 'max:12'],
+            'countdown_banners.*.text'  => ['required_with:countdown_banners', 'string', 'max:300'],
+            'countdown_banners.*.source'=> ['nullable', 'string', 'max:80'],
         ]);
 
         if (array_key_exists('narration_mode', $data)) {
@@ -498,6 +623,25 @@ class AdminController extends Controller
                 Setting::set($key, $data[$key] ? '1' : '0');
             }
         }
+        if (array_key_exists('countdown_content_enabled', $data)) {
+            Setting::set('countdown_content_enabled', $data['countdown_content_enabled'] ? '1' : '0');
+        }
+        if (array_key_exists('countdown_content_source', $data)) {
+            Setting::set('countdown_content_source', $data['countdown_content_source'] === 'off' ? 'off' : $data['countdown_content_source']);
+        }
+        if (array_key_exists('countdown_banners', $data)) {
+            $banners = [];
+            foreach ($data['countdown_banners'] as $banner) {
+                $text = trim((string) ($banner['text'] ?? ''));
+                $source = trim((string) ($banner['source'] ?? ''));
+                if ($text === '') {
+                    continue;
+                }
+                $banners[] = ['text' => $text, 'source' => $source];
+            }
+            abort_if($banners === [], 422, 'At least one countdown banner is required.');
+            Setting::setList('countdown_banners', $banners);
+        }
 
         return response()->json(['ok' => true] + $this->settingsPayload());
     }
@@ -525,6 +669,9 @@ class AdminController extends Controller
             'music_sources'        => Setting::enabledMusicSources(),
             'scheduling_enabled'   => Setting::schedulingEnabled(),
             'default_music_source' => Setting::defaultMusicSource(),
+            'countdown_content_enabled' => Setting::get('countdown_content_enabled', '1') === '1',
+            'countdown_content_source'  => Setting::get('countdown_content_source', 'both'),
+            'countdown_banners'         => Setting::countdownBanners(),
         ];
     }
 

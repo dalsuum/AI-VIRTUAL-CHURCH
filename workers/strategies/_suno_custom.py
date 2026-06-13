@@ -10,10 +10,10 @@ download); only the submit body differs from prompt-mode generation.
 from __future__ import annotations
 
 import os
+import re
 
 import requests
 
-from .suno_strategy import SunoStrategy
 
 # Suno customMode caps prompt (lyrics) length; stay safely under and cut on a
 # verse boundary so the sung text never ends mid-line.
@@ -31,30 +31,101 @@ def trim_on_verse(lyrics: str, limit: int = MAX_LYRICS) -> str:
     return cut.rstrip()
 
 
+_SENSITIVE_REPLACEMENTS: tuple[tuple[str, str], ...] = (
+    (r"\bkill\s+myself\b", "find new hope"),
+    (r"\bwant\s+to\s+die\b", "feel so low"),
+    (r"\bsuicid(?:e|al)\b", "deep despair"),
+    (r"\bself[- ]?harm\b", "hidden pain"),
+    (r"\boverdose\b", "heavy burden"),
+    (r"\bmurder\b", "brokenness"),
+    (r"\bviolence\b", "sorrow"),
+    (r"\bdrugs?\b", "bondage"),
+    (r"\bsex\b", "love"),
+)
+
+
+def sanitize_style(style: str) -> str:
+    text = (style or "").strip()
+    text = re.sub(r"`{1,3}.*?`{1,3}", "", text)
+    text = re.sub(r"[\[\]{}<>]", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    lowered = text.lower()
+    if any(k in lowered for k in ("suicid", "self-harm", "kill myself", "want to die", "murder", "violent")):
+        text = "Modern contemporary Christian worship with hopeful and healing tone, warm choir, acoustic band"
+    return text[:480]
+
+
+def sanitize_lyrics(lyrics: str) -> str:
+    text = (lyrics or "").replace("\r\n", "\n")
+    text = re.sub(r"[`*_#]", "", text)
+    text = re.sub(r"(?im)^\s*(verse|chorus|bridge|pre-chorus)\s*[:\-]?\s*", "", text)
+    for pattern, repl in _SENSITIVE_REPLACEMENTS:
+        text = re.sub(pattern, repl, text, flags=re.IGNORECASE)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r" ?\n ?", "\n", text)
+    return trim_on_verse(text.strip())
+
+
+def safe_payload_variants(style: str, lyrics: str) -> list[tuple[str, str]]:
+    style_0 = sanitize_style(style)
+    lyrics_0 = sanitize_lyrics(lyrics)
+    style_1 = "Modern contemporary Christian worship, hopeful and peaceful, warm choir and acoustic band"
+    lyrics_1 = sanitize_lyrics(re.sub(r"(?im)^\s*[^\n]{0,120}\n", "", lyrics_0, count=1)) or lyrics_0
+    lines = [ln.strip() for ln in lyrics_1.split("\n") if ln.strip()]
+    lyrics_2 = sanitize_lyrics("\n".join(lines[:8]) or lyrics_1)
+    variants = [(style_0, lyrics_0), (style_1, lyrics_1), (style_1, lyrics_2)]
+    out: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for pair in variants:
+        if pair not in seen:
+            seen.add(pair)
+            out.append(pair)
+    return out
+
+
+def is_sensitive_error(exc: Exception) -> bool:
+    return "SENSITIVE_WORD_ERROR" in str(exc)
+
+
 def sing(*, title: str, lyrics: str, style: str) -> bytes:
     """Submit verses to Suno customMode and return the finished MP3 bytes.
 
     Raises on any provider failure — callers degrade the same way every music
     strategy does (generate_music skips the segment rather than crashing).
     """
+    from .suno_strategy import SunoStrategy
+
     suno = SunoStrategy()  # raises KeyError early if SUNO_API_KEY is missing
-    resp = requests.post(
-        f"{suno.BASE_URL}/generate",
-        headers=suno._headers,
-        json={
-            "prompt": trim_on_verse(lyrics),  # customMode: prompt == the exact lyrics
-            "style": style,
-            "title": title[:80],
-            "customMode": True,
-            "instrumental": False,
-            "model": suno.MODEL,
-            "callBackUrl": suno.CALLBACK_URL,
-        },
-        timeout=30,
-    )
-    resp.raise_for_status()
-    body = resp.json()
-    if body.get("code") != 200:
-        raise RuntimeError(f"Suno submit rejected: {body.get('msg')!r} ({body.get('code')})")
-    track = suno._poll(body["data"]["taskId"])
-    return suno._download(track)
+    attempts = safe_payload_variants(style, lyrics)
+    last_exc: Exception | None = None
+
+    for idx, (style_try, lyrics_try) in enumerate(attempts, start=1):
+        try:
+            resp = requests.post(
+                f"{suno.BASE_URL}/generate",
+                headers=suno._headers,
+                json={
+                    "prompt": lyrics_try,
+                    "style": style_try,
+                    "title": title[:80],
+                    "customMode": True,
+                    "instrumental": False,
+                    "model": suno.MODEL,
+                    "callBackUrl": suno.CALLBACK_URL,
+                },
+                timeout=30,
+            )
+            resp.raise_for_status()
+            body = resp.json()
+            if body.get("code") != 200:
+                raise RuntimeError(f"Suno submit rejected: {body.get('msg')!r} ({body.get('code')})")
+            track = suno._poll(body["data"]["taskId"])
+            return suno._download(track)
+        except Exception as exc:
+            last_exc = exc
+            if not is_sensitive_error(exc) or idx >= len(attempts):
+                raise
+            print(f"[music] Suno custom moderation retry {idx}/{len(attempts)}: {exc}", flush=True)
+
+    raise RuntimeError(f"Suno custom generation failed after moderation retries: {last_exc}")

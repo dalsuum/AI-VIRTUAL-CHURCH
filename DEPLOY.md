@@ -26,6 +26,8 @@ Architecture on the box:
       │  aivc-scheduler.service php artisan schedule:work            │
       │  aivc-workers.service   celery -Q ai:sermon,ai:music,...     │
       │  aivc-bridge.service    python bridge.py (Redis→Celery)      │
+      │  aivc-tedim-api.service python api.py / uvicorn (:8001)      │
+      │  aivc-burmese-api.service python api.py / uvicorn (:8002)      │
       └──────────────────┼─────────────────────────────────────────┘
                   MySQL 8 (local)   Redis (local, broker + queue)
 ```
@@ -291,6 +293,20 @@ KOKORO_BASE_URL=https://openrouter.ai/api/v1
 KOKORO_MODEL=hexgrad/kokoro-82m
 KOKORO_VOICE=af_heart
 
+# Local Myanmar/Tedim LLM + MMS-TTS services
+TEDIM_LLM_URL=http://127.0.0.1:8001
+BURMESE_LLM_URL=http://127.0.0.1:8002
+OLLAMA_URL=http://127.0.0.1:11434/api/generate
+OLLAMA_MODEL_TD=tedim-zolai
+OLLAMA_MODEL_MY=burmese-myanmar
+LOCAL_LLM_TIMEOUT=45
+MMS_TTS_URL=http://127.0.0.1:8001
+MMS_TTS_MODEL_MY=facebook/mms-tts-mya
+MMS_TTS_MODEL_TD=facebook/mms-tts-ctd
+MMS_TTS_SEED=42
+MMS_TTS_TIMEOUT=180
+MMS_TTS_STAGGER_SECONDS=60
+
 # Local media storage (served by nginx via the storage symlink)
 LOCAL_MEDIA_DIR=/opt/ai-church/backend/storage/app/public/media
 LOCAL_MEDIA_URL=https://api.example.com/storage/media
@@ -386,11 +402,11 @@ Certbot installs a renewal timer automatically; verify with `sudo certbot renew 
 
 ---
 
-## 11. systemd units (the 4 background processes)
+## 11. systemd units
 
 The HTTP layer is now php-fpm + nginx, so we drop the local `backend.sh`
-(artisan serve) and run only the four background workers as **system-level**
-units owned by `simon`.
+(artisan serve). Queue workers, Celery, the Redis bridge, and the local
+Myanmar/Tedim FastAPI services run as **system-level** units owned by `simon`.
 
 These units are version-controlled in the repo at
 [`.systemd/prod/`](.systemd/prod/) — just copy them (skip retyping the blocks
@@ -399,8 +415,8 @@ below, which are shown for reference):
 ```bash
 sudo cp /opt/ai-church/.systemd/prod/aivc-*.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now aivc-queue aivc-scheduler aivc-workers aivc-bridge
-sudo systemctl status  aivc-queue aivc-scheduler aivc-workers aivc-bridge --no-pager
+sudo systemctl enable --now aivc-queue aivc-scheduler aivc-workers aivc-bridge aivc-tedim-api aivc-burmese-api
+sudo systemctl status  aivc-queue aivc-scheduler aivc-workers aivc-bridge aivc-tedim-api aivc-burmese-api --no-pager
 ```
 
 For reference, each file under `/etc/systemd/system/`:
@@ -450,6 +466,7 @@ After=redis-server.service
 
 [Service]
 User=simon
+Group=www-data
 WorkingDirectory=/opt/ai-church/workers
 ExecStart=/usr/bin/env bash -lc 'set -a; . ./.env; set +a; exec .venv/bin/celery -A tasks.celery_app worker -Q ai:sermon,ai:music,ai:avatar,ai:narration -c 4'
 Restart=on-failure
@@ -468,6 +485,7 @@ After=aivc-workers.service redis-server.service
 
 [Service]
 User=simon
+Group=www-data
 WorkingDirectory=/opt/ai-church/workers
 ExecStart=/usr/bin/env bash -lc 'set -a; . ./.env; set +a; exec .venv/bin/python bridge.py'
 Restart=always
@@ -526,7 +544,7 @@ cd backend && composer install --no-dev --optimize-autoloader \
 cd ../frontend && npm ci && npm run build
 
 # restart the background units (php-fpm picks up code on next request automatically)
-sudo systemctl restart aivc-queue aivc-scheduler aivc-workers aivc-bridge
+sudo systemctl restart aivc-queue aivc-scheduler aivc-workers aivc-bridge aivc-tedim-api aivc-burmese-api
 ```
 
 If you changed Python deps: `cd workers && .venv/bin/pip install -r requirements.txt`
@@ -541,7 +559,7 @@ before the restart.
 | Intake never produces segments | `ai:intake` not draining | Check `REDIS_PREFIX=` is empty in backend `.env`; check `aivc-bridge` is running |
 | Bridge/Celery can't see API keys | `.env` not loaded | They don't auto-load — units use `set -a; . ./.env`; confirm `workers/.env` exists |
 | Webhook callbacks 401/403 | secret mismatch | `WORKER_WEBHOOK_SECRET` must be identical in `backend/.env` and `workers/.env` |
-| 500 on API, blank logs | storage not writable | `chown -R simon:www-data storage bootstrap/cache && chmod -R 775` |
+| 500 on API, blank logs | storage/cache not writable | `sudo chown -R www-data:www-data backend/storage backend/bootstrap/cache && sudo find backend/storage backend/bootstrap/cache -type d -exec chmod 2775 {} \;` |
 | Media mp3 404 | symlink/perms | `php artisan storage:link`; media dir owned `simon:www-data` |
 | Config changes ignored | cached config | `php artisan config:cache` after every `.env` edit |
 | `.env` edits to APP_* ignored | cached | also clear with `php artisan config:clear` then re-cache |
@@ -550,5 +568,5 @@ before the restart.
 
 Logs:
 - Laravel: `/opt/ai-church/backend/storage/logs/laravel.log`
-- Units: `sudo journalctl -u aivc-workers -u aivc-bridge -u aivc-queue -u aivc-scheduler`
+- Units: `sudo journalctl -u aivc-workers -u aivc-bridge -u aivc-queue -u aivc-scheduler -u aivc-tedim-api -u aivc-burmese-api`
 - nginx: `/var/log/nginx/error.log`

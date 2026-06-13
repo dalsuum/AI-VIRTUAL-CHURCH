@@ -20,6 +20,11 @@ const emit = defineEmits(["exit"]);
 
 // The mood the worshipper chose at intake, carried through on the service object.
 const mood = computed(() => props.service?.mood || "");
+const musicFallbackNotice = computed(() => {
+  const asset = props.service?.music_asset;
+  if (!asset || asset.asset_type !== "text") return "";
+  return asset.title || "Worship music is unavailable right now. We will continue with scripture and prayer.";
+});
 
 // Spoken segments, in the order they're read during the service.
 const SEGMENTS = [
@@ -34,7 +39,9 @@ const SEGMENTS = [
 const stages = computed(() => {
   const s = props.service;
   const list = [];
-  if (s?.music_asset) list.push({ kind: "worship", key: "worship", label: "Worship" });
+  if (s?.music_asset && ["audio", "youtube"].includes(s.music_asset.asset_type)) {
+    list.push({ kind: "worship", key: "worship", label: "Worship" });
+  }
   for (const seg of SEGMENTS) {
     const text = s?.segments?.[seg.key];
     // A segment can be a sourced YouTube clip instead of text — the preaching
@@ -55,7 +62,7 @@ const stages = computed(() => {
         embed,
         videoParts,                          // array of part URLs, or null
         video: videoParts?.[0] || null,      // first part for initial render
-        audio: s.audios?.[seg.key] || null,
+        audio: s.narration_enabled === false ? null : (s.audios?.[seg.key] || null),
       });
     }
   }
@@ -95,18 +102,37 @@ const speechSupported = typeof window !== "undefined" && "speechSynthesis" in wi
 const narrating = ref(false);
 
 // The global narration voice mode the admin chose (see Admin Console → Settings):
-//   'openai'/'kokoro' — the server synthesized audio; we play it (handled below).
+//   'openai'/'kokoro'/'edge_tts' — the server synthesized audio; we play it (handled below).
 //   'browser'         — no server audio; the browser reads each segment aloud.
 //   'off'             — segments stay silent text.
 // Default to 'browser' so a service without the field still reads aloud for free.
 const narrationMode = computed(() => props.service?.narration_mode || "browser");
+const narrationEnabled = computed(() => props.service?.narration_enabled !== false);
+const textHighlightEnabled = computed(() => props.service?.text_highlight_enabled !== false);
 
-// The browser reads a segment when either (a) 'browser' mode is chosen, or
-// (b) a server voice (openai/kokoro) was chosen but no audio arrived — so the
-// worshipper always hears something rather than landing in total silence.
+// The browser reads a segment when narration is enabled and either (a) 'browser'
+// mode is chosen, or (b) a server voice was chosen but no audio arrived.
+function pickVoice() {
+  const voices = window.speechSynthesis.getVoices();
+  const lang = props.service?.language || "en";
+  if (lang === "my") {
+    return voices.find((v) => /^my[-_]/i.test(v.lang)) || null;
+  }
+  if (lang === "td") {
+    // Tedim has no standard browser voice. Do not fall back to English; it will
+    // skip/mangle Tedim words. Use Edge TTS with EDGE_TTS_VOICE_TD if desired.
+    return null;
+  }
+  return voices.find((v) => /^en[-_]/i.test(v.lang)) || voices[0] || null;
+}
+
+const browserVoice = computed(() => (speechSupported ? pickVoice() : null));
+
 const usesBrowserSpeech = computed(
   () =>
     speechSupported &&
+    browserVoice.value &&
+    narrationEnabled.value &&
     narrationMode.value !== "off" &&
     current.value?.kind === "segment" &&
     !current.value.embed &&
@@ -114,18 +140,18 @@ const usesBrowserSpeech = computed(
     !current.value.audio,
 );
 
-function pickVoice() {
-  const voices = window.speechSynthesis.getVoices();
-  return voices.find((v) => /^en[-_]/i.test(v.lang)) || voices[0] || null;
-}
-
 // Chrome silently cuts off any single utterance after ~15s, so a long segment
 // (the sermon especially) would stop partway. We split the text into short,
 // sentence-aligned pieces and speak them back-to-back — no one utterance runs
 // long enough to trip the cutoff, and the segment reads start to finish.
 function splitForSpeech(text) {
   const clean = text.replace(/\s+/g, " ").trim();
-  const sentences = clean.match(/[^.!?]+[.!?]*\s*/g) || [clean];
+  const lang = props.service?.language || "en";
+  // Burmese uses ။ (full stop) and ၊ (comma) as sentence delimiters, not .!?
+  const sentenceRe = lang === "my"
+    ? /[^။၊]+[။၊]*\s*/g
+    : /[^.!?]+[.!?]*\s*/g;
+  const sentences = clean.match(sentenceRe) || [clean];
   const pieces = [];
   let buf = "";
   for (const s of sentences) {
@@ -169,21 +195,37 @@ function speakSequence(pieces, i, charOffset = 0) {
   }
   const u = new SpeechSynthesisUtterance(pieces[i]);
   u.rate = 0.96;
-  const voice = pickVoice();
+  const lang = props.service?.language || "en";
+  if (lang === "my") u.lang = "my-MM";
+  const voice = browserVoice.value;
   if (voice) u.voice = voice;
+
+  // Timeout fallback: Chrome sometimes never fires onend (15-second cutoff bug).
+  // If the utterance hasn't finished within 30s per 200-char chunk, skip ahead.
+  const chunkTimeout = setTimeout(() => {
+    if (activeUtterance !== u) return;
+    speakSequence(pieces, i + 1, charOffset + pieces[i].length + 1);
+  }, 30000);
+
+  const advance = () => {
+    clearTimeout(chunkTimeout);
+    speakSequence(pieces, i + 1, charOffset + pieces[i].length + 1);
+  };
+
   u.onboundary = (e) => {
-    if (e.name !== 'word' || activeUtterance !== u) return;
+    if (!textHighlightEnabled.value || e.name !== 'word' || activeUtterance !== u) return;
     highlightedWordIndex.value = charToWordIndex(charOffset + e.charIndex);
   };
   u.onend = () => {
-    if (activeUtterance !== u) return; // stopped or replaced — don't continue
-    speakSequence(pieces, i + 1, charOffset + pieces[i].length + 1);
+    if (activeUtterance !== u) { clearTimeout(chunkTimeout); return; }
+    advance();
   };
-  u.onerror = () => {
-    if (activeUtterance !== u) return;
-    activeUtterance = null;
-    narrating.value = false;
-    highlightedWordIndex.value = -1;
+  // Skip failed pieces rather than freezing — Chrome fires 'interrupted' for
+  // non-English scripts when no matching voice is installed.
+  u.onerror = (e) => {
+    if (activeUtterance !== u) { clearTimeout(chunkTimeout); return; }
+    if (e.error === "interrupted") return; // another utterance replaced us — ignore
+    advance();
   };
   activeUtterance = u;
   window.speechSynthesis.speak(u);
@@ -252,6 +294,7 @@ function charToWordIndex(charIndex) {
 }
 
 function onMediaTimeUpdate() {
+  if (!textHighlightEnabled.value) return;
   const el = mediaEl.value;
   const total = wordPositions.value.length;
   if (!el || !el.duration || !total) return;
@@ -365,6 +408,8 @@ watch(stages, (list) => {
       ></span>
     </div>
 
+    <p v-if="musicFallbackNotice" class="stage-hint">{{ musicFallbackNotice }}</p>
+
     <div class="stage" :key="current.key">
       <!-- Worship -->
       <template v-if="current.kind === 'worship'">
@@ -419,7 +464,7 @@ watch(stages, (list) => {
           <div class="stage-text">
             <p v-for="(para, pi) in paragraphs" :key="pi">
               <template v-for="({ word, idx }) in para.words" :key="idx">
-                <span :class="{ highlight: idx === highlightedWordIndex }">{{ word }}</span>{{ ' ' }}
+                <span :class="{ highlight: textHighlightEnabled && idx === highlightedWordIndex }">{{ word }}</span>{{ ' ' }}
               </template>
             </p>
           </div>

@@ -33,13 +33,14 @@ function firstAllowedTab() {
     { name: "users",       check: () => isAdminUser.value },
     { name: "prayer",      check: () => can("prayer_requests.view") },
     { name: "settings",    check: () => isAdminUser.value },
+    { name: "music-pool",  check: () => isAdminUser.value },
     { name: "voice-studio",check: () => can("voice_studio.view") },
     { name: "permissions", check: () => isAdminUser.value },
   ];
   return (candidates.find((c) => c.check()) ?? candidates[0]).name;
 }
 
-const tab = ref("dashboard"); // dashboard | services | donors | testimonies | users | prayer | settings | voice-studio | permissions
+const tab = ref("dashboard"); // dashboard | services | donors | testimonies | users | prayer | settings | music-pool | voice-studio | permissions
 const stats = ref(null);
 const services = ref([]);
 const donors = ref([]);
@@ -50,6 +51,25 @@ const settings        = ref(null);
 const savingSettings  = ref(false);
 const notice          = ref("");
 const permissionsData = ref(null); // { permissions, available, roles }
+const musicTracks = ref([]);
+const musicPoolBusy = ref(false);
+const musicPoolFilters = ref({ mood: "", language: "", search: "", limit: 100 });
+const musicTrackEditingId = ref(null);
+const musicTrackForm = ref({
+  mood: "",
+  language: "en",
+  provider_ref: "",
+  storage_key: "",
+  title: "",
+  lyrics: "",
+  source: "suno",
+});
+const musicPoolLanguages = [
+  { value: "", label: "All languages" },
+  { value: "en", label: "English" },
+  { value: "my", label: "Myanmar" },
+  { value: "td", label: "Tedim (Zolai)" },
+];
 
 // How spoken segments are voiced across all services. Mirrors the backend's
 // Setting::NARRATION_MODES; surfaced as a single-choice selector.
@@ -98,11 +118,21 @@ const musicSourceOptions = [
   { value: "hymn_sung", label: "Sung hymn", hint: "A classic hymn sung aloud, words on screen." },
   { value: "hymn", label: "Instrumental hymn", hint: "The hymn played, with words to sing along." },
   { value: "hymn_youtube", label: "Vocal hymn (YouTube)", hint: "A traditional hymn sung by a choir, mood-matched and embedded from YouTube." },
-  { value: "suno", label: "AI-composed", hint: "Original worship composed for the worshipper." },
+  { value: "suno", label: "AI-composed (Suno)", hint: "Original worship composed for the worshipper via Suno API." },
+  { value: "musicgen", label: "AI-composed (Local)", hint: "Worship music generated locally using Meta MusicGen — no API key needed, runs on-server (5–8 min on CPU)." },
   { value: "youtube", label: "From YouTube", hint: "An existing worship track and sermon clip." },
 ];
 
 const newMood = ref("");
+const newCountdownBanner = ref({ text: "", source: "" });
+const countdownSourceOptions = [
+  { value: "both", label: "Banners + testimonies", hint: "Rotate admin banners and approved testimonies." },
+  { value: "all", label: "All sources", hint: "Rotate banners, approved testimonies, and an online Bible verse." },
+  { value: "banners", label: "Custom banners", hint: "Show only the admin-managed messages below." },
+  { value: "testimonies", label: "Testimonies", hint: "Show only approved testimonies from the moderation queue." },
+  { value: "online", label: "Online Bible verse", hint: "Show a cached public-domain verse from a fixed online provider." },
+  { value: "off", label: "Off", hint: "Show the normal countdown without cards." },
+];
 
 // Password change
 const pwCurrent = ref("");
@@ -200,6 +230,17 @@ async function loadSettings() {
 async function loadPermissions() {
   permissionsData.value = await api.adminGetPermissions();
 }
+async function loadMusicTracks() {
+  musicPoolBusy.value = true;
+  try {
+    const res = await api.adminMusicTracks(musicPoolFilters.value);
+    musicTracks.value = res.tracks || [];
+  } catch (e) {
+    notice.value = e?.data?.message || "Could not load Suno pool.";
+  } finally {
+    musicPoolBusy.value = false;
+  }
+}
 
 function show(name) {
   tab.value    = name;
@@ -210,9 +251,10 @@ function show(name) {
   if (name === "users")       loadUsers();
   if (name === "prayer")      loadPrayerRequests();
   if (name === "settings")    loadSettings();
+  if (name === "music-pool")  loadMusicTracks();
   if (name === "permissions") loadPermissions();
   // Dashboard stats loaded on demand if not yet fetched.
-  if (name === "dashboard" && !stats.value && can("dashboard.view")) {
+  if (name === "dashboard" && can("dashboard.view")) {
     api.adminDashboard().then((res) => { stats.value = res; }).catch(() => {});
   }
 }
@@ -254,6 +296,8 @@ const setTextHighlightEnabled = (on) => saveSetting("text_highlight_enabled", on
 const setStorageBackend = (backend) => saveSetting("storage_backend", backend, "Storage backend updated.");
 const setScheduling = (on) => saveSetting("scheduling_enabled", on, "Scheduling updated.");
 const setDefaultMusicSource = (src) => saveSetting("default_music_source", src, "Default music source updated.");
+const setCountdownEnabled = (on) => saveSetting("countdown_content_enabled", on, "Countdown content updated.");
+const setCountdownSource = (source) => saveSetting("countdown_content_source", source, "Countdown content source updated.");
 
 // Persist a list-valued setting (moods, music_sources), rolling back on failure.
 // Unlike saveSetting, this always writes — callers pass a freshly built array.
@@ -294,6 +338,42 @@ function removeMood(m) {
   saveListSetting("moods", settings.value.moods.filter((x) => x !== m), `Removed mood "${m}".`);
 }
 
+function addCountdownBanner() {
+  if (!settings.value) return;
+  const text = newCountdownBanner.value.text.trim();
+  const source = newCountdownBanner.value.source.trim();
+  if (!text) return;
+  const current = Array.isArray(settings.value.countdown_banners) ? settings.value.countdown_banners : [];
+  if (current.length >= 12) {
+    notice.value = "Keep countdown banners to 12 or fewer.";
+    return;
+  }
+  saveListSetting("countdown_banners", [...current, { text, source }], "Countdown banner added.");
+  newCountdownBanner.value = { text: "", source: "" };
+}
+
+function updateCountdownBanner(index, field, value) {
+  if (!settings.value) return;
+  const current = Array.isArray(settings.value.countdown_banners) ? settings.value.countdown_banners : [];
+  const trimmed = value.trim();
+  if (field === "text" && !trimmed) {
+    notice.value = "Countdown banner text cannot be blank.";
+    return;
+  }
+  const next = current.map((b, i) => i === index ? { ...b, [field]: trimmed } : b);
+  saveListSetting("countdown_banners", next, "Countdown banner updated.");
+}
+
+function removeCountdownBanner(index) {
+  if (!settings.value) return;
+  const current = Array.isArray(settings.value.countdown_banners) ? settings.value.countdown_banners : [];
+  if (current.length <= 1) {
+    notice.value = "Keep at least one countdown banner.";
+    return;
+  }
+  saveListSetting("countdown_banners", current.filter((_, i) => i !== index), "Countdown banner removed.");
+}
+
 // Flip a music source on/off, preserving canonical order and never emptying the set.
 function toggleMusicSource(value) {
   if (!settings.value) return;
@@ -306,6 +386,84 @@ function toggleMusicSource(value) {
     .map((o) => o.value)
     .filter((v) => (v === value ? !on : settings.value.music_sources.includes(v)));
   saveListSetting("music_sources", next, "Music sources updated.");
+}
+
+function resetMusicTrackForm() {
+  musicTrackEditingId.value = null;
+  musicTrackForm.value = {
+    mood: "",
+    language: "en",
+    provider_ref: "",
+    storage_key: "",
+    title: "",
+    lyrics: "",
+    source: "suno",
+  };
+}
+
+function editMusicTrack(track) {
+  musicTrackEditingId.value = track.id;
+  musicTrackForm.value = {
+    mood: track.mood || "",
+    language: track.language || "en",
+    provider_ref: track.provider_ref || "",
+    storage_key: track.storage_key || "",
+    title: track.title || "",
+    lyrics: track.lyrics || "",
+    source: "suno",
+  };
+}
+
+async function saveMusicTrack() {
+  const payload = {
+    mood: musicTrackForm.value.mood.trim(),
+    language: musicTrackForm.value.language,
+    provider_ref: musicTrackForm.value.provider_ref.trim(),
+    storage_key: musicTrackForm.value.storage_key.trim(),
+    title: musicTrackForm.value.title.trim() || null,
+    lyrics: musicTrackForm.value.lyrics.trim() || null,
+    source: "suno",
+  };
+  if (!payload.mood || !payload.provider_ref || !payload.storage_key) {
+    notice.value = "Mood, provider ref, and storage key are required.";
+    return;
+  }
+
+  musicPoolBusy.value = true;
+  try {
+    if (musicTrackEditingId.value) {
+      await api.adminUpdateMusicTrack(musicTrackEditingId.value, payload);
+      notice.value = "Suno pool track updated.";
+    } else {
+      await api.adminCreateMusicTrack(payload);
+      notice.value = "Suno pool track added.";
+    }
+    resetMusicTrackForm();
+    await loadMusicTracks();
+  } catch (e) {
+    notice.value = e?.data?.message || "Could not save Suno pool track.";
+  } finally {
+    musicPoolBusy.value = false;
+  }
+}
+
+async function removeMusicTrack(track) {
+  if (!confirm(`Delete Suno pool row #${track.id}?`)) return;
+  musicPoolBusy.value = true;
+  try {
+    await api.adminDeleteMusicTrack(track.id);
+    notice.value = "Suno pool track deleted.";
+    if (musicTrackEditingId.value === track.id) resetMusicTrackForm();
+    await loadMusicTracks();
+  } catch (e) {
+    notice.value = e?.data?.message || "Could not delete Suno pool track.";
+  } finally {
+    musicPoolBusy.value = false;
+  }
+}
+
+async function applyMusicPoolFilters() {
+  await loadMusicTracks();
 }
 
 async function retry(s) {
@@ -524,6 +682,7 @@ onMounted(() => { if (api.hasToken()) enter(); });
         <button v-if="isAdminUser"                  :class="{ active: tab === 'users' }"       @click="show('users')">Users</button>
         <button v-if="can('prayer_requests.view')"  :class="{ active: tab === 'prayer' }"      @click="show('prayer')">Prayer Requests</button>
         <button v-if="isAdminUser"                  :class="{ active: tab === 'settings' }"    @click="show('settings')">Settings</button>
+        <button v-if="isAdminUser"                  :class="{ active: tab === 'music-pool' }"  @click="show('music-pool')">Suno Pool</button>
         <button v-if="can('voice_studio.view')"     :class="{ active: tab === 'voice-studio'}" @click="show('voice-studio')">Voice Studio</button>
         <button v-if="isAdminUser"                  :class="{ active: tab === 'permissions' }" @click="show('permissions')">Permissions</button>
         <span v-if="currentUser" class="staff-role-badge" :class="'role-' + currentUser.role">
@@ -575,6 +734,11 @@ onMounted(() => { if (api.hasToken()) enter(); });
             <span class="n">{{ stats.intercepts.total }}</span>
             <span class="lbl">Crisis intercepts</span>
             <small>{{ stats.intercepts.today }} today</small>
+          </div>
+          <div v-if="stats.musicgen?.total > 0 || stats.musicgen?.today > 0" class="card">
+            <span class="n">{{ stats.musicgen?.total ?? 0 }}</span>
+            <span class="lbl">MusicGen generations</span>
+            <small>{{ stats.musicgen?.today ?? 0 }} today · ~{{ stats.musicgen?.audio_minutes ?? 0 }} min audio</small>
           </div>
           <div class="card">
             <span class="n">{{ stats.users.admins }}</span>
@@ -824,6 +988,64 @@ onMounted(() => { if (api.hasToken()) enter(); });
         </table>
       </div>
 
+      <!-- Suno Pool -->
+      <div v-else-if="tab === 'music-pool'" class="table-wrap">
+        <div class="table-head">
+          <h2>Suno Song Pool (music_tracks)</h2>
+          <button class="chip" :disabled="musicPoolBusy" @click="loadMusicTracks">Refresh</button>
+        </div>
+
+        <div class="pool-filters">
+          <input v-model="musicPoolFilters.mood" class="pool-input" placeholder="Filter mood" @keyup.enter="applyMusicPoolFilters" />
+          <select v-model="musicPoolFilters.language" class="pool-input" @change="applyMusicPoolFilters">
+            <option v-for="lang in musicPoolLanguages" :key="lang.value || 'all'" :value="lang.value">{{ lang.label }}</option>
+          </select>
+          <input v-model="musicPoolFilters.search" class="pool-input" placeholder="Search title/provider/storage" @keyup.enter="applyMusicPoolFilters" />
+          <button class="chip" :disabled="musicPoolBusy" @click="applyMusicPoolFilters">Apply</button>
+        </div>
+
+        <div class="pool-editor">
+          <h3>{{ musicTrackEditingId ? `Edit Track #${musicTrackEditingId}` : 'Add Track' }}</h3>
+          <div class="pool-grid">
+            <input v-model="musicTrackForm.mood" class="pool-input" placeholder="Mood (required)" />
+            <select v-model="musicTrackForm.language" class="pool-input">
+              <option value="en">English</option>
+              <option value="my">Myanmar</option>
+              <option value="td">Tedim</option>
+            </select>
+            <input v-model="musicTrackForm.provider_ref" class="pool-input" placeholder="Provider ref / Suno task id (required)" />
+            <input v-model="musicTrackForm.storage_key" class="pool-input" placeholder="Storage key (required)" />
+            <input v-model="musicTrackForm.title" class="pool-input" placeholder="Title (optional)" />
+          </div>
+          <textarea v-model="musicTrackForm.lyrics" class="pool-lyrics" rows="5" placeholder="Lyrics (optional)"></textarea>
+          <div class="pool-actions">
+            <button class="chip primary-chip" :disabled="musicPoolBusy" @click="saveMusicTrack">{{ musicTrackEditingId ? 'Update' : 'Create' }}</button>
+            <button class="chip" :disabled="musicPoolBusy" @click="resetMusicTrackForm">Clear</button>
+          </div>
+        </div>
+
+        <table class="grid">
+          <thead><tr><th>#</th><th>Mood</th><th>Lang</th><th>Title</th><th>Provider Ref</th><th>Storage Key</th><th>Lyrics</th><th>Created</th><th></th></tr></thead>
+          <tbody>
+            <tr v-for="t in musicTracks" :key="t.id">
+              <td>{{ t.id }}</td>
+              <td><span class="badge pending">{{ t.mood }}</span></td>
+              <td>{{ t.language }}</td>
+              <td>{{ t.title || '—' }}</td>
+              <td><small>{{ t.provider_ref }}</small></td>
+              <td><small>{{ t.storage_key }}</small></td>
+              <td class="content">{{ t.lyrics || '—' }}</td>
+              <td><small>{{ fmtDate(t.created_at) }}</small></td>
+              <td class="actions">
+                <button class="link" @click="editMusicTrack(t)">Edit</button>
+                <button class="link danger" @click="removeMusicTrack(t)">Delete</button>
+              </td>
+            </tr>
+            <tr v-if="!musicTracks.length"><td colspan="9" class="empty">No Suno pool tracks found.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
       <!-- Settings -->
       <section v-else-if="tab === 'settings'" class="settings">
         <div class="setting-block">
@@ -929,6 +1151,112 @@ onMounted(() => { if (api.hasToken()) enter(); });
               <span>Hide scheduling; services start immediately.</span>
             </button>
           </div>
+          <p v-else class="setting-desc">Loading…</p>
+        </div>
+
+        <div class="setting-block">
+          <h2>Countdown content</h2>
+          <p class="setting-desc">
+            Short cards shown while the service is preparing. Testimonies come only from
+            approved moderation; custom banners are plain text with an optional source.
+            Online verses use a fixed public-domain provider and are cached by the server.
+          </p>
+          <template v-if="settings">
+            <div class="choice-row">
+              <button
+                type="button"
+                class="choice"
+                :class="{ active: settings.countdown_content_enabled === true }"
+                :disabled="savingSettings"
+                @click="setCountdownEnabled(true)"
+              >
+                <strong>Show cards</strong>
+                <span>Use the countdown space for testimony and encouragement.</span>
+              </button>
+              <button
+                type="button"
+                class="choice"
+                :class="{ active: settings.countdown_content_enabled === false }"
+                :disabled="savingSettings"
+                @click="setCountdownEnabled(false)"
+              >
+                <strong>Hide cards</strong>
+                <span>Keep the countdown screen minimal.</span>
+              </button>
+            </div>
+
+            <p class="setting-desc" style="margin-top:1rem">Source</p>
+            <div class="choice-row">
+              <button
+                v-for="source in countdownSourceOptions"
+                :key="source.value"
+                type="button"
+                class="choice"
+                :class="{ active: settings.countdown_content_source === source.value }"
+                :disabled="savingSettings || settings.countdown_content_enabled === false"
+                @click="setCountdownSource(source.value)"
+              >
+                <strong>{{ source.label }}</strong>
+                <span>{{ source.hint }}</span>
+              </button>
+            </div>
+
+            <p class="setting-desc" style="margin-top:1rem">Custom banners</p>
+            <div class="banner-list">
+              <div v-for="(banner, i) in settings.countdown_banners" :key="i" class="banner-row">
+                <textarea
+                  :value="banner.text"
+                  class="banner-text"
+                  maxlength="300"
+                  rows="2"
+                  :disabled="savingSettings"
+                  @change="updateCountdownBanner(i, 'text', $event.target.value)"
+                ></textarea>
+                <div class="banner-meta-row">
+                  <input
+                    :value="banner.source"
+                    class="banner-source"
+                    maxlength="80"
+                    placeholder="Source label, e.g. Psalm 46:10"
+                    :disabled="savingSettings"
+                    @change="updateCountdownBanner(i, 'source', $event.target.value)"
+                  />
+                  <button
+                    type="button"
+                    class="chip danger-chip"
+                    :disabled="savingSettings || settings.countdown_banners.length <= 1"
+                    @click="removeCountdownBanner(i)"
+                  >Remove</button>
+                </div>
+              </div>
+            </div>
+            <div class="banner-add">
+              <textarea
+                v-model="newCountdownBanner.text"
+                class="banner-text"
+                maxlength="300"
+                rows="2"
+                placeholder="Add a short Christian encouragement or church announcement"
+                :disabled="savingSettings"
+              ></textarea>
+              <div class="banner-meta-row">
+                <input
+                  v-model="newCountdownBanner.source"
+                  class="banner-source"
+                  maxlength="80"
+                  placeholder="Optional source"
+                  :disabled="savingSettings"
+                  @keyup.enter="addCountdownBanner"
+                />
+                <button
+                  type="button"
+                  class="primary add-btn"
+                  :disabled="savingSettings || !newCountdownBanner.text.trim()"
+                  @click="addCountdownBanner"
+                >Add banner</button>
+              </div>
+            </div>
+          </template>
           <p v-else class="setting-desc">Loading…</p>
         </div>
 
@@ -1196,6 +1524,14 @@ onMounted(() => { if (api.hasToken()) enter(); });
 .exports-label { color: var(--text-muted); font-size: 0.85rem; margin-right: 0.25rem; }
 .chip { border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 999px; padding: 0.4rem 0.85rem; font-size: 0.85rem; cursor: pointer; }
 .chip:hover { border-color: var(--primary); color: var(--primary-hover); }
+.pool-filters { display: grid; grid-template-columns: 1fr 180px 1.3fr auto; gap: 0.6rem; margin: 0.9rem 0 1rem; }
+.pool-editor { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 0.85rem; margin-bottom: 1rem; }
+.pool-editor h3 { margin: 0 0 0.65rem; font-size: 0.95rem; }
+.pool-grid { display: grid; grid-template-columns: 1fr 180px 1.4fr 1.4fr 1fr; gap: 0.55rem; }
+.pool-input { width: 100%; padding: 0.45rem 0.6rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); font: inherit; }
+.pool-input:focus, .pool-lyrics:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-soft); }
+.pool-lyrics { width: 100%; margin-top: 0.55rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); padding: 0.55rem 0.6rem; font: inherit; resize: vertical; }
+.pool-actions { display: flex; gap: 0.45rem; margin-top: 0.65rem; }
 
 .table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.5rem 1.1rem 1rem; box-shadow: var(--shadow-sm); overflow-x: auto; }
 .table-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.75rem 0 0.25rem; }
@@ -1280,6 +1616,18 @@ onMounted(() => { if (api.hasToken()) enter(); });
 .chip-x:hover:not(:disabled) { background: var(--primary); color: var(--on-primary); }
 .chip-x:disabled { opacity: 0.4; cursor: default; }
 .mood-add { display: flex; gap: 0.5rem; }
+.banner-list { display: flex; flex-direction: column; gap: 0.75rem; }
+.banner-row, .banner-add { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0.75rem; background: var(--surface-2); }
+.banner-add { margin-top: 0.8rem; }
+.banner-text, .banner-source {
+  width: 100%; padding: 0.55rem 0.65rem; border: 1px solid var(--border);
+  border-radius: var(--radius-sm); font: inherit; background: var(--surface); color: var(--text);
+}
+.banner-text { resize: vertical; min-height: 4.2rem; line-height: 1.45; }
+.banner-text:focus, .banner-source:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.banner-meta-row { display: grid; grid-template-columns: 1fr auto; gap: 0.5rem; align-items: center; margin-top: 0.5rem; }
+.danger-chip { color: var(--danger); }
+.danger-chip:hover { border-color: var(--danger); color: var(--danger); }
 
 .pw-form { display: flex; flex-direction: column; gap: 0.6rem; max-width: 340px; }
 .pw-form input { padding: 0.65rem 0.75rem; border: 1px solid var(--border); border-radius: var(--radius-sm); font: inherit; background: var(--surface); color: var(--text); }

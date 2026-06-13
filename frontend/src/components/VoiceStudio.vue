@@ -153,7 +153,7 @@ async function loadScript(code) {
   recordedIds.value = new Set();
   cursor.value = 0;
   try {
-    const res = await api.adminVoiceScript(code);
+    const res = await api.voiceScript(code);
     sentences.value = res.sentences;
     recordedIds.value = new Set(res.recorded_ids);
   } catch (e) {
@@ -165,7 +165,7 @@ async function loadScript(code) {
 
 async function loadProgress(code) {
   try {
-    const res = await api.adminVoiceProgress(code);
+    const res = await api.voiceProgress(code);
     progress.value[code] = res;
   } catch {}
 }
@@ -267,7 +267,7 @@ async function acceptRecording() {
     form.append("text", currentSentence.value.text);
     form.append("audio", audioBlob.value, "recording.webm");
 
-    await api.adminVoiceStore(form);
+    await api.voiceStore(form);
 
     recordedIds.value.add(currentSentence.value.id);
     await loadProgress(lang.value);
@@ -275,7 +275,8 @@ async function acceptRecording() {
     showStatus("Saved!", "ok");
     goNext();
   } catch (e) {
-    showStatus("Save failed: " + (e.data?.error ?? e.message), "error");
+    const msg = e.data?.error ?? e.data?.message ?? e.message;
+    showStatus("Save failed: " + msg, "error");
   } finally {
     saving.value = false;
   }
@@ -284,7 +285,7 @@ async function acceptRecording() {
 async function deleteRecording() {
   if (!currentSentence.value) return;
   try {
-    await api.adminVoiceDelete(lang.value, currentSentence.value.id);
+    await api.voiceDelete(lang.value, currentSentence.value.id);
     recordedIds.value.delete(currentSentence.value.id);
     await loadProgress(lang.value);
     showStatus("Deleted.", "ok");
@@ -296,7 +297,7 @@ async function deleteRecording() {
 async function exportDataset() {
   exporting.value = true;
   try {
-    const blob = await api.adminVoiceExport(lang.value);
+    const blob = await api.voiceExport(lang.value);
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement("a");
     a.href     = url;

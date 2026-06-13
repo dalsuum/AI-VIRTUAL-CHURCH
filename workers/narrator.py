@@ -24,7 +24,12 @@ Providers (set via Admin Console → Settings → Narration voice):
     KOKORO_BASE_URL — API host (default: OPENROUTER_BASE_URL or OpenRouter's)
     KOKORO_MODEL    — speech model (default hexgrad/kokoro-82m)
     KOKORO_VOICE    — the voice to read with (default 'af_heart')
-    KOKORO_FORMAT   — audio container (default: TTS_FORMAT or mp3)
+    KOKORO_FORMAT   - audio container (default: TTS_FORMAT or mp3)
+
+  Myanmar and Tedim with mode 'edge_tts' are routed to the local MMS-TTS
+  service when MMS_TTS_URL is set (default http://127.0.0.1:8001). This avoids
+  English/Edge voices skipping Burmese script or failing on low-resource Tedim.
+  Myanmar uses facebook/mms-tts-mya; Tedim uses facebook/mms-tts-ctd.
 """
 
 from __future__ import annotations
@@ -84,6 +89,13 @@ def _clean(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def _mms_lang(language: str) -> str | None:
+    # Keep Myanmar/Tedim on local MMS-TTS. Edge/browser voices are unreliable for
+    # these languages: Burmese can be skipped or rejected, and Tedim has no native
+    # Edge voice.
+    return {"my": "burmese", "td": "tedim"}.get(language)
+
+
 def _chunks(text: str) -> list[str]:
     """Split `text` into <= _MAX_CHARS pieces, preferring sentence boundaries."""
     if len(text) <= _MAX_CHARS:
@@ -102,6 +114,22 @@ def _chunks(text: str) -> list[str]:
     if buf:
         parts.append(buf)
     return parts
+
+
+def _speak_mms(text: str, language: str) -> bytes:
+    """Synthesize Myanmar/Tedim with the local MMS VITS service; return WAV bytes."""
+    lang = _mms_lang(language)
+    if not lang:
+        raise RuntimeError(f"MMS TTS does not support language {language!r}")
+    base_url = os.getenv("MMS_TTS_URL", "http://127.0.0.1:8001").rstrip("/")
+    seed = int(os.getenv("MMS_TTS_SEED", "42"))
+    resp = requests.post(
+        f"{base_url}/tts/speak",
+        json={"text": text, "lang": lang, "seed": seed},
+        timeout=int(os.getenv("MMS_TTS_TIMEOUT", "180")),
+    )
+    resp.raise_for_status()
+    return resp.content
 
 
 def _speak(text: str, cfg: dict) -> bytes:
@@ -144,14 +172,25 @@ def _narrate_edge(text: str, voice: str) -> bytes:
     return b"".join(asyncio.run(_speak_edge(chunk, voice)) for chunk in parts if chunk)
 
 
-def narrate(session_token: str, segment: str, text: str, mode: str = "openai", voice: str = "", gender: str = "female") -> str:
+def narrate(
+    session_token: str,
+    segment: str,
+    text: str,
+    mode: str = "openai",
+    voice: str = "",
+    gender: str = "female",
+    language: str = "en",
+) -> str:
     """Read `text` aloud with the `mode` provider, store the audio, and return a
     playable URL.
 
     Raises on any failure — the caller logs and the segment stays text-only."""
     clean = _clean(text)
 
-    if mode == "edge_tts":
+    if mode == "edge_tts" and _mms_lang(language):
+        audio = _speak_mms(clean, language)
+        fmt = "wav"
+    elif mode == "edge_tts":
         suffix = gender.upper()
         resolved_voice = (voice
                           or os.getenv(f"EDGE_TTS_VOICE_{suffix}")

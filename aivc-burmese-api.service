@@ -1,0 +1,15 @@
+[Unit]
+Description=AI Church — Burmese LLM API (FastAPI/Uvicorn wrapping Ollama)
+After=aivc-tedim-api.service redis-server.service
+
+[Service]
+User=simon
+WorkingDirectory=/opt/ai-church/workers
+# One uvicorn worker: inference is serialized by the semaphore in burmese_router.py
+# anyway, and extra workers would just compete for the same ARM CPU cores.
+ExecStart=/usr/bin/env bash -lc 'set -a; . ./.env; set +a; exec .venv/bin/uvicorn api:app --host 127.0.0.1 --port 8002 --workers 1'
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

@@ -99,6 +99,12 @@ Route::middleware('auth:sanctum')->group(function () {
         // CSV report export: donations | users | testimonies
         Route::get('/export/{type}', [AdminController::class, 'export']);
 
+        // Suno song pool manual CRUD (music_tracks)
+        Route::get('/music-tracks', [AdminController::class, 'musicTracks']);
+        Route::post('/music-tracks', [AdminController::class, 'createMusicTrack']);
+        Route::patch('/music-tracks/{musicTrack}', [AdminController::class, 'updateMusicTrack']);
+        Route::delete('/music-tracks/{musicTrack}', [AdminController::class, 'deleteMusicTrack']);
+
         // Role management, user creation, password resets
         Route::post('/users',                      [AdminController::class, 'createUser']);
         Route::patch('/users/{user}/role',         [AdminController::class, 'assignRole']);

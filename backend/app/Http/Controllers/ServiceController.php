@@ -249,6 +249,9 @@ class ServiceController extends Controller
             ->filter(fn ($a) => filled($a->storage_key))
             ->mapWithKeys(fn ($a) => [$a->segment => $a->storage_key]);
 
+        $language = $session->language ?? 'en';
+        $narrationEnabled = Setting::get('narration_' . $language, $language === 'en' ? '1' : '0') === '1';
+
         // Optional text-to-speech narration, keyed by segment. audio_key carries a
         // directly-playable (presigned) URL — see the worker's narrator.narrate().
         $audios = $assets
@@ -265,13 +268,17 @@ class ServiceController extends Controller
             'scheduled_at' => $session->scheduled_at?->toIso8601String(),
             'welcome'      => $welcome,
             'music_asset'  => $music,
+            'music_source' => $session->music_source,
             'segments'     => $segments,
             'embeds'       => $embeds,
             'videos'       => $videos,
             'audios'       => $audios,
-            // How the player should voice spoken segments: 'openai'/'kokoro' (play the
+            // How the player should voice spoken segments: 'openai'/'kokoro'/'edge_tts' (play the
             // audio above), 'browser' (read via speechSynthesis), or 'off' (text only).
             'narration_mode' => Setting::get('narration_mode', 'browser'),
+            'narration_enabled' => $narrationEnabled,
+            'text_highlight_enabled' => Setting::get('text_highlight_enabled', '1') === '1',
+            'language'    => $language,
             'mood'         => $session->intake?->mood,
         ]);
     }

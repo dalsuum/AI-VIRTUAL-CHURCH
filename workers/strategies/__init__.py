@@ -28,7 +28,7 @@ class MusicResult:
     storage_key: str | None = None   # object-storage key for generated audio
     provider_ref: str | None = None  # YouTube video id, or Suno job id
     title: str | None = None
-    lyrics: str | None = None  # public-domain hymn verses to show on screen (hymn sources)
+    lyrics: str | None = None  # hymn verses or generated Suno custom-mode lyrics
 
 
 class MusicStrategy(ABC):
@@ -40,7 +40,9 @@ class MusicStrategy(ABC):
         Produce one worship track for the given service.
 
         mood   - extracted emotional theme (e.g. "grieving", "joyful")
-        prompt - rich text prompt for AI generation (Suno)
+        prompt - rich text prompt for AI generation (Suno). For AI-composed
+                 music, callers may append "Lyrics:\n..." so the same words can
+                 be sent to Suno customMode and shown on screen.
         query  - short search string for catalog lookup (YouTube)
         """
         raise NotImplementedError
@@ -70,6 +72,9 @@ def get_strategy(music_source: str, language: str = "en") -> MusicStrategy:
         return TedimHymnStrategy()  # ZBC Labu Lui hymn: YouTube embed or cached render
     if music_source == "suno":
         return SunoStrategy()
+    if music_source == "musicgen":
+        from .musicgen_strategy import MusicGenStrategy
+        return MusicGenStrategy()
     if music_source == "youtube":
         return YouTubeStrategy()
     if music_source == "hymn_youtube":

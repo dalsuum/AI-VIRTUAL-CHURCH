@@ -15,6 +15,7 @@ const emit = defineEmits(["started", "intercepted"]);
 // NOTE: the Tedim (Zolai) strings below are best-effort — please have a native
 // speaker review them (you wrote the Zolai dictionary; corrections welcome).
 const LANGS = ["en", "my", "td"];
+const enabledLangs = ref(["en"]); // filled from config; English always the fallback
 const stored = localStorage.getItem("service_language");
 const language = ref(LANGS.includes(stored) ? stored : "en");
 function setLanguage(l) {
@@ -146,7 +147,8 @@ const MUSIC_SOURCES = [
   { value: "hymn_sung", title: "Sung hymn", desc: "A classic hymn sung aloud, with the words on screen" },
   { value: "hymn", title: "Instrumental hymn", desc: "The hymn played, with the words to sing along" },
   { value: "hymn_youtube", title: "Sung Hymn (YouTube)", desc: "A traditional hymn sung by a choir, matched to your mood" },
-  { value: "suno", title: "AI-composed", desc: "Original worship, generated for you" },
+  { value: "suno", title: "AI-composed (Suno)", desc: "Original worship, generated for you" },
+  { value: "musicgen", title: "AI-composed (Local)", desc: "Worship music created on-server — no account needed" },
   { value: "youtube", title: "Modern Worship (YouTube)", desc: "An existing worship track and sermon" },
 ];
 
@@ -188,6 +190,12 @@ onMounted(async () => {
     }
     schedulingEnabled.value = cfg.scheduling_enabled !== false;
     if (!schedulingEnabled.value) when.value = "now";
+    if (Array.isArray(cfg.enabled_languages) && cfg.enabled_languages.length) {
+      enabledLangs.value = cfg.enabled_languages;
+      if (!enabledLangs.value.includes(language.value)) {
+        setLanguage(enabledLangs.value[0]);
+      }
+    }
   } catch {
     // Keep the defaults above — the worshipper can still begin a service.
   }
@@ -239,8 +247,13 @@ async function begin() {
     scheduledIso = dt.toISOString();
   }
 
-  loading.value = true;
-  try {
+  const trimmedCustomMood = customMood.value.trim();
+  if (trimmedCustomMood && !/^[A-Za-z]+$/.test(trimmedCustomMood)) {
+    error.value = "Your custom feeling must be a single word using only letters.";
+    return;
+  }
+
+  async function submitOnce() {
     // Walk-up worshippers have no account; provision a session first, carrying
     // their (optional) name/email and music choice, then open a service and submit
     // intake. A returning visitor already holds a token, so this is a no-op for them.
@@ -259,12 +272,6 @@ async function begin() {
 
     await api.updateMusicSource(musicSource.value);
     const { session_token } = await api.startService();
-    const trimmedCustomMood = customMood.value.trim();
-    if (trimmedCustomMood && !/^[A-Za-z]+$/.test(trimmedCustomMood)) {
-      error.value = "Your custom feeling must be a single word using only letters.";
-      loading.value = false;
-      return;
-    }
 
     const res = await api.submitIntake(session_token, {
       mood: selectedMood.value,
@@ -284,7 +291,24 @@ async function begin() {
       // mode — AI-composed music takes ~2 min, YouTube returns in seconds.
       emit("started", { token: session_token, musicSource: musicSource.value });
     }
+  }
+
+  loading.value = true;
+  try {
+    await submitOnce();
   } catch (e) {
+    // Stale/expired token in localStorage can throw 401 here for returning guests.
+    // Reset guest auth once and retry automatically so the worshipper is not blocked.
+    if (e?.status === 401) {
+      try {
+        api.clearSession();
+        await submitOnce();
+        return;
+      } catch (retryErr) {
+        error.value = retryErr.data?.message || "Something went wrong. Please try again.";
+        return;
+      }
+    }
     error.value = e.data?.message || "Something went wrong. Please try again.";
   } finally {
     loading.value = false;
@@ -296,13 +320,16 @@ async function begin() {
   <div class="intake" :class="{ 'lang-my': language === 'my' }">
     <!-- Service language tabs: the whole service — UI, prayers, sermon,
          scripture (Judson 1835), hymns, narration voice — follows this choice. -->
-    <div class="lang-tabs" role="tablist" aria-label="Service language">
-      <button type="button" role="tab" class="lang-tab" :aria-selected="language === 'en'"
-              :class="{ active: language === 'en' }" @click="setLanguage('en')">English</button>
-      <button type="button" role="tab" class="lang-tab lang-tab-my" :aria-selected="language === 'my'"
-              :class="{ active: language === 'my' }" @click="setLanguage('my')">မြန်မာ</button>
-      <button type="button" role="tab" class="lang-tab" :aria-selected="language === 'td'"
-              :class="{ active: language === 'td' }" @click="setLanguage('td')">Zolai</button>
+    <div v-if="enabledLangs.length > 1" class="lang-tabs" role="tablist" aria-label="Service language">
+      <button v-if="enabledLangs.includes('en')" type="button" role="tab" class="lang-tab"
+              :aria-selected="language === 'en'" :class="{ active: language === 'en' }"
+              @click="setLanguage('en')">English</button>
+      <button v-if="enabledLangs.includes('my')" type="button" role="tab" class="lang-tab lang-tab-my"
+              :aria-selected="language === 'my'" :class="{ active: language === 'my' }"
+              @click="setLanguage('my')">မြန်မာ</button>
+      <button v-if="enabledLangs.includes('td')" type="button" role="tab" class="lang-tab"
+              :aria-selected="language === 'td'" :class="{ active: language === 'td' }"
+              @click="setLanguage('td')">Zolai</button>
     </div>
 
     <h1>{{ returningName ? t.welcomeBack(returningName) : t.welcome }}</h1>

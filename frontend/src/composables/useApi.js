@@ -111,8 +111,15 @@ export const api = {
   resetPassword: (token, new_password) =>
     request("/reset-password", { method: "POST", body: { token, new_password } }),
 
-  // Public app configuration (intake options) — fetched before any session exists.
-  getConfig: () => request("/config"),
+  // Public app configuration (intake/preparing options). Optional context narrows
+  // countdown cards by service mood/language once a session poll is available.
+  getConfig: (context = {}) => {
+    const params = new URLSearchParams();
+    if (context.mood) params.set("mood", context.mood);
+    if (context.language) params.set("language", context.language);
+    const qs = params.toString();
+    return request(`/config${qs ? `?${qs}` : ""}`);
+  },
 
   updateGuestEmail: (email) =>
     request("/me/email", { method: "PATCH", body: { email } }),
@@ -181,6 +188,21 @@ export const api = {
   adminSettings: () => request("/admin/settings"),
   adminUpdateSettings: (payload) =>
     request("/admin/settings", { method: "PATCH", body: payload }),
+  adminMusicTracks: (params = {}) => {
+    const qs = new URLSearchParams();
+    if (params.mood) qs.set("mood", params.mood);
+    if (params.language) qs.set("language", params.language);
+    if (params.search) qs.set("search", params.search);
+    if (params.limit) qs.set("limit", String(params.limit));
+    const q = qs.toString();
+    return request(`/admin/music-tracks${q ? `?${q}` : ""}`);
+  },
+  adminCreateMusicTrack: (payload) =>
+    request("/admin/music-tracks", { method: "POST", body: payload }),
+  adminUpdateMusicTrack: (id, payload) =>
+    request(`/admin/music-tracks/${id}`, { method: "PATCH", body: payload }),
+  adminDeleteMusicTrack: (id) =>
+    request(`/admin/music-tracks/${id}`, { method: "DELETE" }),
   adminGetPermissions: () => request("/admin/permissions"),
   adminUpdatePermissions: (permissions) =>
     request("/admin/permissions", { method: "PATCH", body: { permissions } }),

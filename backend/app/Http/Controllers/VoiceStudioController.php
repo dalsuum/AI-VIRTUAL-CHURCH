@@ -23,12 +23,12 @@ class VoiceStudioController extends Controller
 
     private function recordingsDir(string $lang): string
     {
-        return storage_path("app/voice-studio/{$lang}/");
+        return storage_path("app/voice-studio/" . auth()->id() . "/{$lang}/");
     }
 
     private function manifestPath(string $lang): string
     {
-        return storage_path("app/voice-studio/{$lang}/manifest.json");
+        return storage_path("app/voice-studio/" . auth()->id() . "/{$lang}/manifest.json");
     }
 
     private function loadManifest(string $lang): array
@@ -87,12 +87,21 @@ class VoiceStudioController extends Controller
             mkdir($dir, 0775, true);
         }
 
-        $tmpIn  = $audio->getRealPath();
+        $tmpIn   = $audio->getRealPath();
         $outFile = sprintf('%s%04d.wav', $dir, $id);
 
-        // convert browser audio (webm/ogg/wav) → 16kHz mono PCM WAV
+        // Convert browser audio (webm/ogg/wav) → 16 kHz mono PCM WAV and trim
+        // leading/trailing silence. The double silenceremove+areverse removes both
+        // ends: first pass strips the front, areverse flips the file, second pass
+        // strips the new front (original end), areverse restores direction.
+        // -45 dB threshold catches room noise without clipping soft speech.
         $cmd = sprintf(
-            'ffmpeg -y -i %s -ar 16000 -ac 1 -acodec pcm_s16le %s 2>&1',
+            'ffmpeg -y -i %s -ar 16000 -ac 1'
+            . ' -af "silenceremove=start_periods=1:start_threshold=-45dB:start_duration=0.1,'
+            .       'areverse,'
+            .       'silenceremove=start_periods=1:start_threshold=-45dB:start_duration=0.1,'
+            .       'areverse"'
+            . ' -acodec pcm_s16le %s 2>&1',
             escapeshellarg($tmpIn),
             escapeshellarg($outFile)
         );
@@ -103,6 +112,21 @@ class VoiceStudioController extends Controller
                 'error'  => 'Audio conversion failed',
                 'detail' => implode("\n", $output),
             ], 500);
+        }
+
+        // Reject clips that are too short after silence trimming — a sub-0.8 s
+        // clip is almost certainly a mis-tap, not a real recording. A VITS model
+        // trained on these learns to produce nothing or garbled output.
+        if (file_exists($outFile)) {
+            $sizeBytes = filesize($outFile);
+            // 16 kHz × 2 bytes/sample × 0.8 s = 25 600 bytes (plus 44-byte WAV header)
+            $minBytes = 16000 * 2 * 0.8 + 44;
+            if ($sizeBytes < $minBytes) {
+                unlink($outFile);
+                return response()->json([
+                    'error' => 'Recording too short. Please speak the full sentence clearly and try again.',
+                ], 422);
+            }
         }
 
         $manifest = $this->loadManifest($lang);
@@ -142,7 +166,7 @@ class VoiceStudioController extends Controller
         }
 
         $dir     = $this->recordingsDir($lang);
-        $zipPath = storage_path("app/voice-studio/{$lang}_dataset.zip");
+        $zipPath = storage_path("app/voice-studio/" . auth()->id() . "/{$lang}_dataset.zip");
 
         $zip = new ZipArchive();
         $zip->open($zipPath, ZipArchive::CREATE | ZipArchive::OVERWRITE);

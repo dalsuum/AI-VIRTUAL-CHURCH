@@ -45,26 +45,27 @@ let pollTimer = null;
 // prayer audio too so late narration does not start over a page the worshipper is
 // already reading.
 const MEDIA_GRACE_POLLS = 75;
-const OPEN_FAILSAFE_POLLS = 120;
+// Fallback open after ~140s (35 polls x 4s) once text is composed, so
+// provider failures (Suno moderation, late/missing narration callbacks) do
+// not trap worshippers on the preparing screen for many minutes.
+const OPEN_FAILSAFE_POLLS = 35;
 let mediaGracePolls = 0;
 let openWaitPolls = 0;
 
 const textComposed = computed(() => service.value?.status === "complete");
 const musicLanded = computed(() => service.value?.music_asset != null);
+const musicFallbackToText = computed(() => service.value?.music_asset?.asset_type === "text");
 const lockedMusicSource = computed(() => musicSource.value || service.value?.music_source || null);
-const musicExpected = computed(() => ["suno", "youtube", "hymn", "hymn_sung"].includes(lockedMusicSource.value));
-// Server-voice modes attach mp3s after the text; 'browser'/'off' never do, so only
-// these gate the open on narration audio. (Kept in sync with Setting::NARRATION_MODES.)
+const musicExpected = computed(() => ["suno", "youtube", "hymn", "hymn_sung"].includes(lockedMusicSource.value) && !musicFallbackToText.value);
+// Server-voice modes attach mp3s after the text; we keep polling after entry so
+// late narration can still attach without blocking worship start. (Kept in sync
+// with Setting::NARRATION_MODES.)
 const SERVER_VOICE_MODES = ["openai", "kokoro", "edge_tts"];
 const serverNarrationExpected = computed(() => {
   const s = service.value;
   return Boolean(s && s.narration_enabled !== false && SERVER_VOICE_MODES.includes(s.narration_mode));
 });
 const openingPrayerTextReady = computed(() => Boolean(service.value?.segments?.opening_prayer));
-const openingPrayerVoiceReady = computed(() => {
-  if (!serverNarrationExpected.value) return true;
-  return Boolean(service.value?.audios?.opening_prayer);
-});
 const narrationSettled = computed(() => {
   const s = service.value;
   if (!s || !serverNarrationExpected.value) return true;
@@ -73,7 +74,7 @@ const narrationSettled = computed(() => {
   return Object.keys(segs).every((k) => auds[k]);
 });
 const requiredOpeningMediaReady = computed(() => {
-  if (!textComposed.value || !openingPrayerTextReady.value || !openingPrayerVoiceReady.value) return false;
+  if (!textComposed.value || !openingPrayerTextReady.value) return false;
   return !musicExpected.value || musicLanded.value;
 });
 // Enough is composed to begin worship. This intentionally waits longer for

@@ -69,9 +69,18 @@ def _client():
 def upload_bytes(key: str, data: bytes, content_type: str) -> str:
     if _is_local():
         path = os.path.join(_LOCAL_DIR, key)
-        os.makedirs(os.path.dirname(path), exist_ok=True)
+        directory = os.path.dirname(path)
+        os.makedirs(directory, mode=0o2775, exist_ok=True)
+        try:
+            os.chmod(directory, 0o2775)
+        except PermissionError:
+            pass
         with open(path, "wb") as f:
             f.write(data)
+        try:
+            os.chmod(path, 0o664)
+        except PermissionError:
+            pass
         return key
     _client().put_object(Bucket=os.environ["S3_BUCKET"], Key=key, Body=data, ContentType=content_type)
     return key

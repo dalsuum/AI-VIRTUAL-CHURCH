@@ -76,17 +76,8 @@ def _strip_name(text: str, user_name: str | None) -> str:
 
 
 def _ensure_exact_name(text: str, user_name: str | None) -> str:
-    """Keep worshipper names literal in personalized segments.
-
-    Burmese and Tedim services still use the exact name the worshipper typed. If a
-    low-resource model drops or localizes it despite the prompt, prefix the cleaned
-    prose with the original string so we never store a translated/transliterated
-    replacement as the only visible/spoken name.
-    """
-    name = (user_name or "").strip()
-    if not name or name in text:
-        return text
-    return f"{name}, {text}".strip()
+    """No-op: names are never injected into service output."""
+    return text
 
 
 # We talk to OpenRouter's OpenAI-compatible Chat Completions endpoint. Any provider
@@ -167,32 +158,18 @@ def _complete(system: str, user: str, max_tokens: int = 1500, language: str = "e
 
 
 def _addressing(user_name: str | None) -> str:
-    """One instruction line telling the model how to address the worshipper.
-
-    Named worshippers are greeted personally. Anonymous ones (guests who declined to
-    give a name) must never be addressed by name — and the model must not invent one
-    either; it speaks to them warmly without using any name at all."""
-    name = (user_name or "").strip()
-    if name:
-        return (
-            f"Address the worshipper personally by name. Their exact name is: {name}. "
-            "Even when the service language is Burmese or Tedim/Zolai, copy that name "
-            "exactly as written, character-for-character. Do not translate it, "
-            "transliterate it, change its script, localize it, shorten it, or add "
-            "language-specific honorifics to it."
-        )
+    """Always address the worshipper anonymously — names are never used in output."""
     return (
-        "The worshipper is anonymous: do NOT address them by name and do NOT invent "
-        "one. Speak to them warmly without using any name."
+        "Do NOT address the worshipper by name and do NOT invent one. "
+        "Speak to them warmly without using any name."
     )
 
 
 
 def _fallback_opening_prayer(user_name: str | None, mood: str, language: str) -> str:
-    name_line = f"{user_name} အတွက် " if user_name else ""
     if language == "my":
         return (
-            f"ကရုဏာတော်ရှင် ဘုရားသခင်၊ ယနေ့ {name_line}ကိုယ်တော်ထံသို့ နီးကပ်စွာ ချဉ်းကပ်ပါသည်။ "
+            "ကရုဏာတော်ရှင် ဘုရားသခင်၊ ယနေ့ ကိုယ်တော်ထံသို့ နီးကပ်စွာ ချဉ်းကပ်ပါသည်။ "
             "ဝမ်းနည်းခြင်း၊ ပင်ပန်းခြင်း၊ မတည်ငြိမ်ခြင်းများရှိနေပါက ကိုယ်တော်၏ ငြိမ်သက်ခြင်းဖြင့် ဖုံးလွှမ်းပေးပါ။ "
             "ကျွန်ုပ်တို့၏နှလုံးကို နားထောင်တတ်သော နှလုံးဖြစ်စေပြီး၊ သမ္မာတရား၏ အလင်းကို မြင်နိုင်စေပါ။ "
             "ယခု ဝတ်ပြုချိန်တွင် စကားလုံးတိုင်း၊ ဆုတောင်းခြင်းတိုင်း၊ သီချင်းတိုင်းသည် မျှော်လင့်ခြင်းနှင့် ယုံကြည်ခြင်းကို ပြန်လည်ထူထောင်စေပါ။ "
@@ -239,16 +216,15 @@ def _fallback_sermon(mood: str, scripture_ref: str, language: str) -> str:
 
 
 def _fallback_benediction(user_name: str | None, mood: str, language: str) -> str:
-    name = f"{user_name}၊ " if user_name else ""
     if language == "my":
         return (
-            f"{name}ထာဝရဘုရား၏ ငြိမ်သက်ခြင်းသည် သင့်နှလုံးကို စောင့်ရှောက်ပါစေ။ "
-            "ခရစ်တော်၏ မေတ္တာသည် သင့်ကို ချီးမြှောက်ပြီး၊ သန့်ရှင်းသောဝိညာဉ်တော်သည် သင်၏ နောက်ခြေလှမ်းကို လမ်းပြပါစေ။ "
+            "ထာဝရဘုရား၏ ငြိမ်သက်ခြင်းသည် သင့်နှလုံးကို စောင့်ရှောက်ပါစေ။ "
+            "ခရစ်တော်၏ မေတ္တာသည် သင့်ကို ချီးမြှောက်ပြီး၊ သန့်ရှင်းသောဝိညာဉ်တော်သည် သင်၏ နောက်ခြေလှမ်းကို လမ်းပြပါစေ။ "
             "ဝမ်းနည်းခြင်းအလယ်၌ပင် မျှော်လင့်ခြင်းကို တွေ့နိုင်ပါစေ။ အာမင်။"
         )
     if language == "td":
         return (
-            f"{user_name + ', ' if user_name else ''}Topa Pasian nopna in na lungtang kem hen. "
+            "Topa Pasian nopna in na lungtang kem hen. "
             "Zeisu Krist itna in hong thahat sak hen, Kha Siangtho in na lam hong makaih hen. Amen."
         )
     return "May the peace of Christ guard your heart and guide your next step. Amen."
@@ -307,17 +283,17 @@ def _fallback_music_lyrics(mood: str, language: str) -> str:
     """Guaranteed customMode lyrics for AI-composed worship when the plan omits them."""
     if language == "my":
         return (
-            "အပိုဒ် ၁\n"
+            "[Verse 1]\n"
             "ကိုယ်တော်ရှင်၊ ယနေ့ ကျွန်ုပ်၏နှလုံးသားထဲသို့ ကြွလာပါ။\n"
             "ပင်ပန်းသောစိတ်ကို ငြိမ်သက်ခြင်းဖြင့် ဖေးမပါ။\n"
             "ကိုယ်တော်၏မေတ္တာသည် မကုန်ဆုံးသောအလင်းဖြစ်သည်။\n"
             "ယုံကြည်ခြင်းဖြင့် ကျွန်ုပ် ကိုယ်တော်ထံ ခိုလှုံပါသည်။\n\n"
-            "သံပြိုင်\n"
+            "[Chorus]\n"
             "ယေရှုဘုရား၊ ကိုယ်တော်ကို ချီးမွမ်းပါသည်။\n"
             "ကျေးဇူးတော်ထဲတွင် ကျွန်ုပ် အသက်ရှင်ပါသည်။\n"
             "လမ်းပြတော်မူပါ၊ ဖေးမတော်မူပါ။\n"
             "ကိုယ်တော်၏ငြိမ်သက်ခြင်းဖြင့် ကျွန်ုပ်ကို ပြည့်စေပါ။\n\n"
-            "အပိုဒ် ၂\n"
+            "[Verse 2]\n"
             "မျှော်လင့်ခြင်းနည်းသောအချိန်တွင် ကိုယ်တော်သည် နီးပါသည်။\n"
             "ကြောက်ရွံ့ခြင်းထဲမှ ကျွန်ုပ်ကို လက်ကမ်းခေါ်ပါ။\n"
             "နေ့ရက်တိုင်းတွင် ကိုယ်တော်၏ကရုဏာကို မြင်စေပါ။\n"
@@ -328,14 +304,17 @@ def _fallback_music_lyrics(mood: str, language: str) -> str:
         # Mood-appropriate Tedim fallback lyrics so the static fallback varies by feeling.
         if any(w in _mood for w in ("griev", "sad", "mourn", "loss", "broken", "sorr")):
             return (
+                "[Verse 1]\n"
                 "Topa, ka lungkim ngai khat mama hi.\n"
                 "Lungkhamna sungah nang hong naih zel hi.\n"
                 "Ka thil suah ding hi nang kianga hi.\n"
                 "Na lungdamna in ka lungtang hong kem sak in.\n\n"
+                "[Chorus]\n"
                 "Topa aw, hong kem in, hong kem in.\n"
                 "Ka lungkhamna sungah nang om zel hi.\n"
                 "Ka siamna tawm ahihhang nang in ka za hi.\n"
                 "Zeisu Krist, na itna in hong khen sak in.\n\n"
+                "[Verse 2]\n"
                 "Lauhna sungpan na khut in hong kai hi.\n"
                 "Ka nuntakna hong makaih in hong kem in.\n"
                 "Ni simin na hehpihna ka mu thei hi.\n"
@@ -343,14 +322,17 @@ def _fallback_music_lyrics(mood: str, language: str) -> str:
             )
         if any(w in _mood for w in ("joy", "grateful", "thankful", "celebrat", "nop")):
             return (
+                "[Verse 1]\n"
                 "Nopna tawh Topa na min hong phat hi.\n"
                 "Na hehpihna mama hi, na lungdamna lian hi.\n"
                 "Pasian, tuni na kianga hong pai hi.\n"
                 "Na lungdamna sungah ka lungtang dim hi.\n\n"
+                "[Chorus]\n"
                 "Topa aw, ka phat ding hi nang.\n"
                 "Na nopna in ka lungtang a dim hi.\n"
                 "Zeisu Krist, na min phat ding hi.\n"
                 "Na lungdamna sungah ka nungta hi.\n\n"
+                "[Verse 2]\n"
                 "Ni simin na kilemna ka mu hi.\n"
                 "Ka nuntakna in Nang ading lasa suak hi.\n"
                 "Pasian in hong hehpih zel hi.\n"
@@ -358,31 +340,34 @@ def _fallback_music_lyrics(mood: str, language: str) -> str:
             )
         # Default (anxious / seeking / general)
         return (
+            "[Verse 1]\n"
             "Topa, tuni ka lungtang sungah hong om in.\n"
             "Ka lunggimna sungah na lungdamna in hong kem in.\n"
             "Pasian itna in khuavak bangin hong taang hi.\n"
             "Zeisu Krist tungah ka muang in ka bia hi.\n\n"
+            "[Chorus]\n"
             "Topa aw, Nang kong phat hi.\n"
             "Na lungdamna sungah ka nungta hi.\n"
             "Hong makaih in, hong kem in.\n"
             "Na kilemna in ka lungtang hong dim sak in.\n\n"
+            "[Verse 2]\n"
             "Lam-etna tawm hunah nang hong naih zel hi.\n"
             "Lauhna sungpan na khut in hong kai hi.\n"
             "Ni simin na hehpihna ka mu sak in.\n"
             "Ka nuntakna in Nang ading lasa suak hen."
         )
     return (
-        "Verse 1\n"
+        "[Verse 1]\n"
         "Lord, meet me in this moment,\n"
         "With mercy kind and near.\n"
         "Lift my heart toward Your promise,\n"
         "And quiet every fear.\n\n"
-        "Chorus\n"
+        "[Chorus]\n"
         "I will worship, I will trust You,\n"
         "In Your grace I stand today.\n"
         "Jesus, lead me, Jesus, hold me,\n"
         "Guide my heart along Your way.\n\n"
-        "Verse 2\n"
+        "[Verse 2]\n"
         "When hope feels small and distant,\n"
         "Your love is still my song.\n"
         "You are faithful in the waiting,\n"
@@ -491,8 +476,9 @@ def build_intake_plan(*, user_name: str | None, mood: str, prayer_text: str | No
         "schema": {
             "scripture_ref": "string, e.g. 'Psalm 23:1-4'",
             "music_prompt": "string, a short style prompt for AI worship-music generation",
-            "music_lyrics": "string, original singable worship lyrics, {} and a chorus, in the service language".format(
-                "1 short verse" if music_source == "musicgen" else "2 short verses"
+            "music_lyrics": "string, original singable worship lyrics in the service language, {} and a chorus{}".format(
+                "1 short verse" if music_source == "musicgen" else "2 short verses",
+                "" if music_source == "musicgen" else ", using [Verse 1] / [Chorus] / [Verse 2] structural tags on their own lines",
             ),
             "music_query": "string, a short YouTube search query for a worship song",
             "preaching_query": "string, a short YouTube search query for a Christian sermon on this theme",
@@ -659,7 +645,8 @@ def generate_music_lyrics(*, mood: str, language: str) -> str:
             "ka (I/my), na (your), nang (you), hong (come), in (subject marker), "
             "sungah (in/inside), lungdamna (grace), lungtang (heart), nuntakna (life). "
             "Do NOT use English, Mizo, Falam, or Haka words. "
-            "Output ONLY the lyric lines — no Verse/Chorus labels, no explanations."
+            "Start each section with a Suno structural tag on its own line: "
+            "[Verse 1], [Chorus], [Verse 2]. Output ONLY the tagged lyric sections — no explanations."
         )
         user = (
             f"Write 2 short verses and 1 chorus of a Tedim worship song "
@@ -671,7 +658,8 @@ def generate_music_lyrics(*, mood: str, language: str) -> str:
             "Write worship song lyrics ONLY in Myanmar Burmese using Myanmar Unicode script. "
             "Use: ဘုရားသခင် (God), ကိုယ်တော် (Lord), ယေရှုခရစ်တော် (Jesus Christ). "
             "Do NOT use English words or Zawgyi encoding. "
-            "Output ONLY the lyric lines — no labels, no explanations."
+            "Start each section with a Suno structural tag on its own line: "
+            "[Verse 1], [Chorus], [Verse 2]. Output ONLY the tagged lyric sections — no explanations."
         )
         user = (
             f"Write 2 short verses and 1 chorus of a Burmese worship song "

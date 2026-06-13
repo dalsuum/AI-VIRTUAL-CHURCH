@@ -286,11 +286,11 @@ Scripture references stay English internally (`"Psalm 23:1-4"`) — they're work
 worshipper-facing text. `bible_api` parses them against a canonical 66-book index and rewrites
 the on-screen heading to the translation's own book name (ဆာလံကျမ်း / Late 23…).
 
-Worshipper names are treated as literal personal data, not translation text. If a user
-types a name, the worker prompts every personalized segment to copy it exactly as entered
-for English, Myanmar, and Zolai/Tedim, and `llm_engine._ensure_exact_name()` repairs model
-output that drops or localizes it. Auto-generated guest placeholder names remain
-display-only (`name_provided=false`) and are not sent to the LLM or narrator.
+Worshipper names are collected at intake but are never included in any generated service
+output. All spoken segments (welcome, prayer, sermon, benediction) address the worshipper
+anonymously using "you" — this applies across English, Burmese (Myanmar), and Tedim/Zolai.
+Auto-generated guest placeholder names remain display-only (`name_provided=false`) and are
+not sent to the LLM or narrator.
 
 ### Myanmar LLM service (`workers/api.py` → `:8002`)
 

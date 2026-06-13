@@ -4,7 +4,7 @@
 // registered worshipper, the mood-aware "welcome back" greeting fades in as soon as
 // it lands. The doors open only when the parent confirms the worship media and the
 // first narrated prayer are ready.
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch, nextTick } from "vue";
 import { api } from "../composables/useApi";
 
 const props = defineProps({
@@ -20,6 +20,11 @@ const props = defineProps({
   // True once the opening experience is ready: worship music has landed when
   // expected, and server narration has produced the opening-prayer audio.
   mediaReady: { type: Boolean, default: false },
+  // Service language known at intake time — used immediately on mount so the
+  // first card fetch uses the right Bible translation before the poll returns.
+  language: { type: String, default: "en" },
+  // Worshipper's selected mood at intake time — used for initial verse matching.
+  mood: { type: String, default: "" },
 });
 const emit = defineEmits(["ready"]);
 
@@ -46,48 +51,14 @@ const currentCardIndex = ref(0);
 const currentCardContext = ref("");
 const currentCard = computed(() => countdownCards.value[currentCardIndex.value] || null);
 const cardContext = computed(() => {
-  const language = props.service?.language || "";
-  const mood = props.service?.mood || "";
+  const language = props.service?.language || props.language || "";
+  const mood = props.service?.mood || props.mood || "";
   return language + "|" + mood;
 });
 
-const FALLBACK_VERSE_CARDS = {
-  en: [
-    { type: "online", text: "The Lord is near to all who call on Him in truth.", source: "Psalm 145:18 (BSB)" },
-    { type: "online", text: "Cast all your anxiety on Him because He cares for you.", source: "1 Peter 5:7 (BSB)" },
-    { type: "online", text: "The Lord is my shepherd; I shall not want.", source: "Psalm 23:1 (BSB)" },
-  ],
-  my: [
-    { type: "online", text: "ထာဝရဘုရားသည် မိမိကို အမှန်တကယ် ခေါ်သောသူအပေါင်းတို့နှင့် နီးတော်မူ၏။", source: "ဆာလံ 145:18" },
-    { type: "online", text: "သင်တို့၏ စိုးရိမ်ပူပန်မှုအပေါင်းတို့ကို ကိုယ်တော်ပေါ်သို့ အပ်နှံကြလော့။", source: "၁ ပေတရု 5:7" },
-    { type: "online", text: "ထာဝရဘုရားသည် ကျွန်ုပ်၏ ထိန်းကျောင်းသူဖြစ်တော်မူ၏။", source: "ဆာလံ 23:1" },
-  ],
-  td: [
-    { type: "online", text: "Topa in amah taktak a samte tungah a nai hi.", source: "Late 145:18" },
-    { type: "online", text: "Na lungkhamna khempeuh Topa tungah koih in; aman nang hong ngaisak hi.", source: "1 Peter 5:7" },
-    { type: "online", text: "Topa pen ka zohpa hi; ka kisam lo ding hi.", source: "Late 23:1" },
-  ],
-};
-
-function ensureRotatingCards(cards) {
-  const language = props.service?.language || "en";
-  const fallbacks = FALLBACK_VERSE_CARDS[language] || FALLBACK_VERSE_CARDS.en;
-  const next = Array.isArray(cards) ? [...cards] : [];
-  const seen = new Set(next.map((c) => (c.type || "") + "|" + (c.text || "") + "|" + (c.source || "")));
-
-  for (const card of fallbacks) {
-    if (next.length >= 4) break;
-    const key = (card.type || "") + "|" + (card.text || "") + "|" + (card.source || "");
-    if (seen.has(key)) continue;
-    next.push(card);
-    seen.add(key);
-  }
-
-  return next.slice(0, 16);
-}
-
-// Open only when the parent says the opening media is ready. The countdown is a
-// visible minimum/expectation, not permission to start without the first voice.
+// Open only once the service is ready (all text composed + music if expected).
+// The countdown is a visual experience — it no longer gates the doors by itself.
+// App.vue's mediaReady includes a 15-min absolute failsafe so this never hangs.
 const canOpen = computed(() => props.mediaReady && hasService.value);
 
 function tick() {
@@ -106,31 +77,44 @@ function tick() {
 
 async function loadCountdownCards() {
   try {
-    const language = props.service?.language || undefined;
-    const mood = props.service?.mood || undefined;
+    const language = props.service?.language || props.language || undefined;
+    const mood = props.service?.mood || props.mood || undefined;
     const cfg = await api.getConfig({ language, mood });
-    const cards = Array.isArray(cfg.countdown_cards) ? cfg.countdown_cards : [];
-    countdownCards.value = ensureRotatingCards(cards
+    countdownCards.value = (Array.isArray(cfg.countdown_cards) ? cfg.countdown_cards : [])
       .filter((c) => c && typeof c.text === "string" && c.text.trim())
       .map((c) => ({
-        type: ["testimony", "online"].includes(c.type) ? c.type : "banner",
+        type: ["testimony", "verse"].includes(c.type) ? c.type : "banner",
         text: c.text.trim(),
         source: typeof c.source === "string" ? c.source.trim() : "",
       }))
-      .slice(0, 16));
+      .slice(0, 16);
     currentCardIndex.value = 0;
     currentCardContext.value = cardContext.value;
   } catch {
-    countdownCards.value = ensureRotatingCards([]);
+    countdownCards.value = [];
   }
 }
 
-watch(countdownFrom, (next) => {
-  if (!opened && remaining.value < next) remaining.value = next;
+watch(countdownFrom, (next, prev) => {
+  // Only extend the countdown if it hasn't ticked below the previous target —
+  // prevents a multilingual language arrival from restarting a near-finished countdown.
+  if (!opened && remaining.value >= prev) remaining.value = next;
 });
 
 watch(cardContext, (next) => {
   if (next !== currentCardContext.value) loadCountdownCards();
+});
+
+// React immediately when the server signals readiness — don't wait for the next
+// 1-second tick. This eliminates the "Opening the doors…" hang when mediaReady
+// arrives between ticks or while the countdown is still running.
+watch(canOpen, (val) => {
+  if (val && !opened) {
+    opened = true;
+    if (timer) { clearInterval(timer); timer = null; }
+    if (cardTimer) { clearInterval(cardTimer); cardTimer = null; }
+    nextTick(() => emit("ready"));
+  }
 });
 
 onMounted(() => {
@@ -164,9 +148,9 @@ onUnmounted(() => {
         <span class="num">{{ remaining }}</span>
         <span class="lead">Your service begins in…</span>
       </template>
-      <template v-else-if="!hasService || !mediaReady">
+      <template v-else-if="!hasService">
         <span class="spinner" aria-hidden="true"></span>
-        <span class="lead">Preparing worship music and first narration…</span>
+        <span class="lead">Connecting…</span>
       </template>
       <template v-else>
         <span class="lead">Opening the doors…</span>
@@ -175,7 +159,7 @@ onUnmounted(() => {
 
     <transition name="fade" mode="out-in">
       <div v-if="currentCard" :key="currentCardIndex" class="wait-card">
-        <span class="card-label">{{ currentCard.type === "testimony" ? "Testimony" : currentCard.type === "online" ? "Bible verse" : "While you wait" }}</span>
+        <span class="card-label">{{ currentCard.type === "testimony" ? "Testimony" : currentCard.type === "verse" ? "Scripture" : "While you wait" }}</span>
         <p>{{ currentCard.text }}</p>
         <small v-if="currentCard.source">{{ currentCard.source }}</small>
       </div>

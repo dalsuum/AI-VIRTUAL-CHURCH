@@ -51,6 +51,8 @@ const STRINGS = {
     begin: "Begin my service", schedule: "Schedule my service",
     preparing: "Preparing your service…",
     localTime: "Your local time",
+    customize: "Add a prayer request or schedule",
+    noAccount: "No account needed · takes about 30 seconds",
   },
   my: {
     welcome: "ကြိုဆိုပါသည်",
@@ -77,6 +79,8 @@ const STRINGS = {
     begin: "ဝတ်ပြုခြင်း စတင်မည်", schedule: "ဝတ်ပြုခြင်း စီစဉ်မည်",
     preparing: "သင့်ဝတ်ပြုခြင်းကို ပြင်ဆင်နေပါသည်…",
     localTime: "သင့်ဒေသစံတော်ချိန်",
+    customize: "ဆုတောင်းချက် ထည့်မည် / အချိန်ဇယားသတ်မှတ်မည်",
+    noAccount: "အကောင့်မလိုအပ်ပါ · ၃၀ စက္ကန့်ခန့်သာ ကြာပါမည်",
   },
   td: {
     welcome: "Hong kipahpih ung",
@@ -103,6 +107,8 @@ const STRINGS = {
     begin: "Ka biakna kipan ding", schedule: "Ka biakna hun khen ding",
     preparing: "Na biakna ka bawl laitak uh hi…",
     localTime: "Na omna mun hun",
+    customize: "Thungetna gelh ding ahih kei leh hun khen ding",
+    noAccount: "Account kigelhsak theih nai hi · minute khat bek laitak",
   },
 };
 const t = computed(() => STRINGS[language.value]);
@@ -205,6 +211,11 @@ onMounted(async () => {
 // anonymous (the backend assigns a friendly visitor name). A returning visitor is
 // remembered via localStorage so we can greet them back and pre-fill their name.
 const returningName = api.rememberedName();
+const expanded = ref(!!returningName);
+function setScheduleLater() {
+  when.value = "later";
+  expanded.value = true;
+}
 const name = ref(returningName || "");
 
 // Service history — loaded for returning users who already have an auth token.
@@ -289,7 +300,7 @@ async function begin() {
     } else {
       // Carry the music choice so the preparing screen can size its countdown to the
       // mode — AI-composed music takes ~2 min, YouTube returns in seconds.
-      emit("started", { token: session_token, musicSource: musicSource.value });
+      emit("started", { token: session_token, musicSource: musicSource.value, language: language.value, mood: selectedMood.value });
     }
   }
 
@@ -347,31 +358,7 @@ async function begin() {
       </div>
     </template>
 
-    <template v-if="!returningName">
-      <label class="field-label" for="name">{{ t.nameLabel }}</label>
-      <input
-        id="name"
-        v-model="name"
-        type="text"
-        class="text-input"
-        :placeholder="t.namePh"
-        autocomplete="name"
-      />
-    </template>
-
-    <label class="field-label" for="email">
-      {{ t.emailLabel }} <span v-if="when === 'later'">{{ t.emailReq }}</span><span v-else>{{ t.emailOpt }}</span>
-    </label>
-    <input
-      id="email"
-      v-model="email"
-      type="email"
-      class="text-input"
-      :placeholder="when === 'later' ? t.emailPhLater : t.emailPhNow"
-      autocomplete="email"
-      :required="when === 'later'"
-    />
-
+    <!-- Mood picker is first: the only question a first-time visitor must answer -->
     <label class="field-label">{{ t.moodLabel }}</label>
     <div class="mood-grid">
       <button
@@ -386,77 +373,118 @@ async function begin() {
       </button>
     </div>
 
-    <label class="field-label" for="custom-mood">{{ t.customMoodLabel }}</label>
-    <input
-      id="custom-mood"
-      v-model="customMood"
-      type="text"
-      class="text-input"
-      :placeholder="t.customMoodPh"
-      maxlength="50"
-      autocomplete="off"
-    />
+    <!-- Optional details collapsed by default for first-time visitors -->
+    <button
+      v-if="!returningName"
+      type="button"
+      class="customize-toggle"
+      :aria-expanded="String(expanded)"
+      @click="expanded = !expanded"
+    >
+      {{ t.customize }}
+      <span class="toggle-chevron" :class="{ open: expanded }">▼</span>
+    </button>
 
-    <label class="field-label" for="prayer">{{ t.prayerLabel }}</label>
-    <textarea
-      id="prayer"
-      v-model="prayerText"
-      rows="3"
-      :placeholder="t.prayerPh"
-    ></textarea>
+    <div v-show="expanded || returningName" class="customize-body">
+      <template v-if="!returningName">
+        <label class="field-label" for="name">{{ t.nameLabel }}</label>
+        <input
+          id="name"
+          v-model="name"
+          type="text"
+          class="text-input"
+          :placeholder="t.namePh"
+          autocomplete="name"
+        />
+      </template>
 
-    <label class="field-label">{{ t.musicLabel }}</label>
-    <div class="source-row">
-      <button
-        v-for="s in musicSources"
-        :key="s.value"
-        type="button"
-        class="source"
-        :class="{ active: musicSource === s.value }"
-        @click="musicSource = s.value"
-      >
-        <strong>{{ sourceLabel(s).title }}</strong>
-        <span>{{ sourceLabel(s).desc }}</span>
-      </button>
-    </div>
+      <label class="field-label" for="email">
+        {{ t.emailLabel }} <span v-if="when === 'later'">{{ t.emailReq }}</span><span v-else>{{ t.emailOpt }}</span>
+      </label>
+      <input
+        id="email"
+        v-model="email"
+        type="email"
+        class="text-input"
+        :placeholder="when === 'later' ? t.emailPhLater : t.emailPhNow"
+        autocomplete="email"
+        :required="when === 'later'"
+      />
 
-    <template v-if="schedulingEnabled">
-      <label class="field-label">{{ t.whenLabel }}</label>
+      <label class="field-label" for="custom-mood">{{ t.customMoodLabel }}</label>
+      <input
+        id="custom-mood"
+        v-model="customMood"
+        type="text"
+        class="text-input"
+        :placeholder="t.customMoodPh"
+        maxlength="50"
+        autocomplete="off"
+      />
+
+      <label class="field-label" for="prayer">{{ t.prayerLabel }}</label>
+      <textarea
+        id="prayer"
+        v-model="prayerText"
+        rows="3"
+        :placeholder="t.prayerPh"
+      ></textarea>
+
+      <label class="field-label">{{ t.musicLabel }}</label>
       <div class="source-row">
         <button
+          v-for="s in musicSources"
+          :key="s.value"
           type="button"
           class="source"
-          :class="{ active: when === 'now' }"
-          @click="when = 'now'"
+          :class="{ active: musicSource === s.value }"
+          @click="musicSource = s.value"
         >
-          <strong>{{ t.now }}</strong>
-          <span>{{ t.nowDesc }}</span>
-        </button>
-        <button
-          type="button"
-          class="source"
-          :class="{ active: when === 'later' }"
-          @click="when = 'later'"
-        >
-          <strong>{{ t.later }}</strong>
-          <span>{{ t.laterDesc }}</span>
+          <strong>{{ sourceLabel(s).title }}</strong>
+          <span>{{ sourceLabel(s).desc }}</span>
         </button>
       </div>
-      <input
-        v-if="when === 'later'"
-        v-model="scheduledAt"
-        type="datetime-local"
-        class="schedule-input"
-        aria-label="Service date and time"
-      />
-      <small v-if="when === 'later'" class="tz-hint">{{ t.localTime }} · {{ localTimezone }}</small>
-    </template>
+
+      <template v-if="schedulingEnabled">
+        <label class="field-label">{{ t.whenLabel }}</label>
+        <div class="source-row">
+          <button
+            type="button"
+            class="source"
+            :class="{ active: when === 'now' }"
+            @click="when = 'now'"
+          >
+            <strong>{{ t.now }}</strong>
+            <span>{{ t.nowDesc }}</span>
+          </button>
+          <button
+            type="button"
+            class="source"
+            :class="{ active: when === 'later' }"
+            @click="setScheduleLater"
+          >
+            <strong>{{ t.later }}</strong>
+            <span>{{ t.laterDesc }}</span>
+          </button>
+        </div>
+        <input
+          v-if="when === 'later'"
+          v-model="scheduledAt"
+          type="datetime-local"
+          class="schedule-input"
+          aria-label="Service date and time"
+        />
+        <small v-if="when === 'later'" class="tz-hint">{{ t.localTime }} · {{ localTimezone }}</small>
+      </template>
+    </div>
 
     <p v-if="error" class="error">{{ error }}</p>
 
     <button class="begin" :disabled="loading" @click="begin">
       {{ loading ? t.preparing : (when === "later" ? t.schedule : t.begin) }}
     </button>
+
+    <p v-if="!returningName" class="no-account-hint">{{ t.noAccount }}</p>
   </div>
 </template>
 
@@ -499,6 +527,34 @@ textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 
 .begin:hover:not(:disabled) { background: var(--primary-hover); }
 .begin:disabled { opacity: 0.6; cursor: default; }
 .error { color: var(--danger); font-size: 0.85rem; }
+
+.customize-toggle {
+  width: 100%;
+  margin-top: 1.1rem;
+  padding: 0.6rem 0.85rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+.customize-toggle:hover { border-color: var(--primary); color: var(--primary); }
+.toggle-chevron { font-size: 0.65rem; transition: transform 0.2s ease; display: inline-block; line-height: 1; }
+.toggle-chevron.open { transform: rotate(180deg); }
+.customize-body { margin-top: 0; }
+.no-account-hint {
+  text-align: center;
+  margin-top: 0.6rem;
+  font-size: 0.8rem;
+  color: var(--text-faint);
+  letter-spacing: 0.01em;
+}
 
 .history { margin: 1rem 0 1.25rem; padding: 0.85rem 1rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); }
 .history-label { font-size: 0.78rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 0 0 0.6rem; }

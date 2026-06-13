@@ -8,7 +8,6 @@ use App\Models\Testimony;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Http;
 
 /**
  * Public, unauthenticated app configuration consumed by the intake form before a
@@ -17,6 +16,51 @@ use Illuminate\Support\Facades\Http;
  */
 class ConfigController extends Controller
 {
+    /** Mood keyword → curated verse references (English, looked up in the active language Bible). */
+    private const MOOD_VERSES = [
+        'grateful'  => ['Psalm 100:4', 'Colossians 3:17', '1 Thessalonians 5:18', 'Psalm 107:1'],
+        'thankful'  => ['Psalm 100:4', 'Colossians 3:17', '1 Thessalonians 5:18'],
+        'anxious'   => ['Philippians 4:6', 'Matthew 6:34', '1 Peter 5:7', 'Isaiah 41:10', 'Psalm 23:4'],
+        'worried'   => ['Philippians 4:6', 'Matthew 6:34', '1 Peter 5:7'],
+        'stressed'  => ['Philippians 4:6', '1 Peter 5:7', 'Matthew 11:28'],
+        'grieving'  => ['Psalm 34:18', 'Matthew 5:4', 'Revelation 21:4', 'Psalm 147:3'],
+        'grief'     => ['Psalm 34:18', 'Matthew 5:4', 'Psalm 147:3'],
+        'sad'       => ['Psalm 34:18', 'Psalm 147:3', 'Isaiah 61:1'],
+        'lonely'    => ['Psalm 34:18', 'Hebrews 13:5', 'Isaiah 41:10'],
+        'lost'      => ['Matthew 7:7', 'Isaiah 43:1', 'Psalm 23:1'],
+        'joyful'    => ['Psalm 16:11', 'Philippians 4:4', 'Psalm 118:24', 'Zephaniah 3:17'],
+        'joy'       => ['Psalm 16:11', 'Philippians 4:4', 'Psalm 118:24'],
+        'happy'     => ['Psalm 16:11', 'Philippians 4:4', 'Psalm 118:24'],
+        'celebrat'  => ['Psalm 118:24', 'Zephaniah 3:17', 'Philippians 4:4'],
+        'seeking'   => ['Matthew 7:7', 'Jeremiah 29:13', 'James 4:8', 'Proverbs 3:5'],
+        'search'    => ['Matthew 7:7', 'Jeremiah 29:13', 'James 4:8'],
+        'hopeful'   => ['Jeremiah 29:11', 'Romans 15:13', 'Hebrews 11:1', 'Lamentations 3:22'],
+        'hope'      => ['Jeremiah 29:11', 'Romans 15:13', 'Hebrews 11:1'],
+        'desperate' => ['Psalm 46:1', 'Isaiah 40:31', 'Romans 8:28', 'Psalm 34:18'],
+        'tired'     => ['Matthew 11:28', 'Isaiah 40:31', 'Psalm 62:1'],
+        'weary'     => ['Matthew 11:28', 'Isaiah 40:31', 'Psalm 62:1'],
+        'broken'    => ['Psalm 34:18', 'Isaiah 61:1', 'Psalm 147:3'],
+        'peace'     => ['John 14:27', 'Philippians 4:7', 'Isaiah 26:3'],
+        'peaceful'  => ['John 14:27', 'Philippians 4:7', 'Isaiah 26:3'],
+        'confused'  => ['Proverbs 3:5', 'James 1:5', 'John 14:6'],
+        'doubt'     => ['Hebrews 11:1', 'Mark 9:24', 'James 1:6'],
+        'worship'   => ['Psalm 95:6', 'Psalm 100:2', 'John 4:24'],
+        'praise'    => ['Psalm 100:4', 'Psalm 95:6', 'Psalm 118:24'],
+        'fear'      => ['Isaiah 41:10', 'Psalm 23:4', '2 Timothy 1:7', 'Psalm 46:1'],
+        'afraid'    => ['Isaiah 41:10', 'Psalm 23:4', '2 Timothy 1:7'],
+        'angry'     => ['Ephesians 4:26', 'James 1:19', 'Psalm 55:22'],
+        'anger'     => ['Ephesians 4:26', 'James 1:19', 'Psalm 62:1'],
+        'forgiv'    => ['Colossians 3:13', '1 John 1:9', 'Matthew 6:14'],
+        'heal'      => ['Psalm 147:3', 'Isaiah 53:5', 'James 5:16'],
+        'strength'  => ['Isaiah 40:31', 'Philippians 4:13', 'Psalm 46:1'],
+        'strong'    => ['Isaiah 40:31', 'Philippians 4:13', 'Joshua 1:9'],
+    ];
+
+    private const DEFAULT_VERSES = [
+        'Psalm 23:1', 'John 3:16', 'Romans 8:28', 'Psalm 46:1',
+        'Isaiah 40:31', 'Matthew 11:28', 'Jeremiah 29:11', 'Philippians 4:13',
+    ];
+
     public function show(Request $request): JsonResponse
     {
         $language = in_array($request->query('language'), ['en', 'my', 'td'], true)
@@ -42,13 +86,15 @@ class ConfigController extends Controller
         }
 
         $source = Setting::get('countdown_content_source', 'both');
-        if (! in_array($source, ['banners', 'testimonies', 'online', 'both', 'all'], true)) {
+        if (! in_array($source, ['banners', 'testimonies', 'verses', 'both', 'all'], true)) {
             return [];
         }
 
         $cards = [];
 
-        if (in_array($source, ['banners', 'both', 'all'], true)) {
+        // Admin banners are written in English — only show them for English services
+        // so non-English services don't receive mixed-language slides.
+        if ($language === 'en' && in_array($source, ['banners', 'both', 'all'], true)) {
             foreach (Setting::countdownBanners() as $banner) {
                 $cards[] = [
                     'type' => 'banner',
@@ -58,10 +104,11 @@ class ConfigController extends Controller
             }
         }
 
-        if (in_array($source, ['online', 'all'], true)) {
-            $online = $this->bibleVerseCard($language);
-            if ($online) {
-                $cards[] = $online;
+        // Non-English services always get mood-matched Scripture in the service language.
+        // English services get them when the source explicitly includes verses.
+        if ($language !== 'en' || in_array($source, ['verses', 'all'], true)) {
+            foreach ($this->moodBibleVerseCards($mood, $language) as $card) {
+                $cards[] = $card;
             }
         }
 
@@ -106,126 +153,140 @@ class ConfigController extends Controller
             ->get(['content']);
     }
 
-    /** Bible verse card in the service language. English can use the online source; local data is fallback and non-English source. */
-    private function bibleVerseCard(string $language): ?array
+    /** Mood-matched Bible verse cards from local bundled translations. */
+    private function moodBibleVerseCards(string $mood, string $language): array
     {
-        if ($language === 'en') {
-            return $this->onlineVerseCard() ?: $this->localBibleVerseCard('en');
-        }
+        $refs = $this->verseRefsForMood($mood);
+        sort($refs);
 
-        return $this->localBibleVerseCard($language);
-    }
+        $cacheKey = 'countdown_verse_' . $language . '_' . substr(md5(implode('|', $refs)), 0, 16);
 
-
-    /** Fetch one English online Bible verse from a fixed allowlisted provider, with cache. */
-    private function onlineVerseCard(): ?array
-    {
-        try {
-            return Cache::remember('countdown_online_verse_web_nt', now()->addHours(6), function () {
-                $response = Http::timeout(3)
-                    ->acceptJson()
-                    ->get('https://bible-api.com/data/web/random/NT');
-
-                if (! $response->ok()) {
-                    return null;
-                }
-
-                $data = $response->json();
-                $verse = is_array($data) ? ($data['random_verse'] ?? $data) : null;
-                if (! is_array($verse)) {
-                    return null;
-                }
-
-                $text = trim((string) ($verse['text'] ?? ''));
-                if ($text === '') {
-                    return null;
-                }
-
-                $book = trim((string) ($verse['book'] ?? $verse['book_name'] ?? ''));
-                $chapter = trim((string) ($verse['chapter'] ?? ''));
-                $verseNo = trim((string) ($verse['verse'] ?? ''));
-                $reference = trim($book . ' ' . $chapter . ($verseNo !== '' ? ':' . $verseNo : ''));
-
-                return [
-                    'type' => 'online',
-                    'text' => mb_substr($text, 0, 420),
-                    'source' => $reference !== '' ? $reference . ' (WEB)' : 'World English Bible',
-                ];
-            });
-        } catch (\Throwable) {
-            return null;
-        }
-    }
-
-    /** Random NT verse from bundled Bible JSON for English/Burmese/Tedim. */
-    private function localBibleVerseCard(string $language): ?array
-    {
-        $language = in_array($language, ['en', 'my', 'td'], true) ? $language : 'en';
-        $cacheKey = 'countdown_local_bible_verse_' . $language;
-
-        return Cache::remember($cacheKey, now()->addHours(6), function () use ($language) {
+        return Cache::remember($cacheKey, now()->addHours(6), function () use ($refs, $language) {
             $file = match ($language) {
-                'my' => base_path('../workers/data/judson1835.json'),
-                'td' => base_path('../workers/data/tedim1932.json'),
+                'my'    => base_path('../workers/data/judson1835.json'),
+                'td'    => base_path('../workers/data/tedim1932.json'),
                 default => base_path('../workers/data/bsb.json'),
             };
 
             if (! is_readable($file)) {
-                return null;
+                return [];
             }
 
-            $bible = json_decode((string) file_get_contents($file), true);
-            $books = is_array($bible) ? ($bible['book'] ?? []) : [];
-            if (! is_array($books) || $books === []) {
-                return null;
-            }
+            $bible     = json_decode((string) file_get_contents($file), true);
+            $bookIndex = $this->buildBookIndex();
+            $digits    = is_array($bible['digit'] ?? null) && count($bible['digit']) >= 10
+                ? $bible['digit']
+                : null;
 
-            $bookNumbers = array_values(array_filter(array_map('strval', array_keys($books)), fn ($n) => (int) $n >= 40 && (int) $n <= 66));
-            if ($bookNumbers === []) {
-                return null;
-            }
+            $translation = match ($language) {
+                'my'    => 'Judson 1835',
+                'td'    => 'Lai Siangtho 1932',
+                default => 'BSB',
+            };
 
-            for ($i = 0; $i < 50; $i++) {
-                $bookNum = $bookNumbers[array_rand($bookNumbers)];
-                $book = $books[$bookNum] ?? null;
-                $chapters = $book['chapter'] ?? [];
-                if (! is_array($chapters) || $chapters === []) {
+            $cards = [];
+            foreach ($refs as $ref) {
+                [$bookNum, $chapter, $verseNum] = $this->parseRef($ref, $bookIndex);
+                if ($bookNum === null) {
                     continue;
                 }
-                $chapterNum = (string) array_rand($chapters);
-                $verses = $chapters[$chapterNum]['verse'] ?? [];
-                if (! is_array($verses) || $verses === []) {
-                    continue;
-                }
-                $verseNum = (string) array_rand($verses);
-                $text = trim((string) ($verses[$verseNum]['text'] ?? ''));
+
+                $text = trim((string) ($bible['book'][$bookNum]['chapter'][$chapter]['verse'][$verseNum]['text'] ?? ''));
                 if ($text === '' || mb_strlen($text) > 420) {
                     continue;
                 }
 
-                $bookName = trim((string) ($book['info']['name'] ?? ''));
-                $reference = trim($bookName . ' ' . $this->localizedNumber($chapterNum, $bible) . ':' . $this->localizedNumber($verseNum, $bible));
-                $translation = match ($language) {
-                    'my' => 'Judson 1835',
-                    'td' => 'Lai Siangtho 1932',
-                    default => 'BSB',
-                };
+                $nativeBook = $bible['book'][$bookNum]['info']['name'] ?? null;
+                $displayRef = $nativeBook !== null
+                    ? $nativeBook . ' ' . $this->localizeNum($chapter, $digits) . ':' . $this->localizeNum($verseNum, $digits)
+                    : $ref;
 
-                return [
-                    'type' => 'online',
-                    'text' => mb_substr($text, 0, 420),
-                    'source' => $reference !== '' ? $reference . ' (' . $translation . ')' : $translation,
+                $cards[] = [
+                    'type'   => 'verse',
+                    'text'   => $text,
+                    'source' => $displayRef . ' (' . $translation . ')',
                 ];
             }
 
-            return null;
+            return $cards;
         });
     }
 
-    private function localizedNumber(string $number, array $bible): string
+    /** Pick verse references that match keywords in $mood; fall back to the default set. */
+    private function verseRefsForMood(string $mood): array
     {
-        $digits = $bible['digit'] ?? null;
-        if (! is_array($digits) || count($digits) < 10) {
+        $lower   = mb_strtolower($mood);
+        $matched = [];
+
+        foreach (self::MOOD_VERSES as $keyword => $refs) {
+            if (str_contains($lower, $keyword)) {
+                foreach ($refs as $ref) {
+                    $matched[$ref] = true;
+                }
+            }
+        }
+
+        return array_keys($matched) ?: self::DEFAULT_VERSES;
+    }
+
+    /**
+     * Parse an English reference like "1 Thessalonians 5:18" or "Psalm 23:1".
+     * Returns [bookNumber, chapter, verse] or [null, null, null] on failure.
+     */
+    private function parseRef(string $ref, array $bookIndex): array
+    {
+        $none = [null, null, null];
+
+        if (! preg_match(
+            '/^((?:[123]\s+)?[a-z][a-z ]*?)\s+(\d+):(\d+)\s*$/iu',
+            trim($ref),
+            $m,
+        )) {
+            return $none;
+        }
+
+        $bookNum = $bookIndex[strtolower(trim($m[1]))] ?? null;
+
+        return $bookNum !== null ? [$bookNum, $m[2], $m[3]] : $none;
+    }
+
+    /** Build a lowercase English-name → book-number index from the bundled books_en.json. */
+    private function buildBookIndex(): array
+    {
+        static $cached = null;
+        if ($cached !== null) {
+            return $cached;
+        }
+
+        $file = base_path('../workers/data/books_en.json');
+        if (! is_readable($file)) {
+            return $cached = [];
+        }
+
+        $books = json_decode((string) file_get_contents($file), true);
+        $index = [];
+
+        foreach ((array) $books as $num => $info) {
+            $names = array_filter(array_merge(
+                [$info['name'] ?? '', $info['shortname'] ?? ''],
+                $info['abbr'] ?? [],
+            ));
+            foreach ($names as $name) {
+                $key         = strtolower((string) $name);
+                $index[$key] = (string) $num;
+                if (! str_ends_with($key, 's')) {
+                    $index[$key . 's'] = (string) $num;
+                }
+            }
+        }
+
+        return $cached = $index;
+    }
+
+    /** Replace ASCII digits with the Bible's native digit glyphs (Burmese etc.). */
+    private function localizeNum(string $number, ?array $digits): string
+    {
+        if ($digits === null) {
             return $number;
         }
 

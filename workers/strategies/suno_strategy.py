@@ -20,7 +20,7 @@ from ._suno_custom import is_sensitive_error, safe_payload_variants, trim_on_ver
 
 class SunoStrategy(MusicStrategy):
     BASE_URL = os.getenv("SUNO_API_URL", "https://api.kie.ai/api/v1")
-    MODEL = os.getenv("SUNO_MODEL", "V4_5")
+    MODEL = os.getenv("SUNO_MODEL", "V5_5")
     # KIE requires a callBackUrl by schema even though we poll instead of receiving
     # callbacks; any valid URL satisfies it. Point it somewhere harmless.
     CALLBACK_URL = os.getenv("SUNO_CALLBACK_URL", "https://example.com/suno-callback")

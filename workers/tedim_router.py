@@ -121,6 +121,27 @@ async def translate(body: TranslateIn):
     return {"text": out, "cached": False}
 
 
+def _validate_tedim(text: str) -> str:
+    """Reject clearly-degenerate model output (too short, or lacks any Tedim
+    markers) so llm_engine falls back to the hardcoded Tedim content instead of
+    storing garbage like a hymn title or a single English sentence."""
+    _TEDIM_MARKERS = ("hi", "ahi", "hong", "pasian", "topa", "zeisu", "krist",
+                      "lungdamna", "thungetna", "zangtal", "ka ", "na ", " in ")
+    clean = text.strip()
+    if len(clean) < 60:
+        raise HTTPException(
+            status_code=502,
+            detail="Tedim model output too short; using fallback content.",
+        )
+    lower = clean.lower()
+    if not any(marker in lower for marker in _TEDIM_MARKERS):
+        raise HTTPException(
+            status_code=502,
+            detail="Tedim model output lacks Tedim markers; using fallback content.",
+        )
+    return clean
+
+
 @router.post("/generate")
 async def generate(body: GenerateIn):
     system = body.system or (
@@ -136,9 +157,9 @@ async def generate(body: GenerateIn):
         "Pronouns: ka (I/my), nang (you), amah (he/she), eite (we), amaute (they). "
         "Tense: verb+'khin hi' = past; verb+'ding hi' = future; verb+'hi' = present; verb+'lo hi' = negation."
     )
-    out = _strip_english_paragraphs(
+    out = _validate_tedim(_strip_english_paragraphs(
         await _ollama(body.prompt, system=system, max_tokens=body.max_tokens)
-    )
+    ))
     return {"text": out}
 
 

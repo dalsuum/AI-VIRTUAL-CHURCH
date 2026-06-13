@@ -408,7 +408,7 @@ watch(stages, (list) => {
       ></span>
     </div>
 
-    <p v-if="musicFallbackNotice" class="stage-hint">{{ musicFallbackNotice }}</p>
+    <p v-if="musicFallbackNotice && atStart" class="stage-hint">{{ musicFallbackNotice }}</p>
 
     <div class="stage" :key="current.key">
       <!-- Worship -->

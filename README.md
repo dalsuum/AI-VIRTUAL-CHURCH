@@ -165,7 +165,7 @@ A single Celery app with one Redis broker and **named queues that mirror the wor
 | [tasks/celery_app.py](workers/tasks/celery_app.py) | Celery config + queue routing. |
 | [tasks/celery_tedim_tasks.py](workers/tasks/celery_tedim_tasks.py) | Legacy Tedim localization/narration tasks kept for compatibility. New services use `generate_text_segments(..., language='td')` and `tasks.narrate(..., language='td')`. |
 | [tasks/celery_burmese_tasks.py](workers/tasks/celery_burmese_tasks.py) | Legacy Myanmar localization/narration tasks kept for compatibility. New services use `generate_text_segments(..., language='my')` and `tasks.narrate(..., language='my')`. |
-| [tedim_router.py](workers/tedim_router.py) | FastAPI router: `POST /tedim/translate`, `POST /tedim/generate`, `GET /tedim/verse?ref=`. Redis db 2 cache (30-day TTL). Single-inference semaphore. |
+| [tedim_router.py](workers/tedim_router.py) | FastAPI router: `POST /tedim/translate`, `POST /tedim/generate`, `GET /tedim/verse?ref=`. Redis db 2 cache (30-day TTL). Single-inference semaphore. `_validate_tedim()` rejects model output that is too short (<60 chars) or lacks Tedim markers (returns HTTP 502 so `llm_engine` falls back to hardcoded Tedim content instead of storing degenerate output). |
 | [burmese_router.py](workers/burmese_router.py) | FastAPI router: `POST /burmese/translate`, `POST /burmese/generate`, `GET /burmese/verse?ref=`. Redis db 3 cache (30-day TTL). Shares the same semaphore pattern as the Tedim router. Myanmar Unicode only — no Zawgyi. |
 | [api.py](workers/api.py) | Unified FastAPI app mounting Tedim, Burmese, and `/tts/speak` MMS-TTS routers plus `/health`. Typically run as two separate uvicorn instances: port 8001 (`aivc-tedim-api`) for Tedim/MMS requests, port 8002 (`aivc-burmese-api`) for Burmese. |
 | [hymns_my.py](workers/hymns_my.py) | Loader for the 852-song `data/hymns_my.json` Burmese library; mood-based selection for `MyanmarHymnStrategy`. |
@@ -195,8 +195,8 @@ service one stage at a time.
 |-----------|------|
 | [App.vue](frontend/src/App.vue) | Stage machine: `intake` → `preparing` → `service`; routes `#admin` to the console, `#vocabulary` to the Zolai vocabulary page. |
 | [ZolaiVocabulary.vue](frontend/src/components/ZolaiVocabulary.vue) | Searchable Zolai↔English reference at `#vocabulary`. Edit `frontend/src/data/zolai_vocabulary.json` to add or correct words. |
-| [IntakeForm.vue](frontend/src/components/IntakeForm.vue) | Mood + prayer + (optional) schedule + music-source pick + **language tab** (English / မြန်မာ / Zolai). Moods, the offered music sources, and whether scheduling shows are all driven by `GET /config` so the admin can curate them. Myanmar Unicode fonts (Padauk/Noto Sans Myanmar) loaded for Burmese UI strings. |
-| [PreparingView.vue](frontend/src/components/PreparingView.vue) | Countdown screen; shows the welcome-back greeting while segments compose, rotates admin-managed encouragement/testimony cards, then opens only after the worship media and opening-prayer narration are ready (with longer Myanmar/Tedim countdowns). |
+| [IntakeForm.vue](frontend/src/components/IntakeForm.vue) | Mood picker (first question) + **language tab** (English / မြန်မာ / Zolai). For first-time visitors, name/email/prayer/music-source/scheduling are collapsed behind an "Add a prayer request or schedule" toggle so the main path is one-tap. Returning users always see the full form. Passes `language` and `mood` to the preparing screen so countdown verses load in the right Bible translation immediately. Moods, music sources, and scheduling toggle are all driven by `GET /config`. |
+| [PreparingView.vue](frontend/src/components/PreparingView.vue) | Countdown screen; accepts `language` and `mood` props from the intake event so mood-matched Scripture cards load in the correct Bible translation before the server poll returns. Card type is `'verse'` (labelled "Scripture"); label `'banner'` shows admin text; `'testimony'` shows a worshipper story. Opens immediately via `nextTick` when `mediaReady` arrives — no longer waits for the next 1-second tick. |
 | [ServicePlayer.vue](frontend/src/components/ServicePlayer.vue) | The full-screen, one-stage-at-a-time player. Auto-reads each segment (server video → server audio → browser Web Speech), auto-advances. |
 | [MusicPlayer.vue](frontend/src/components/MusicPlayer.vue) | Plays the worship track: stored audio, or an embedded YouTube `<iframe>`. |
 | [OfferingForm.vue](frontend/src/components/OfferingForm.vue) | Stripe PaymentIntent confirmation. |
@@ -456,17 +456,20 @@ Myanmar/Tedim countdown so the Suno track and first narrated prayer are ready be
 worship starts, while polling continues for later narration during the song.
 
 **Countdown content.** The same screen can rotate randomized short cards while the worshipper
-waits. Admin Settings controls whether cards show and whether the source is custom
-banners, approved testimonies, a Bible verse, or all sources together. Custom banners
-are stored as plain text plus an optional source label. Testimony cards come only from
+waits. Admin Settings controls whether cards show and which sources to include
+(`countdown_content_source`: `banners` / `testimonies` / `verses` / `both` / `all`).
+Custom banners (plain text + optional source label) are only shown for English services
+so non-English services never receive mixed-language slides. Testimony cards come only from
 already-approved testimonies and, when a service mood/language is known, are randomly selected from
-worshippers who have service history for that same mood/language. Bible cards follow the
-service language: English uses the fixed allowlisted `bible-api.com` WEB endpoint with a
-short timeout and local BSB fallback; Myanmar and Zolai/Tedim use the bundled Judson
-1835 and Lai Siangtho 1932 data, so they do not depend on an English online provider.
-Admins cannot enter arbitrary URLs. The public `/config` endpoint returns text-only
-`countdown_cards`, and Vue renders the content with normal text bindings rather than
-HTML to avoid script injection.
+worshippers who have service history for that same mood/language. Verse cards are
+**mood-matched**: the worshipper's mood is matched against a curated keyword → verse-reference
+table (30+ mood keywords, ~120 mapped references), and up to four matching verses are looked
+up in the bundled public-domain Bible for that service language (BSB for English, Judson 1835
+for Myanmar, Lai Siangtho 1932 for Tedim). Non-English services always receive mood verses;
+English services receive them when the source explicitly includes `verses`. No external
+verse provider is used. Admins cannot enter arbitrary URLs. The public `/config` endpoint
+returns text-only `countdown_cards` (type `'verse'`, `'testimony'`, or `'banner'`), and Vue
+renders the content with normal text bindings rather than HTML to avoid script injection.
 
 **The Suno reuse pool.** Composing fresh AI music costs money and time, so completed Suno
 tracks are banked in `music_tracks`, keyed by language + mood (deduped by `provider_ref` via the
@@ -544,6 +547,10 @@ English narration. It runs as a Docker container on the same server.
 ### Setup
 
 **1. Start the container**
+
+The compose file pulls the pre-built image (`ghcr.io/jamiepine/voicebox:latest`) and
+maps host port `17493` to container port `8000`. The CPU backend variant is used; adjust
+`VOICEBOX_BACKEND_VARIANT` in `voicebox/docker-compose.yml` for GPU hosts.
 
 ```bash
 cd /opt/ai-church/voicebox
@@ -656,9 +663,9 @@ The console is at `/#admin`. Access is role-based:
 - **Settings** — global service config persisted in the `settings` table and threaded
   onto each job: `narration_mode` (`off`/`browser`/`openai`/`kokoro`/`edge_tts`),
   per-language narration toggles (`narration_en`/`narration_my`/`narration_td`),
-  countdown-card settings (`countdown_content_enabled`, `countdown_content_source`,
-  `countdown_banners`; source may be custom banners, approved testimonies, or the
-  fixed online verse provider), `text_highlight_enabled` (word-by-word highlight on/off in the player), `music_reuse`
+  countdown-card settings (`countdown_content_enabled`, `countdown_content_source` [`banners`/`testimonies`/`verses`/`both`/`all`],
+  `countdown_banners`; banners are English-only; verse cards are mood-matched from bundled translations),
+  `text_highlight_enabled` (word-by-word highlight on/off in the player), `music_reuse`
   (the Suno pool toggle), `storage_backend` (`local` vs `s3` for generated audio), and
   `avatar_enabled` (toggle HeyGen avatar rendering on/off without touching env vars).
   Plus the worshipper-facing **intake options** an admin curates without a redeploy:
@@ -926,7 +933,7 @@ This includes:
 | `SUNO_CUSTOM_MAX_LYRICS` | Maximum lyric characters sent to Suno customMode (default `2800`). |
 | `LARAVEL_WEBHOOK_URL` | Where finished assets are posted (e.g. `http://localhost:8000/api/internal/asset-ready`). |
 | `WORKER_WEBHOOK_SECRET` | Must match the backend's. |
-| `SUNO_API_KEY` / `SUNO_API_URL` | Suno music generation. Fresh AI-composed songs (`music_source=suno`) use customMode so their generated lyrics can be displayed in the player. |
+| `SUNO_API_KEY` / `SUNO_API_URL` / `SUNO_MODEL` | Suno music generation. Fresh AI-composed songs (`music_source=suno`) use customMode so their generated lyrics can be displayed in the player. `SUNO_MODEL` defaults to `V5_5`; override to pin a specific model version. |
 | `YOUTUBE_API_KEY` | YouTube Data API search (only if `music_source=youtube`). |
 | `TTS_API_KEY` / `TTS_BASE_URL` / `TTS_MODEL` / `TTS_VOICE` / `TTS_FORMAT` | Narration (`openai` voice). Absent ⇒ that mode off (browser speech still works). |
 | `KOKORO_API_KEY` / `KOKORO_BASE_URL` / `KOKORO_MODEL` / `KOKORO_VOICE` / `KOKORO_FORMAT` | Narration (`kokoro` voice — hexgrad/kokoro-82m via OpenRouter). Defaults to the `OPENROUTER_*` LLM credentials. |

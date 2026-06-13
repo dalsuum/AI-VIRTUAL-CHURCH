@@ -1,23 +1,23 @@
 services:
   voicebox:
-    build:
-      context: /tmp/voicebox
-      dockerfile: Dockerfile
+    image: ghcr.io/jamiepine/voicebox:latest
     container_name: voicebox
     restart: unless-stopped
     ports:
-      - "127.0.0.1:17493:17493"
+      - "127.0.0.1:17493:8000"
     volumes:
       - voicebox-data:/app/data
       - huggingface-cache:/home/voicebox/.cache/huggingface
     environment:
       - LOG_LEVEL=info
       - NUMBA_CACHE_DIR=/tmp/numba_cache
+      - VOICEBOX_BACKEND_VARIANT=cpu
+      - VOICEBOX_CORS_ORIGINS=https://voicebox.aivirtual.church
     deploy:
       resources:
         limits:
-          cpus: '4'
-          memory: 8G
+          cpus: '2'
+          memory: 2G
 
 volumes:
   voicebox-data:

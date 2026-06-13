@@ -663,9 +663,9 @@ class AdminController extends Controller
     private function settingsPayload(): array
     {
         return [
-            'narration_mode_en'  => Setting::get('narration_mode_en', 'browser'),
-            'narration_mode_my'  => Setting::get('narration_mode_my', 'edge_tts'),
-            'narration_mode_td'  => Setting::get('narration_mode_td', 'edge_tts'),
+            'narration_mode_en'  => Setting::narrationMode('en'),
+            'narration_mode_my'  => Setting::narrationMode('my'),
+            'narration_mode_td'  => Setting::narrationMode('td'),
             'edge_tts_voice'     => Setting::get('edge_tts_voice', 'en-US-AriaNeural'),
             'voicebox_engine'    => Setting::get('voicebox_engine', 'qwen'),
             'music_reuse'        => Setting::get('music_reuse', '1') === '1',
@@ -674,9 +674,9 @@ class AdminController extends Controller
             'text_highlight_enabled' => Setting::get('text_highlight_enabled', '1') === '1',
             // Per-language narration: all on by default.
             // Myanmar/Tedim: edge_tts = Microsoft cloud; mms_tts = local MMS-TTS.
-            'narration_en'       => Setting::get('narration_en', '1') === '1',
-            'narration_my'       => Setting::get('narration_my', '1') === '1',
-            'narration_td'       => Setting::get('narration_td', '1') === '1',
+            'narration_en'       => Setting::narrationEnabled('en'),
+            'narration_my'       => Setting::narrationEnabled('my'),
+            'narration_td'       => Setting::narrationEnabled('td'),
             // Which service languages appear in the intake form.
             'lang_en'            => Setting::get('lang_en', '1') === '1',
             'lang_my'            => Setting::get('lang_my', '0') === '1',

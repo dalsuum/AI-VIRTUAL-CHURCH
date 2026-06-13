@@ -137,7 +137,7 @@ python workers/tools/seed_tedim_midi.py
 |---|---|---|
 | `BIBLE_DATA_FILE_MY` | `workers/data/judson1835.json` | swap the Burmese translation |
 | `BIBLE_DATA_FILE_TD` | `workers/data/tedim1932.json` | swap the Tedim translation |
-| `MMS_TTS_URL` | `http://127.0.0.1:8001` | local MMS-TTS base URL used for Myanmar/Tedim narration |
+| `MMS_TTS_URL` | `http://127.0.0.1:8003` | local MMS-TTS base URL used for Myanmar/Tedim narration |
 | `MMS_TTS_MODEL_MY` / `MMS_TTS_MODEL_TD` | `facebook/mms-tts-mya` / `facebook/mms-tts-ctd` | native VITS checkpoints |
 | `MMS_TTS_TIMEOUT` | `180` | per-request MMS timeout so long message audio cannot hang forever |
 | `MMS_TTS_STAGGER_SECONDS` | `60` | delay between non-English narration jobs |

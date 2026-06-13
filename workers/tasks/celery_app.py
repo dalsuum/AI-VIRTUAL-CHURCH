@@ -33,6 +33,7 @@ app.conf.update(
         "tasks.generate_music": {"queue": "ai:music"},
         "tasks.render_avatar": {"queue": "ai:avatar"},
         "tasks.narrate": {"queue": "ai:narration"},
+        "tasks.repair_missing_narration": {"queue": "ai:narration"},
         # Tedim localization: paragraph-by-paragraph Ollama inference.
         # Runs on ai:sermon so the same worker pool handles it — inference
         # is serialized by the semaphore in tedim_router.py anyway.

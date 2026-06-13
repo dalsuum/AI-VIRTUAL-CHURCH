@@ -15,7 +15,7 @@ Providers (set via Admin Console → Settings → Narration voice):
   'mms_tts' — Local Facebook MMS-TTS (free, offline). Best native quality for
     Burmese and Tedim. Requires the aivc-mms-tts container (port 8003).
     Myanmar: facebook/mms-tts-mya  |  Tedim: facebook/mms-tts-ctd
-    MMS_TTS_URL — service base URL (default http://127.0.0.1:8001)
+    MMS_TTS_URL — service base URL (default http://127.0.0.1:8003)
 
   'openai' — OpenAI's own (or any compatible gateway) text-to-speech:
     TTS_API_KEY    — required to enable this provider at all
@@ -125,7 +125,7 @@ def _speak_mms(text: str, language: str) -> bytes:
     lang = _mms_lang(language)
     if not lang:
         raise RuntimeError(f"MMS TTS does not support language {language!r}")
-    base_url = os.getenv("MMS_TTS_URL", "http://127.0.0.1:8001").rstrip("/")
+    base_url = os.getenv("MMS_TTS_URL", "http://127.0.0.1:8003").rstrip("/")
     seed = int(os.getenv("MMS_TTS_SEED", "42"))
     resp = requests.post(
         f"{base_url}/tts/speak",

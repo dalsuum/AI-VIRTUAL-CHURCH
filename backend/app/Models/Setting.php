@@ -20,6 +20,16 @@ class Setting extends Model
     /** Allowed narration voice modes (see narration_mode setting). */
     public const NARRATION_MODES = ['off', 'browser', 'openai', 'kokoro', 'edge_tts', 'mms_tts', 'voicebox'];
 
+    /** Modes that produce a stored audio file the player can render. */
+    public const SERVER_NARRATION_MODES = ['openai', 'kokoro', 'edge_tts', 'mms_tts', 'voicebox'];
+
+    /** Server-side defaults so every language gets an audio player unless disabled. */
+    public const DEFAULT_NARRATION_MODES = [
+        'en' => 'edge_tts',
+        'my' => 'mms_tts',
+        'td' => 'mms_tts',
+    ];
+
     /** Edge TTS voice names the admin may pick from. */
     public const EDGE_TTS_VOICES = [
         'en-US-AriaNeural',
@@ -59,6 +69,22 @@ class Setting extends Model
     public static function set(string $key, ?string $value): void
     {
         static::query()->updateOrCreate(['key' => $key], ['value' => $value]);
+    }
+
+    public static function defaultNarrationMode(string $language): string
+    {
+        return self::DEFAULT_NARRATION_MODES[$language] ?? self::DEFAULT_NARRATION_MODES['en'];
+    }
+
+    public static function narrationMode(string $language): string
+    {
+        $mode = static::get('narration_mode_' . $language, self::defaultNarrationMode($language));
+        return in_array($mode, self::NARRATION_MODES, true) ? $mode : self::defaultNarrationMode($language);
+    }
+
+    public static function narrationEnabled(string $language): bool
+    {
+        return static::get('narration_' . $language, '1') === '1';
     }
 
     /** Read a JSON-encoded list setting, falling back to $default when unset/garbled. */

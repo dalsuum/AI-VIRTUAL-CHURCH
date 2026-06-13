@@ -10,10 +10,13 @@ use App\Notifications\ServiceScheduledNotification;
 use App\Services\CrisisInterceptService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Str;
 
 class ServiceController extends Controller
 {
+    private const NARRATED_SEGMENTS = ['opening_prayer', 'scripture', 'sermon', 'benediction'];
+
     public function __construct(private CrisisInterceptService $crisis) {}
 
     /** Create a session. The media source is locked from the user's preference now. */
@@ -250,7 +253,8 @@ class ServiceController extends Controller
             ->mapWithKeys(fn ($a) => [$a->segment => $a->storage_key]);
 
         $language = $session->language ?? 'en';
-        $narrationEnabled = Setting::get('narration_' . $language, $language === 'en' ? '1' : '0') === '1';
+        $narrationEnabled = Setting::narrationEnabled($language);
+        $narrationMode = Setting::narrationMode($language);
 
         // Optional text-to-speech narration, keyed by segment. audio_key carries a
         // directly-playable (presigned) URL — see the worker's narrator.narrate().
@@ -262,6 +266,9 @@ class ServiceController extends Controller
         // marks the service as fully composed. (Music runs in parallel and is
         // optional — keying "complete" off it would hang if music is skipped.)
         $complete = $assets->firstWhere('segment', 'benediction') !== null;
+        if ($complete) {
+            $this->queueMissingNarration($session, $assets, $language, $narrationMode, $narrationEnabled);
+        }
 
         return response()->json([
             'status'       => $complete ? 'complete' : $session->status,
@@ -276,15 +283,60 @@ class ServiceController extends Controller
             // How the player should voice spoken segments. Read per-language so the
             // player knows whether to expect server audio ('edge_tts'/'mms_tts'/
             // 'openai'/'kokoro') or fall back to browser speech / silence.
-            'narration_mode' => Setting::get('narration_mode_' . $language, match ($language) {
-                'my'    => 'edge_tts',
-                'td'    => 'mms_tts',
-                default => 'browser',
-            }),
+            'narration_mode' => $narrationMode,
             'narration_enabled' => $narrationEnabled,
             'text_highlight_enabled' => Setting::get('text_highlight_enabled', '1') === '1',
             'language'    => $language,
             'mood'         => $session->intake?->mood,
         ]);
+    }
+
+    private function queueMissingNarration($session, $assets, string $language, string $mode, bool $enabled): void
+    {
+        try {
+            if (! $enabled || ! in_array($mode, Setting::SERVER_NARRATION_MODES, true)) {
+                return;
+            }
+
+            $missing = [];
+            foreach (self::NARRATED_SEGMENTS as $segment) {
+                $asset = $assets->firstWhere('segment', $segment);
+                if (! $asset || $asset->asset_type === 'youtube' || blank($asset->text_payload) || filled($asset->audio_key)) {
+                    continue;
+                }
+                if ($asset->ready_at && $asset->ready_at->gt(now()->subSeconds(90))) {
+                    continue;
+                }
+
+                $lockKey = "ai:narration-repair:{$session->id}:{$segment}";
+                if (! Redis::setnx($lockKey, '1')) {
+                    continue;
+                }
+                Redis::expire($lockKey, 15 * 60);
+
+                $missing[] = [
+                    'segment' => $segment,
+                    'text'    => $asset->text_payload,
+                ];
+            }
+
+            if ($missing === []) {
+                return;
+            }
+
+            Redis::rpush('ai:narration-repair', json_encode([
+                'session_id'        => $session->id,
+                'session_token'     => $session->session_token,
+                'language'          => $language,
+                'narration_mode'    => $mode,
+                'narration_enabled' => true,
+                'voicebox_engine'   => Setting::get('voicebox_engine', 'qwen'),
+                'presenter_gender'  => $session->presenter_gender ?? 'female',
+                'storage_backend'   => Setting::get('storage_backend'),
+                'segments'          => $missing,
+            ], JSON_UNESCAPED_UNICODE));
+        } catch (\Throwable $e) {
+            report($e);
+        }
     }
 }

@@ -1469,7 +1469,7 @@ onUnmounted(() => clearInterval(updateTimer));
                 :key="m.value"
                 type="button"
                 class="choice"
-                :class="{ active: (settings.narration_mode_en || 'browser') === m.value }"
+                :class="{ active: (settings.narration_mode_en || 'edge_tts') === m.value }"
                 :disabled="savingSettings"
                 @click="setNarrationMode('en', m.value)"
               >
@@ -1524,7 +1524,7 @@ onUnmounted(() => clearInterval(updateTimer));
                 :key="m.value"
                 type="button"
                 class="choice"
-                :class="{ active: (settings.narration_mode_my || 'edge_tts') === m.value }"
+                :class="{ active: (settings.narration_mode_my || 'mms_tts') === m.value }"
                 :disabled="savingSettings"
                 @click="setNarrationMode('my', m.value)"
               >

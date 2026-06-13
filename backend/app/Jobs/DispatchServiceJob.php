@@ -27,30 +27,23 @@ class DispatchServiceJob implements ShouldQueue
     {
         $session = ServiceSession::with('intake')->findOrFail($this->sessionId);
         $intake  = $session->intake;
+        $language = $session->language ?? 'en';
 
         $payload = json_encode([
             'session_id'   => $session->id,
             'session_token'=> $session->session_token,
             'music_source' => $session->music_source, // 'hymn_sung' | 'hymn' | 'suno' | 'youtube'
-            // Service language ('en' | 'my'), locked at session start like the music
+            // Service language ('en' | 'my' | 'td'), locked at session start like the music
             // source. Drives the LLM output language, the Bible translation (BSB vs
             // Judson 1835 Burmese), the hymn library, and the narration voice.
-            'language'     => $session->language ?? 'en',
+            'language'     => $language,
             // How spoken segments are voiced — per-language admin setting.
-            // Myanmar defaults to edge_tts (Microsoft my-MM-NilarNeural);
-            // Tedim defaults to mms_tts (local MMS-TTS, only native Zolai voice);
-            // English defaults to browser.
-            'narration_mode'    => Setting::get(
-                'narration_mode_' . ($session->language ?? 'en'),
-                match ($session->language) {
-                    'my'    => 'edge_tts',
-                    'td'    => 'mms_tts',
-                    default => 'browser',
-                }
-            ),
+            // Defaults are server-side so the player has audio controls:
+            // English uses Edge TTS; Myanmar/Tedim use local MMS-TTS.
+            'narration_mode'    => Setting::narrationMode($language),
             'voicebox_engine'  => Setting::get('voicebox_engine', 'qwen'),
-            // Mode encodes on/off; 'off' and 'browser' skip server TTS in the worker.
-            'narration_enabled' => true,
+            // Mode encodes provider choice; this toggle suppresses server TTS entirely.
+            'narration_enabled' => Setting::narrationEnabled($language),
             'avatar_enabled'  => Setting::get('avatar_enabled', '1') === '1',
             'edge_tts_voice'  => Setting::get('edge_tts_voice', 'en-US-AriaNeural'),
             // Where generated audio is stored (local dir vs S3). null lets the worker

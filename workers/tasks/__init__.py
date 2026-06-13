@@ -67,6 +67,55 @@ def _musicgen_queue_depth() -> int:
         return 0
 
 
+SERVER_NARRATION_MODES = {"openai", "kokoro", "edge_tts", "mms_tts", "voicebox"}
+NARRATED_SEGMENTS = {"opening_prayer", "scripture", "sermon", "benediction"}
+
+
+def _wants_server_narration(job: dict) -> bool:
+    mode = job.get("narration_mode")
+    return bool(
+        job.get("narration_enabled", True)
+        and mode in SERVER_NARRATION_MODES
+        and narrator.is_enabled(mode)
+    )
+
+
+def _segment_gender(segment: str, presenter_gender: str = "female") -> str:
+    """Sermon uses the chosen presenter gender; support segments use the opposite."""
+    return presenter_gender if segment == "sermon" else ("female" if presenter_gender == "male" else "male")
+
+
+def _edge_voice(language: str, gender: str) -> str:
+    suffix = gender.upper()
+    if language == "my":
+        default = "my-MM-ThihaNeural" if gender == "male" else "my-MM-NilarNeural"
+        return (
+            os.getenv(f"EDGE_TTS_VOICE_MY_{suffix}")
+            or os.getenv("EDGE_TTS_VOICE_MY")
+            or default
+        )
+    if language == "td":
+        default = "en-US-GuyNeural" if gender == "male" else "en-US-AriaNeural"
+        return os.getenv("EDGE_TTS_VOICE_TD", default)
+    default = "en-US-GuyNeural" if gender == "male" else "en-US-AriaNeural"
+    return os.getenv(f"EDGE_TTS_VOICE_{suffix}") or os.getenv("EDGE_TTS_VOICE", default)
+
+
+def _narration_voice(mode: str, voicebox_engine: str, language: str, gender: str) -> str:
+    """Return the voice/engine param for the narrate task based on provider mode."""
+    if mode == "voicebox":
+        return voicebox_engine
+    return _edge_voice(language, gender)
+
+
+def _narration_stagger(mode: str, language: str) -> int:
+    if mode == "kokoro":
+        return 45
+    if language in ("my", "td") and mode in ("edge_tts", "mms_tts"):
+        return int(os.getenv("MMS_TTS_STAGGER_SECONDS", "5"))
+    return 0
+
+
 @app.task(name="tasks.orchestrate")
 def orchestrate(job: dict) -> None:
     """Entry point. `job` is the JSON pushed by Laravel's DispatchServiceJob."""
@@ -120,42 +169,12 @@ def generate_text_segments(job: dict, plan: dict) -> None:
     narration_mode = job.get("narration_mode")
     voicebox_engine = job.get("voicebox_engine", "kokoro")
     gender = job.get("presenter_gender", "female")
-    # narration_mode is now set per-language by the admin dashboard.
-    # A False value suppresses server TTS for this service entirely.
-    narration_enabled = job.get("narration_enabled", True)
-    want_audio = (
-        narration_enabled
-        and narration_mode in ("openai", "kokoro", "edge_tts", "mms_tts", "voicebox")
-        and narrator.is_enabled(narration_mode)
-    )
+    want_audio = _wants_server_narration(job)
     def _seg_gender(segment: str) -> str:
-        """Sermon uses the chosen presenter gender; all other segments use the opposite
-        so the preacher and the support voice are always a matched pair."""
-        return gender if segment == "sermon" else ("female" if gender == "male" else "male")
-
-    def _edge_voice(g: str) -> str:
-        import os as _os
-        suffix = g.upper()
-        if language == "my":
-            # Myanmar has two native Edge TTS voices; pick by gender.
-            default = "my-MM-ThihaNeural" if g == "male" else "my-MM-NilarNeural"
-            return (_os.getenv(f"EDGE_TTS_VOICE_MY_{suffix}")
-                    or _os.getenv("EDGE_TTS_VOICE_MY", default))
-        if language == "td":
-            # No native Zolai Edge TTS voice; use a configurable fallback.
-            # Tedim is Latin-script so an English voice reads it phonetically.
-            default = "en-US-GuyNeural" if g == "male" else "en-US-AriaNeural"
-            return _os.getenv("EDGE_TTS_VOICE_TD", default)
-        default = "en-US-GuyNeural" if g == "male" else "en-US-AriaNeural"
-        return _os.getenv(f"EDGE_TTS_VOICE_{suffix}") or _os.getenv("EDGE_TTS_VOICE", default)
+        return _segment_gender(segment, gender)
 
     def _narrate_voice(g: str) -> str:
-        """Return the voice/engine param for the narrate task based on mode.
-        For voicebox mode this carries the engine name; for edge_tts it carries
-        the Edge TTS voice name; for other modes the value is unused."""
-        if narration_mode == "voicebox":
-            return voicebox_engine
-        return _edge_voice(g)
+        return _narration_voice(narration_mode, voicebox_engine, language, g)
 
     # Scripture: model picks the reference, the bundled public-domain Bible supplies
     # the words. If resolution fails (unparseable/missing reference), still give the
@@ -174,18 +193,9 @@ def generate_text_segments(job: dict, plan: dict) -> None:
     _post_asset(token, "scripture", asset_type="text", text_payload=scripture_payload)
     # Read the passage aloud (the verse words, not the bare reference) when narration
     # is configured. Scripture gets a voice but no avatar — it's shown as written.
-    # OpenRouter (kokoro) has tight per-minute rate limits; stagger narration calls
-    # 45 s apart so concurrent segments don't overlap and trigger provider 429s.
-    # Myanmar/Tedim edge_tts mode is backed by local MMS-TTS; stagger those CPU-heavy
-    # requests too so the ARM box does not get several long VITS generations at once.
-    if narration_mode == "kokoro":
-        _narrate_stagger = 45
-    elif language in ("my", "td") and narration_mode == "edge_tts":
-        # MMS-TTS already serializes via its own asyncio.Semaphore(1), so
-        # a small stagger is enough to avoid hammering Celery's queue.
-        _narrate_stagger = int(os.getenv("MMS_TTS_STAGGER_SECONDS", "5"))
-    else:
-        _narrate_stagger = 0
+    # Stagger providers that are sensitive to overlap: Kokoro can rate-limit, and
+    # Myanmar/Tedim local MMS-TTS is CPU-heavy on the small server.
+    _narrate_stagger = _narration_stagger(narration_mode, language)
     _narrate_slot = 0
 
     if want_audio:
@@ -253,6 +263,44 @@ def generate_text_segments(job: dict, plan: dict) -> None:
     for args in deferred_narrations:
         narrate.apply_async(args, countdown=_narrate_slot)
         _narrate_slot += _narrate_stagger
+
+
+@app.task(name="tasks.repair_missing_narration")
+def repair_missing_narration(job: dict) -> None:
+    """Backfill narration for completed text segments that are missing audio.
+
+    Laravel enqueues this from the poll endpoint when it sees a completed service
+    with text but no audio_key. The work is idempotent at the webhook level because
+    narration only enriches the existing service_assets row.
+    """
+    if not _wants_server_narration(job):
+        return
+
+    token = job["session_token"]
+    language = job.get("language", "en")
+    mode = job.get("narration_mode", "openai")
+    voicebox_engine = job.get("voicebox_engine", "kokoro")
+    presenter_gender = job.get("presenter_gender", "female")
+    storage.set_backend(job.get("storage_backend"))
+
+    countdown = 0
+    stagger = _narration_stagger(mode, language)
+    queued = 0
+    for item in job.get("segments", []):
+        segment = item.get("segment")
+        text = (item.get("text") or "").strip()
+        if segment not in NARRATED_SEGMENTS or not text:
+            continue
+
+        gender = _segment_gender(segment, presenter_gender)
+        narrate.apply_async(
+            (token, segment, text, mode, _narration_voice(mode, voicebox_engine, language, gender), gender, language),
+            countdown=countdown,
+        )
+        countdown += stagger
+        queued += 1
+
+    print(f"[narration-repair] queued {queued} segment(s) for {token[:8]}…", flush=True)
 
 
 @app.task(name="tasks.generate_music", time_limit=1800, soft_time_limit=1500, reject_on_worker_lost=True)

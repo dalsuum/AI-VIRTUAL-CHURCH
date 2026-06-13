@@ -111,7 +111,7 @@ def _ensure_exact_name(text: str, user_name: str | None) -> str:
 API_KEY = os.environ["OPENROUTER_API_KEY"]
 BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 MODEL = os.getenv("LLM_MODEL", "meta-llama/llama-3.3-70b-instruct:free")
-LOCAL_LLM_TIMEOUT = int(os.getenv("LOCAL_LLM_TIMEOUT", "300"))
+LOCAL_LLM_TIMEOUT = int(os.getenv("LOCAL_LLM_TIMEOUT", "45"))
 
 
 def _model_for(language: str = "en") -> str:
@@ -237,6 +237,22 @@ def _keyword_anchor(prayer_text: str | None) -> str:
         "Ground this segment directly in these specific feelings and concerns."
     )
 
+def _fallback_welcome(user_name: str | None, mood: str, language: str) -> str:
+    if language == "my":
+        name = f"{user_name}၊ " if user_name else ""
+        return (
+            f"{name}ပြန်လည်ကြိုဆိုပါသည်။ ယနေ့ သင်၏နှလုံးတွင် ဝမ်းနည်းခြင်းနှင့် ပင်ပန်းခြင်းရှိနေပါက၊ "
+            "ဘုရားသခင်၏ ကရုဏာတော်သည် သင့်အနီးတွင် ရှိပါသည်။ ဤဝတ်ပြုချိန်တွင် ငြိမ်သက်ခြင်း၊ "
+            "မျှော်လင့်ခြင်းနှင့် ခရစ်တော်၏ မေတ္တာတော်ကို ပြန်လည်ခံစားရပါစေ။"
+        )
+    if language == "td":
+        name = f"{user_name}, " if user_name else ""
+        return (
+            f"{name}dam takin kong na sang hi. Tuni in na lungtang a dah leh a gim mahmah leh, "
+            "Topa Pasian in na kiangah om hi. Hih biakna hun sungah Zeisu Krist itna, "
+            "nopna leh lam-etna hong thak sak hen."
+        )
+    return f"Welcome back{', ' + user_name if user_name else ''}. May Christ meet you with peace and hope today."
 
 
 def _fallback_opening_prayer(user_name: str | None, mood: str, language: str) -> str:
@@ -691,10 +707,16 @@ def generate_welcome(*, user_name: str | None, mood: str, language: str = "en") 
         "headings, no scripture citation. Stay within mainstream Christian hope and grace."
     )
     user = f"{_addressing(user_name)}\nFeeling they chose today: {mood}"
-    return _ensure_exact_name(
-        _strip_formatting(_complete(system, user, max_tokens=180, language=language)),
-        user_name,
-    )
+    try:
+        return _ensure_exact_name(
+            _strip_formatting(_complete(system, user, max_tokens=180, language=language)),
+            user_name,
+        )
+    except Exception as exc:
+        if language in ("my", "td"):
+            print(f"[llm] {language} welcome fallback: {exc}", flush=True)
+            return _ensure_exact_name(_fallback_welcome(user_name, mood, language), user_name)
+        raise
 
 
 def generate_opening_prayer(*, user_name: str | None, mood: str, prayer_text: str | None, language: str = "en", user_history: dict | None = None) -> str:

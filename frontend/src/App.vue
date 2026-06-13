@@ -6,12 +6,15 @@ import ServicePlayer from "./components/ServicePlayer.vue";
 import AdminConsole from "./components/AdminConsole.vue";
 import PasswordReset from "./components/PasswordReset.vue";
 import ThemeToggle from "./components/ThemeToggle.vue";
+import ZolaiVocabulary from "./components/ZolaiVocabulary.vue";
 import { api } from "./composables/useApi";
 
 // The admin console lives at #admin so it never collides with the worship flow.
 const isAdminRoute = ref(window.location.hash === "#admin");
+const isVocabRoute = ref(window.location.hash === "#vocabulary");
 window.addEventListener("hashchange", () => {
   isAdminRoute.value = window.location.hash === "#admin";
+  isVocabRoute.value = window.location.hash === "#vocabulary";
 });
 
 // view: "intake" | "preparing" | "service" | "intercepted" | "reset"
@@ -33,6 +36,8 @@ const sessionToken = ref(null);
 const resource = ref(null);
 const service = ref(null);
 const musicSource = ref(null);
+const intakeLanguage = ref("en");
+const intakeMood = ref("");
 const displayName = ref(api.rememberedName() || "");
 const resumeError = ref("");
 
@@ -89,9 +94,11 @@ const scheduledFor = computed(() => {
   return at ? new Date(at).toLocaleString() : null;
 });
 
-function onStarted({ token, musicSource: source }) {
+function onStarted({ token, musicSource: source, language, mood }) {
   sessionToken.value = token;
   musicSource.value = source;
+  intakeLanguage.value = language || "en";
+  intakeMood.value = mood || "";
   view.value = "preparing";
   service.value = null;
   displayName.value = api.rememberedName() || "";
@@ -187,6 +194,7 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
 
 <template>
   <AdminConsole v-if="isAdminRoute" />
+  <ZolaiVocabulary v-else-if="isVocabRoute" />
 
   <div v-else class="page">
     <header class="topbar">
@@ -224,6 +232,8 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
           :display-name="displayName"
           :music-source="musicSource"
           :media-ready="mediaReady"
+          :language="intakeLanguage"
+          :mood="intakeMood"
           @ready="onReady"
         />
 

@@ -193,7 +193,8 @@ service one stage at a time.
 
 | Component | Role |
 |-----------|------|
-| [App.vue](frontend/src/App.vue) | Stage machine: `intake` → `preparing` → `service`; routes `/admin` to the console. |
+| [App.vue](frontend/src/App.vue) | Stage machine: `intake` → `preparing` → `service`; routes `#admin` to the console, `#vocabulary` to the Zolai vocabulary page. |
+| [ZolaiVocabulary.vue](frontend/src/components/ZolaiVocabulary.vue) | Searchable Zolai↔English reference at `#vocabulary`. Edit `frontend/src/data/zolai_vocabulary.json` to add or correct words. |
 | [IntakeForm.vue](frontend/src/components/IntakeForm.vue) | Mood + prayer + (optional) schedule + music-source pick + **language tab** (English / မြန်မာ / Zolai). Moods, the offered music sources, and whether scheduling shows are all driven by `GET /config` so the admin can curate them. Myanmar Unicode fonts (Padauk/Noto Sans Myanmar) loaded for Burmese UI strings. |
 | [PreparingView.vue](frontend/src/components/PreparingView.vue) | Countdown screen; shows the welcome-back greeting while segments compose, rotates admin-managed encouragement/testimony cards, then opens only after the worship media and opening-prayer narration are ready (with longer Myanmar/Tedim countdowns). |
 | [ServicePlayer.vue](frontend/src/components/ServicePlayer.vue) | The full-screen, one-stage-at-a-time player. Auto-reads each segment (server video → server audio → browser Web Speech), auto-advances. |

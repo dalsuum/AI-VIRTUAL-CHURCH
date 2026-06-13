@@ -242,10 +242,13 @@ def generate_music(job: dict, plan: dict) -> None:
         music_prompt = plan.get("music_prompt", "")
         if job["music_source"] == "suno":
             language = job.get("language", "en")
-            if language == "td":
-                # OpenRouter has insufficient Tedim training data to write proper Zolai.
-                # Always use the curated hardcoded lyrics — never trust LLM output here.
-                music_lyrics = llm_engine._fallback_music_lyrics(job["mood"], language)
+            if language in ("td", "my"):
+                # For non-English services, delegate lyric generation to the local
+                # language-specific LLM (Tedim :8001 / Burmese :8002). OpenRouter
+                # English-first models cannot reliably produce correct Zolai or Myanmar.
+                # generate_music_lyrics falls back to curated hardcoded lyrics if the
+                # local service is down or the output fails the language guard.
+                music_lyrics = llm_engine.generate_music_lyrics(mood=job["mood"], language=language)
             else:
                 music_lyrics = str(plan.get("music_lyrics") or "")
                 if not llm_engine._lyrics_match_language(music_lyrics, language):

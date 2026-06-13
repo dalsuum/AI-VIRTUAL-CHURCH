@@ -631,3 +631,54 @@ def generate_benediction(*, user_name: str | None, mood: str, language: str = "e
             print(f"[llm] {language} benediction fallback: {exc}", flush=True)
             return _ensure_exact_name(_fallback_benediction(user_name, mood, language), user_name)
         raise
+
+
+def generate_music_lyrics(*, mood: str, language: str) -> str:
+    """Generate worship song lyrics via the local language-specific LLM.
+
+    For Tedim and Burmese the local Ollama model produces text in the correct
+    script and grammar. If the local service is unreachable, busy, or its output
+    fails the language guard, falls back to mood-keyed curated Tedim/Burmese lyrics.
+    For English (and any other language) this just returns the fallback directly —
+    callers use plan['music_lyrics'] from OpenRouter for those.
+    """
+    if language not in ("td", "my"):
+        return _fallback_music_lyrics(mood, language)
+
+    if language == "td":
+        system = (
+            "You are a Tedim Chin (Zolai) Christian worship song composer. "
+            "Write worship song lyrics ONLY in the Tedim/Zolai language. "
+            "Every sentence MUST end with 'hi' (declarative) or 'hen' (benedictive). "
+            "Required Tedim words: Pasian (God), Topa (Lord), Zeisu Krist (Jesus Christ), "
+            "ka (I/my), na (your), nang (you), hong (come), in (subject marker), "
+            "sungah (in/inside), lungdamna (grace), lungtang (heart), nuntakna (life). "
+            "Do NOT use English, Mizo, Falam, or Haka words. "
+            "Output ONLY the lyric lines — no Verse/Chorus labels, no explanations."
+        )
+        user = (
+            f"Write 2 short verses and 1 chorus of a Tedim worship song "
+            f"for someone feeling {mood}."
+        )
+    else:  # my
+        system = (
+            "You are a Myanmar (Burmese) Christian worship song composer. "
+            "Write worship song lyrics ONLY in Myanmar Burmese using Myanmar Unicode script. "
+            "Use: ဘုရားသခင် (God), ကိုယ်တော် (Lord), ယေရှုခရစ်တော် (Jesus Christ). "
+            "Do NOT use English words or Zawgyi encoding. "
+            "Output ONLY the lyric lines — no labels, no explanations."
+        )
+        user = (
+            f"Write 2 short verses and 1 chorus of a Burmese worship song "
+            f"for someone feeling {mood}."
+        )
+
+    try:
+        text = _strip_formatting(_complete_local(system, user, max_tokens=400, language=language))
+        if _lyrics_match_language(text, language):
+            return text
+        print(f"[llm] local {language} lyrics failed language guard, using fallback", flush=True)
+    except Exception as exc:
+        print(f"[llm] local {language} lyrics unavailable ({exc}), using fallback", flush=True)
+
+    return _fallback_music_lyrics(mood, language)

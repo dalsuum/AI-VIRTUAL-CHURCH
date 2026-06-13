@@ -17,6 +17,7 @@ shares Gunicorn, Redis, and MySQL on the same 4-OCPU instance.
 import asyncio
 import hashlib
 import os
+import re
 import sys
 
 import httpx
@@ -27,6 +28,41 @@ from pydantic import BaseModel
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 router = APIRouter(prefix="/tedim", tags=["tedim-llm"])
+
+# English function words that never appear in genuine Tedim prose. A paragraph
+# where these make up more than 30% of its words is English and must be removed.
+_EN_MARKERS = frozenset({
+    "you", "are", "have", "been", "the", "a", "an", "to", "of", "and", "is",
+    "for", "that", "this", "with", "your", "by", "it", "was", "be", "as", "at",
+    "from", "which", "all", "has", "will", "on", "but", "not", "they", "their",
+    "we", "he", "she", "his", "her", "its", "our", "who", "or", "can", "do",
+    "gives", "come", "today", "brings", "place", "grow", "part", "called", "done",
+    "also", "so", "up", "out", "about", "into", "through", "there", "been",
+    "church", "worship", "lord", "jesus", "god", "love", "gift", "life", "faith",
+    "grateful", "thankful", "peace", "joy", "salvation", "presence", "community",
+})
+
+
+def _strip_english_paragraphs(text: str) -> str:
+    """Remove paragraphs that are predominantly English from Tedim output."""
+    paras = text.split("\n")
+    clean = []
+    for para in paras:
+        stripped = para.strip()
+        if not stripped:
+            clean.append(para)
+            continue
+        words = re.findall(r"\b[a-z]+\b", stripped.lower())
+        if len(words) < 4:
+            clean.append(para)
+            continue
+        english_hits = sum(1 for w in words if w in _EN_MARKERS)
+        if english_hits / len(words) > 0.30:
+            continue  # English paragraph — drop it
+        clean.append(para)
+    result = "\n".join(clean).strip()
+    # If we stripped everything (degenerate model output), return original
+    return result if result else text
 
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434/api/generate")
 MODEL = os.getenv("OLLAMA_MODEL_TD", "tedim-zolai")
@@ -88,11 +124,14 @@ async def translate(body: TranslateIn):
 @router.post("/generate")
 async def generate(body: GenerateIn):
     system = body.system or (
+        "LANGUAGE LAW: Write EVERY sentence in Tedim Chin (Zolai) ONLY. "
+        "ZERO English sentences or paragraphs. "
         "You are a Tedim (Zolai) language assistant for a virtual church. "
-        "Write devotional content in natural Tedim using standard Zolai "
-        "orthography."
+        "Write devotional content in natural Tedim using standard Zolai orthography."
     )
-    out = await _ollama(body.prompt, system=system, max_tokens=body.max_tokens)
+    out = _strip_english_paragraphs(
+        await _ollama(body.prompt, system=system, max_tokens=body.max_tokens)
+    )
     return {"text": out}
 
 

@@ -324,8 +324,11 @@ def _language_instruction(language: str) -> str:
         )
     if language == "td":
         return (
-            "Write your ENTIRE response in the Tedim Chin language (also called Zolai or Zomi pau). "
-            "Use standard Tedim Latin orthography only — no English sentences except a worshipper's proper name when one is provided, no Burmese script. "
+            "LANGUAGE LAW — ABSOLUTE: Write EVERY SINGLE SENTENCE in Tedim Chin (Zolai / Zomi pau) ONLY. "
+            "ZERO English sentences, ZERO English paragraphs, ZERO English explanations. "
+            "Do NOT translate, do NOT add English alongside Tedim, do NOT explain in English. "
+            "Every word must be Tedim. The only Latin letters allowed are Tedim words. "
+            "Use standard Tedim Latin orthography only — no Burmese script. "
             "CRITICAL: Tedim is NOT Mizo, NOT Falam Chin, and NOT Haka Chin. Do NOT use Mizo words. "
             "These Tedim words are REQUIRED — use them exactly: "
             "Pasian (God) — NOT Pathian; "
@@ -339,9 +342,10 @@ def _language_instruction(language: str) -> str:
             "Thu Siangtho (Holy Scripture); "
             "Siangtho (holy/sacred); "
             "Zomi (the Tedim people). "
-            "Common Tedim sentence patterns: 'Pasian in i hiam' (God loves you), "
-            "'Topa in na ngaih' (the Lord hears you), 'Zeisu in zangtal piak' (Jesus gives salvation). "
-            "Keep sentences short and clear. Compose directly in Tedim; do not translate English idioms word-for-word. "
+            "Tedim declarative sentences end with 'hi'; benedictive endings use 'hen'. "
+            "Common Tedim sentence patterns: 'Pasian in i hiam hi' (God loves you), "
+            "'Topa in na ngaih hi' (the Lord hears you), 'Zeisu in zangtal piak hi' (Jesus gives salvation). "
+            "Keep sentences short and clear. Compose directly in Tedim; never translate English idioms. "
             "For narration, spell out numbers and Bible references in Tedim words; do not leave raw forms like 'Jn 3:16' or '2026'."
         )
     return ""
@@ -596,7 +600,9 @@ def generate_welcome(*, user_name: str | None, mood: str, language: str = "en") 
     the service is still composing. Tuned to the feeling the worshipper chose, it is
     spoken-style and deliberately brief — it is read in a few seconds, not preached.
     """
+    lang_inst = _language_instruction(language) if language != "en" else ""
     system = (
+        (f"{lang_inst} " if lang_inst else "") +
         "You are the warm voice that welcomes a returning worshipper back to their "
         "personal worship service. Write a SHORT greeting (40-70 words) that opens by "
         "welcoming them and gently meets the feeling they arrived with — "
@@ -604,8 +610,6 @@ def generate_welcome(*, user_name: str | None, mood: str, language: str = "en") 
         "encouragement if seeking or hopeful. Spoken cadence, one short paragraph, no "
         "headings, no scripture citation. Stay within mainstream Christian hope and grace."
     )
-    if language != "en":
-        system = f"{system} {_language_instruction(language)}"
     user = f"{_addressing(user_name)}\nFeeling they chose today: {mood}"
     return _ensure_exact_name(
         _strip_formatting(_complete(system, user, max_tokens=180, language=language)),
@@ -614,7 +618,9 @@ def generate_welcome(*, user_name: str | None, mood: str, language: str = "en") 
 
 
 def generate_opening_prayer(*, user_name: str | None, mood: str, prayer_text: str | None, language: str = "en", user_history: dict | None = None) -> str:
+    lang_inst = _language_instruction(language) if language != "en" else ""
     system = (
+        (f"{lang_inst} " if lang_inst else "") +
         "You are a warm, pastoral voice opening a worship service. Write a personalized "
         "opening prayer (120-180 words) that gently acknowledges the person's situation "
         "without exposing sensitive detail bluntly. Spoken cadence, no headings."
@@ -622,8 +628,6 @@ def generate_opening_prayer(*, user_name: str | None, mood: str, prayer_text: st
     freshness = _freshness_directive(user_history)
     if freshness:
         system = f"{system} {freshness}"
-    if language != "en":
-        system = f"{system} {_language_instruction(language)}"
     user = (
         f"{_addressing(user_name)}\nMood: {mood}\n"
         f"What they shared: {prayer_text or '(nothing specific)'}"
@@ -644,7 +648,9 @@ def generate_opening_prayer(*, user_name: str | None, mood: str, prayer_text: st
 
 def generate_sermon(*, user_name: str | None, mood: str, scripture_ref: str, target_minutes: int = 8, language: str = "en", prayer_text: str | None = None, user_history: dict | None = None) -> str:
     """Preaching segment, built around the user's mood and the chosen passage."""
+    lang_inst = _language_instruction(language) if language != "en" else ""
     system = (
+        (f"{lang_inst} " if lang_inst else "") +
         "You are an expository preacher writing for spoken delivery by a digital avatar. "
         "Move through three movements — a hook that draws the listener in, the passage's "
         "context and meaning, then how it applies to their life today — but write it as "
@@ -657,8 +663,6 @@ def generate_sermon(*, user_name: str | None, mood: str, scripture_ref: str, tar
     freshness = _freshness_directive(user_history)
     if freshness:
         system = f"{system} {freshness}"
-    if language != "en":
-        system = f"{system} {_language_instruction(language)}"
     user = (
         f"Scripture focus: {scripture_ref}\n"
         f"Listener's theme/mood: {mood}\n"
@@ -686,15 +690,15 @@ def generate_sermon(*, user_name: str | None, mood: str, scripture_ref: str, tar
 
 
 def generate_benediction(*, user_name: str | None, mood: str, language: str = "en", prayer_text: str | None = None, user_history: dict | None = None) -> str:
+    lang_inst = _language_instruction(language) if language != "en" else ""
     system = (
+        (f"{lang_inst} " if lang_inst else "") +
         "Write a short closing benediction (50-90 words) for spoken delivery. Personal, "
         "hopeful, sends the listener out with peace. No headings."
     )
     freshness = _freshness_directive(user_history)
     if freshness:
         system = f"{system} {freshness}"
-    if language != "en":
-        system = f"{system} {_language_instruction(language)}"
     user = f"{_addressing(user_name)}\nMood: {mood}"
     if anchor := _keyword_anchor(prayer_text):
         user = f"{user}\n{anchor}"

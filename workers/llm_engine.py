@@ -23,7 +23,11 @@ _TEDIM_CORRECTIONS = [
     (r"\btawngtai\b",  "thungeta"),     # pray (verb)
     (r"\bpathian\b",   "Pasian"),       # God
     (r"\blalpa\b",     "Topa"),         # the Lord
+    (r"\blalpan\b",    "Topa in"),      # the Lord [subject marker] — Mizo conjugated form
     (r"\bisua\b",      "Zeisu"),        # Jesus
+    (r"\bchawimawina\b","kumdan"),      # glory/honour
+    (r"\bngaihthlak\b","ngaihdam"),     # forgiveness (Mizo → Tedim)
+    (r"\bthangpui\b",  "kumdan"),       # glorify (Mizo form)
 ]
 _TEDIM_CORRECTIONS_COMPILED = [
     (re.compile(pat, re.IGNORECASE), rep) for pat, rep in _TEDIM_CORRECTIONS
@@ -342,10 +346,23 @@ def _language_instruction(language: str) -> str:
             "Thu Siangtho (Holy Scripture); "
             "Siangtho (holy/sacred); "
             "Zomi (the Tedim people). "
-            "Tedim declarative sentences end with 'hi'; benedictive endings use 'hen'. "
-            "Common Tedim sentence patterns: 'Pasian in i hiam hi' (God loves you), "
-            "'Topa in na ngaih hi' (the Lord hears you), 'Zeisu in zangtal piak hi' (Jesus gives salvation). "
-            "Keep sentences short and clear. Compose directly in Tedim; never translate English idioms. "
+            "TEDIM GRAMMAR — mandatory rules from Zolai grammar (Paunam Khenna Leh Kampau Luanzia): "
+            "Word order is SOV — the verb always comes at the END of the sentence. "
+            "Subject marker 'in' follows the subject noun (e.g., 'Pasian in' = God [as subject]). "
+            "Sentence-final particles: 'hi' closes every declarative sentence; 'hen' closes prayers, blessings, and wishes; 'ahi hi' for emphatic truths. "
+            "Pronouns: ka (I/my, 1st sg), nang (you/your, 2nd sg), amah (he/she/it, 3rd sg), "
+            "eite (we/our, 1st pl), note (you pl, 2nd pl), amaute (they, 3rd pl). "
+            "Tense suffixes: past = verb + 'khin hi' (e.g., 'hong pai khin hi' = came); "
+            "future = verb + 'ding hi' (e.g., 'hong pai ding hi' = will come); "
+            "continuous = verb + 'laitak hi' (e.g., 'tai laitak hi' = is going); "
+            "present/habitual = bare verb + 'hi'. "
+            "Negation: verb + 'lo hi' (e.g., 'om lo hi' = there is not; 'mangngilh lo hi' = does not forget). "
+            "Correct sentence examples: "
+            "'Pasian in na itna hi' (God loves you — SOV); "
+            "'Topa in na thungna hong za hi' (The Lord hears your prayer); "
+            "'Zeisu in zangtal hong piak hi' (Jesus gives you salvation); "
+            "'Kha Siangtho in hong makaih zel hen' (May the Holy Spirit always guide you — benedictive). "
+            "Keep sentences short and clear. Compose directly in Tedim; never translate English idioms word-for-word. "
             "For narration, spell out numbers and Bible references in Tedim words; do not leave raw forms like 'Jn 3:16' or '2026'."
         )
     return ""
@@ -730,10 +747,14 @@ def generate_music_lyrics(*, mood: str, language: str) -> str:
         system = (
             "You are a Tedim Chin (Zolai) Christian worship song composer. "
             "Write worship song lyrics ONLY in the Tedim/Zolai language. "
-            "Every sentence MUST end with 'hi' (declarative) or 'hen' (benedictive). "
-            "Required Tedim words: Pasian (God), Topa (Lord), Zeisu Krist (Jesus Christ), "
-            "ka (I/my), na (your), nang (you), hong (come), in (subject marker), "
-            "sungah (in/inside), lungdamna (grace), lungtang (heart), nuntakna (life). "
+            "GRAMMAR — SOV word order: the verb always comes at the END of each line. "
+            "Every declarative line MUST end with 'hi'; prayer/blessing lines MUST end with 'hen'. "
+            "Subject marker 'in' follows the subject (e.g., 'Pasian in' = God [as subject]). "
+            "Pronouns: ka (I/my), nang (you/your), amah (he/she), eite (we). "
+            "Required Tedim words: Pasian (God — NOT Pathian), Topa (Lord — NOT Lalpa), "
+            "Zeisu Krist (Jesus Christ — NOT Isua), Kha Siangtho (Holy Spirit), "
+            "lungdamna (grace), lungtang (heart), nuntakna (life), zangtal (salvation), "
+            "hong (come/arrive), sungah (in/within), kilemna (praise). "
             "Do NOT use English, Mizo, Falam, or Haka words. "
             "Start each section with a Suno structural tag on its own line: "
             "[Verse 1], [Chorus], [Verse 2]. Output ONLY the tagged lyric sections — no explanations."

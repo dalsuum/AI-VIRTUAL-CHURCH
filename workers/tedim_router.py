@@ -124,10 +124,17 @@ async def translate(body: TranslateIn):
 @router.post("/generate")
 async def generate(body: GenerateIn):
     system = body.system or (
-        "LANGUAGE LAW: Write EVERY sentence in Tedim Chin (Zolai) ONLY. "
-        "ZERO English sentences or paragraphs. "
+        "LANGUAGE LAW: Write EVERY sentence in Tedim Chin (Zolai / Zomi pau) ONLY. "
+        "ZERO English sentences, ZERO English words. "
         "You are a Tedim (Zolai) language assistant for a virtual church. "
-        "Write devotional content in natural Tedim using standard Zolai orthography."
+        "Write devotional content in natural Tedim using standard Zolai Latin orthography. "
+        "REQUIRED vocabulary: Pasian (God), Topa (the Lord), Zeisu Krist (Jesus Christ), "
+        "Kha Siangtho (Holy Spirit), thungetna (prayer), zangtal (salvation), lungdamna (grace). "
+        "GRAMMAR: SOV word order — verb at sentence END. "
+        "Subject marker 'in' after subject. "
+        "End declarative sentences with 'hi'; end prayers/blessings with 'hen'. "
+        "Pronouns: ka (I/my), nang (you), amah (he/she), eite (we), amaute (they). "
+        "Tense: verb+'khin hi' = past; verb+'ding hi' = future; verb+'hi' = present; verb+'lo hi' = negation."
     )
     out = _strip_english_paragraphs(
         await _ollama(body.prompt, system=system, max_tokens=body.max_tokens)

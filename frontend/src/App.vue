@@ -49,13 +49,23 @@ let pollTimer = null;
 // modes, wait for worship music; for server-narrated modes, wait for the opening
 // prayer audio too so late narration does not start over a page the worshipper is
 // already reading.
-const MEDIA_GRACE_POLLS = 75;
+// Multilingual (Tedim/Myanmar) MMS-TTS runs sequentially on CPU and takes
+// longer to finish all segments — extend the polling window so late-arriving
+// sermon narration still attaches before we stop polling.
+const MEDIA_GRACE_POLLS = computed(() =>
+  (["my", "td"].includes(service.value?.language) && serverNarrationExpected.value) ? 150 : 75
+);
 // Fallback open after ~140s (35 polls x 4s) once text is composed, so
 // provider failures (Suno moderation, late/missing narration callbacks) do
 // not trap worshippers on the preparing screen for many minutes.
 const OPEN_FAILSAFE_POLLS = 35;
+// Absolute ceiling: open after 15 min of polling even if the service never
+// reaches "complete" (e.g. worker outage, LLM silent failure). Prevents the
+// preparing screen from becoming a permanent dead-end.
+const TOTAL_FAILSAFE_POLLS = 225; // 225 × 4s = 15 min
 let mediaGracePolls = 0;
 let openWaitPolls = 0;
+let totalPolls = 0;
 
 const textComposed = computed(() => service.value?.status === "complete");
 const musicLanded = computed(() => service.value?.music_asset != null);
@@ -65,18 +75,23 @@ const musicExpected = computed(() => ["suno", "youtube", "hymn", "hymn_sung"].in
 // Server-voice modes attach mp3s after the text; we keep polling after entry so
 // late narration can still attach without blocking worship start. (Kept in sync
 // with Setting::NARRATION_MODES.)
-const SERVER_VOICE_MODES = ["openai", "kokoro", "edge_tts"];
+const SERVER_VOICE_MODES = ["openai", "kokoro", "edge_tts", "mms_tts", "voicebox"];
 const serverNarrationExpected = computed(() => {
   const s = service.value;
   return Boolean(s && s.narration_enabled !== false && SERVER_VOICE_MODES.includes(s.narration_mode));
 });
 const openingPrayerTextReady = computed(() => Boolean(service.value?.segments?.opening_prayer));
+// Music segments (worship / closing_hymn) are never narrated — exclude them so
+// narrationSettled doesn't get stuck waiting for audio that will never arrive.
+const NARRATED_SEGMENTS = new Set(["opening_prayer", "scripture", "sermon", "benediction"]);
 const narrationSettled = computed(() => {
   const s = service.value;
   if (!s || !serverNarrationExpected.value) return true;
   const segs = s.segments || {};
   const auds = s.audios || {};
-  return Object.keys(segs).every((k) => auds[k]);
+  return Object.keys(segs)
+    .filter((k) => NARRATED_SEGMENTS.has(k))
+    .every((k) => auds[k]);
 });
 const requiredOpeningMediaReady = computed(() => {
   if (!textComposed.value || !openingPrayerTextReady.value) return false;
@@ -86,7 +101,11 @@ const requiredOpeningMediaReady = computed(() => {
 // Myanmar/Tedim server narration so users are not surprised by a delayed first
 // prayer voice while they are already reading later pages. The failsafe preserves
 // the app's degrade-not-block behavior if an external media provider never returns.
-const mediaReady = computed(() => requiredOpeningMediaReady.value || (textComposed.value && openWaitPolls >= OPEN_FAILSAFE_POLLS));
+const mediaReady = computed(() =>
+  requiredOpeningMediaReady.value ||
+  (textComposed.value && openWaitPolls >= OPEN_FAILSAFE_POLLS) ||
+  totalPolls >= TOTAL_FAILSAFE_POLLS
+);
 
 const isScheduled = computed(() => service.value?.status === "scheduled");
 const scheduledFor = computed(() => {
@@ -104,6 +123,7 @@ function onStarted({ token, musicSource: source, language, mood }) {
   displayName.value = api.rememberedName() || "";
   mediaGracePolls = 0;
   openWaitPolls = 0;
+  totalPolls = 0;
   // Assets are produced asynchronously by the AI pipeline; poll until they land.
   // (A later phase replaces this with the WebSocket push described in the README.)
   poll();
@@ -113,6 +133,7 @@ function onStarted({ token, musicSource: source, language, mood }) {
 async function poll() {
   try {
     service.value = await api.getService(sessionToken.value);
+    totalPolls += 1;
     if (textComposed.value && !requiredOpeningMediaReady.value) {
       openWaitPolls += 1;
     }
@@ -121,7 +142,7 @@ async function poll() {
     // only after opening is allowed). narrationSettled covers the late-arriving server
     // mp3s (the sermon especially) that attach after their text in OpenAI/Kokoro mode.
     const mediaSettled = (!musicExpected.value || musicLanded.value) && narrationSettled.value;
-    if (mediaReady.value && pollTimer && (mediaSettled || ++mediaGracePolls >= MEDIA_GRACE_POLLS)) {
+    if (mediaReady.value && pollTimer && (mediaSettled || ++mediaGracePolls >= MEDIA_GRACE_POLLS.value)) {
       clearInterval(pollTimer);
       pollTimer = null;
     }
@@ -173,6 +194,7 @@ onMounted(async () => {
     displayName.value  = api.rememberedName() || "";
     mediaGracePolls    = 0;
     openWaitPolls      = 0;
+    totalPolls         = 0;
 
     if (status === "scheduled") {
       // Time hasn't arrived yet — show the "your service is scheduled" screen.

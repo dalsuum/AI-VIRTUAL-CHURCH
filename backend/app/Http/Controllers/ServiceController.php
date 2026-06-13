@@ -273,9 +273,14 @@ class ServiceController extends Controller
             'embeds'       => $embeds,
             'videos'       => $videos,
             'audios'       => $audios,
-            // How the player should voice spoken segments: 'openai'/'kokoro'/'edge_tts' (play the
-            // audio above), 'browser' (read via speechSynthesis), or 'off' (text only).
-            'narration_mode' => Setting::get('narration_mode', 'browser'),
+            // How the player should voice spoken segments. Read per-language so the
+            // player knows whether to expect server audio ('edge_tts'/'mms_tts'/
+            // 'openai'/'kokoro') or fall back to browser speech / silence.
+            'narration_mode' => Setting::get('narration_mode_' . $language, match ($language) {
+                'my'    => 'edge_tts',
+                'td'    => 'mms_tts',
+                default => 'browser',
+            }),
             'narration_enabled' => $narrationEnabled,
             'text_highlight_enabled' => Setting::get('text_highlight_enabled', '1') === '1',
             'language'    => $language,

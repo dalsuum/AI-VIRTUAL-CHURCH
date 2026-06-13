@@ -183,7 +183,7 @@ A single Celery app with one Redis broker and **named queues that mirror the wor
 | [strategies/](workers/strategies/) | `MusicStrategy` interface + `HymnStrategy` / `SunoStrategy` / `YouTubeStrategy`, returning a normalized `MusicResult`. |
 | [hymns.py](workers/hymns.py) / [seed_hymns.py](workers/seed_hymns.py) | Public-domain hymn library (lyrics + recordings) and the one-time seeder that renders/downloads it into storage. |
 | [avatar.py](workers/avatar.py) | HeyGen render (submit → poll → store → URL). Key-gated. |
-| [narrator.py](workers/narrator.py) | OpenAI/Kokoro/Edge narration plus local MMS-TTS for Myanmar/Tedim (`facebook/mms-tts-mya` / `facebook/mms-tts-ctd`). MMS calls have a bounded timeout so long message audio cannot block forever. |
+| [narrator.py](workers/narrator.py) | OpenAI/Kokoro/Edge/MMS narration. `edge_tts` uses real Microsoft cloud TTS for all languages (Myanmar: `my-MM-NilarNeural`/`ThihaNeural`; Tedim: `EDGE_TTS_VOICE_TD`); `mms_tts` routes to local `facebook/mms-tts-mya`/`mms-tts-ctd`. MMS calls have a bounded timeout. |
 | [storage.py](workers/storage.py) | Object storage with two interchangeable backends: **local dir** (dev) or **S3** (prod). |
 
 ### Frontend (Vue 3)
@@ -261,10 +261,10 @@ Three languages are supported. Language is chosen on the intake form and **locke
 | Language | Code | Bible | TTS voice | LLM | Hymns |
 |----------|------|-------|-----------|-----|-------|
 | English | `en` | BSB (bundled) | `en-US-AriaNeural` / `en-US-GuyNeural` | OpenRouter (`LLM_MODEL`) | Open Hymnal (instrumental/sung) |
-| Myanmar | `my` | Judson 1835 (bundled) | `facebook/mms-tts-mya` via local MMS-TTS | OpenRouter (`LLM_MODEL_MY`) | 852-song dalsuum/myanmar-hymns — sung via Suno customMode, cached |
-| Tedim (Zolai) | `td` | Lai Siangtho 1932 (bundled) | `facebook/mms-tts-ctd` via local MMS-TTS | local Ollama (`OLLAMA_MODEL_TD`) | ZBC Labu Lui (~470 hymns) — YouTube embed → Suno → instrumental |
+| Myanmar | `my` | Judson 1835 (bundled) | `edge_tts` → `my-MM-NilarNeural`; `mms_tts` → `facebook/mms-tts-mya` | OpenRouter (`LLM_MODEL_MY`) | 852-song dalsuum/myanmar-hymns — sung via Suno customMode, cached |
+| Tedim (Zolai) | `td` | Lai Siangtho 1932 (bundled) | `mms_tts` → `facebook/mms-tts-ctd` (native); `edge_tts` → `EDGE_TTS_VOICE_TD` | local Ollama (`OLLAMA_MODEL_TD`) | ZBC Labu Lui (~470 hymns) — YouTube embed → Suno → instrumental |
 
-Myanmar and Tedim server narration use the local `/tts/speak` MMS VITS route when `narration_mode=edge_tts`; this retires the old Edge-voice Tedim workaround and avoids English-biased voices skipping Burmese script. Burmese input to MMS-TTS is Myanmar Unicode only; the route rejects likely legacy-encoded Burmese and never converts text into legacy encoding.
+Myanmar and Tedim support two free narration modes: `edge_tts` (Microsoft cloud neural voices — `my-MM-NilarNeural` for Burmese, configurable for Tedim) and `mms_tts` (local Facebook MMS-TTS via `/tts/speak`). Burmese input to MMS-TTS is Myanmar Unicode only; the route rejects likely legacy-encoded Burmese.
 
 ### How language flows through the pipeline
 
@@ -499,25 +499,24 @@ and the worshipper still gets every segment as text.
     `TTS_API_KEY`; see the `TTS_*` env vars.
   - `kokoro` — server-synthesized open `hexgrad/kokoro-82m` voice via OpenRouter.
     Defaults to the `OPENROUTER_*` LLM credentials; see the `KOKORO_*` env vars.
-  - `edge_tts` — English uses Microsoft Edge voices; Myanmar/Tedim are routed to
-    local MMS-TTS (`mya`/`ctd`) instead of English-biased voices.
+  - `edge_tts` — Microsoft Edge TTS (cloud, free, no API key). For English:
+    `EDGE_TTS_VOICE_FEMALE/MALE`; for Myanmar: `EDGE_TTS_VOICE_MY_FEMALE/MALE`
+    (default `my-MM-NilarNeural`/`my-MM-ThihaNeural`); for Tedim: `EDGE_TTS_VOICE_TD`
+    (default `en-US-AriaNeural` — no native Zolai Edge voice; Latin-script phonetic read).
+  - `mms_tts` — Local Facebook MMS-TTS (offline, free). Myanmar: `facebook/mms-tts-mya`;
+    Tedim: `facebook/mms-tts-ctd` (only native Zolai voice). Requires `aivc-mms-tts`
+    container and `MMS_TTS_URL` pointing to it.
   - `voicebox` — voice-cloned narration via the local Voicebox Docker container
     (`127.0.0.1:17493`). See **[Voicebox TTS (optional)](#voicebox-tts-optional)** below.
   - `off` — segments stay as silent text.
 
-  Admin Settings also has per-language switches. English defaults on; Myanmar and
-  Tedim default off until a native listener confirms the configured local voice is
-  acceptable. New services carry `narration_enabled` in the worker payload, so changing
-  the admin switch affects newly started services; existing sessions can be recovered by
-  queueing `tasks.narrate` for the missing segments.
+  Myanmar defaults to `edge_tts` (cloud); Tedim defaults to `mms_tts` (native local).
+  Both are free and configurable per-language in Admin Console → Settings.
 
-  In a server-voice mode (`openai`/`kokoro`/`edge_tts`) the player waits for each
-  segment's audio to land, then plays it. Browser Web Speech is used only when a
+  In a server-voice mode (`openai`/`kokoro`/`edge_tts`/`mms_tts`) the player waits for
+  each segment's audio to land, then plays it. Browser Web Speech is used only when a
   matching browser voice exists; Myanmar and Tedim never fall back to an English
-  browser voice, because that skips or mangles their words. For Myanmar/Tedim,
-  choose `narration_mode=edge_tts`; the worker routes those languages to local
-  MMS-TTS (`facebook/mms-tts-mya` / `facebook/mms-tts-ctd`) through `MMS_TTS_URL`.
-  OpenAI/Kokoro narration is skipped for Myanmar/Tedim. MMS-TTS narration is staggered
+  browser voice, because that skips or mangles their words. MMS-TTS narration is staggered
   for non-English services; scripture, opening prayer, and benediction are prioritized,
   and the longer message audio is deferred so it cannot block the last prayer.
 - **Avatar** — [avatar.py](workers/avatar.py) renders a HeyGen talking-head of the

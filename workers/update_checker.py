@@ -47,6 +47,7 @@ SERVICES = [
     "aivc-scheduler",
     "aivc-tedim-api",
     "aivc-burmese-api",
+    "aivc-mms-tts",
     "redis-server",
     "nginx",
 ]

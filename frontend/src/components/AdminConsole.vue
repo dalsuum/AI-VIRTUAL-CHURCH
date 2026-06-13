@@ -669,6 +669,7 @@ const SERVICE_LABELS = {
   "aivc-scheduler"     : "Laravel scheduler",
   "aivc-tedim-api"     : "Tedim LLM API",
   "aivc-burmese-api"   : "Burmese LLM API",
+  "aivc-mms-tts"       : "MMS TTS (Tedim/Burmese)",
   "redis-server"       : "Redis",
   "nginx"              : "Nginx",
 };
@@ -1636,7 +1637,7 @@ onUnmounted(() => clearInterval(updateTimer));
               </div>
               <span class="svc-status" :class="svcBadgeClass(status)">{{ status }}</span>
               <button
-                v-if="['aivc-workers','aivc-workers-music','aivc-bridge','aivc-queue','aivc-scheduler','aivc-tedim-api','aivc-burmese-api'].includes(name)"
+                v-if="['aivc-workers','aivc-workers-music','aivc-bridge','aivc-queue','aivc-scheduler','aivc-tedim-api','aivc-burmese-api','aivc-mms-tts'].includes(name)"
                 class="chip svc-restart-btn"
                 :disabled="updateBusy"
                 @click="restartSvc(name)"

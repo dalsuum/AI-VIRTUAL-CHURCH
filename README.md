@@ -1021,7 +1021,10 @@ All routes are under `/api`. Authenticated routes use a Sanctum bearer token.
   admin view, email-link session resume, service deletion + confirmation notifications — **DONE**;
   security audit remediation (webhook fail-closed on missing/short secret, password-reset
   tokens hashed at rest, resume endpoint throttled + short-lived Sanctum token, CSV-injection
-  sanitization on admin exports, ffmpeg detail stripped from API error responses) — **DONE**
+  sanitization on admin exports, ffmpeg detail stripped from API error responses) — **DONE**;
+  follow-up audit fixes (hash SHA-256 token in `createUser` path to match `resetPassword`
+  lookup, add `\n` to CSV injection guard, migrate admin token from `localStorage` to
+  `sessionStorage`) — **DONE**
 - **Phase 7 — Multilingual:** Myanmar (`my`) and Tedim (`td`) language selection, bundled
   Judson 1835 (Myanmar) and Lai Siangtho 1932 (Tedim) Bible corpora, language-specific
   narration voices, local Ollama LLM services (FastAPI + `tedim-zolai` + `burmese-myanmar`

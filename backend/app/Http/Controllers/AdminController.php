@@ -524,7 +524,7 @@ class AdminController extends Controller
 
     private function csvSafe(string $value): string
     {
-        return preg_match('/^[=+\-@\t\r]/', $value) ? "'" . $value : $value;
+        return preg_match('/^[=+\-@\t\r\n]/', $value) ? "'" . $value : $value;
     }
 
     /**
@@ -846,7 +846,7 @@ class AdminController extends Controller
             $token   = Str::random(64);
             $expires = Carbon::now()->addHours(48);
             $user->update([
-                'password_reset_token'      => $token,
+                'password_reset_token'      => hash('sha256', $token),
                 'password_reset_expires_at' => $expires,
             ]);
             $result['reset_url']  = config('app.url') . '/#reset?token=' . $token;

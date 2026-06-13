@@ -3,12 +3,12 @@
 
 const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
 
-let token = localStorage.getItem("token") || null;
+let token = sessionStorage.getItem("token") || null;
 
 function setToken(t) {
   token = t;
-  if (t) localStorage.setItem("token", t);
-  else localStorage.removeItem("token");
+  if (t) sessionStorage.setItem("token", t);
+  else sessionStorage.removeItem("token");
 }
 
 // The worshipper's display name, remembered locally so returning visitors can be

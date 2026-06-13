@@ -205,6 +205,7 @@ def generate_text_segments(job: dict, plan: dict) -> None:
         try:
             past_video_ids = (user_history or {}).get("past_video_ids", [])
             video = find_sermon_video(mood=mood, query=plan.get("preaching_query", ""),
+                                      language=language,
                                       excluded_ids=past_video_ids)
             _post_asset(token, "sermon", asset_type="youtube",
                         provider_ref=video["video_id"], text_payload=video["title"])

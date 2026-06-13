@@ -341,7 +341,7 @@ reference so the Ollama model produces more natural Zolai sentences:
 - **Tense**: past = verb + `khin hi`; future = verb + `ding hi`; continuous = verb + `laitak hi`; present = verb + `hi`.
 - **Negation**: verb + `lo hi` (e.g., `om lo hi` = there is not; `mangngilh lo hi` = does not forget).
 - **Mizo→Tedim post-corrections** in `_TEDIM_CORRECTIONS` cover the most common drift words
-  (`kohhran→koici`, `tawngtaina→thungetna`, `pathian→Pasian`, `lalpa→Topa`, `lalpan→Topa in`, `isua→Zeisu`, and several others).
+  (`kohhran→biakinn`, `koici→biakinn`, `tawngtaina→thungetna`, `pathian→Pasian`, `lalpa→Topa`, `lalpan→Topa in`, `isua→Zeisu`, and several others).
 
 **Concurrency:** a single `asyncio.Semaphore(1)` gate in each router ensures only one Ollama inference runs at a time — important on the shared ARM/OCI box where Gunicorn, Redis, MySQL, and Celery compete for the same CPUs.
 

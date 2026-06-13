@@ -18,7 +18,8 @@ import requests
 
 _TEDIM_CORRECTIONS = [
     # Mizo word       → Tedim word      (word-boundary, case-insensitive)
-    (r"\bkohhran\b",   "koici"),        # church
+    (r"\bkohhran\b",   "biakinn"),       # church
+    (r"\bkoici\b",     "biakinn"),       # church (older romanization still seen in model output)
     (r"\btawngtaina\b","thungetna"),    # prayer (noun)
     (r"\btawngtai\b",  "thungeta"),     # pray (verb)
     (r"\bpathian\b",   "Pasian"),       # God
@@ -340,7 +341,7 @@ def _language_instruction(language: str) -> str:
             "Zeisu Krist (Jesus Christ) — NOT Isua; "
             "Kha Siangtho (Holy Spirit); "
             "thungetna (prayer) — NOT tawngtaina; "
-            "koici (church) — NOT kohhran; "
+            "biakinn (church) — NOT koici, NOT kohhran; "
             "zangtal (salvation); "
             "lungdamna (grace/blessing); "
             "Thu Siangtho (Holy Scripture); "

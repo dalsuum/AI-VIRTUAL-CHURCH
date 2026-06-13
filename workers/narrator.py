@@ -269,11 +269,19 @@ def narrate(
         audio = _narrate_edge(clean, resolved_voice)
         fmt = "mp3"
     elif mode == "voicebox":
-        audio = b"".join(
-            _speak_voicebox(chunk, gender=gender, engine_override=voice)
-            for chunk in _chunks(clean)
-            if chunk
-        )
+        if language in ("my", "td"):
+            # Voicebox only synthesises English; route native languages to MMS-TTS
+            # so Myanmar/Tedim text is read by the correct VITS voice, not garbled
+            # through an English model that cannot produce those scripts.
+            if not _mms_lang(language):
+                raise RuntimeError(f"mms_tts does not support language {language!r}")
+            audio = _speak_mms(clean, language)
+        else:
+            audio = b"".join(
+                _speak_voicebox(chunk, gender=gender, engine_override=voice)
+                for chunk in _chunks(clean)
+                if chunk
+            )
         fmt = "wav"
     else:
         cfg = _providers(gender=gender).get(mode)

@@ -512,11 +512,14 @@ and the worshipper still gets every segment as text.
     Tedim: `facebook/mms-tts-ctd` (only native Zolai voice). Requires `aivc-mms-tts`
     container and `MMS_TTS_URL` pointing to it.
   - `voicebox` — voice-cloned narration via the local Voicebox Docker container
-    (`127.0.0.1:17493`). See **[Voicebox TTS (optional)](#voicebox-tts-optional)** below.
+    (`127.0.0.1:17493`). English only — Voicebox cannot synthesise Myanmar or Chin
+    scripts, so `my`/`td` sessions automatically fall back to MMS-TTS even when this
+    mode is selected. See **[Voicebox TTS (optional)](#voicebox-tts-optional)** below.
   - `off` — segments stay as silent text.
 
-  Myanmar and Tedim default to `mms_tts` (native local).
-  Both are free and configurable per-language in Admin Console → Settings.
+  Myanmar and Tedim use MMS-TTS regardless of the global `narration_mode` setting when
+  that mode is `voicebox` (which only handles English). For `edge_tts` and `mms_tts`
+  both are free and configurable per-language in Admin Console → Settings.
 
   In a server-voice mode (`openai`/`kokoro`/`edge_tts`/`mms_tts`) the player waits for
   each segment's audio to land, then plays it. Browser Web Speech is used only when a

@@ -10,7 +10,7 @@ Generation time on 4 vCPU: ~3–5 min.
 
 Env vars (all optional):
   MUSICGEN_MODEL      HuggingFace model id (default: facebook/musicgen-small)
-  MUSICGEN_MAX_TOKENS Tokens to generate; 50 tokens ≈ 1 second (default: 1500 → ~30 s)
+  MUSICGEN_MAX_TOKENS Tokens to generate; 50 tokens ≈ 1 second (default: 750 → ~15 s)
   MUSICGEN_LOCK_TTL   Redis lock TTL in seconds (default: 1200 → 20 min)
   REDIS_URL           Redis broker URL (default: redis://localhost:6379/0)
 """
@@ -30,7 +30,7 @@ import storage
 from . import MusicResult, MusicStrategy
 
 _MODEL = os.getenv("MUSICGEN_MODEL", "facebook/musicgen-small")
-_MAX_TOKENS = int(os.getenv("MUSICGEN_MAX_TOKENS", "1500"))
+_MAX_TOKENS = int(os.getenv("MUSICGEN_MAX_TOKENS", "750"))
 # Redis lock TTL — must be longer than the worst-case generation time.
 _LOCK_TTL = int(os.getenv("MUSICGEN_LOCK_TTL", "1800"))
 _REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")

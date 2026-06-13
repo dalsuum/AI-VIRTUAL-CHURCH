@@ -57,6 +57,16 @@ def _post_music_track(*, mood: str, language: str, provider_ref: str, storage_ke
         print(f"[music] pool registration failed for {provider_ref}: {exc}", flush=True)
 
 
+def _musicgen_queue_depth() -> int:
+    """Return the number of tasks waiting in the MusicGen queue."""
+    try:
+        import redis as _redis
+        client = _redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"))
+        return int(client.llen("ai:music"))
+    except Exception:
+        return 0
+
+
 @app.task(name="tasks.orchestrate")
 def orchestrate(job: dict) -> None:
     """Entry point. `job` is the JSON pushed by Laravel's DispatchServiceJob."""
@@ -66,6 +76,7 @@ def orchestrate(job: dict) -> None:
     plan = llm_engine.build_intake_plan(
         user_name=job["user_name"], mood=job["mood"], prayer_text=job.get("prayer_text"),
         language=job.get("language", "en"),
+        music_source=job.get("music_source"),
     )
 
     # 1b. Registered worshippers get a short, mood-aware "welcome back" greeting up
@@ -76,6 +87,14 @@ def orchestrate(job: dict) -> None:
         generate_welcome.delay(job)
 
     # 2. Fan out. These run on their named queues in parallel.
+    # MusicGen on CPU takes 15-25 min and exhausts RAM. If the music queue already
+    # has a task waiting, fall back to a hymn so new services don't wait indefinitely.
+    if job.get("music_source") == "musicgen" and _musicgen_queue_depth() >= 1:
+        print(
+            f"[orchestrate] MusicGen queue backed up, falling back to hymn for {token}",
+            flush=True,
+        )
+        job = {**job, "music_source": "hymn"}
     generate_text_segments.delay(job, plan)
     generate_music.delay(job, plan)
 
@@ -184,8 +203,10 @@ def generate_text_segments(job: dict, plan: dict) -> None:
     ]
     # Only generate the sermon when we aren't sourcing it from YouTube.
     if not youtube_mode:
+        sermon_minutes = 5 if job.get("music_source") == "musicgen" else 8
         spoken.insert(1, ("sermon", llm_engine.generate_sermon(
-            user_name=name, mood=mood, scripture_ref=ref, language=language)))
+            user_name=name, mood=mood, scripture_ref=ref, language=language,
+            target_minutes=sermon_minutes)))
 
     deferred_narrations = []
     for segment, text in spoken:
@@ -215,7 +236,7 @@ def generate_text_segments(job: dict, plan: dict) -> None:
         _narrate_slot += _narrate_stagger
 
 
-@app.task(name="tasks.generate_music", time_limit=1800, soft_time_limit=1500)
+@app.task(name="tasks.generate_music", time_limit=1800, soft_time_limit=1500, reject_on_worker_lost=True)
 def generate_music(job: dict, plan: dict) -> None:
     """Resolves Suno vs YouTube from the session's locked preference, honoring the
     admin storage backend and the mood-keyed reuse pool.

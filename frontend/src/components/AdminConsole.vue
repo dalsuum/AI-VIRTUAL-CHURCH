@@ -98,7 +98,7 @@ const setEdgeTtsVoice = (v) => saveSetting("edge_tts_voice", v, "Voice updated."
 const narrationLanguages = [
   { key: "narration_en", label: "English", hint: "Use the selected narration provider for English services." },
   { key: "narration_my", label: "Myanmar", hint: "Uses my-MM-NilarNeural (female) / my-MM-ThihaNeural (male) via Edge TTS. Requires narration mode set to Edge TTS." },
-  { key: "narration_td", label: "Tedim (Zolai)", hint: "Enable only when EDGE_TTS_VOICE_TD is configured." },
+  { key: "narration_td", label: "Tedim (Zolai)", hint: "Uses the local MMS-TTS service (facebook/mms-tts-ctd). Enable once the MMS-TTS service is running." },
 ];
 
 const serviceLanguages = [

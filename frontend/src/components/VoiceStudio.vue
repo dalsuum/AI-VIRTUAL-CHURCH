@@ -96,9 +96,21 @@
       No sentences found for this language.
     </div>
 
-    <!-- Jump to unrecorded -->
+    <!-- Jump controls -->
     <div class="vs-jump" v-if="sentences.length">
       <button class="jump-btn" @click="jumpToNext">Jump to next unrecorded</button>
+      <div class="jump-index">
+        <input
+          v-model.number="jumpIndex"
+          type="number"
+          min="1"
+          :max="sentences.length"
+          placeholder="Go to #"
+          class="jump-input"
+          @keyup.enter="jumpToIndex"
+        />
+        <button class="jump-go-btn" @click="jumpToIndex">Go</button>
+      </div>
     </div>
 
     <div v-if="statusMsg" class="vs-status" :class="statusClass">{{ statusMsg }}</div>
@@ -124,6 +136,19 @@ const exporting  = ref(false);
 const statusMsg  = ref("");
 const statusClass = ref("ok");
 const progress   = ref({ td: null, my: null });
+
+const jumpIndex = ref("");
+
+function jumpToIndex() {
+  const n = parseInt(jumpIndex.value);
+  if (!n || n < 1 || n > sentences.value.length) {
+    showStatus(`Enter a number between 1 and ${sentences.value.length}`, "error");
+    return;
+  }
+  discardRecording();
+  cursor.value = n - 1;
+  jumpIndex.value = "";
+}
 
 // recorder state
 const isRecording  = ref(false);
@@ -156,6 +181,9 @@ async function loadScript(code) {
     const res = await api.voiceScript(code);
     sentences.value = res.sentences;
     recordedIds.value = new Set(res.recorded_ids);
+    // auto-start at first unrecorded phrase
+    const firstUnrecorded = res.sentences.findIndex(s => !recordedIds.value.has(s.id));
+    if (firstUnrecorded > 0) cursor.value = firstUnrecorded;
   } catch (e) {
     showStatus("Failed to load script: " + (e.data?.error ?? e.message), "error");
   } finally {
@@ -414,12 +442,23 @@ onMounted(async () => {
 }
 .delete-btn:hover { text-decoration: underline; }
 
-.vs-jump { text-align: center; margin-bottom: .75rem; }
+.vs-jump { display: flex; align-items: center; justify-content: center; gap: .75rem; flex-wrap: wrap; margin-bottom: .75rem; }
 .jump-btn {
   background: none; border: 1px solid var(--border, #ccc); border-radius: 6px;
   padding: .4rem 1rem; cursor: pointer; font-size: .85rem;
 }
 .jump-btn:hover { background: var(--surface-2, #f3f4f6); }
+.jump-index { display: flex; gap: .35rem; }
+.jump-input {
+  width: 80px; padding: .4rem .6rem; border-radius: 6px;
+  border: 1px solid var(--border, #ccc); font-size: .85rem; text-align: center;
+}
+.jump-input:focus { outline: 2px solid var(--primary, #2563eb); border-color: transparent; }
+.jump-go-btn {
+  padding: .4rem .75rem; border-radius: 6px; border: none;
+  background: var(--primary, #2563eb); color: #fff; font-size: .85rem; cursor: pointer;
+}
+.jump-go-btn:hover { opacity: .9; }
 
 .vs-status {
   text-align: center; padding: .5rem 1rem; border-radius: 6px;

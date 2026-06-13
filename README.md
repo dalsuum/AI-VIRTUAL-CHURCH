@@ -588,9 +588,12 @@ The console is at `/#admin`. Access is role-based:
 - **Voice Studio** — in-browser TTS training-data recorder. Displays sentences from the
   Tedim (1,500) and Burmese (1,500) bible corpora one at a time; click **Record**, speak,
   review playback, then **Accept**. The server converts each clip to 16 kHz mono WAV via
-  ffmpeg and stores it under `storage/app/voice-studio/{lang}/`. When ready, **Export
-  Dataset** downloads a zip with `metadata.csv` + `wavs/` — the exact format expected by
-  the [MMS-VITS fine-tuning guide](TRAIN_CUSTOM_VOICE.md) for Colab training.
+  ffmpeg and stores it under `storage/app/voice-studio/{lang}/`. **Jump to unrecorded**
+  skips to the next sentence without a recording; **Go to #** lets you jump directly to
+  any sentence by number, and auto-starts at the first unrecorded phrase when you open a
+  language. When ready, **Export Dataset** downloads a zip with `metadata.csv` + `wavs/`
+  — the exact format expected by the [MMS-VITS fine-tuning guide](TRAIN_CUSTOM_VOICE.md)
+  for Colab training.
 
 ---
 

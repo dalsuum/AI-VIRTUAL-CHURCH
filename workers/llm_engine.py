@@ -451,7 +451,7 @@ def _lyrics_match_language(lyrics: str, language: str) -> bool:
     return True
 
 
-def build_intake_plan(*, user_name: str | None, mood: str, prayer_text: str | None, language: str = "en") -> dict:
+def build_intake_plan(*, user_name: str | None, mood: str, prayer_text: str | None, language: str = "en", music_source: str | None = None) -> dict:
     """
     First pass: derive the service's spine from the user input.
     Returns scripture reference, a Suno music prompt, optional Suno custom-mode
@@ -491,7 +491,9 @@ def build_intake_plan(*, user_name: str | None, mood: str, prayer_text: str | No
         "schema": {
             "scripture_ref": "string, e.g. 'Psalm 23:1-4'",
             "music_prompt": "string, a short style prompt for AI worship-music generation",
-            "music_lyrics": "string, original singable worship lyrics, 2 short verses and a chorus, in the service language",
+            "music_lyrics": "string, original singable worship lyrics, {} and a chorus, in the service language".format(
+                "1 short verse" if music_source == "musicgen" else "2 short verses"
+            ),
             "music_query": "string, a short YouTube search query for a worship song",
             "preaching_query": "string, a short YouTube search query for a Christian sermon on this theme",
         },
@@ -602,7 +604,10 @@ def generate_sermon(*, user_name: str | None, mood: str, scripture_ref: str, tar
     # Local Myanmar/Tedim Ollama models on small CPU boxes are much slower than the
     # hosted English chat model. Keep those messages shorter so the text pages land
     # reliably and narration is not asked to synthesize an eight-minute segment.
-    max_tokens = 900 if language in ("my", "td") else 2500
+    if language in ("my", "td"):
+        max_tokens = 600 if target_minutes <= 5 else 900
+    else:
+        max_tokens = 1500 if target_minutes <= 5 else 2500
     try:
         text = _strip_formatting(_complete(system, user, max_tokens=max_tokens, language=language))
     except Exception as exc:

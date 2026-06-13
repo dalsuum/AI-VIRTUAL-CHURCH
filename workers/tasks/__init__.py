@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 
 import requests
 
@@ -18,6 +19,8 @@ import bible_api  # noqa: E402
 import classifier  # noqa: E402
 import llm_engine  # noqa: E402
 import narrator  # noqa: E402
+from tasks.celery_burmese_tasks import localize_segment_burmese, narrate_burmese  # noqa: E402, F401
+from tasks.celery_tedim_tasks import localize_segment_tedim, narrate_tedim  # noqa: E402, F401
 import storage  # noqa: E402
 from strategies import MusicResult, get_strategy  # noqa: E402
 from strategies.youtube_strategy import find_sermon_video  # noqa: E402
@@ -40,13 +43,13 @@ def _post_asset(session_token: str, segment: str, **fields) -> None:
     ).raise_for_status()
 
 
-def _post_music_track(*, mood: str, provider_ref: str, storage_key: str, title: str | None) -> None:
+def _post_music_track(*, mood: str, language: str, provider_ref: str, storage_key: str, title: str | None, lyrics: str | None = None) -> None:
     """Register a fresh Suno track in the reusable mood pool. Best-effort: the pool is
     an optimization for *future* services, so a failure here must never break this one."""
     try:
         requests.post(
             MUSIC_TRACK_WEBHOOK,
-            json={"mood": mood, "provider_ref": provider_ref, "storage_key": storage_key, "title": title},
+            json={"mood": mood, "language": language, "provider_ref": provider_ref, "storage_key": storage_key, "title": title, "lyrics": lyrics},
             headers={"X-Worker-Secret": WORKER_SECRET},
             timeout=30,
         ).raise_for_status()
@@ -89,20 +92,27 @@ def generate_welcome(job: dict) -> None:
 def generate_text_segments(job: dict, plan: dict) -> None:
     token, name, mood = job["session_token"], job["user_name"], job["mood"]
     ref = plan["scripture_ref"]
-    language = job.get("language", "en")  # 'en' | 'my' — the whole service's language
+    language = job.get("language", "en")  # 'en' | 'my' | 'td' — the whole service's language
 
     # Synthesize TTS audio only when the admin chose a server voice provider —
     # 'openai', 'kokoro', or 'edge_tts' — server generates audio. In 'browser'/'off'
     # the client handles (or skips) reading aloud, so we deliver text only.
     narration_mode = job.get("narration_mode")
     gender = job.get("presenter_gender", "female")
-    # 'td': edge-tts ships no Tedim voice — suppress server TTS unless the admin
-    # explicitly points EDGE_TTS_VOICE_TD at a voice they judge acceptable.
-    td_voice = os.getenv("EDGE_TTS_VOICE_TD", "")
-    want_audio = narration_mode in ("openai", "kokoro", "edge_tts") and narrator.is_enabled(narration_mode)
-    if language == "td" and not td_voice:
-        want_audio = False  # no Tedim TTS voice exists; read-along service
-
+    # narration_enabled is set per-language by the admin dashboard (defaults: en=on,
+    # my=off, td=off). A False value suppresses server TTS for this service entirely,
+    # producing a read-along service regardless of the global narration_mode.
+    narration_enabled = job.get("narration_enabled", language == "en")
+    want_audio = (
+        narration_enabled
+        and narration_mode in ("openai", "kokoro", "edge_tts")
+        and narrator.is_enabled(narration_mode)
+    )
+    # OpenAI/Kokoro voices configured here are English-biased and skip or mangle
+    # Burmese/Tedim text. Non-English server narration is intentionally routed
+    # through the local MMS-TTS service under edge_tts mode.
+    if language in ("my", "td") and narration_mode != "edge_tts":
+        want_audio = False
     def _seg_gender(segment: str) -> str:
         """Sermon uses the chosen presenter gender; all other segments use the opposite
         so the preacher and the support voice are always a matched pair."""
@@ -114,7 +124,7 @@ def generate_text_segments(job: dict, plan: dict) -> None:
         if language == "my":
             return _os.getenv("EDGE_TTS_VOICE_MY", "my-MM-NilarNeural")
         if language == "td":
-            return td_voice  # already confirmed non-empty before want_audio is True
+            return ""
         suffix = g.upper()
         default = "en-US-GuyNeural" if g == "male" else "en-US-AriaNeural"
         return _os.getenv(f"EDGE_TTS_VOICE_{suffix}") or _os.getenv("EDGE_TTS_VOICE", default)
@@ -138,13 +148,19 @@ def generate_text_segments(job: dict, plan: dict) -> None:
     # is configured. Scripture gets a voice but no avatar — it's shown as written.
     # OpenRouter (kokoro) has tight per-minute rate limits; stagger narration calls
     # 45 s apart so concurrent segments don't overlap and trigger provider 429s.
-    # edge_tts and openai have no meaningful rate limit, so no stagger needed.
-    _narrate_stagger = 45 if narration_mode == "kokoro" else 0
+    # Myanmar/Tedim edge_tts mode is backed by local MMS-TTS; stagger those CPU-heavy
+    # requests too so the ARM box does not get several long VITS generations at once.
+    if narration_mode == "kokoro":
+        _narrate_stagger = 45
+    elif language in ("my", "td") and narration_mode == "edge_tts":
+        _narrate_stagger = int(os.getenv("MMS_TTS_STAGGER_SECONDS", "60"))
+    else:
+        _narrate_stagger = 0
     _narrate_slot = 0
 
     if want_audio:
         _sg = _seg_gender("scripture")
-        narrate.apply_async((token, "scripture", scripture_text or ref, narration_mode, _edge_voice(_sg), _sg),
+        narrate.apply_async((token, "scripture", scripture_text or ref, narration_mode, _edge_voice(_sg), _sg, language),
                             countdown=_narrate_slot)
         _narrate_slot += _narrate_stagger
 
@@ -171,6 +187,7 @@ def generate_text_segments(job: dict, plan: dict) -> None:
         spoken.insert(1, ("sermon", llm_engine.generate_sermon(
             user_name=name, mood=mood, scripture_ref=ref, language=language)))
 
+    deferred_narrations = []
     for segment, text in spoken:
         ok, reason = classifier.review(text)
         if not ok:
@@ -183,13 +200,19 @@ def generate_text_segments(job: dict, plan: dict) -> None:
         seg_gender = _seg_gender(segment)
         if job.get("avatar_enabled", True) and avatar.is_enabled():
             render_avatar.delay(token, segment, text, seg_gender)
-        # Optionally read the segment aloud. Independent of the avatar: with TTS but
-        # no D-ID/HeyGen the worshipper still hears the service; with both, the audio is a
-        # standalone fallback to the spoken video.
+        # Myanmar/Tedim sermon TTS is much slower than prayer/benediction on CPU.
+        # Defer it so the final prayer voice can land even if the message audio is slow.
         if want_audio:
-            narrate.apply_async((token, segment, text, narration_mode, _edge_voice(seg_gender), seg_gender),
-                                countdown=_narrate_slot)
-            _narrate_slot += _narrate_stagger
+            args = (token, segment, text, narration_mode, _edge_voice(seg_gender), seg_gender, language)
+            if language in ("my", "td") and segment == "sermon":
+                deferred_narrations.append(args)
+            else:
+                narrate.apply_async(args, countdown=_narrate_slot)
+                _narrate_slot += _narrate_stagger
+
+    for args in deferred_narrations:
+        narrate.apply_async(args, countdown=_narrate_slot)
+        _narrate_slot += _narrate_stagger
 
 
 @app.task(name="tasks.generate_music")
@@ -210,19 +233,72 @@ def generate_music(job: dict, plan: dict) -> None:
             storage_key=storage.presign(reuse["storage_key"], expires=6 * 3600),
             provider_ref=reuse.get("provider_ref"),
             title=reuse.get("title"),
+            lyrics=reuse.get("lyrics"),
         )
     else:
         strategy = get_strategy(job["music_source"], language=job.get("language", "en"))
         # Music depends on external providers (YouTube/Suno + S3 upload). If their
         # keys are missing or the call fails, skip music rather than crash the task.
-        try:
-            result = strategy.fetch(
-                mood=job["mood"],
-                prompt=plan.get("music_prompt", ""),
-                query=plan.get("music_query", ""),
-            )
-        except Exception as exc:  # noqa: BLE001 — degrade gracefully
-            print(f"[music] {job['music_source']} fetch failed: {exc}", flush=True)
+        music_prompt = plan.get("music_prompt", "")
+        if job["music_source"] == "suno":
+            language = job.get("language", "en")
+            if language == "td":
+                # OpenRouter has insufficient Tedim training data to write proper Zolai.
+                # Always use the curated hardcoded lyrics — never trust LLM output here.
+                music_lyrics = llm_engine._fallback_music_lyrics(job["mood"], language)
+            else:
+                music_lyrics = str(plan.get("music_lyrics") or "")
+                if not llm_engine._lyrics_match_language(music_lyrics, language):
+                    music_lyrics = llm_engine._fallback_music_lyrics(job["mood"], language)
+            if language == "td":
+                music_prompt = (
+                    f"Modern contemporary Zomi/Tedim Christian worship song for someone feeling {job['mood']}, "
+                    "in a live contemporary worship style with uplifting congregational energy, "
+                    "with warm choir and acoustic-band arrangement. Sing the provided Tedim lyrics exactly."
+                )
+            elif language == "my":
+                music_prompt = (
+                    f"Modern contemporary Burmese Christian worship song for someone feeling {job['mood']}, "
+                    "in a live contemporary worship style with uplifting congregational energy, "
+                    "with warm choir and acoustic-band arrangement. Sing the provided Myanmar Unicode lyrics exactly."
+                )
+            else:
+                music_prompt = (
+                    f"Modern contemporary Christian worship song for someone feeling {job['mood']}, "
+                    "in a live contemporary worship style with uplifting congregational energy, "
+                    "with warm choir and acoustic-band arrangement. Sing the provided lyrics exactly."
+                )
+            music_prompt = f"{music_prompt}\n\nLyrics:\n{music_lyrics}"
+
+        result = None
+        max_attempts = 3
+        for attempt in range(1, max_attempts + 1):
+            try:
+                result = strategy.fetch(
+                    mood=job["mood"],
+                    prompt=music_prompt,
+                    query=plan.get("music_query", ""),
+                )
+                break
+            except Exception as exc:  # noqa: BLE001 — degrade gracefully
+                print(
+                    f"[music] {job['music_source']} fetch failed "
+                    f"(attempt {attempt}/{max_attempts}): {exc}",
+                    flush=True,
+                )
+                if attempt < max_attempts:
+                    time.sleep(2 if attempt == 1 else 6)
+
+        if result is None:
+            language = job.get("language", "en")
+            if language == "td":
+                fallback_notice = "La sa ding ngah thei nailo hi. Thu leh thungetna tawh kizom in i pai ding uh."
+            elif language == "my":
+                fallback_notice = "ယခုအချိန်တွင် သီချင်းဖွင့်မရသေးပါ။ ကျမ်းစာနှင့် ဆုတောင်းဖြင့် ဆက်လက်ဝတ်ပြုပါမည်။"
+            else:
+                fallback_notice = "Worship music is unavailable right now. We will continue with scripture and prayer."
+            for segment in ("worship", "closing_hymn"):
+                _post_asset(job["session_token"], segment, asset_type="text", text_payload=fallback_notice)
             return
 
         # Suno/hymn hand back a RAW object key: presign it for the browser. A fresh
@@ -236,8 +312,8 @@ def generate_music(job: dict, plan: dict) -> None:
             result.storage_key = storage.presign(raw_key, expires=6 * 3600)
             if job["music_source"] == "suno":
                 _post_music_track(
-                    mood=job["mood"], provider_ref=result.provider_ref,
-                    storage_key=raw_key, title=result.title,
+                    mood=job["mood"], language=job.get("language", "en"), provider_ref=result.provider_ref,
+                    storage_key=raw_key, title=result.title, lyrics=result.lyrics,
                 )
 
     for segment in ("worship", "closing_hymn"):
@@ -270,7 +346,16 @@ def render_avatar(session_token: str, segment: str, script: str, gender: str = "
 
 
 @app.task(name="tasks.narrate", bind=True, max_retries=4, default_retry_delay=30)
-def narrate(self, session_token: str, segment: str, script: str, mode: str = "openai", voice: str = "", gender: str = "female") -> None:
+def narrate(
+    self,
+    session_token: str,
+    segment: str,
+    script: str,
+    mode: str = "openai",
+    voice: str = "",
+    gender: str = "female",
+    language: str = "en",
+) -> None:
     """Read `script` aloud with the `mode` voice provider and post it back as the
     segment's audio narration. The text asset was already delivered, so any failure
     here just leaves the segment without audio — never block or crash the service."""
@@ -278,7 +363,9 @@ def narrate(self, session_token: str, segment: str, script: str, mode: str = "op
     if not narrator.is_enabled(mode):
         return
     try:
-        audio_url = narrator.narrate(session_token, segment, script, mode, voice=voice, gender=gender)
+        audio_url = narrator.narrate(
+            session_token, segment, script, mode, voice=voice, gender=gender, language=language
+        )
     except _req.exceptions.HTTPError as exc:
         if exc.response is not None and exc.response.status_code == 429:
             # Back off and retry; countdown doubles each attempt (30 s, 60 s, 120 s, 240 s).

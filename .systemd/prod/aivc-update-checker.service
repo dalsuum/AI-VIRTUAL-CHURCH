@@ -1,0 +1,12 @@
+[Unit]
+Description=AI Church — update checker (one-shot PyPI + git status scan)
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=simon
+WorkingDirectory=/opt/ai-church/workers
+ExecStart=/opt/ai-church/workers/.venv/bin/python /opt/ai-church/workers/update_checker.py
+# Writes result to /tmp/aivc_update_status.json; no restart needed for a one-shot.
+StandardOutput=journal
+StandardError=journal

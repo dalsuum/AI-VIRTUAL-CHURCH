@@ -1,0 +1,14 @@
+[Unit]
+Description=AI Church — hourly update-status cache refresh
+After=network-online.target
+
+[Timer]
+# First run 5 min after boot (allows services to settle), then every hour.
+OnBootSec=5min
+OnUnitActiveSec=1h
+# Stagger up to 2 min to avoid hitting PyPI exactly on the hour with other servers.
+RandomizedDelaySec=120
+Persistent=true
+
+[Install]
+WantedBy=timers.target

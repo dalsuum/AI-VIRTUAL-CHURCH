@@ -568,6 +568,23 @@ The console is at `/#admin`. Access is role-based:
   at least one on), and whether **scheduling** is offered. These are served to the
   intake form via the public [`GET /config`](#public).
 - **Export** — CSV of `donations` | `users` | `testimonies`.
+- **System** (admin-only) — live system monitor with one-click installs and service restarts:
+  - **Service health** — real-time status (active / inactive / unknown) of all AIVC systemd
+    units (`aivc-workers`, `aivc-workers-music`, `aivc-bridge`, `aivc-queue`,
+    `aivc-scheduler`, `aivc-tedim-api`, `aivc-burmese-api`) plus `redis-server` and `nginx`.
+    Each restartable unit has a **Restart** button that dispatches a `RestartService` queue
+    job (requires the `sudoers` entry documented in `RestartService.php`).
+  - **App version (git)** — current branch, commit hash + message, and how many commits
+    behind `origin` the working tree is. A **Pull latest from origin** button dispatches a
+    `RunUpdateCheck(gitPull: true)` job that runs `git pull --ff-only` then refreshes the
+    cache.
+  - **Python packages** — installed version vs PyPI latest for 12 key worker dependencies
+    (`edge-tts`, `anthropic`, `celery`, `torch`, `transformers`, etc.). Packages with an
+    available update are highlighted and have an **Upgrade** button that dispatches
+    `RunPackageUpgrade` to run `pip install --upgrade` in the workers virtualenv.
+  - The cache lives at `/tmp/aivc_update_status.json`, refreshed by the `aivc-update-checker`
+    systemd timer (every hour, 5 min after boot) and on demand via the **Refresh now** button.
+    The dashboard auto-polls every 30 s while the tab is open (4 s while a check is running).
 - **Voice Studio** — in-browser TTS training-data recorder. Displays sentences from the
   Tedim (1,500) and Burmese (1,500) bible corpora one at a time; click **Record**, speak,
   review playback, then **Accept**. The server converts each clip to 16 kHz mono WAV via

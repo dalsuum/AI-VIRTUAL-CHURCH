@@ -229,6 +229,15 @@ export const api = {
     return data;
   },
 
+  // System monitor — update check, package installs, service restarts.
+  adminUpdateStatus: () => request("/admin/updates/status"),
+  adminUpdateCheck: () => request("/admin/updates/check", { method: "POST" }),
+  adminGitPull: () => request("/admin/updates/git-pull", { method: "POST" }),
+  adminInstallPackage: (package_name) =>
+    request("/admin/updates/install", { method: "POST", body: { package: package_name } }),
+  adminRestartService: (service) =>
+    request("/admin/updates/restart-service", { method: "POST", body: { service } }),
+
   // Blob download — needs auth header, returns Blob.
   voiceExport: async (lang) => {
     const res = await fetch(`${BASE_URL}/voice-studio/export/${lang}`, {

@@ -2,7 +2,7 @@
 // Admin console, reached at #admin. Logs in with an admin account, then exposes the
 // dashboard plus moderation (testimonies), donor insight, user management, service
 // retry, and CSV exports.
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { api } from "../composables/useApi";
 import ThemeToggle from "./ThemeToggle.vue";
 import VoiceStudio from "./VoiceStudio.vue";
@@ -36,6 +36,7 @@ function firstAllowedTab() {
     { name: "music-pool",  check: () => isAdminUser.value },
     { name: "voice-studio",check: () => can("voice_studio.view") },
     { name: "permissions", check: () => isAdminUser.value },
+    { name: "system",      check: () => isAdminUser.value },
   ];
   return (candidates.find((c) => c.check()) ?? candidates[0]).name;
 }
@@ -243,6 +244,7 @@ async function loadMusicTracks() {
 }
 
 function show(name) {
+  if (name !== "system") clearInterval(updateTimer);
   tab.value    = name;
   notice.value = "";
   if (name === "services")    loadServices();
@@ -253,6 +255,7 @@ function show(name) {
   if (name === "settings")    loadSettings();
   if (name === "music-pool")  loadMusicTracks();
   if (name === "permissions") loadPermissions();
+  if (name === "system")      { loadUpdateStatus(); scheduleUpdatePoll(); }
   // Dashboard stats loaded on demand if not yet fetched.
   if (name === "dashboard" && can("dashboard.view")) {
     api.adminDashboard().then((res) => { stats.value = res; }).catch(() => {});
@@ -651,8 +654,116 @@ function fmtMoney(amount, currency) {
   return `${Number(amount).toFixed(2)} ${(currency || "usd").toUpperCase()}`;
 }
 
+// ─── System Monitor ────────────────────────────────────────────────────────────
+
+const updateStatus   = ref(null);   // { checked_at, checking, packages, services, git }
+const updateBusy     = ref(false);  // true while an action is in flight
+const updateNotice   = ref("");
+let   updateTimer    = null;
+
+const SERVICE_LABELS = {
+  "aivc-workers"       : "Workers (sermon/avatar)",
+  "aivc-workers-music" : "Workers (music)",
+  "aivc-bridge"        : "Bridge consumer",
+  "aivc-queue"         : "Laravel queue",
+  "aivc-scheduler"     : "Laravel scheduler",
+  "aivc-tedim-api"     : "Tedim LLM API",
+  "aivc-burmese-api"   : "Burmese LLM API",
+  "redis-server"       : "Redis",
+  "nginx"              : "Nginx",
+};
+
+function svcBadgeClass(status) {
+  if (status === "active")   return "svc-active";
+  if (status === "inactive") return "svc-inactive";
+  return "svc-unknown";
+}
+
+function pkgHasUpdate(pkg) {
+  return pkg?.update_available === true;
+}
+
+async function loadUpdateStatus() {
+  try {
+    updateStatus.value = await api.adminUpdateStatus();
+  } catch { /* silent — status tab may not be open */ }
+}
+
+function scheduleUpdatePoll() {
+  clearInterval(updateTimer);
+  const interval = updateStatus.value?.checking ? 4000 : 30000;
+  updateTimer = setInterval(async () => {
+    await loadUpdateStatus();
+    // Once checking finishes, switch to the slow 30-second polling cadence.
+    if (!updateStatus.value?.checking) scheduleUpdatePoll();
+  }, interval);
+}
+
+async function triggerCheck() {
+  updateBusy.value = true;
+  updateNotice.value = "";
+  try {
+    await api.adminUpdateCheck();
+    await loadUpdateStatus();
+    scheduleUpdatePoll();
+    updateNotice.value = "Check queued — results will appear in a few seconds.";
+  } catch (e) {
+    updateNotice.value = e?.data?.message || "Check failed.";
+  } finally {
+    updateBusy.value = false;
+  }
+}
+
+async function triggerGitPull() {
+  if (!confirm("Pull the latest code from origin? The app will keep running while pulling.")) return;
+  updateBusy.value = true;
+  updateNotice.value = "";
+  try {
+    await api.adminGitPull();
+    await loadUpdateStatus();
+    scheduleUpdatePoll();
+    updateNotice.value = "Git pull queued — this may take a few seconds.";
+  } catch (e) {
+    updateNotice.value = e?.data?.message || "Git pull failed.";
+  } finally {
+    updateBusy.value = false;
+  }
+}
+
+async function installPackage(pkgName) {
+  if (!confirm(`Upgrade ${pkgName} to the latest version?`)) return;
+  updateBusy.value = true;
+  updateNotice.value = "";
+  try {
+    await api.adminInstallPackage(pkgName);
+    await loadUpdateStatus();
+    scheduleUpdatePoll();
+    updateNotice.value = `${pkgName} upgrade queued.`;
+  } catch (e) {
+    updateNotice.value = e?.data?.message || "Upgrade failed.";
+  } finally {
+    updateBusy.value = false;
+  }
+}
+
+async function restartSvc(svcName) {
+  if (!confirm(`Restart ${svcName}? It will be briefly unavailable.`)) return;
+  updateBusy.value = true;
+  updateNotice.value = "";
+  try {
+    await api.adminRestartService(svcName);
+    updateNotice.value = `${svcName} restart queued — may take a few seconds.`;
+    setTimeout(loadUpdateStatus, 5000);
+  } catch (e) {
+    updateNotice.value = e?.data?.message || "Restart failed.";
+  } finally {
+    updateBusy.value = false;
+  }
+}
+
 // If a token is already stored (e.g. a returning admin), try to enter directly.
 onMounted(() => { if (api.hasToken()) enter(); });
+onUnmounted(() => clearInterval(updateTimer));
 </script>
 
 <template>
@@ -685,6 +796,7 @@ onMounted(() => { if (api.hasToken()) enter(); });
         <button v-if="isAdminUser"                  :class="{ active: tab === 'music-pool' }"  @click="show('music-pool')">Suno Pool</button>
         <button v-if="can('voice_studio.view')"     :class="{ active: tab === 'voice-studio'}" @click="show('voice-studio')">Voice Studio</button>
         <button v-if="isAdminUser"                  :class="{ active: tab === 'permissions' }" @click="show('permissions')">Permissions</button>
+        <button v-if="isAdminUser"                  :class="{ active: tab === 'system' }"      @click="show('system')">System</button>
         <span v-if="currentUser" class="staff-role-badge" :class="'role-' + currentUser.role">
           {{ currentUser.role }}
         </span>
@@ -1481,6 +1593,141 @@ onMounted(() => { if (api.hasToken()) enter(); });
       <section v-else-if="tab === 'permissions' && isAdminUser" class="settings">
         <PermissionsMatrix :initial-data="permissionsData" />
       </section>
+
+      <!-- System Monitor -->
+      <section v-else-if="tab === 'system' && isAdminUser" class="sys-monitor">
+
+        <!-- Header row -->
+        <div class="sys-header">
+          <div>
+            <h2 class="sys-title">System Monitor</h2>
+            <p v-if="updateStatus?.checked_at" class="sys-meta">
+              Last checked: {{ new Date(updateStatus.checked_at).toLocaleString() }}
+            </p>
+            <p v-else class="sys-meta">No data yet — run a check to populate this panel.</p>
+          </div>
+          <div class="sys-header-actions">
+            <button class="chip" :disabled="updateBusy || updateStatus?.checking" @click="triggerCheck">
+              {{ updateStatus?.checking ? "Checking…" : "Refresh now" }}
+            </button>
+          </div>
+        </div>
+
+        <p v-if="updateNotice" class="sys-notice">{{ updateNotice }}</p>
+
+        <!-- Service health -->
+        <div class="sys-block">
+          <h3 class="sys-block-title">Service Health</h3>
+          <p class="sys-block-desc">
+            Live status of all AIVC systemd units and supporting services. Restart
+            requires <code>sudo systemctl restart</code> — configure sudoers first
+            (see <code>RestartService.php</code> docblock).
+          </p>
+          <div v-if="updateStatus?.services" class="svc-grid">
+            <div
+              v-for="(status, name) in updateStatus.services"
+              :key="name"
+              class="svc-card"
+            >
+              <span class="svc-dot" :class="svcBadgeClass(status)"></span>
+              <div class="svc-info">
+                <strong class="svc-name">{{ SERVICE_LABELS[name] || name }}</strong>
+                <code class="svc-unit">{{ name }}</code>
+              </div>
+              <span class="svc-status" :class="svcBadgeClass(status)">{{ status }}</span>
+              <button
+                v-if="['aivc-workers','aivc-workers-music','aivc-bridge','aivc-queue','aivc-scheduler','aivc-tedim-api','aivc-burmese-api'].includes(name)"
+                class="chip svc-restart-btn"
+                :disabled="updateBusy"
+                @click="restartSvc(name)"
+              >Restart</button>
+            </div>
+          </div>
+          <p v-else class="sys-empty">Run a check to see service statuses.</p>
+        </div>
+
+        <!-- Git / App version -->
+        <div class="sys-block">
+          <h3 class="sys-block-title">App Version (Git)</h3>
+          <div v-if="updateStatus?.git" class="git-panel">
+            <div class="git-row">
+              <span class="git-label">Branch</span>
+              <code class="git-val">{{ updateStatus.git.branch }}</code>
+            </div>
+            <div class="git-row">
+              <span class="git-label">Commit</span>
+              <code class="git-val">{{ updateStatus.git.commit }}</code>
+            </div>
+            <div class="git-row">
+              <span class="git-label">Message</span>
+              <span class="git-val">{{ updateStatus.git.message || "—" }}</span>
+            </div>
+            <div class="git-row">
+              <span class="git-label">Behind origin</span>
+              <span class="git-val">
+                <span v-if="updateStatus.git.behind > 0" class="update-badge">
+                  {{ updateStatus.git.behind }} commit{{ updateStatus.git.behind !== 1 ? 's' : '' }} behind
+                </span>
+                <span v-else class="up-to-date">Up to date</span>
+              </span>
+            </div>
+            <div v-if="updateStatus.git.pull_output" class="git-row">
+              <span class="git-label">Last pull</span>
+              <code class="git-val git-output">{{ updateStatus.git.pull_output }}</code>
+            </div>
+            <button class="chip primary-chip git-pull-btn" :disabled="updateBusy" @click="triggerGitPull">
+              Pull latest from origin
+            </button>
+          </div>
+          <p v-else class="sys-empty">Run a check to see git info.</p>
+        </div>
+
+        <!-- Python packages -->
+        <div class="sys-block">
+          <h3 class="sys-block-title">Python Packages</h3>
+          <p class="sys-block-desc">
+            Installed versions in <code>workers/.venv</code> versus the latest release
+            on PyPI. Upgrade runs <code>pip install --upgrade</code> in the background.
+          </p>
+          <div v-if="updateStatus?.packages && Object.keys(updateStatus.packages).length" class="pkg-table-wrap">
+            <table class="pkg-table">
+              <thead>
+                <tr>
+                  <th>Package</th>
+                  <th>Installed</th>
+                  <th>Latest (PyPI)</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="(info, name) in updateStatus.packages"
+                  :key="name"
+                  :class="{ 'pkg-row-update': pkgHasUpdate(info) }"
+                >
+                  <td class="pkg-name">{{ name }}</td>
+                  <td><code>{{ info.current }}</code></td>
+                  <td>
+                    <code v-if="info.latest">{{ info.latest }}</code>
+                    <span v-else class="sys-muted">—</span>
+                    <span v-if="pkgHasUpdate(info)" class="update-badge pkg-badge">update</span>
+                  </td>
+                  <td>
+                    <button
+                      v-if="pkgHasUpdate(info)"
+                      class="chip primary-chip pkg-upgrade-btn"
+                      :disabled="updateBusy"
+                      @click="installPackage(name)"
+                    >Upgrade</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p v-else class="sys-empty">Run a check to see package versions.</p>
+        </div>
+
+      </section>
     </template>
   </main>
 </template>
@@ -1648,4 +1895,54 @@ onMounted(() => { if (api.hasToken()) enter(); });
 .share-btns { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .chip.ghost { background: transparent; border-color: var(--border); color: var(--text-muted); }
 .chip.ghost:hover { border-color: var(--border-strong); color: var(--text); }
+
+/* ── System Monitor ─────────────────────────────────────────────────────────── */
+.sys-monitor { display: flex; flex-direction: column; gap: 1.25rem; }
+.sys-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.sys-title { font-size: 1.1rem; margin: 0 0 0.2rem; }
+.sys-meta { color: var(--text-muted); font-size: 0.82rem; margin: 0; }
+.sys-header-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+.sys-notice { background: var(--primary-soft); color: var(--primary-hover); padding: 0.5rem 0.85rem; border-radius: var(--radius-sm); font-size: 0.88rem; margin: 0; }
+.sys-block { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.1rem 1.25rem; box-shadow: var(--shadow-sm); }
+.sys-block-title { font-size: 1rem; margin: 0 0 0.25rem; }
+.sys-block-desc { color: var(--text-muted); font-size: 0.83rem; margin: 0 0 0.9rem; line-height: 1.5; }
+.sys-empty { color: var(--text-muted); font-size: 0.88rem; margin: 0; }
+.sys-muted { color: var(--text-faint); font-size: 0.85rem; }
+
+/* Service health grid */
+.svc-grid { display: flex; flex-direction: column; gap: 0.45rem; }
+.svc-card { display: flex; align-items: center; gap: 0.75rem; padding: 0.6rem 0.8rem; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.svc-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.svc-dot.svc-active   { background: var(--success, #16a34a); box-shadow: 0 0 0 3px rgba(22,163,74,.15); }
+.svc-dot.svc-inactive { background: var(--danger, #dc2626); box-shadow: 0 0 0 3px rgba(220,38,38,.15); }
+.svc-dot.svc-unknown  { background: var(--text-faint, #94a3b8); }
+.svc-info { flex: 1; min-width: 0; }
+.svc-name { display: block; font-size: 0.88rem; }
+.svc-unit { font-size: 0.75rem; color: var(--text-muted); }
+.svc-status { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; padding: 0.15rem 0.55rem; border-radius: 999px; }
+.svc-status.svc-active   { background: rgba(22,163,74,.12);  color: #16a34a; }
+.svc-status.svc-inactive { background: rgba(220,38,38,.12); color: #dc2626; }
+.svc-status.svc-unknown  { background: var(--surface-3); color: var(--text-muted); }
+.svc-restart-btn { font-size: 0.78rem; padding: 0.25rem 0.65rem; flex-shrink: 0; }
+
+/* Git panel */
+.git-panel { display: flex; flex-direction: column; gap: 0.55rem; }
+.git-row { display: grid; grid-template-columns: 110px 1fr; gap: 0.5rem; align-items: baseline; font-size: 0.9rem; }
+.git-label { color: var(--text-muted); font-size: 0.82rem; font-weight: 500; }
+.git-val { word-break: break-all; }
+.git-output { display: block; background: var(--surface-2); border: 1px solid var(--border); border-radius: 4px; padding: 0.4rem 0.6rem; font-size: 0.78rem; white-space: pre-wrap; line-height: 1.5; }
+.git-pull-btn { margin-top: 0.5rem; align-self: flex-start; }
+.up-to-date { color: var(--success, #16a34a); font-size: 0.82rem; font-weight: 500; }
+.update-badge { display: inline-block; background: #fef3c7; color: #92400e; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; border-radius: 999px; padding: 0.1rem 0.5rem; margin-left: 0.35rem; }
+
+/* Package table */
+.pkg-table-wrap { overflow-x: auto; }
+.pkg-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+.pkg-table th { text-align: left; color: var(--text-muted); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--border); }
+.pkg-table td { padding: 0.55rem 0.6rem; border-bottom: 1px solid var(--border); color: var(--text); vertical-align: middle; }
+.pkg-table tr:last-child td { border-bottom: 0; }
+.pkg-name { font-weight: 500; }
+.pkg-badge { vertical-align: middle; }
+.pkg-row-update { background: rgba(234,179,8,.04); }
+.pkg-upgrade-btn { font-size: 0.78rem; padding: 0.2rem 0.6rem; }
 </style>

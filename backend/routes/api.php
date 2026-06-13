@@ -6,6 +6,7 @@ use App\Http\Controllers\ConfigController;
 use App\Http\Controllers\OfferingController;
 use App\Http\Controllers\ServiceController;
 use App\Http\Controllers\TestimonyController;
+use App\Http\Controllers\UpdateController;
 use App\Http\Controllers\VoiceStudioController;
 use App\Http\Controllers\WebhookController;
 use Illuminate\Support\Facades\Route;
@@ -113,5 +114,12 @@ Route::middleware('auth:sanctum')->group(function () {
         // Role-based permission matrix management
         Route::get('/permissions',   [AdminController::class, 'getPermissions']);
         Route::patch('/permissions', [AdminController::class, 'updatePermissions']);
+
+        // Live system monitor — package versions, service health, git state, installs.
+        Route::get('/updates/status',           [UpdateController::class, 'status']);
+        Route::post('/updates/check',           [UpdateController::class, 'check']);
+        Route::post('/updates/git-pull',        [UpdateController::class, 'gitPull']);
+        Route::post('/updates/install',         [UpdateController::class, 'install']);
+        Route::post('/updates/restart-service', [UpdateController::class, 'restartService']);
     });
 });

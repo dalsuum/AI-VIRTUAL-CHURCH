@@ -6,12 +6,17 @@ Uses the YouTube Data API v3 search endpoint. Returns the video id, which the Vu
 client embeds via an <iframe> player. No audio/video is downloaded or stored:
 downloading from YouTube violates their Terms of Service, so we only ever embed the
 official player. We also restrict to embeddable, syndicated, safe-search results.
+
+## Adding a new language
+
+Add one entry to ``_LANG_CONFIG`` (see below).  No other code changes required.
 """
 
 from __future__ import annotations
 
 import os
 import random
+from typing import Callable
 
 import requests
 
@@ -20,20 +25,28 @@ from . import MusicResult, MusicStrategy
 SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
 
 
-_EXCLUDED_CHANNEL_KEYWORDS = ["tamil", "hindi", "telugu", "malayalam", "kannada", "bengali"]
+# ── script helpers ────────────────────────────────────────────────────────────
 
-# South/Southeast Asian language channel keywords — rejected for Burmese services.
-# Telugu, Tamil, Kannada etc. produce Christian content that passes the religion
-# filter but is in the wrong language for a Myanmar-language service.
+# Myanmar Unicode main block U+1000–U+109F.
+def _has_myanmar_script(text: str) -> bool:
+    return any(0x1000 <= ord(c) <= 0x109F for c in text)
+
+
+# ── shared reject lists ───────────────────────────────────────────────────────
+
+# South/Southeast Asian language channel keywords. Rejected whenever the service
+# language has its own script or its own keyword set (Burmese, Tedim, …) so that
+# Telugu, Tamil, Kannada etc. Christian content never appears in those services.
 _SOUTH_ASIAN_CHANNEL_KEYWORDS = [
     "telugu", "tamil", "kannada", "malayalam", "hindi", "bengali",
     "sinhala", "sinhalese", "nepali", "marathi", "gujarati", "punjabi",
     "urdu", "odia", "assamese",
 ]
 
-# Non-Christian religious terms — any video whose title or channel contains one of
-# these is rejected regardless of query. Keeps Buddhist, Islamic, Hindu, and New Age
-# content out of a Baptist/AG Christian service.
+# English-mode channel exclusions (kept for backward-compat with english_only flag).
+_EXCLUDED_CHANNEL_KEYWORDS = ["tamil", "hindi", "telugu", "malayalam", "kannada", "bengali"]
+
+# Non-Christian religious terms — rejected regardless of query.
 _NON_CHRISTIAN_REJECT = [
     "buddhism", "buddhist", "buddha", "dharma", "sangha",
     "monk", "monks", "monastery", "zen",
@@ -44,34 +57,117 @@ _NON_CHRISTIAN_REJECT = [
     "mindfulness", "chakra", "reincarnation",
 ]
 
-# Myanmar Unicode main block: U+1000–U+109F.  Any title that contains at least
-# one character in this range is confirmed Burmese-script content.
-_MYANMAR_SCRIPT_START = 0x1000
-_MYANMAR_SCRIPT_END = 0x109F
+
+# ── per-language search configuration ────────────────────────────────────────
+#
+# To add a new language, add one entry here.  Fields:
+#
+#   relevance_language  BCP-47 code passed to YouTube as relevanceLanguage.
+#                       Omit if YouTube has no useful code for this language.
+#
+#   script_check        Callable(title: str) -> bool.  Return True when the
+#                       title is confirmed to be in the right script.  Used for
+#                       languages that have a unique Unicode block (Myanmar, …).
+#                       If provided, a result is rejected when it returns False.
+#
+#   required_title_terms  list[str] (lowercased).  At least one must appear in
+#                         the video title.  Used for Latin-script languages that
+#                         have no unique Unicode block (Tedim, Karen, …).
+#
+#   excluded_channels   list[str] (lowercased).  Channel names containing any
+#                       of these substrings are rejected.
+#
+#   sermon_must_contain list[str] (lowercased for non-script, raw for script).
+#                       The LLM-generated preaching_query must satisfy the same
+#                       check that title filtering uses; if it does not, the
+#                       query is replaced with sermon_fallback.
+#
+#   sermon_fallback     Search query used when the LLM query fails the
+#                       sermon_must_contain check.  Include a {mood} placeholder
+#                       if you want the worshipper's mood appended.
+
+_LANG_CONFIG: dict[str, dict] = {
+    "my": {
+        # ██ Myanmar (Burmese) ██
+        # Unique Unicode block → script check is the definitive gate.
+        # Any result without Myanmar script in the title is rejected,
+        # so Telugu, Tamil, English, and all other-script Christian videos
+        # can never appear in a Burmese service.
+        "relevance_language": "my",
+        "script_check": _has_myanmar_script,
+        "excluded_channels": _SOUTH_ASIAN_CHANNEL_KEYWORDS,
+        # ခရစ်ယာန် = Christian (Myanmar), တရားဟောချက် = sermon/message
+        "sermon_must_contain": ["ခရစ်ယာန်"],
+        "sermon_fallback": "ခရစ်ယာန် တရားဟောချက်",
+    },
+    "td": {
+        # ██ Tedim / Zolai (Zomi Chin) ██
+        # Latin script → keyword gate on title and query.
+        # Zomi channels mostly use English metadata so we bias with English
+        # relevanceLanguage and require one of the community's self-names.
+        "relevance_language": "en",
+        "required_title_terms": ["zomi", "tedim", "zolai", "chin christian"],
+        "excluded_channels": _SOUTH_ASIAN_CHANNEL_KEYWORDS,
+        "sermon_must_contain": ["zomi", "tedim", "zolai"],
+        "sermon_fallback": "Zomi Tedim Christian sermon",
+    },
+    # ── template for a future language ────────────────────────────────────────
+    # "kn": {                          # example: Karen
+    #     "relevance_language": "kar", # BCP-47 if known, else omit
+    #     "required_title_terms": ["karen", "kayin", "sgaw"],
+    #     "excluded_channels": _SOUTH_ASIAN_CHANNEL_KEYWORDS,
+    #     "sermon_must_contain": ["karen", "kayin"],
+    #     "sermon_fallback": "Karen Christian sermon",
+    # },
+}
 
 
-def _has_myanmar_script(text: str) -> bool:
-    return any(_MYANMAR_SCRIPT_START <= ord(c) <= _MYANMAR_SCRIPT_END for c in text)
-
+# ── helpers ───────────────────────────────────────────────────────────────────
 
 def _is_christian_result(item: dict) -> bool:
-    """Return False if the video title or channel name matches a non-Christian religion."""
     snippet = item["snippet"]
     text = (snippet.get("title", "") + " " + snippet.get("channelTitle", "")).lower()
     return not any(kw in text for kw in _NON_CHRISTIAN_REJECT)
 
 
-def _is_burmese_result(item: dict) -> bool:
-    """Return True only when the video title contains Myanmar Unicode characters.
-
-    This is the definitive gate for Burmese-language services: Telugu, Tamil,
-    Hindi, English, and every other non-Myanmar-script video is rejected here
-    even if it is genuine Christian content, because the worshipper cannot
-    understand it and it will look like a bug.
-    """
+def _passes_language_filter(item: dict, cfg: dict) -> bool:
+    """Return True when the item satisfies all per-language content gates."""
     title = item["snippet"].get("title", "")
-    return _has_myanmar_script(title)
+    channel = item["snippet"].get("channelTitle", "").lower()
 
+    # Channel exclusions
+    for kw in cfg.get("excluded_channels", []):
+        if kw in channel:
+            return False
+
+    # Script check (e.g. Myanmar Unicode required for Burmese)
+    script_check: Callable[[str], bool] | None = cfg.get("script_check")
+    if script_check and not script_check(title):
+        return False
+
+    # Keyword gate (e.g. "zomi"/"tedim" required in Tedim titles)
+    required: list[str] = cfg.get("required_title_terms", [])
+    if required and not any(t in title.lower() for t in required):
+        return False
+
+    return True
+
+
+def _query_satisfies(query: str, cfg: dict) -> bool:
+    """Return True when the search query already targets the right language."""
+    must: list[str] = cfg.get("sermon_must_contain", [])
+    if not must:
+        return True
+    script_check: Callable[[str], bool] | None = cfg.get("script_check")
+    if script_check:
+        # For script languages, verify the actual script, then optionally the term
+        if not script_check(query):
+            return False
+        return any(t in query for t in must)
+    return any(t in query.lower() for t in must)
+
+
+# ── public API ────────────────────────────────────────────────────────────────
 
 def search_video(
     *,
@@ -82,17 +178,14 @@ def search_video(
     language: str = "en",
     excluded_ids: list[str] | None = None,
 ) -> dict:
-    """Embeddable, syndicated, safe-search video for `query`.
+    """Embeddable, syndicated, safe-search video for ``query``.
 
-    Returns ``{"video_id", "title"}``; raises LookupError if nothing matches. Shared
-    by the worship-music strategy and the YouTube-mode preaching lookup so both go
-    through the same safety/embeddability constraints.
+    Returns ``{"video_id", "title"}``; raises LookupError if nothing matches.
+    Shared by the worship-music strategy and the YouTube-mode preaching lookup.
 
-    Fetches up to 25 candidates, applies filters, then picks randomly from the
-    survivors so the same video does not repeat across consecutive services.
-    ``excluded_ids`` lets the caller skip videos the worshipper has already seen.
-    ``language`` controls relevanceLanguage and script-based post-filtering so that
-    Burmese services only receive Burmese-script results.
+    ``language`` drives both the YouTube ``relevanceLanguage`` hint and the
+    post-filter gates defined in ``_LANG_CONFIG``.  Adding a new language to
+    ``_LANG_CONFIG`` is the only change needed to extend filtering here.
     """
     params = {
         "key": os.environ["YOUTUBE_API_KEY"],
@@ -104,13 +197,14 @@ def search_video(
         "safeSearch": "strict",
         "maxResults": 25,
     }
-    # relevanceLanguage biases results toward the service language.
-    # NOTE: christian_only alone must NOT force English — that broke Burmese mode.
+
+    # relevanceLanguage: english_only wins; otherwise use per-language config.
+    # christian_only alone must NOT force English — that broke Burmese mode.
+    cfg = _LANG_CONFIG.get(language, {})
     if english_only:
         params["relevanceLanguage"] = "en"
-    elif language == "my":
-        params["relevanceLanguage"] = "my"
-    # Tedim uses Latin script; no dedicated BCP-47 code — omit to let YouTube rank freely.
+    elif rl := cfg.get("relevance_language"):
+        params["relevanceLanguage"] = rl
 
     if category_id:
         params["videoCategoryId"] = category_id
@@ -124,30 +218,23 @@ def search_video(
     excluded = set(excluded_ids or [])
 
     def _passes(item: dict) -> bool:
-        vid = item["id"]["videoId"]
-        if vid in excluded:
+        if item["id"]["videoId"] in excluded:
             return False
         channel = item["snippet"].get("channelTitle", "").lower()
-        # English-only: reject South/Southeast Asian language channels
         if english_only and any(kw in channel for kw in _EXCLUDED_CHANNEL_KEYWORDS):
             return False
-        # Burmese: reject South Asian channels (Telugu, Tamil, Kannada, etc.)
-        if language == "my" and any(kw in channel for kw in _SOUTH_ASIAN_CHANNEL_KEYWORDS):
-            return False
-        # Religion filter — always active when requested
         if christian_only and not _is_christian_result(item):
             return False
-        # Burmese: require Myanmar Unicode script in the title
-        if language == "my" and not _is_burmese_result(item):
+        if cfg and not _passes_language_filter(item, cfg):
             return False
         return True
 
     candidates = [item for item in items if _passes(item)]
 
-    # If every candidate was excluded (returning worshipper, narrow results), ignore
-    # the exclusion list rather than failing — a repeat is better than an error.
+    # If every candidate was excluded (returning worshipper, narrow results),
+    # drop the exclusion set and retry filters — a repeat beats an error.
     if not candidates:
-        excluded = set()  # clear exclusions and retry the full filter pass
+        excluded = set()
         candidates = [item for item in items if _passes(item)]
     if not candidates:
         raise LookupError(f"No suitable result after filtering for query: {query!r}")
@@ -161,30 +248,30 @@ def find_sermon_video(
 ) -> dict:
     """Find an existing Christian preaching video for the worshipper's theme.
 
-    Used in YouTube mode so the message is *sourced*, not AI-written — saving the
-    sermon's LLM call (and any avatar/TTS for it). No category filter: sermons span
-    People & Blogs, Education and Nonprofits, so we lean on safe-search + embeddable
-    rather than a single music-style category.
+    Used in YouTube mode so the message is *sourced*, not AI-written.  Always
+    enforces a Christian query term and filters non-Christian results.
 
-    Always enforces "Christian" in the query and filters out non-Christian religious
-    results (Buddhist, Islamic, Hindu, etc.) so no other religion's content appears
-    in a Baptist/AG church service. For Burmese (language="my") the query is also
-    forced to include Myanmar-script Christian terms, and results are rejected unless
-    their title contains Myanmar Unicode — this is the definitive fix that prevents
-    Telugu, Tamil, and other South Asian Christian videos from appearing in a
-    Burmese-language service. ``excluded_ids`` skips videos the worshipper has
-    already been shown so the same sermon never repeats.
+    Language-specific behaviour is driven entirely by ``_LANG_CONFIG``: add a
+    new entry there to extend filtering to a new language with zero code changes
+    here.  For Burmese the query is forced to Myanmar script; for Tedim it must
+    contain "Zomi"/"Tedim"/"Zolai"; for English "Christian" is enforced.
     """
-    safe_query = query.strip() if query.strip() else ""
+    safe_query = query.strip()
+    cfg = _LANG_CONFIG.get(language)
 
-    if language == "my":
-        # ခရစ်ယာန် = Christian (Myanmar), တရားဟောချက် = sermon/message
-        if not _has_myanmar_script(safe_query):
-            # LLM fallback produced an English query — replace with a strong Burmese one
-            safe_query = f"ခရစ်ယာန် တရားဟောချက် {mood}"
-        elif "ခရစ်ယာန်" not in safe_query:
-            safe_query = f"ခရစ်ယာန် {safe_query}"
+    if cfg:
+        fallback = cfg.get("sermon_fallback", f"Christian sermon {mood}")
+        if not safe_query or not _query_satisfies(safe_query, cfg):
+            # LLM produced no query or a query in the wrong language — replace it.
+            safe_query = f"{fallback} {mood}".strip()
+        # Prepend the first enforce term if still missing after the replacement
+        must = cfg.get("sermon_must_contain", [])
+        script_check = cfg.get("script_check")
+        if must and not _query_satisfies(safe_query, cfg):
+            prefix = must[0] if not script_check else fallback.split()[0]
+            safe_query = f"{prefix} {safe_query}"
     else:
+        # Default (English or unrecognised language)
         if not safe_query:
             safe_query = f"Christian sermon {mood}"
         if "christian" not in safe_query.lower():
@@ -197,10 +284,8 @@ def find_sermon_video(
 
 class YouTubeStrategy(MusicStrategy):
     def fetch(self, *, mood: str, prompt: str, query: str) -> MusicResult:
-        # "english choir hymn vocal" targets choral vocal performances and keeps out
-        # instrumental-only and non-English (Tamil, Hindi, etc.) results.
+        # English choir hymn vocal — music category (10) filters out talks/sermons.
         # relevanceLanguage=en + channel filtering handled inside search_video.
-        # Music category (10) filters out talks and sermons.
         result = search_video(
             query=query or f"english choir hymn vocal worship {mood} -instrumental",
             category_id="10",

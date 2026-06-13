@@ -38,6 +38,7 @@ Redis queue so neither has to know the other's serializer.
 - [Environment variables](#environment-variables)
 - [API reference](#api-reference)
 - [Project status](#project-status)
+- [Acknowledgements — free AI services](#acknowledgements--free-ai-services)
 
 ---
 
@@ -937,3 +938,33 @@ Tedim GGUF (current `tedim-zolai` uses `llama3.2:1b` as base — quality improve
 significantly with a Tedim-corpus fine-tune on a larger model), a Vue bilingual segment
 component if you want bilingual side-by-side English plus target-language text,
 and ZBC Labu Lui licensing confirmation before production.
+
+---
+
+## Acknowledgements — free AI services
+
+This project is built almost entirely on **free and open-source AI services**. The
+following providers make it possible to run a full AI worship pipeline at zero AI cost.
+
+### Free LLM (Language Models)
+
+| Provider | What we use it for | Why we're grateful |
+|----------|-------------------|--------------------|
+| **[OpenRouter](https://openrouter.ai)** | Sermon, prayer, benediction, and intake-plan generation via the free-tier OpenAI-compatible chat endpoint | Offers a rotating set of capable free models (e.g. Mistral, Gemma, Llama variants) behind a single API — no per-model keys or infra to manage |
+| **[Ollama](https://ollama.com)** | Local inference host for the `tedim-zolai` and `burmese-myanmar` custom Modelfiles | Runs quantized LLaMA-family models on CPU with no GPU, no cloud cost, and no data leaving the server — essential for low-resource Chin and Burmese generation |
+| **[Meta — Llama 3.2 1B](https://llama.meta.com)** | Base model for both the Tedim (`tedim-zolai`) and Burmese (`burmese-myanmar`) Ollama Modelfiles | Released under the Meta Llama Community License for free commercial and research use; small enough to run on a shared ARM/OCI box with 4 GB RAM |
+
+### Free TTS (Text-to-Speech)
+
+| Provider | What we use it for | Why we're grateful |
+|----------|-------------------|--------------------|
+| **[Facebook MMS-TTS](https://huggingface.co/facebook/mms-tts)** | Native narration for Myanmar (`facebook/mms-tts-mya`) and Tedim/Zolai (`facebook/mms-tts-ctd`) | Part of Meta's Massively Multilingual Speech project — one of the very few publicly available TTS systems that supports Tedim (Chin) and Burmese with a proper VITS voice, not an English voice guessing at the script |
+| **[Microsoft Edge TTS](https://github.com/rany2/edge-tts)** | English narration (`en-US-AriaNeural` / `en-US-GuyNeural`) in `edge_tts` mode | High-quality neural voices available free via the Edge read-aloud API, with no key required for reasonable usage |
+| **[Browser Web Speech API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Speech_API)** | Client-side narration (`browser` mode) — works out of the box on any modern browser, no server or key needed | Zero cost, zero setup; the default narration mode for local development |
+| **[Hugging Face Hub](https://huggingface.co)** | Model distribution for MMS-TTS checkpoints (`transformers` auto-download on first use) | Hosts and serves all the MMS-VITS model weights for free, making multilingual TTS accessible without self-hosting model files |
+
+> A special thank-you to the **Meta AI Research** team behind the
+> [Massively Multilingual Speech (MMS)](https://ai.meta.com/research/publications/scaling-speech-technology-to-1000-languages/)
+> project. The inclusion of Tedim (Zolai) and Burmese voices — languages spoken by a
+> relatively small number of people — makes it possible for this project to serve
+> Chin and Myanmar-speaking worshippers in their own language and voice.

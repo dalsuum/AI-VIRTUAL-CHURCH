@@ -16,6 +16,26 @@ import re
 import requests
 
 
+_TEDIM_CORRECTIONS = [
+    # Mizo word       → Tedim word      (word-boundary, case-insensitive)
+    (r"\bkohhran\b",   "koici"),        # church
+    (r"\btawngtaina\b","thungetna"),    # prayer (noun)
+    (r"\btawngtai\b",  "thungeta"),     # pray (verb)
+    (r"\bpathian\b",   "Pasian"),       # God
+    (r"\blalpa\b",     "Topa"),         # the Lord
+    (r"\bisua\b",      "Zeisu"),        # Jesus
+]
+_TEDIM_CORRECTIONS_COMPILED = [
+    (re.compile(pat, re.IGNORECASE), rep) for pat, rep in _TEDIM_CORRECTIONS
+]
+
+
+def _fix_tedim_vocab(text: str) -> str:
+    for pattern, replacement in _TEDIM_CORRECTIONS_COMPILED:
+        text = pattern.sub(replacement, text)
+    return text
+
+
 def _strip_formatting(text: str) -> str:
     """Reduce model output to clean spoken prose.
 
@@ -86,7 +106,7 @@ def _ensure_exact_name(text: str, user_name: str | None) -> str:
 API_KEY = os.environ["OPENROUTER_API_KEY"]
 BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 MODEL = os.getenv("LLM_MODEL", "meta-llama/llama-3.3-70b-instruct:free")
-LOCAL_LLM_TIMEOUT = int(os.getenv("LOCAL_LLM_TIMEOUT", "45"))
+LOCAL_LLM_TIMEOUT = int(os.getenv("LOCAL_LLM_TIMEOUT", "300"))
 
 
 def _model_for(language: str = "en") -> str:
@@ -135,7 +155,10 @@ def _complete_local(system: str, user: str, max_tokens: int, language: str) -> s
 
 def _complete(system: str, user: str, max_tokens: int = 1500, language: str = "en") -> str:
     if _should_use_local_llm(system, language):
-        return _complete_local(system, user, max_tokens, language)
+        text = _complete_local(system, user, max_tokens, language)
+        if language == "td":
+            text = _fix_tedim_vocab(text)
+        return text
 
     resp = requests.post(
         f"{BASE_URL}/chat/completions",
@@ -154,7 +177,10 @@ def _complete(system: str, user: str, max_tokens: int = 1500, language: str = "e
         timeout=120,
     )
     resp.raise_for_status()
-    return (resp.json()["choices"][0]["message"]["content"] or "").strip()
+    text = (resp.json()["choices"][0]["message"]["content"] or "").strip()
+    if language == "td":
+        text = _fix_tedim_vocab(text)
+    return text
 
 
 def _addressing(user_name: str | None) -> str:
@@ -162,6 +188,48 @@ def _addressing(user_name: str | None) -> str:
     return (
         "Do NOT address the worshipper by name and do NOT invent one. "
         "Speak to them warmly without using any name."
+    )
+
+
+def _freshness_directive(user_history: dict | None) -> str:
+    """Build a system-prompt clause that prevents repeating past service content.
+
+    The worker passes the user's last ~10 sessions (same language) so the LLM
+    can pick a different scripture passage, avoid recycled illustrations, and
+    find fresh angles — ensuring every return visit feels genuinely new."""
+    if not user_history:
+        return ""
+    parts = []
+    past_refs = [r for r in (user_history.get("past_scripture_refs") or []) if r][:8]
+    if past_refs:
+        parts.append(
+            "IMPORTANT — these Bible passages were already used in this person's past services; "
+            f"choose a DIFFERENT passage: {', '.join(past_refs)}."
+        )
+    past_excerpts = [e for e in (user_history.get("past_prayer_excerpts") or []) if e][:4]
+    if past_excerpts:
+        parts.append(
+            "Past prayer themes already addressed for this person: "
+            + "; ".join(f'"{e}"' for e in past_excerpts)
+            + ". Bring a genuinely fresh angle — a new illustration, metaphor, or facet "
+            "of grace not yet explored."
+        )
+    return " ".join(parts)
+
+
+def _keyword_anchor(prayer_text: str | None) -> str:
+    """Surface the user's own feeling-words so the LLM grounds content in them.
+
+    The prayer_text already flows into the user-turn prompt, but a short,
+    clearly-labelled anchor phrase nudges the model to treat those exact words
+    as the emotional centre of the segment rather than just context."""
+    text = (prayer_text or "").strip()
+    if not text:
+        return ""
+    snippet = text[:150].rsplit(" ", 1)[0] if len(text) > 150 else text
+    return (
+        f'The worshipper\'s own words: "{snippet}". '
+        "Ground this segment directly in these specific feelings and concerns."
     )
 
 
@@ -436,7 +504,7 @@ def _lyrics_match_language(lyrics: str, language: str) -> bool:
     return True
 
 
-def build_intake_plan(*, user_name: str | None, mood: str, prayer_text: str | None, language: str = "en", music_source: str | None = None) -> dict:
+def build_intake_plan(*, user_name: str | None, mood: str, prayer_text: str | None, language: str = "en", music_source: str | None = None, user_history: dict | None = None) -> dict:
     """
     First pass: derive the service's spine from the user input.
     Returns scripture reference, a Suno music prompt, optional Suno custom-mode
@@ -449,6 +517,9 @@ def build_intake_plan(*, user_name: str | None, mood: str, prayer_text: str | No
         "no markdown fences. music_lyrics is REQUIRED for every language and must be "
         "singable worship lyrics, not a description."
     )
+    freshness = _freshness_directive(user_history)
+    if freshness:
+        system = f"{system} {freshness}"
     if language == "my":
         # The scripture reference is part of the worker contract (bible_api parses
         # English references and serves the Judson 1835 Burmese text), so it stays
@@ -542,18 +613,23 @@ def generate_welcome(*, user_name: str | None, mood: str, language: str = "en") 
     )
 
 
-def generate_opening_prayer(*, user_name: str | None, mood: str, prayer_text: str | None, language: str = "en") -> str:
+def generate_opening_prayer(*, user_name: str | None, mood: str, prayer_text: str | None, language: str = "en", user_history: dict | None = None) -> str:
     system = (
         "You are a warm, pastoral voice opening a worship service. Write a personalized "
         "opening prayer (120-180 words) that gently acknowledges the person's situation "
         "without exposing sensitive detail bluntly. Spoken cadence, no headings."
     )
+    freshness = _freshness_directive(user_history)
+    if freshness:
+        system = f"{system} {freshness}"
     if language != "en":
         system = f"{system} {_language_instruction(language)}"
     user = (
         f"{_addressing(user_name)}\nMood: {mood}\n"
         f"What they shared: {prayer_text or '(nothing specific)'}"
     )
+    if anchor := _keyword_anchor(prayer_text):
+        user = f"{user}\n{anchor}"
     try:
         return _ensure_exact_name(
             _strip_formatting(_complete(system, user, max_tokens=500, language=language)),
@@ -566,7 +642,7 @@ def generate_opening_prayer(*, user_name: str | None, mood: str, prayer_text: st
         raise
 
 
-def generate_sermon(*, user_name: str | None, mood: str, scripture_ref: str, target_minutes: int = 8, language: str = "en") -> str:
+def generate_sermon(*, user_name: str | None, mood: str, scripture_ref: str, target_minutes: int = 8, language: str = "en", prayer_text: str | None = None, user_history: dict | None = None) -> str:
     """Preaching segment, built around the user's mood and the chosen passage."""
     system = (
         "You are an expository preacher writing for spoken delivery by a digital avatar. "
@@ -578,6 +654,9 @@ def generate_sermon(*, user_name: str | None, mood: str, scripture_ref: str, tar
         "of any kind. If the theme touches a serious medical or safety emergency, do not "
         "advise; close gently and defer to real-world help."
     )
+    freshness = _freshness_directive(user_history)
+    if freshness:
+        system = f"{system} {freshness}"
     if language != "en":
         system = f"{system} {_language_instruction(language)}"
     user = (
@@ -587,6 +666,8 @@ def generate_sermon(*, user_name: str | None, mood: str, scripture_ref: str, tar
         "personal name for them anywhere in the message. Speak to them warmly using "
         "only 'you'."
     )
+    if anchor := _keyword_anchor(prayer_text):
+        user = f"{user}\n{anchor}"
     # Local Myanmar/Tedim Ollama models on small CPU boxes are much slower than the
     # hosted English chat model. Keep those messages shorter so the text pages land
     # reliably and narration is not asked to synthesize an eight-minute segment.
@@ -604,14 +685,19 @@ def generate_sermon(*, user_name: str | None, mood: str, scripture_ref: str, tar
     return _strip_name(text, user_name)
 
 
-def generate_benediction(*, user_name: str | None, mood: str, language: str = "en") -> str:
+def generate_benediction(*, user_name: str | None, mood: str, language: str = "en", prayer_text: str | None = None, user_history: dict | None = None) -> str:
     system = (
         "Write a short closing benediction (50-90 words) for spoken delivery. Personal, "
         "hopeful, sends the listener out with peace. No headings."
     )
+    freshness = _freshness_directive(user_history)
+    if freshness:
+        system = f"{system} {freshness}"
     if language != "en":
         system = f"{system} {_language_instruction(language)}"
     user = f"{_addressing(user_name)}\nMood: {mood}"
+    if anchor := _keyword_anchor(prayer_text):
+        user = f"{user}\n{anchor}"
     try:
         return _ensure_exact_name(
             _strip_formatting(_complete(system, user, max_tokens=250, language=language)),
@@ -667,7 +753,10 @@ def generate_music_lyrics(*, mood: str, language: str) -> str:
         )
 
     try:
-        text = _strip_formatting(_complete_local(system, user, max_tokens=400, language=language))
+        raw = _complete_local(system, user, max_tokens=400, language=language)
+        if language == "td":
+            raw = _fix_tedim_vocab(raw)
+        text = _strip_formatting(raw)
         if _lyrics_match_language(text, language):
             return text
         print(f"[llm] local {language} lyrics failed language guard, using fallback", flush=True)

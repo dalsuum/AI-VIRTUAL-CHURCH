@@ -818,7 +818,7 @@ This includes:
 | `MMS_TTS_SEED` | Pinned VITS seed for reproducible narration (default `42`). |
 | `MMS_TTS_TIMEOUT` | Per-request timeout for local MMS-TTS (default `180` seconds). Long message audio may be skipped/left text-only if the CPU model cannot finish in time. |
 | `MMS_TTS_STAGGER_SECONDS` | Delay between Myanmar/Tedim MMS narration tasks (default `60`; keeps the small server from running several VITS generations at once). |
-| `LOCAL_LLM_TIMEOUT` | Timeout for local Myanmar/Tedim prose generation before fallback text is used (default `45` seconds). |
+| `LOCAL_LLM_TIMEOUT` | Timeout for local Myanmar/Tedim prose generation before fallback text is used (default `300` seconds). Increase if your ARM box is slow; decrease only if you have a fast GPU. |
 | `EDGE_TTS_VOICE_MY` / `EDGE_TTS_VOICE_TD` | Legacy Edge TTS voice overrides. English still uses Edge voices; Myanmar/Tedim use MMS-TTS. |
 | `BIBLE_DATA_FILE_MY` | Override the bundled Judson 1835 Burmese Bible with another same-schema translation. |
 | `BIBLE_DATA_FILE_TD` | Override the bundled Lai Siangtho 1932 Tedim Bible. |

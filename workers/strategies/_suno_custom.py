@@ -31,6 +31,34 @@ def trim_on_verse(lyrics: str, limit: int = MAX_LYRICS) -> str:
     return cut.rstrip()
 
 
+# Burmese native section labels → Suno structural metatags (never sung)
+_MY_SECTION_TAGS: tuple[tuple[str, str], ...] = (
+    (r"(?m)^\s*အပိုဒ်\s*[၁1]\s*$",          "[Verse 1]"),
+    (r"(?m)^\s*အပိုဒ်\s*[၂2]\s*$",          "[Verse 2]"),
+    (r"(?m)^\s*အပိုဒ်\s*[၃3]\s*$",          "[Verse 3]"),
+    (r"(?m)^\s*သံပြိုင်\s*$",               "[Chorus]"),
+    # ထပ်ဆိုရန် = "Repeat" / Chorus marker used in classic hymnal layout
+    (r"(?m)^\s*ထပ်ဆိုရန်[။\.\:\)]*\s*$",   "[Chorus]"),
+    (r"(?m)^\s*တံတားဆက်\s*$",               "[Bridge]"),
+    (r"(?m)^\s*နိဂုံး\s*$",                 "[Outro]"),
+)
+
+# Burmese digits ၁-၉ mapped to ASCII for verse-tag generation.
+_BURMESE_DIGIT_MAP = str.maketrans("၁၂၃၄၅၆၇၈၉", "123456789")
+
+# Plain English section labels (no brackets) → Suno structural metatags
+_EN_SECTION_TAGS: tuple[tuple[str, str], ...] = (
+    (r"(?im)^\s*verse\s*1\s*[:\-]?\s*$",        "[Verse 1]"),
+    (r"(?im)^\s*verse\s*2\s*[:\-]?\s*$",        "[Verse 2]"),
+    (r"(?im)^\s*verse\s*3\s*[:\-]?\s*$",        "[Verse 3]"),
+    (r"(?im)^\s*verse\s*[:\-]?\s*$",            "[Verse 1]"),
+    (r"(?im)^\s*(chorus|refrain)\s*[:\-]?\s*$", "[Chorus]"),
+    (r"(?im)^\s*pre-?chorus\s*[:\-]?\s*$",      "[Pre-Chorus]"),
+    (r"(?im)^\s*bridge\s*[:\-]?\s*$",           "[Bridge]"),
+    (r"(?im)^\s*outro\s*[:\-]?\s*$",            "[Outro]"),
+    (r"(?im)^\s*intro\s*[:\-]?\s*$",            "[Intro]"),
+)
+
 _SENSITIVE_REPLACEMENTS: tuple[tuple[str, str], ...] = (
     (r"\bkill\s+myself\b", "find new hope"),
     (r"\bwant\s+to\s+die\b", "feel so low"),
@@ -55,10 +83,28 @@ def sanitize_style(style: str) -> str:
     return text[:480]
 
 
+def _verse_number_sub(m: re.Match) -> str:
+    """'၁ lyric text' → '[Verse 1]\\nlyric text'; '၁' alone → '[Verse 1]'."""
+    n = m.group(1).translate(_BURMESE_DIGIT_MAP)
+    rest = m.group(2).strip() if m.lastindex and m.group(2) else ""
+    return f"[Verse {n}]\n{rest}" if rest else f"[Verse {n}]"
+
+
 def sanitize_lyrics(lyrics: str) -> str:
     text = (lyrics or "").replace("\r\n", "\n")
     text = re.sub(r"[`*_#]", "", text)
-    text = re.sub(r"(?im)^\s*(verse|chorus|bridge|pre-chorus)\s*[:\-]?\s*", "", text)
+    # Convert native-language and plain-English section labels to Suno structural
+    # metatags ([Verse 1], [Chorus], etc.). Suno reads these as instructions and
+    # never sings them — they must be kept, not stripped.
+    for pattern, tag in _MY_SECTION_TAGS:
+        text = re.sub(pattern, tag, text)
+    for pattern, tag in _EN_SECTION_TAGS:
+        text = re.sub(pattern, tag, text)
+    # Burmese numeral verse prefixes: "၁ lyric text" → "[Verse 1]\nlyric text";
+    # standalone "၁" → "[Verse 1]". Classic hymnals prefix each verse this way
+    # instead of using a separate section-header line.
+    text = re.sub(r"(?m)^\s*([၁-၉])\s+(.+)$", _verse_number_sub, text)
+    text = re.sub(r"(?m)^\s*([၁-၉])\s*$",     _verse_number_sub, text)
     for pattern, repl in _SENSITIVE_REPLACEMENTS:
         text = re.sub(pattern, repl, text, flags=re.IGNORECASE)
     text = re.sub(r"\n{3,}", "\n\n", text)

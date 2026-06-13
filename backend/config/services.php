@@ -7,7 +7,7 @@ return [
      * X-Worker-Secret header when POSTing finished assets to /api/internal/asset-ready.
      */
     'worker' => [
-        'secret' => env('WORKER_WEBHOOK_SECRET', ''),
+        'secret' => env('WORKER_WEBHOOK_SECRET'),
     ],
 
     /*

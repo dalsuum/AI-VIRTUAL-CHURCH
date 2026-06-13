@@ -25,7 +25,9 @@ Route::middleware('throttle:auth')->group(function () {
 });
 
 // Email-link session resume — public, session token acts as the credential.
-Route::get('/service/{token}/resume', [ServiceController::class, 'resume']);
+// Throttled to limit repeated token exchange from a leaked link.
+Route::get('/service/{token}/resume', [ServiceController::class, 'resume'])
+    ->middleware('throttle:5,1');
 
 // Internal worker callbacks (shared-secret protected, no user auth)
 Route::post('/internal/asset-ready', [WebhookController::class, 'assetReady']);

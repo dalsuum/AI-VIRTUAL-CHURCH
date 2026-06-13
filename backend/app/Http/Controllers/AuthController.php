@@ -158,7 +158,7 @@ class AuthController extends Controller
         $token   = Str::random(64);
         $expires = Carbon::now()->addHours(2);
         $user->update([
-            'password_reset_token'      => $token,
+            'password_reset_token'      => hash('sha256', $token),
             'password_reset_expires_at' => $expires,
         ]);
 
@@ -184,7 +184,7 @@ class AuthController extends Controller
             'new_password' => ['required', 'string', Password::defaults()],
         ]);
 
-        $user = User::where('password_reset_token', $data['token'])
+        $user = User::where('password_reset_token', hash('sha256', $data['token']))
             ->where('password_reset_expires_at', '>', Carbon::now())
             ->first();
 

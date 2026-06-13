@@ -156,7 +156,7 @@ class ServiceController extends Controller
         $session = ServiceSession::where('session_token', $token)->firstOrFail();
         $user    = $session->user;
 
-        $authToken = $user->createToken('api')->plainTextToken;
+        $authToken = $user->createToken('api', ['*'], now()->addHours(24))->plainTextToken;
 
         return response()->json([
             'auth_token'    => $authToken,

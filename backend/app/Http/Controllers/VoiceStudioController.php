@@ -108,10 +108,8 @@ class VoiceStudioController extends Controller
         exec($cmd, $output, $code);
 
         if ($code !== 0) {
-            return response()->json([
-                'error'  => 'Audio conversion failed',
-                'detail' => implode("\n", $output),
-            ], 500);
+            \Illuminate\Support\Facades\Log::error('Audio conversion failed', ['output' => $output]);
+            return response()->json(['error' => 'Audio conversion failed'], 500);
         }
 
         // Reject clips that are too short after silence trimming — a sub-0.8 s

@@ -478,11 +478,11 @@ class AdminController extends Controller
             ->get()
             ->map(fn ($l) => [
                 $l->created_at,
-                $l->user?->name ?? '—',
-                $l->user && ! str_ends_with($l->user->email, '@guest.local') ? $l->user->email : '',
+                $this->csvSafe($l->user?->name ?? '—'),
+                $this->csvSafe($l->user && ! str_ends_with($l->user->email, '@guest.local') ? $l->user->email : ''),
                 $l->amount,
                 strtoupper($l->currency),
-                $l->allocation_type,
+                $this->csvSafe($l->allocation_type),
             ]);
 
         return [['Date', 'Donor', 'Email', 'Amount', 'Currency', 'Allocation'], $rows];
@@ -495,8 +495,8 @@ class AdminController extends Controller
             ->latest()
             ->get()
             ->map(fn ($u) => [
-                $u->name,
-                str_ends_with($u->email, '@guest.local') ? '(visitor)' : $u->email,
+                $this->csvSafe($u->name),
+                $this->csvSafe(str_ends_with($u->email, '@guest.local') ? '(visitor)' : $u->email),
                 $u->is_admin ? 'yes' : 'no',
                 $u->sessions_count,
                 $u->sessions_max_created_at,
@@ -513,13 +513,18 @@ class AdminController extends Controller
             ->get()
             ->map(fn ($t) => [
                 $t->created_at,
-                $t->user?->name ?? '—',
-                $t->source,
+                $this->csvSafe($t->user?->name ?? '—'),
+                $this->csvSafe($t->source),
                 $t->approved ? 'approved' : 'pending',
-                $t->content,
+                $this->csvSafe($t->content),
             ]);
 
         return [['Date', 'By', 'Source', 'Status', 'Content'], $rows];
+    }
+
+    private function csvSafe(string $value): string
+    {
+        return preg_match('/^[=+\-@\t\r]/', $value) ? "'" . $value : $value;
     }
 
     /**
@@ -766,7 +771,7 @@ class AdminController extends Controller
         $token   = Str::random(64);
         $expires = Carbon::now()->addHours(24);
         $user->update([
-            'password_reset_token'      => $token,
+            'password_reset_token'      => hash('sha256', $token),
             'password_reset_expires_at' => $expires,
         ]);
 
@@ -774,7 +779,6 @@ class AdminController extends Controller
 
         return response()->json([
             'ok'        => true,
-            'token'     => $token,
             'reset_url' => $resetUrl,
             'expires_at'=> $expires->toIso8601String(),
         ]);

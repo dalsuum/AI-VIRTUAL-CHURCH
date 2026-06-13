@@ -16,8 +16,9 @@ class WebhookController extends Controller
 {
     public function assetReady(Request $request): JsonResponse
     {
+        $secret = (string) config('services.worker.secret', '');
         abort_unless(
-            hash_equals(config('services.worker.secret', ''), (string) $request->header('X-Worker-Secret')),
+            strlen($secret) >= 32 && hash_equals($secret, (string) $request->header('X-Worker-Secret')),
             403
         );
 
@@ -99,8 +100,9 @@ class WebhookController extends Controller
      */
     public function musicTrack(Request $request): JsonResponse
     {
+        $secret = (string) config('services.worker.secret', '');
         abort_unless(
-            hash_equals(config('services.worker.secret', ''), (string) $request->header('X-Worker-Secret')),
+            strlen($secret) >= 32 && hash_equals($secret, (string) $request->header('X-Worker-Secret')),
             403
         );
 

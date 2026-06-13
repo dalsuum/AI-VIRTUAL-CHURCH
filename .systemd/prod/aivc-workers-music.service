@@ -1,0 +1,16 @@
+[Unit]
+Description=AI Church — Celery music worker (MusicGen/Suno/YouTube)
+After=redis-server.service aivc-workers.service
+
+[Service]
+User=simon
+Group=www-data
+WorkingDirectory=/opt/ai-church/workers
+# Single worker for ai:music so MusicGen loads only once (~2 GB model stays in one
+# process). Concurrency >1 would cache the model N times and exhaust RAM on 8 GB boxes.
+ExecStart=/usr/bin/env bash -lc 'set -a; . ./.env; set +a; exec .venv/bin/celery -A tasks.celery_app worker -Q ai:music -c 1 -n music@%%h'
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

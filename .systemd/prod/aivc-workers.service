@@ -1,5 +1,5 @@
 [Unit]
-Description=AI Church — Celery workers (sermon/music/avatar/narration)
+Description=AI Church — Celery workers (sermon/avatar/narration)
 After=redis-server.service
 
 [Service]
@@ -7,7 +7,10 @@ User=simon
 Group=www-data
 WorkingDirectory=/opt/ai-church/workers
 # Celery does NOT read .env itself, so we load it first (mirrors .systemd/workers.sh).
-ExecStart=/usr/bin/env bash -lc 'set -a; . ./.env; set +a; exec .venv/bin/celery -A tasks.celery_app worker -Q ai:sermon,ai:music,ai:avatar,ai:narration -c 4'
+# ai:music is intentionally excluded — handled by aivc-workers-music.service with
+# concurrency 1, so the MusicGen model only loads in a single process (~2 GB).
+# Running it here too caused all 4 workers to cache the model, exhausting RAM.
+ExecStart=/usr/bin/env bash -lc 'set -a; . ./.env; set +a; exec .venv/bin/celery -A tasks.celery_app worker -Q ai:sermon,ai:avatar,ai:narration -c 2'
 Restart=always
 RestartSec=2
 

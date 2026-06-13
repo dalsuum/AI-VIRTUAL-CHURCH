@@ -331,6 +331,18 @@ worship words, and at least two Tedim sentence-final particles (` hi` / ` hen`) 
 grammatically impossible in any other language. Lyrics that fail are replaced with
 mood-specific hardcoded Tedim fallbacks before being sent to Suno.
 
+**Myanmar grammar guidance (from *Burmese: An Introduction to the Spoken Language*, John Okell, NIU Press):**
+All system prompts for Burmese prose and lyric generation encode these rules so the model produces
+natural Myanmar church Burmese:
+- **Word order SOV** — the verb always comes at the end (`ဘုရားသခင်သည် ကျွန်ုပ်တို့ကို ချစ်တော်မူသည်` = God loves us).
+- **Case markers**: subject `-သည်`/`-က`; object `-ကို`; location `-မှာ`/`-တွင်`; genitive `-၏`.
+- **Reverential register**: God's actions use `-တော်မူသည်` (not plain `-သည်`); address God as `ကိုယ်တော်`.
+- **Sentence-final particles**: `-ပါသည်` (polite declarative), `-ပါစေ` (prayer/blessing/wish), `-တော်မူပါ` (reverent request to God); Amen = `အာမင်`.
+- **Pronouns**: `ကျွန်ုပ်` (I — formal), `ကျွန်ုပ်တို့` (we), `သင်` (you — to humans), `ကိုယ်တော်` (You/He — God/Jesus only).
+- **Tense**: past = verb + `-ခဲ့သည်`; future = verb + `-မည်`; continuous = verb + `-နေသည်`; present = verb + `-သည်`.
+- **Negation**: `မ-` + verb + `-ဘူး` (plain); `မ-` + verb (reverential, for God).
+- **Required Christian terms**: `ဘုရားသခင်` God, `ယေရှုခရစ်တော်` Jesus Christ, `သန့်ရှင်းသောဝိညာဉ်တော်` Holy Spirit, `ကျေးဇူးတော်` grace, `ကရုဏာတော်` mercy, `မေတ္တာတော်` love, `ကယ်တင်ခြင်း` salvation, `မျှော်လင့်ခြင်း` hope, `ငြိမ်သက်ခြင်း` peace.
+
 **Zolai grammar guidance (from *Paunam Khenna Leh Kampau Luanzia*):** All system prompts
 for Tedim prose and lyric generation encode the following rules from the community grammar
 reference so the Ollama model produces more natural Zolai sentences:

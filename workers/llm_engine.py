@@ -307,9 +307,11 @@ def _language_instruction(language: str) -> str:
     """One system-prompt line fixing the output language of a spoken segment.
 
     'my' services are conducted entirely in Burmese. The instruction pins the
-    script too — Myanmar Unicode only, never Zawgyi or romanization — because the
-    player renders with Unicode fonts (Padauk/Noto Sans Myanmar) and edge-tts's
-    my-MM voices expect Unicode text.
+    script, enforces SOV grammar, and anchors the reverential register used in
+    Myanmar church worship — rules sourced from John Okell's "Burmese: An
+    Introduction to the Spoken Language" (NIU Press). Myanmar Unicode only, never
+    Zawgyi or romanization — edge-tts my-MM voices and Padauk/Noto Sans Myanmar
+    fonts both require Unicode.
 
     'td' services are conducted in Tedim Chin (Zolai / Zomi pau, Latin script).
     The instruction anchors the model with the community's own Christian
@@ -318,14 +320,74 @@ def _language_instruction(language: str) -> str:
     segments already use."""
     if language == "my":
         return (
-            "Write your ENTIRE response in the Burmese (Myanmar) language, using "
-            "Myanmar Unicode script only (never Zawgyi, never romanized Burmese, "
-            "no English words, except a worshipper's proper name when one is provided). "
-            "Compose directly in natural Myanmar Burmese; do not translate English "
-            "idioms word-for-word. Use simple, meaningful sentences and a reverent "
-            "Christian worship register that ordinary Myanmar readers can understand. "
+            "LANGUAGE LAW — ABSOLUTE: Write EVERY SINGLE SENTENCE in Burmese (Myanmar) ONLY. "
+            "Myanmar Unicode script only — never Zawgyi encoding, never romanized Burmese, "
+            "no English words (except a worshipper's proper name when provided). "
+            "Compose DIRECTLY in natural Myanmar Burmese; never translate English idioms word-for-word. "
             "For narration, spell out numbers and Bible references in Burmese words; "
-            "do not leave raw forms like 'Jn 3:16' or '2026'."
+            "do not leave raw forms like 'Jn 3:16' or '2026'. "
+
+            "BURMESE GRAMMAR — mandatory rules (from John Okell, Burmese: An Introduction to the Spoken Language): "
+            "Word order is SOV — the verb ALWAYS comes at the END of the sentence "
+            "(e.g., ဘုရားသခင်သည် ကျွန်ုပ်တို့ကို ချစ်တော်မူသည် — God [S] us [O] loves [V]). "
+
+            "Subject marker: -သည် (-dhì) or -က (-ga) follows the subject noun "
+            "(e.g., ဘုရားသခင်သည် = God [as subject]). "
+            "Object marker: -ကို (-go) marks the direct object "
+            "(e.g., ကျွန်ုပ်တို့ကို = us [as object]). "
+            "Location markers: -မှာ (-hmah) or -တွင် (-twin) = in/at "
+            "(e.g., နှလုံးထဲတွင် = in the heart). "
+            "Genitive: -၏ (-ì) = of/possessive (e.g., ကိုယ်တော်၏ မေတ္တာ = God's love). "
+
+            "REGISTER — use the reverential/literary register for worship: "
+            "God's actions take -တော်မူသည် (-daw-mu-dhì) not plain -သည် "
+            "(e.g., ကြားတော်မူသည် = hears [God]; ပေးတော်မူသည် = gives [God]). "
+            "Addressing God directly: use ကိုယ်တော် (You — reverential, for God and Jesus only). "
+
+            "Sentence-final particles: "
+            "-ပါသည် (-ba-dhì) closes polite declarative sentences; "
+            "-တော်မူသည် (-daw-mu-dhì) closes statements about God's actions; "
+            "-ပါစေ (-ba-zè) closes prayers, blessings, and wishes "
+            "(e.g., ကောင်းချီးပေးတော်မူပါစေ = May He bless); "
+            "-တော်မူပါ (-daw-mu-ba) closes reverent requests to God; "
+            "Amen = အာမင်. "
+
+            "Pronouns: ကျွန်ုပ် (I — formal), ကျွန်ုပ်တို့ (we), "
+            "သင် (you — polite, to humans), ကိုယ်တော် (You/He — reverential, God/Jesus only), "
+            "သူ (he/she — ordinary people), သူတို့ (they). "
+
+            "Tense/aspect: "
+            "Past = verb + -ခဲ့သည် (e.g., ပေးတော်မူခဲ့သည် = gave [God]); "
+            "Future = verb + -မည် or -ပါမည် (e.g., လာမည် = will come); "
+            "Continuous = verb + -နေသည် (e.g., ဆုတောင်းနေသည် = is praying); "
+            "Present/habitual = bare verb + -သည်. "
+            "Negation = မ- prefix + verb + -ဘူး (e.g., မမေ့ဘူး = does not forget) or "
+            "မ- prefix + verb (reverential: မပျောက်တော်မမူ = God does not abandon). "
+
+            "REQUIRED Christian vocabulary — use these exact Burmese terms: "
+            "ဘုရားသခင် = God; "
+            "ယေရှုခရစ်တော် = Jesus Christ; "
+            "သန့်ရှင်းသောဝိညာဉ်တော် = Holy Spirit; "
+            "သမ္မာကျမ်းစာ = Holy Scripture; "
+            "ဆုတောင်းခြင်း = prayer; "
+            "ဘုရားကျောင်း = church; "
+            "ကယ်တင်ခြင်း = salvation; "
+            "ကျေးဇူးတော် = grace; "
+            "ကရုဏာတော် = mercy; "
+            "မေတ္တာတော် = divine love; "
+            "မျှော်လင့်ခြင်း = hope; "
+            "ယုံကြည်ခြင်း = faith; "
+            "ငြိမ်သက်ခြင်း = peace; "
+            "ကောင်းချီးမင်္ဂလာ = blessing; "
+            "နောင်တ = repentance; "
+            "ဖြောင့်မတ်ခြင်း = righteousness. "
+
+            "Correct sentence examples: "
+            "'ဘုရားသခင်သည် ကျွန်ုပ်တို့ကို ချစ်တော်မူသည်' (God loves us — SOV + reverential); "
+            "'ကိုယ်တော်သည် ကျွန်ုပ်တို့၏ ဆုတောင်းသံကို နားထောင်တော်မူသည်' (The Lord hears our prayers); "
+            "'ယေရှုခရစ်တော်သည် ကယ်တင်ခြင်းကို ပေးတော်မူသည်' (Jesus Christ gives salvation — SOV); "
+            "'ကျွန်ုပ်တို့နှလုံးကို ကောင်းချီးပေးတော်မူပါစေ' (May He bless our hearts — benediction with -ပါစေ). "
+            "Keep sentences short and clear. Use the colloquial-literary blend of Myanmar church Burmese."
         )
     if language == "td":
         return (

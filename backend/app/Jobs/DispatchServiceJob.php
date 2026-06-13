@@ -39,7 +39,8 @@ class DispatchServiceJob implements ShouldQueue
             // How spoken segments are voiced (global admin setting). 'openai' tells
             // the worker to synthesize TTS audio; 'browser'/'off' leave it to the
             // client (browser speech) or silent, so the worker skips narration.
-            'narration_mode'  => Setting::get('narration_mode', 'browser'),
+            'narration_mode'   => Setting::get('narration_mode', 'browser'),
+            'voicebox_engine'  => Setting::get('voicebox_engine', 'kokoro'),
             // Per-language narration gate. English on by default; Myanmar and Tedim
             // off by default (no Tedim edge-tts voice; Myanmar quality may vary).
             // Admin can flip each independently via the dashboard.
@@ -62,10 +63,58 @@ class DispatchServiceJob implements ShouldQueue
             // Registered worshippers (real email) get a personalized welcome-back
             // greeting; guests use a throwaway @guest.local address and skip it.
             'is_registered'=> ! str_ends_with((string) $session->user->email, '@guest.local'),
+            // Past-service data for registered users. The LLM uses this to avoid
+            // repeating the same scripture passages, prayer themes, or sermon angles
+            // for someone who has attended before.
+            'user_history' => $this->buildUserHistory($session),
         ]);
 
         // The Python orchestrator (tasks.orchestrate) BLPOPs this list.
         Redis::rpush('ai:intake', $payload);
+    }
+
+    /**
+     * Collect the worshipper's service history for the current language so the LLM
+     * can avoid repeating scriptures, prayer themes, and sermon angles.
+     * Guests (throwaway @guest.local accounts) have no meaningful history.
+     */
+    private function buildUserHistory(ServiceSession $session): array
+    {
+        if (str_ends_with((string) $session->user->email, '@guest.local')) {
+            return [];
+        }
+
+        $past = ServiceSession::where('user_id', $session->user_id)
+            ->where('id', '!=', $session->id)
+            ->where('language', $session->language ?? 'en')
+            ->whereHas('intake', fn ($q) => $q->whereNotNull('scripture_ref'))
+            ->with(['intake:session_id,mood,custom_mood,prayer_text,scripture_ref'])
+            ->orderByDesc('id')
+            ->limit(10)
+            ->get();
+
+        $scriptureRefs = $past
+            ->map(fn ($s) => $s->intake?->scripture_ref)
+            ->filter()->unique()->values()->toArray();
+
+        $pastMoods = $past
+            ->map(fn ($s) => $s->intake?->mood)
+            ->filter()->unique()->values()->toArray();
+
+        // Short excerpts from past prayer text — enough for the LLM to recognise
+        // recurring themes without sending the full personal text.
+        $prayerExcerpts = $past
+            ->map(function ($s) {
+                $text = trim((string) ($s->intake?->prayer_text ?? ''));
+                return $text !== '' ? mb_substr($text, 0, 80) : null;
+            })
+            ->filter()->unique()->values()->toArray();
+
+        return [
+            'past_scripture_refs'  => $scriptureRefs,
+            'past_moods'           => $pastMoods,
+            'past_prayer_excerpts' => $prayerExcerpts,
+        ];
     }
 
     /**

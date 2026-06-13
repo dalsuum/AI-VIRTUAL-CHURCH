@@ -7,6 +7,7 @@ use App\Http\Controllers\OfferingController;
 use App\Http\Controllers\ServiceController;
 use App\Http\Controllers\TestimonyController;
 use App\Http\Controllers\UpdateController;
+use App\Http\Controllers\VoiceboxController;
 use App\Http\Controllers\VoiceStudioController;
 use App\Http\Controllers\WebhookController;
 use Illuminate\Support\Facades\Route;
@@ -121,5 +122,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/updates/git-pull',        [UpdateController::class, 'gitPull']);
         Route::post('/updates/install',         [UpdateController::class, 'install']);
         Route::post('/updates/restart-service', [UpdateController::class, 'restartService']);
+
+        // Voicebox TTS container monitor — proxies health/profiles/queue from localhost:17493.
+        Route::get('/voicebox/health',   [VoiceboxController::class, 'health']);
+        Route::get('/voicebox/profiles', [VoiceboxController::class, 'profiles']);
+        Route::get('/voicebox/queue',    [VoiceboxController::class, 'queue']);
     });
 });

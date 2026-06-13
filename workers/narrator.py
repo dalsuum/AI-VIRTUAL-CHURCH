@@ -78,6 +78,10 @@ def is_enabled(mode: str = "openai") -> bool:
     edge_tts needs no key so it is always enabled."""
     if mode == "edge_tts":
         return True
+    if mode == "voicebox":
+        return bool(
+            os.getenv("VOICEBOX_PROFILE_ID_FEMALE") or os.getenv("VOICEBOX_PROFILE_ID")
+        )
     cfg = _providers().get(mode)
     return bool(cfg and cfg["api_key"])
 
@@ -172,6 +176,28 @@ def _narrate_edge(text: str, voice: str) -> bytes:
     return b"".join(asyncio.run(_speak_edge(chunk, voice)) for chunk in parts if chunk)
 
 
+def _speak_voicebox(text: str, gender: str = "female", engine_override: str = "") -> bytes:
+    """Synthesize text via local Voicebox /generate/stream; return WAV bytes.
+
+    engine_override lets the orchestrator pass the admin-chosen engine from the
+    database setting (via the job payload) instead of the env var default.
+    """
+    base_url = os.getenv("VOICEBOX_URL", "http://127.0.0.1:17493").rstrip("/")
+    env_key = "VOICEBOX_PROFILE_ID_MALE" if gender == "male" else "VOICEBOX_PROFILE_ID_FEMALE"
+    profile_id = os.getenv(env_key) or os.getenv("VOICEBOX_PROFILE_ID")
+    if not profile_id:
+        raise RuntimeError(f"Voicebox profile not configured ({env_key} unset)")
+    engine = engine_override or os.getenv("VOICEBOX_ENGINE", "kokoro")
+    timeout = int(os.getenv("VOICEBOX_TIMEOUT", "180"))
+    resp = requests.post(
+        f"{base_url}/generate/stream",
+        json={"profile_id": profile_id, "text": text, "language": "en", "engine": engine},
+        timeout=timeout,
+    )
+    resp.raise_for_status()
+    return resp.content  # WAV bytes
+
+
 def narrate(
     session_token: str,
     segment: str,
@@ -197,6 +223,13 @@ def narrate(
                           or os.getenv("EDGE_TTS_VOICE", "en-US-AriaNeural"))
         audio = _narrate_edge(clean, resolved_voice)
         fmt = "mp3"
+    elif mode == "voicebox":
+        audio = b"".join(
+            _speak_voicebox(chunk, gender=gender, engine_override=voice)
+            for chunk in _chunks(clean)
+            if chunk
+        )
+        fmt = "wav"
     else:
         cfg = _providers(gender=gender).get(mode)
         if not cfg or not cfg["api_key"]:

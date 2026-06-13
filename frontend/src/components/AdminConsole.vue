@@ -76,11 +76,21 @@ const musicPoolLanguages = [
 // Setting::NARRATION_MODES; surfaced as a single-choice selector.
 const narrationModes = [
   { value: "edge_tts", label: "Edge TTS (free)", hint: "Microsoft neural voice — free, no API key, high quality. Recommended." },
+  { value: "voicebox", label: "Voicebox (local)", hint: "Voice-cloned narration via the local Voicebox container. Requires Docker setup and VOICEBOX_PROFILE_ID_FEMALE / _MALE set in the worker env." },
   { value: "browser", label: "Browser voice", hint: "The worshipper's browser reads each segment aloud — free, no API key." },
   { value: "openai", label: "OpenAI voice", hint: "Segments are narrated with OpenAI text-to-speech. Requires a TTS key." },
   { value: "kokoro", label: "OpenRouter Kokoro", hint: "Segments are narrated with the open hexgrad/kokoro-82m voice via OpenRouter. Uses the OpenRouter key." },
   { value: "off", label: "Off", hint: "Segments stay as silent text — nothing is read aloud." },
 ];
+
+const voiceboxEngines = [
+  { value: "kokoro",           label: "Kokoro",             hint: "82M model, 50 preset voices, fast CPU inference. Best default." },
+  { value: "chatterbox",       label: "Chatterbox",         hint: "Multilingual (23 languages), good for non-English accents." },
+  { value: "qwen",             label: "Qwen3-TTS",          hint: "High quality multilingual cloning (0.6B / 1.7B)." },
+  { value: "luxtts",           label: "LuxTTS",             hint: "Lightweight English-only, 48 kHz, 150× realtime on CPU." },
+  { value: "chatterbox_turbo", label: "Chatterbox Turbo",   hint: "Fast 350M English model with paralinguistic emotion tags." },
+];
+const setVoiceboxEngine = (v) => saveSetting("voicebox_engine", v, "Voicebox engine updated.");
 
 // Edge TTS voice options (shown when narration_mode === 'edge_tts').
 const edgeTtsVoices = [
@@ -127,11 +137,11 @@ const musicSourceOptions = [
 const newMood = ref("");
 const newCountdownBanner = ref({ text: "", source: "" });
 const countdownSourceOptions = [
+  { value: "all", label: "All sources", hint: "Rotate banners, approved testimonies, and mood-matched Scripture from the local Bible." },
   { value: "both", label: "Banners + testimonies", hint: "Rotate admin banners and approved testimonies." },
-  { value: "all", label: "All sources", hint: "Rotate banners, approved testimonies, and an online Bible verse." },
+  { value: "verses", label: "Scripture verses", hint: "Show mood-matched verses from the local Bible (English / Burmese / Tedim)." },
   { value: "banners", label: "Custom banners", hint: "Show only the admin-managed messages below." },
   { value: "testimonies", label: "Testimonies", hint: "Show only approved testimonies from the moderation queue." },
-  { value: "online", label: "Online Bible verse", hint: "Show a cached public-domain verse from a fixed online provider." },
   { value: "off", label: "Off", hint: "Show the normal countdown without cards." },
 ];
 
@@ -244,7 +254,7 @@ async function loadMusicTracks() {
 }
 
 function show(name) {
-  if (name !== "system") clearInterval(updateTimer);
+  if (name !== "system") { clearInterval(updateTimer); clearInterval(vbTimer); }
   tab.value    = name;
   notice.value = "";
   if (name === "services")    loadServices();
@@ -255,7 +265,7 @@ function show(name) {
   if (name === "settings")    loadSettings();
   if (name === "music-pool")  loadMusicTracks();
   if (name === "permissions") loadPermissions();
-  if (name === "system")      { loadUpdateStatus(); scheduleUpdatePoll(); }
+  if (name === "system")      { loadUpdateStatus(); scheduleUpdatePoll(); loadVoiceboxStatus(); scheduleVoiceboxPoll(); }
   // Dashboard stats loaded on demand if not yet fetched.
   if (name === "dashboard" && can("dashboard.view")) {
     api.adminDashboard().then((res) => { stats.value = res; }).catch(() => {});
@@ -660,6 +670,47 @@ const updateStatus   = ref(null);   // { checked_at, checking, packages, service
 const updateBusy     = ref(false);  // true while an action is in flight
 const updateNotice   = ref("");
 let   updateTimer    = null;
+
+// ─── Voicebox TTS Monitor ──────────────────────────────────────────────────────
+
+const vbHealth   = ref(null);   // { status, model_loaded, gpu_type, vram_used_mb, ... }
+const vbProfiles = ref([]);     // [{ id, name, voice_type, language, sample_count }]
+const vbQueue    = ref(null);   // { status, generations, downloads }
+const vbCopied   = ref("");     // id of the profile whose UUID was just copied
+let   vbTimer    = null;
+
+async function loadVoiceboxStatus() {
+  try {
+    const [h, p, q] = await Promise.all([
+      api.adminVoiceboxHealth(),
+      api.adminVoiceboxProfiles(),
+      api.adminVoiceboxQueue(),
+    ]);
+    vbHealth.value   = h;
+    vbProfiles.value = p.profiles || [];
+    vbQueue.value    = q;
+  } catch { /* silent — Voicebox may not be running yet */ }
+}
+
+function scheduleVoiceboxPoll() {
+  clearInterval(vbTimer);
+  vbTimer = setInterval(loadVoiceboxStatus, 30000);
+}
+
+async function copyProfileId(id) {
+  try {
+    await navigator.clipboard.writeText(id);
+    vbCopied.value = id;
+    setTimeout(() => { if (vbCopied.value === id) vbCopied.value = ""; }, 2000);
+  } catch { /* clipboard permission denied */ }
+}
+
+function vbDotClass(status) {
+  if (!status) return "svc-unknown";
+  if (status === "ok" || status === "healthy") return "svc-active";
+  if (status === "unreachable") return "svc-inactive";
+  return "svc-unknown";
+}
 
 const SERVICE_LABELS = {
   "aivc-workers"       : "Workers (sermon/avatar)",
@@ -1272,7 +1323,6 @@ onUnmounted(() => clearInterval(updateTimer));
           <p class="setting-desc">
             Short cards shown while the service is preparing. Testimonies come only from
             approved moderation; custom banners are plain text with an optional source.
-            Online verses use a fixed public-domain provider and are cached by the server.
           </p>
           <template v-if="settings">
             <div class="choice-row">
@@ -1433,6 +1483,27 @@ onUnmounted(() => clearInterval(updateTimer));
                 <span>{{ v.gender }} · {{ v.accent }}</span>
               </button>
             </div>
+          </template>
+          <template v-if="settings && settings.narration_mode === 'voicebox'">
+            <p class="setting-desc" style="margin-top:1rem">Engine</p>
+            <div class="choice-row">
+              <button
+                v-for="e in voiceboxEngines"
+                :key="e.value"
+                type="button"
+                class="choice"
+                :class="{ active: (settings.voicebox_engine || 'kokoro') === e.value }"
+                :disabled="savingSettings"
+                @click="setVoiceboxEngine(e.value)"
+              >
+                <strong>{{ e.label }}</strong>
+                <span>{{ e.hint }}</span>
+              </button>
+            </div>
+            <p class="setting-desc" style="margin-top:0.75rem">
+              Set <code>VOICEBOX_PROFILE_ID_FEMALE</code> and <code>VOICEBOX_PROFILE_ID_MALE</code>
+              in <code>workers/.env</code> with the profile UUIDs shown in the Voicebox panel below.
+            </p>
           </template>
           <p v-else-if="!settings" class="setting-desc">Loading…</p>
           <template v-if="settings">
@@ -1645,6 +1716,89 @@ onUnmounted(() => clearInterval(updateTimer));
             </div>
           </div>
           <p v-else class="sys-empty">Run a check to see service statuses.</p>
+        </div>
+
+        <!-- Voicebox TTS container -->
+        <div class="sys-block">
+          <h3 class="sys-block-title">Voicebox TTS</h3>
+          <p class="sys-block-desc">
+            Local voice-cloning container at <code>127.0.0.1:17493</code>. Used when narration
+            mode is set to Voicebox. Profiles listed here provide the UUIDs needed for
+            <code>VOICEBOX_PROFILE_ID_FEMALE</code> / <code>_MALE</code> in <code>workers/.env</code>.
+          </p>
+
+          <!-- Health row -->
+          <div class="svc-card" style="margin-bottom:0.75rem">
+            <span class="svc-dot" :class="vbDotClass(vbHealth?.status)"></span>
+            <div class="svc-info">
+              <strong class="svc-name">Voicebox</strong>
+              <code class="svc-unit">docker · port 17493</code>
+            </div>
+            <span class="svc-status" :class="vbDotClass(vbHealth?.status)">
+              {{ vbHealth ? (vbHealth.status === 'unreachable' ? 'unreachable' : 'running') : '—' }}
+            </span>
+            <button class="chip" @click="loadVoiceboxStatus">Refresh</button>
+          </div>
+
+          <!-- Model / GPU details -->
+          <div v-if="vbHealth && vbHealth.status !== 'unreachable'" class="git-panel" style="margin-bottom:0.75rem">
+            <div class="git-row">
+              <span class="git-label">Model loaded</span>
+              <span class="git-val">{{ vbHealth.model_loaded ? '✓ loaded' : 'not loaded' }}</span>
+            </div>
+            <div class="git-row">
+              <span class="git-label">GPU</span>
+              <span class="git-val">{{ vbHealth.gpu_type || (vbHealth.gpu_available ? 'available' : 'CPU only') }}</span>
+            </div>
+            <div v-if="vbHealth.vram_used_mb" class="git-row">
+              <span class="git-label">VRAM used</span>
+              <span class="git-val">{{ Math.round(vbHealth.vram_used_mb) }} MB</span>
+            </div>
+            <div class="git-row">
+              <span class="git-label">Backend</span>
+              <span class="git-val">{{ vbHealth.backend_type || '—' }} / {{ vbHealth.backend_variant || '—' }}</span>
+            </div>
+            <div v-if="vbQueue" class="git-row">
+              <span class="git-label">Queue</span>
+              <span class="git-val">{{ vbQueue.generations }} generating · {{ vbQueue.downloads }} downloading</span>
+            </div>
+          </div>
+
+          <!-- Profile list -->
+          <template v-if="vbProfiles.length">
+            <p class="setting-desc" style="margin-bottom:0.4rem">Voice profiles</p>
+            <table class="pkg-table" style="margin-bottom:0.5rem">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Type</th>
+                  <th>Lang</th>
+                  <th>Samples</th>
+                  <th>Profile ID</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="p in vbProfiles" :key="p.id">
+                  <td class="pkg-name">{{ p.name }}</td>
+                  <td><code>{{ p.voice_type }}</code></td>
+                  <td><code>{{ p.language }}</code></td>
+                  <td>{{ p.sample_count }}</td>
+                  <td>
+                    <code class="git-val" style="font-size:0.72rem">{{ p.id }}</code>
+                    <button
+                      class="chip"
+                      style="margin-left:0.4rem;font-size:0.7rem;padding:0.1rem 0.45rem"
+                      @click="copyProfileId(p.id)"
+                    >{{ vbCopied === p.id ? 'Copied!' : 'Copy' }}</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </template>
+          <p v-else-if="vbHealth && vbHealth.status !== 'unreachable'" class="sys-empty">
+            No voice profiles yet. Open <code>http://localhost:17493</code> in a browser to create them.
+          </p>
+          <p v-else class="sys-empty">Start the Voicebox container to see profiles.</p>
         </div>
 
         <!-- Git / App version -->

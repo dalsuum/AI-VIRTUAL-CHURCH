@@ -77,6 +77,7 @@ def orchestrate(job: dict) -> None:
         user_name=job["user_name"], mood=job["mood"], prayer_text=job.get("prayer_text"),
         language=job.get("language", "en"),
         music_source=job.get("music_source"),
+        user_history=job.get("user_history"),
     )
 
     # 1b. Registered worshippers get a short, mood-aware "welcome back" greeting up
@@ -117,6 +118,7 @@ def generate_text_segments(job: dict, plan: dict) -> None:
     # 'openai', 'kokoro', or 'edge_tts' — server generates audio. In 'browser'/'off'
     # the client handles (or skips) reading aloud, so we deliver text only.
     narration_mode = job.get("narration_mode")
+    voicebox_engine = job.get("voicebox_engine", "kokoro")
     gender = job.get("presenter_gender", "female")
     # narration_enabled is set per-language by the admin dashboard (defaults: en=on,
     # my=off, td=off). A False value suppresses server TTS for this service entirely,
@@ -124,12 +126,11 @@ def generate_text_segments(job: dict, plan: dict) -> None:
     narration_enabled = job.get("narration_enabled", language == "en")
     want_audio = (
         narration_enabled
-        and narration_mode in ("openai", "kokoro", "edge_tts")
+        and narration_mode in ("openai", "kokoro", "edge_tts", "voicebox")
         and narrator.is_enabled(narration_mode)
     )
-    # OpenAI/Kokoro voices configured here are English-biased and skip or mangle
-    # Burmese/Tedim text. Non-English server narration is intentionally routed
-    # through the local MMS-TTS service under edge_tts mode.
+    # OpenAI/Kokoro/Voicebox voices are English-only; Burmese/Tedim narration is
+    # routed through the local MMS-TTS service under edge_tts mode only.
     if language in ("my", "td") and narration_mode != "edge_tts":
         want_audio = False
     def _seg_gender(segment: str) -> str:
@@ -147,6 +148,14 @@ def generate_text_segments(job: dict, plan: dict) -> None:
         suffix = g.upper()
         default = "en-US-GuyNeural" if g == "male" else "en-US-AriaNeural"
         return _os.getenv(f"EDGE_TTS_VOICE_{suffix}") or _os.getenv("EDGE_TTS_VOICE", default)
+
+    def _narrate_voice(g: str) -> str:
+        """Return the voice/engine param for the narrate task based on mode.
+        For voicebox mode this carries the engine name; for edge_tts it carries
+        the Edge TTS voice name; for other modes the value is unused."""
+        if narration_mode == "voicebox":
+            return voicebox_engine
+        return _edge_voice(g)
 
     # Scripture: model picks the reference, the bundled public-domain Bible supplies
     # the words. If resolution fails (unparseable/missing reference), still give the
@@ -179,7 +188,7 @@ def generate_text_segments(job: dict, plan: dict) -> None:
 
     if want_audio:
         _sg = _seg_gender("scripture")
-        narrate.apply_async((token, "scripture", scripture_text or ref, narration_mode, _edge_voice(_sg), _sg, language),
+        narrate.apply_async((token, "scripture", scripture_text or ref, narration_mode, _narrate_voice(_sg), _sg, language),
                             countdown=_narrate_slot)
         _narrate_slot += _narrate_stagger
 
@@ -196,17 +205,23 @@ def generate_text_segments(job: dict, plan: dict) -> None:
         except Exception as exc:  # noqa: BLE001 — degrade gracefully, never block
             print(f"[sermon] youtube lookup failed for mood {mood!r}: {exc}", flush=True)
 
+    user_history = job.get("user_history")
+    prayer_text = job.get("prayer_text")
     spoken = [
         ("opening_prayer", llm_engine.generate_opening_prayer(
-            user_name=name, mood=mood, prayer_text=job.get("prayer_text"), language=language)),
-        ("benediction", llm_engine.generate_benediction(user_name=name, mood=mood, language=language)),
+            user_name=name, mood=mood, prayer_text=prayer_text, language=language,
+            user_history=user_history)),
+        ("benediction", llm_engine.generate_benediction(
+            user_name=name, mood=mood, language=language,
+            prayer_text=prayer_text, user_history=user_history)),
     ]
     # Only generate the sermon when we aren't sourcing it from YouTube.
     if not youtube_mode:
         sermon_minutes = 5 if job.get("music_source") == "musicgen" else 8
         spoken.insert(1, ("sermon", llm_engine.generate_sermon(
             user_name=name, mood=mood, scripture_ref=ref, language=language,
-            target_minutes=sermon_minutes)))
+            target_minutes=sermon_minutes, prayer_text=prayer_text,
+            user_history=user_history)))
 
     deferred_narrations = []
     for segment, text in spoken:
@@ -224,7 +239,7 @@ def generate_text_segments(job: dict, plan: dict) -> None:
         # Myanmar/Tedim sermon TTS is much slower than prayer/benediction on CPU.
         # Defer it so the final prayer voice can land even if the message audio is slow.
         if want_audio:
-            args = (token, segment, text, narration_mode, _edge_voice(seg_gender), seg_gender, language)
+            args = (token, segment, text, narration_mode, _narrate_voice(seg_gender), seg_gender, language)
             if language in ("my", "td") and segment == "sermon":
                 deferred_narrations.append(args)
             else:

@@ -18,7 +18,7 @@ class Setting extends Model
     protected $fillable = ['key', 'value'];
 
     /** Allowed narration voice modes (see narration_mode setting). */
-    public const NARRATION_MODES = ['off', 'browser', 'openai', 'kokoro', 'edge_tts'];
+    public const NARRATION_MODES = ['off', 'browser', 'openai', 'kokoro', 'edge_tts', 'voicebox'];
 
     /** Edge TTS voice names the admin may pick from. */
     public const EDGE_TTS_VOICES = [

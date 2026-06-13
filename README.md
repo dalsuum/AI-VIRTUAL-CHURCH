@@ -501,6 +501,8 @@ and the worshipper still gets every segment as text.
     Defaults to the `OPENROUTER_*` LLM credentials; see the `KOKORO_*` env vars.
   - `edge_tts` — English uses Microsoft Edge voices; Myanmar/Tedim are routed to
     local MMS-TTS (`mya`/`ctd`) instead of English-biased voices.
+  - `voicebox` — voice-cloned narration via the local Voicebox Docker container
+    (`127.0.0.1:17493`). See **[Voicebox TTS (optional)](#voicebox-tts-optional)** below.
   - `off` — segments stay as silent text.
 
   Admin Settings also has per-language switches. English defaults on; Myanmar and
@@ -531,6 +533,69 @@ admin can override `presenter_gender` per user in the admin console.
 
 > See the project memory notes for the known-good local narration setup (browser speech
 > works out of the box; the server S3 path needs credits + storage).
+
+---
+
+## Voicebox TTS (optional)
+
+[Voicebox](https://github.com/jamiepine/voicebox) is an open-source local voice studio that
+lets you **clone a pastor or narrator's voice** from a short recording and use it for all
+English narration. It runs as a Docker container on the same server.
+
+### Setup
+
+**1. Start the container**
+
+```bash
+cd /opt/ai-church/voicebox
+docker compose up -d
+# Wait ~60 s for the health check to pass
+curl http://127.0.0.1:17493/health
+```
+
+**2. Create two voice profiles**
+
+Open `http://localhost:17493` in a browser on the server (or SSH tunnel). In the Voicebox
+UI, create two voice profiles — one female (congregation support voice) and one male
+(pastor / sermon voice) — by uploading short recordings. The profiles appear in
+**Admin Console → System Monitor → Voicebox TTS** with their UUIDs.
+
+**3. Configure the worker env**
+
+Add to `workers/.env`:
+
+```
+VOICEBOX_URL=http://127.0.0.1:17493
+VOICEBOX_PROFILE_ID_FEMALE=<paste UUID from admin panel>
+VOICEBOX_PROFILE_ID_MALE=<paste UUID from admin panel>
+VOICEBOX_ENGINE=kokoro          # or: qwen, luxtts, chatterbox, chatterbox_turbo
+VOICEBOX_TIMEOUT=180
+```
+
+**4. Activate in the admin console**
+
+Go to **Admin Console → Settings → Narration voice → Voicebox (local)**.
+Choose the engine (Kokoro is the fastest; Qwen3-TTS gives the best quality).
+Enable English narration. Burmese/Tedim continue to use MMS-TTS unchanged.
+
+### Monitoring
+
+**Admin Console → System Monitor → Voicebox TTS** shows:
+
+- Container status (running / unreachable)
+- Model loaded, GPU type, VRAM used
+- Generation queue depth
+- All voice profiles with copy-to-clipboard UUIDs
+
+### Engine comparison
+
+| Engine | Speed | Quality | Notes |
+|---|---|---|---|
+| Kokoro | ★★★★★ | ★★★★ | 82M params, 50 preset voices, great default |
+| Chatterbox | ★★★ | ★★★★ | 23-language support, best for accented English |
+| Qwen3-TTS | ★★★ | ★★★★★ | Highest quality; delivery instructions supported |
+| LuxTTS | ★★★★★ | ★★★ | English only, 150× realtime on CPU |
+| Chatterbox Turbo | ★★★★ | ★★★ | Paralinguistic tags `[laugh]`, `[sigh]` supported |
 
 ---
 

@@ -238,6 +238,11 @@ export const api = {
   adminRestartService: (service) =>
     request("/admin/updates/restart-service", { method: "POST", body: { service } }),
 
+  // Voicebox TTS monitor — health, voice profiles, generation queue.
+  adminVoiceboxHealth:   () => request("/admin/voicebox/health"),
+  adminVoiceboxProfiles: () => request("/admin/voicebox/profiles"),
+  adminVoiceboxQueue:    () => request("/admin/voicebox/queue"),
+
   // Blob download — needs auth header, returns Blob.
   voiceExport: async (lang) => {
     const res = await fetch(`${BASE_URL}/voice-studio/export/${lang}`, {

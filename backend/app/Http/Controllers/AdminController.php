@@ -553,6 +553,8 @@ class AdminController extends Controller
             'music_sources.*' => ['string', 'in:' . implode(',', Setting::MUSIC_SOURCES)],
             // Edge TTS voice (used when narration_mode = 'edge_tts').
             'edge_tts_voice'  => ['sometimes', 'string', 'in:' . implode(',', Setting::EDGE_TTS_VOICES)],
+            // Voicebox TTS engine (used when narration_mode = 'voicebox').
+            'voicebox_engine' => ['sometimes', 'string', 'in:qwen,kokoro,luxtts,chatterbox,chatterbox_turbo'],
             // Whether the "schedule it" option appears in the intake form.
             'scheduling_enabled' => ['sometimes', 'boolean'],
             // The music source pre-selected in the intake form.
@@ -583,6 +585,9 @@ class AdminController extends Controller
         }
         if (array_key_exists('edge_tts_voice', $data)) {
             Setting::set('edge_tts_voice', $data['edge_tts_voice']);
+        }
+        if (array_key_exists('voicebox_engine', $data)) {
+            Setting::set('voicebox_engine', $data['voicebox_engine']);
         }
         if (array_key_exists('music_reuse', $data)) {
             Setting::set('music_reuse', $data['music_reuse'] ? '1' : '0');
@@ -652,6 +657,7 @@ class AdminController extends Controller
         return [
             'narration_mode'     => Setting::get('narration_mode', 'browser'),
             'edge_tts_voice'     => Setting::get('edge_tts_voice', 'en-US-AriaNeural'),
+            'voicebox_engine'    => Setting::get('voicebox_engine', 'kokoro'),
             'music_reuse'        => Setting::get('music_reuse', '1') === '1',
             'storage_backend'    => Setting::get('storage_backend', 'local'),
             'avatar_enabled'     => Setting::get('avatar_enabled', '1') === '1',

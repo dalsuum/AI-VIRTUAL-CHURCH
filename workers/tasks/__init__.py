@@ -120,19 +120,14 @@ def generate_text_segments(job: dict, plan: dict) -> None:
     narration_mode = job.get("narration_mode")
     voicebox_engine = job.get("voicebox_engine", "kokoro")
     gender = job.get("presenter_gender", "female")
-    # narration_enabled is set per-language by the admin dashboard (defaults: en=on,
-    # my=off, td=off). A False value suppresses server TTS for this service entirely,
-    # producing a read-along service regardless of the global narration_mode.
-    narration_enabled = job.get("narration_enabled", language == "en")
+    # narration_mode is now set per-language by the admin dashboard.
+    # A False value suppresses server TTS for this service entirely.
+    narration_enabled = job.get("narration_enabled", True)
     want_audio = (
         narration_enabled
-        and narration_mode in ("openai", "kokoro", "edge_tts", "voicebox")
+        and narration_mode in ("openai", "kokoro", "edge_tts", "mms_tts", "voicebox")
         and narrator.is_enabled(narration_mode)
     )
-    # OpenAI/Kokoro/Voicebox voices are English-only; Burmese/Tedim narration is
-    # routed through the local MMS-TTS service under edge_tts mode only.
-    if language in ("my", "td") and narration_mode != "edge_tts":
-        want_audio = False
     def _seg_gender(segment: str) -> str:
         """Sermon uses the chosen presenter gender; all other segments use the opposite
         so the preacher and the support voice are always a matched pair."""
@@ -140,12 +135,17 @@ def generate_text_segments(job: dict, plan: dict) -> None:
 
     def _edge_voice(g: str) -> str:
         import os as _os
-        # Language-specific voices take precedence over gender-based selection.
-        if language == "my":
-            return _os.getenv("EDGE_TTS_VOICE_MY", "my-MM-NilarNeural")
-        if language == "td":
-            return ""
         suffix = g.upper()
+        if language == "my":
+            # Myanmar has two native Edge TTS voices; pick by gender.
+            default = "my-MM-ThihaNeural" if g == "male" else "my-MM-NilarNeural"
+            return (_os.getenv(f"EDGE_TTS_VOICE_MY_{suffix}")
+                    or _os.getenv("EDGE_TTS_VOICE_MY", default))
+        if language == "td":
+            # No native Zolai Edge TTS voice; use a configurable fallback.
+            # Tedim is Latin-script so an English voice reads it phonetically.
+            default = "en-US-GuyNeural" if g == "male" else "en-US-AriaNeural"
+            return _os.getenv("EDGE_TTS_VOICE_TD", default)
         default = "en-US-GuyNeural" if g == "male" else "en-US-AriaNeural"
         return _os.getenv(f"EDGE_TTS_VOICE_{suffix}") or _os.getenv("EDGE_TTS_VOICE", default)
 
@@ -181,7 +181,9 @@ def generate_text_segments(job: dict, plan: dict) -> None:
     if narration_mode == "kokoro":
         _narrate_stagger = 45
     elif language in ("my", "td") and narration_mode == "edge_tts":
-        _narrate_stagger = int(os.getenv("MMS_TTS_STAGGER_SECONDS", "60"))
+        # MMS-TTS already serializes via its own asyncio.Semaphore(1), so
+        # a small stagger is enough to avoid hammering Celery's queue.
+        _narrate_stagger = int(os.getenv("MMS_TTS_STAGGER_SECONDS", "5"))
     else:
         _narrate_stagger = 0
     _narrate_slot = 0
@@ -196,17 +198,18 @@ def generate_text_segments(job: dict, plan: dict) -> None:
     # YouTube (mood-based), not an AI-written sermon — this saves the LLM call plus
     # any avatar/TTS for the service's longest segment. Best-effort, like music: if
     # the search fails we skip the message rather than fall back to generating one.
+    user_history = job.get("user_history")
+    prayer_text = job.get("prayer_text")
     youtube_mode = job.get("music_source") == "youtube"
     if youtube_mode:
         try:
-            video = find_sermon_video(mood=mood, query=plan.get("preaching_query", ""))
+            past_video_ids = (user_history or {}).get("past_video_ids", [])
+            video = find_sermon_video(mood=mood, query=plan.get("preaching_query", ""),
+                                      excluded_ids=past_video_ids)
             _post_asset(token, "sermon", asset_type="youtube",
                         provider_ref=video["video_id"], text_payload=video["title"])
         except Exception as exc:  # noqa: BLE001 — degrade gracefully, never block
             print(f"[sermon] youtube lookup failed for mood {mood!r}: {exc}", flush=True)
-
-    user_history = job.get("user_history")
-    prayer_text = job.get("prayer_text")
     spoken = [
         ("opening_prayer", llm_engine.generate_opening_prayer(
             user_name=name, mood=mood, prayer_text=prayer_text, language=language,

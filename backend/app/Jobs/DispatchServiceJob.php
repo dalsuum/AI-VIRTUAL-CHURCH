@@ -36,15 +36,21 @@ class DispatchServiceJob implements ShouldQueue
             // source. Drives the LLM output language, the Bible translation (BSB vs
             // Judson 1835 Burmese), the hymn library, and the narration voice.
             'language'     => $session->language ?? 'en',
-            // How spoken segments are voiced (global admin setting). 'openai' tells
-            // the worker to synthesize TTS audio; 'browser'/'off' leave it to the
-            // client (browser speech) or silent, so the worker skips narration.
-            'narration_mode'   => Setting::get('narration_mode', 'browser'),
-            'voicebox_engine'  => Setting::get('voicebox_engine', 'kokoro'),
-            // Per-language narration gate. English on by default; Myanmar and Tedim
-            // off by default (no Tedim edge-tts voice; Myanmar quality may vary).
-            // Admin can flip each independently via the dashboard.
-            'narration_enabled' => Setting::get('narration_' . ($session->language ?? 'en'), $session->language === 'en' || !$session->language ? '1' : '0') === '1',
+            // How spoken segments are voiced — per-language admin setting.
+            // Myanmar defaults to edge_tts (Microsoft my-MM-NilarNeural);
+            // Tedim defaults to mms_tts (local MMS-TTS, only native Zolai voice);
+            // English defaults to browser.
+            'narration_mode'    => Setting::get(
+                'narration_mode_' . ($session->language ?? 'en'),
+                match ($session->language) {
+                    'my'    => 'edge_tts',
+                    'td'    => 'mms_tts',
+                    default => 'browser',
+                }
+            ),
+            'voicebox_engine'  => Setting::get('voicebox_engine', 'qwen'),
+            // Mode encodes on/off; 'off' and 'browser' skip server TTS in the worker.
+            'narration_enabled' => true,
             'avatar_enabled'  => Setting::get('avatar_enabled', '1') === '1',
             'edge_tts_voice'  => Setting::get('edge_tts_voice', 'en-US-AriaNeural'),
             // Where generated audio is stored (local dir vs S3). null lets the worker
@@ -110,10 +116,20 @@ class DispatchServiceJob implements ShouldQueue
             })
             ->filter()->unique()->values()->toArray();
 
+        // YouTube sermon video IDs the worshipper has already been shown — passed to
+        // the worker so find_sermon_video can skip them and pick a different video.
+        $pastVideoIds = \App\Models\ServiceAsset::whereIn('session_id', $past->pluck('id'))
+            ->where('segment', 'sermon')
+            ->where('asset_type', 'youtube')
+            ->whereNotNull('provider_ref')
+            ->pluck('provider_ref')
+            ->unique()->values()->toArray();
+
         return [
             'past_scripture_refs'  => $scriptureRefs,
             'past_moods'           => $pastMoods,
             'past_prayer_excerpts' => $prayerExcerpts,
+            'past_video_ids'       => $pastVideoIds,
         ];
     }
 

@@ -7,8 +7,15 @@ is handed back so the segment can be *heard* as well as read.
 Providers (set via Admin Console → Settings → Narration voice):
 
   'edge_tts' — Microsoft Edge TTS: free, no API key, high-quality neural voices.
-    EDGE_TTS_VOICE — voice name (default 'en-US-AriaNeural', a warm female narrator)
-    EDGE_TTS_RATE  — speaking rate adjustment, e.g. '-5%' to slow down (default '')
+    For English: EDGE_TTS_VOICE_FEMALE / EDGE_TTS_VOICE_MALE (default en-US-Aria/GuyNeural)
+    For Myanmar: EDGE_TTS_VOICE_MY_FEMALE / EDGE_TTS_VOICE_MY_MALE (default my-MM-Nilar/ThihaNeural)
+    For Tedim:  EDGE_TTS_VOICE_TD (default en-US-AriaNeural; no native Zolai Edge voice)
+    EDGE_TTS_RATE — speaking rate adjustment, e.g. '-5%' to slow down (default '')
+
+  'mms_tts' — Local Facebook MMS-TTS (free, offline). Best native quality for
+    Burmese and Tedim. Requires the aivc-mms-tts container (port 8003).
+    Myanmar: facebook/mms-tts-mya  |  Tedim: facebook/mms-tts-ctd
+    MMS_TTS_URL — service base URL (default http://127.0.0.1:8001)
 
   'openai' — OpenAI's own (or any compatible gateway) text-to-speech:
     TTS_API_KEY    — required to enable this provider at all
@@ -25,11 +32,6 @@ Providers (set via Admin Console → Settings → Narration voice):
     KOKORO_MODEL    — speech model (default hexgrad/kokoro-82m)
     KOKORO_VOICE    — the voice to read with (default 'af_heart')
     KOKORO_FORMAT   - audio container (default: TTS_FORMAT or mp3)
-
-  Myanmar and Tedim with mode 'edge_tts' are routed to the local MMS-TTS
-  service when MMS_TTS_URL is set (default http://127.0.0.1:8001). This avoids
-  English/Edge voices skipping Burmese script or failing on low-resource Tedim.
-  Myanmar uses facebook/mms-tts-mya; Tedim uses facebook/mms-tts-ctd.
 """
 
 from __future__ import annotations
@@ -75,8 +77,8 @@ def _providers(gender: str = "female") -> dict[str, dict]:
 
 def is_enabled(mode: str = "openai") -> bool:
     """True when the chosen provider is ready to use.
-    edge_tts needs no key so it is always enabled."""
-    if mode == "edge_tts":
+    edge_tts and mms_tts need no API key so they are always enabled."""
+    if mode in ("edge_tts", "mms_tts"):
         return True
     if mode == "voicebox":
         return bool(
@@ -94,9 +96,7 @@ def _clean(text: str) -> str:
 
 
 def _mms_lang(language: str) -> str | None:
-    # Keep Myanmar/Tedim on local MMS-TTS. Edge/browser voices are unreliable for
-    # these languages: Burmese can be skipped or rejected, and Tedim has no native
-    # Edge voice.
+    """Map a service language to the MMS-TTS lang key, or None if unsupported."""
     return {"my": "burmese", "td": "tedim"}.get(language)
 
 
@@ -187,7 +187,7 @@ def _speak_voicebox(text: str, gender: str = "female", engine_override: str = ""
     profile_id = os.getenv(env_key) or os.getenv("VOICEBOX_PROFILE_ID")
     if not profile_id:
         raise RuntimeError(f"Voicebox profile not configured ({env_key} unset)")
-    engine = engine_override or os.getenv("VOICEBOX_ENGINE", "kokoro")
+    engine = engine_override or os.getenv("VOICEBOX_ENGINE", "qwen")
     timeout = int(os.getenv("VOICEBOX_TIMEOUT", "180"))
     resp = requests.post(
         f"{base_url}/generate/stream",
@@ -213,10 +213,18 @@ def narrate(
     Raises on any failure — the caller logs and the segment stays text-only."""
     clean = _clean(text)
 
-    if mode == "edge_tts" and _mms_lang(language):
+    if mode == "mms_tts":
+        if not _mms_lang(language):
+            raise RuntimeError(f"mms_tts does not support language {language!r}")
         audio = _speak_mms(clean, language)
         fmt = "wav"
     elif mode == "edge_tts":
+        # Real Microsoft Edge TTS for all languages:
+        #   English → EDGE_TTS_VOICE_FEMALE/MALE env vars
+        #   Myanmar → EDGE_TTS_VOICE_MY_FEMALE/MALE (my-MM-NilarNeural/ThihaNeural)
+        #   Tedim   → EDGE_TTS_VOICE_TD (no native Zolai voice; English phonetic read)
+        # `voice` is pre-resolved by the orchestrator's _edge_voice(); only fall back
+        # to generic env vars when it arrives empty.
         suffix = gender.upper()
         resolved_voice = (voice
                           or os.getenv(f"EDGE_TTS_VOICE_{suffix}")

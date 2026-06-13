@@ -535,10 +535,11 @@ class AdminController extends Controller
     public function updateSettings(Request $request): JsonResponse
     {
         $data = $request->validate([
-            // off = silent text; browser = browser speech synthesis;
-            // edge_tts = Microsoft Edge neural TTS (free, no key);
-            // openai = OpenAI TTS; kokoro = hexgrad/kokoro-82m via OpenRouter.
-            'narration_mode'  => ['sometimes', 'string', 'in:' . implode(',', Setting::NARRATION_MODES)],
+            // Per-language narration voice. English supports all providers; Myanmar and
+            // Tedim support edge_tts (Microsoft cloud, free) or mms_tts (local MMS, free).
+            'narration_mode_en'  => ['sometimes', 'string', 'in:' . implode(',', Setting::NARRATION_MODES)],
+            'narration_mode_my'  => ['sometimes', 'string', 'in:edge_tts,mms_tts,off'],
+            'narration_mode_td'  => ['sometimes', 'string', 'in:edge_tts,mms_tts,off'],
             // When on, a worshipper new to a mood is served a random song already
             // composed for it instead of generating (and paying for) a fresh one.
             'music_reuse'     => ['sometimes', 'boolean'],
@@ -563,8 +564,8 @@ class AdminController extends Controller
             'avatar_enabled'      => ['sometimes', 'boolean'],
             // Toggle karaoke-style word highlighting in the service player.
             'text_highlight_enabled' => ['sometimes', 'boolean'],
-            // Per-language narration toggles. English defaults on; Myanmar and Tedim
-            // default off (no Tedim edge-tts voice exists; Myanmar quality may vary).
+            // Per-language narration toggles. All languages default on.
+            // Myanmar and Tedim are routed through MMS-TTS (edge_tts mode).
             'narration_en'        => ['sometimes', 'boolean'],
             'narration_my'        => ['sometimes', 'boolean'],
             'narration_td'        => ['sometimes', 'boolean'],
@@ -580,8 +581,10 @@ class AdminController extends Controller
             'countdown_banners.*.source'=> ['nullable', 'string', 'max:80'],
         ]);
 
-        if (array_key_exists('narration_mode', $data)) {
-            Setting::set('narration_mode', $data['narration_mode']);
+        foreach (['narration_mode_en', 'narration_mode_my', 'narration_mode_td'] as $key) {
+            if (array_key_exists($key, $data)) {
+                Setting::set($key, $data[$key]);
+            }
         }
         if (array_key_exists('edge_tts_voice', $data)) {
             Setting::set('edge_tts_voice', $data['edge_tts_voice']);
@@ -655,18 +658,20 @@ class AdminController extends Controller
     private function settingsPayload(): array
     {
         return [
-            'narration_mode'     => Setting::get('narration_mode', 'browser'),
+            'narration_mode_en'  => Setting::get('narration_mode_en', 'browser'),
+            'narration_mode_my'  => Setting::get('narration_mode_my', 'edge_tts'),
+            'narration_mode_td'  => Setting::get('narration_mode_td', 'edge_tts'),
             'edge_tts_voice'     => Setting::get('edge_tts_voice', 'en-US-AriaNeural'),
-            'voicebox_engine'    => Setting::get('voicebox_engine', 'kokoro'),
+            'voicebox_engine'    => Setting::get('voicebox_engine', 'qwen'),
             'music_reuse'        => Setting::get('music_reuse', '1') === '1',
             'storage_backend'    => Setting::get('storage_backend', 'local'),
             'avatar_enabled'     => Setting::get('avatar_enabled', '1') === '1',
             'text_highlight_enabled' => Setting::get('text_highlight_enabled', '1') === '1',
-            // Per-language narration: English on by default; Myanmar and Tedim off
-            // by default (Tedim has no edge-tts voice; Myanmar quality may vary).
+            // Per-language narration: all on by default.
+            // Myanmar/Tedim: edge_tts = Microsoft cloud; mms_tts = local MMS-TTS.
             'narration_en'       => Setting::get('narration_en', '1') === '1',
-            'narration_my'       => Setting::get('narration_my', '0') === '1',
-            'narration_td'       => Setting::get('narration_td', '0') === '1',
+            'narration_my'       => Setting::get('narration_my', '1') === '1',
+            'narration_td'       => Setting::get('narration_td', '1') === '1',
             // Which service languages appear in the intake form.
             'lang_en'            => Setting::get('lang_en', '1') === '1',
             'lang_my'            => Setting::get('lang_my', '0') === '1',

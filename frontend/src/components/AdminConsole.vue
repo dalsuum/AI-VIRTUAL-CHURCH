@@ -84,9 +84,9 @@ const narrationModes = [
 ];
 
 const voiceboxEngines = [
-  { value: "kokoro",           label: "Kokoro",             hint: "82M model, 50 preset voices, fast CPU inference. Best default." },
+  { value: "qwen",             label: "Qwen3-TTS",          hint: "High quality voice cloning (0.6B / 1.7B). Available in the CPU Docker build." },
+  { value: "kokoro",           label: "Kokoro",             hint: "82M model, fast CPU inference. Not available in the default Docker image." },
   { value: "chatterbox",       label: "Chatterbox",         hint: "Multilingual (23 languages), good for non-English accents." },
-  { value: "qwen",             label: "Qwen3-TTS",          hint: "High quality multilingual cloning (0.6B / 1.7B)." },
   { value: "luxtts",           label: "LuxTTS",             hint: "Lightweight English-only, 48 kHz, 150× realtime on CPU." },
   { value: "chatterbox_turbo", label: "Chatterbox Turbo",   hint: "Fast 350M English model with paralinguistic emotion tags." },
 ];
@@ -105,10 +105,18 @@ const edgeTtsVoices = [
 ];
 const setEdgeTtsVoice = (v) => saveSetting("edge_tts_voice", v, "Voice updated.");
 
-const narrationLanguages = [
-  { key: "narration_en", label: "English", hint: "Use the selected narration provider for English services." },
-  { key: "narration_my", label: "Myanmar", hint: "Uses my-MM-NilarNeural (female) / my-MM-ThihaNeural (male) via Edge TTS. Requires narration mode set to Edge TTS." },
-  { key: "narration_td", label: "Tedim (Zolai)", hint: "Uses the local MMS-TTS service (facebook/mms-tts-ctd). Enable once the MMS-TTS service is running." },
+// Myanmar narration modes: real Edge TTS (cloud) or local MMS-TTS.
+const narrationModesMY = [
+  { value: "edge_tts", label: "Edge TTS (cloud, free)", hint: "Microsoft my-MM-NilarNeural (female) / my-MM-ThihaNeural (male) — high-quality neural Burmese, no server needed. Configure EDGE_TTS_VOICE_MY_FEMALE / _MALE in workers/.env to override." },
+  { value: "mms_tts",  label: "MMS-TTS (local, free)",  hint: "Local facebook/mms-tts-mya via the aivc-mms-tts container. Best offline quality; requires the MMS-TTS service on port 8003." },
+  { value: "off",      label: "Off",                    hint: "Segments stay as silent text — nothing is read aloud." },
+];
+
+// Tedim/Zolai narration modes: local MMS-TTS (native) or Edge TTS (no native Zolai voice).
+const narrationModesTD = [
+  { value: "mms_tts",  label: "MMS-TTS (local, free)",  hint: "Local facebook/mms-tts-ctd — the only native Zolai TTS. Requires aivc-mms-tts container on port 8003." },
+  { value: "edge_tts", label: "Edge TTS (cloud, free)", hint: "Microsoft cloud TTS — no native Zolai voice; reads Tedim text phonetically using EDGE_TTS_VOICE_TD (default en-US-AriaNeural). Free but accent will be English." },
+  { value: "off",      label: "Off",                    hint: "Segments stay as silent text — nothing is read aloud." },
 ];
 
 const serviceLanguages = [
@@ -290,8 +298,7 @@ async function saveSetting(key, value, ok) {
   }
 }
 
-const setNarrationMode = (mode) => saveSetting("narration_mode", mode, "Narration voice updated.");
-const setLanguageNarration = (key, on) => saveSetting(key, on, "Language narration updated.");
+const setNarrationMode = (lang, mode) => saveSetting(`narration_mode_${lang}`, mode, "Narration voice updated.");
 
 function toggleServiceLanguage(key) {
   if (!settings.value) return;
@@ -1451,78 +1458,99 @@ onUnmounted(() => clearInterval(updateTimer));
           <h2>Narration voice</h2>
           <p class="setting-desc">
             How the spoken segments — opening prayer, scripture, message, benediction —
-            are read aloud across every service.
+            are read aloud. Set a separate voice for each service language.
           </p>
-          <div v-if="settings" class="choice-row">
-            <button
-              v-for="m in narrationModes"
-              :key="m.value"
-              type="button"
-              class="choice"
-              :class="{ active: settings.narration_mode === m.value }"
-              :disabled="savingSettings"
-              @click="setNarrationMode(m.value)"
-            >
-              <strong>{{ m.label }}</strong>
-              <span>{{ m.hint }}</span>
-            </button>
-          </div>
-          <template v-if="settings && settings.narration_mode === 'edge_tts'">
-            <p class="setting-desc" style="margin-top:1rem">Voice</p>
-            <div class="choice-row">
-              <button
-                v-for="v in edgeTtsVoices"
-                :key="v.value"
-                type="button"
-                class="choice"
-                :class="{ active: (settings.edge_tts_voice || 'en-US-AriaNeural') === v.value }"
-                :disabled="savingSettings"
-                @click="setEdgeTtsVoice(v.value)"
-              >
-                <strong>{{ v.label }}</strong>
-                <span>{{ v.gender }} · {{ v.accent }}</span>
-              </button>
-            </div>
-          </template>
-          <template v-if="settings && settings.narration_mode === 'voicebox'">
-            <p class="setting-desc" style="margin-top:1rem">Engine</p>
-            <div class="choice-row">
-              <button
-                v-for="e in voiceboxEngines"
-                :key="e.value"
-                type="button"
-                class="choice"
-                :class="{ active: (settings.voicebox_engine || 'kokoro') === e.value }"
-                :disabled="savingSettings"
-                @click="setVoiceboxEngine(e.value)"
-              >
-                <strong>{{ e.label }}</strong>
-                <span>{{ e.hint }}</span>
-              </button>
-            </div>
-            <p class="setting-desc" style="margin-top:0.75rem">
-              Set <code>VOICEBOX_PROFILE_ID_FEMALE</code> and <code>VOICEBOX_PROFILE_ID_MALE</code>
-              in <code>workers/.env</code> with the profile UUIDs shown in the Voicebox panel below.
-            </p>
-          </template>
-          <p v-else-if="!settings" class="setting-desc">Loading…</p>
           <template v-if="settings">
-            <p class="setting-desc" style="margin-top:1rem">Languages</p>
+            <!-- English -->
+            <p class="setting-desc" style="margin-top:1rem"><strong>English</strong></p>
             <div class="choice-row">
               <button
-                v-for="lang in narrationLanguages"
-                :key="lang.key"
+                v-for="m in narrationModes"
+                :key="m.value"
                 type="button"
                 class="choice"
-                :class="{ active: settings[lang.key] === true }"
+                :class="{ active: (settings.narration_mode_en || 'browser') === m.value }"
                 :disabled="savingSettings"
-                @click="setLanguageNarration(lang.key, !settings[lang.key])"
+                @click="setNarrationMode('en', m.value)"
               >
-                <strong>{{ lang.label }}<span class="state">{{ settings[lang.key] ? "on" : "off" }}</span></strong>
-                <span>{{ lang.hint }}</span>
+                <strong>{{ m.label }}</strong>
+                <span>{{ m.hint }}</span>
+              </button>
+            </div>
+            <template v-if="settings.narration_mode_en === 'edge_tts'">
+              <p class="setting-desc" style="margin-top:0.75rem">Voice</p>
+              <div class="choice-row">
+                <button
+                  v-for="v in edgeTtsVoices"
+                  :key="v.value"
+                  type="button"
+                  class="choice"
+                  :class="{ active: (settings.edge_tts_voice || 'en-US-AriaNeural') === v.value }"
+                  :disabled="savingSettings"
+                  @click="setEdgeTtsVoice(v.value)"
+                >
+                  <strong>{{ v.label }}</strong>
+                  <span>{{ v.gender }} · {{ v.accent }}</span>
+                </button>
+              </div>
+            </template>
+            <template v-if="settings.narration_mode_en === 'voicebox'">
+              <p class="setting-desc" style="margin-top:0.75rem">Engine</p>
+              <div class="choice-row">
+                <button
+                  v-for="e in voiceboxEngines"
+                  :key="e.value"
+                  type="button"
+                  class="choice"
+                  :class="{ active: (settings.voicebox_engine || 'qwen') === e.value }"
+                  :disabled="savingSettings"
+                  @click="setVoiceboxEngine(e.value)"
+                >
+                  <strong>{{ e.label }}</strong>
+                  <span>{{ e.hint }}</span>
+                </button>
+              </div>
+              <p class="setting-desc" style="margin-top:0.75rem">
+                Set <code>VOICEBOX_PROFILE_ID_FEMALE</code> and <code>VOICEBOX_PROFILE_ID_MALE</code>
+                in <code>workers/.env</code> with the profile UUIDs shown in the Voicebox panel below.
+              </p>
+            </template>
+
+            <!-- Myanmar -->
+            <p class="setting-desc" style="margin-top:1.5rem"><strong>Myanmar (မြန်မာ)</strong></p>
+            <div class="choice-row">
+              <button
+                v-for="m in narrationModesMY"
+                :key="m.value"
+                type="button"
+                class="choice"
+                :class="{ active: (settings.narration_mode_my || 'edge_tts') === m.value }"
+                :disabled="savingSettings"
+                @click="setNarrationMode('my', m.value)"
+              >
+                <strong>{{ m.label }}</strong>
+                <span>{{ m.hint }}</span>
+              </button>
+            </div>
+
+            <!-- Tedim (Zolai) -->
+            <p class="setting-desc" style="margin-top:1.5rem"><strong>Tedim (Zolai)</strong></p>
+            <div class="choice-row">
+              <button
+                v-for="m in narrationModesTD"
+                :key="m.value"
+                type="button"
+                class="choice"
+                :class="{ active: (settings.narration_mode_td || 'mms_tts') === m.value }"
+                :disabled="savingSettings"
+                @click="setNarrationMode('td', m.value)"
+              >
+                <strong>{{ m.label }}</strong>
+                <span>{{ m.hint }}</span>
               </button>
             </div>
           </template>
+          <p v-else class="setting-desc">Loading…</p>
         </div>
 
         <div class="setting-block">

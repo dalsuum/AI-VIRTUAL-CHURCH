@@ -215,10 +215,15 @@ def generate_text_segments(job: dict, plan: dict) -> None:
         _narrate_slot += _narrate_stagger
 
 
-@app.task(name="tasks.generate_music")
+@app.task(name="tasks.generate_music", time_limit=1800, soft_time_limit=1500)
 def generate_music(job: dict, plan: dict) -> None:
     """Resolves Suno vs YouTube from the session's locked preference, honoring the
-    admin storage backend and the mood-keyed reuse pool."""
+    admin storage backend and the mood-keyed reuse pool.
+
+    time_limit=1800 (30 min hard): kills a runaway MusicGen that would otherwise
+    block the music queue forever (e.g. model thrashing swap on a busy box).
+    soft_time_limit=1500 (25 min): raises SoftTimeLimitExceeded so the task can
+    release the Redis lock before the hard kill arrives."""
     # Where generated audio lands (local dir vs S3) is an admin setting Laravel threads
     # through; None falls back to the worker's env default.
     storage.set_backend(job.get("storage_backend"))

@@ -32,7 +32,7 @@ from . import MusicResult, MusicStrategy
 _MODEL = os.getenv("MUSICGEN_MODEL", "facebook/musicgen-small")
 _MAX_TOKENS = int(os.getenv("MUSICGEN_MAX_TOKENS", "1500"))
 # Redis lock TTL — must be longer than the worst-case generation time.
-_LOCK_TTL = int(os.getenv("MUSICGEN_LOCK_TTL", "1200"))
+_LOCK_TTL = int(os.getenv("MUSICGEN_LOCK_TTL", "1800"))
 _REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 _LOCK_KEY = "musicgen:lock"
 
@@ -83,7 +83,10 @@ class MusicGenStrategy(MusicStrategy):
 
         try:
             result = self._generate(text)
-        finally:
+        except Exception:
+            _release_lock(client)
+            raise
+        else:
             _release_lock(client)
 
         return result

@@ -90,7 +90,7 @@ def _get_filter_keywords() -> list[str]:
                 _filter_cache = [str(k).lower().strip() for k in keywords if k]
                 _filter_cache_ts = now
                 return _filter_cache
-    except Exception:
+    except (requests.RequestException, ValueError):
         pass  # network error or env not set — use cached/default list
     return _filter_cache or _DEFAULT_FILTER_KEYWORDS
 

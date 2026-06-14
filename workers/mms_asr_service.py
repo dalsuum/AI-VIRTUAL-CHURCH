@@ -99,7 +99,7 @@ async def transcribe(
 
         pipe = _load(target_lang)
         async with _lock:
-            result = pipe(tmp_path)
+            result = await asyncio.to_thread(pipe, tmp_path)
     except ImportError as exc:
         raise _missing_dependency(exc) from exc
     finally:

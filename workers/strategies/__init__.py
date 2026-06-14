@@ -76,7 +76,7 @@ def get_strategy(music_source: str, language: str = "en") -> MusicStrategy:
         from .musicgen_strategy import MusicGenStrategy
         return MusicGenStrategy()
     if music_source == "youtube":
-        return YouTubeStrategy()
+        return YouTubeStrategy(language=language)
     if music_source == "hymn_youtube":
         return HymnYouTubeStrategy()  # mood-matched hymn from HymnSite YouTube channel
     if music_source == "hymn":

@@ -77,15 +77,46 @@ def run_agent(job: dict) -> None:
     language = job.get("language", "en")
     mood     = job.get("mood", "Hopeful")
 
-    tools, handlers = _build_tools(job)
+    # ── Step 1: build the intake plan (one LLM call, same as pipeline) ──────
+    # This gives us scripture_ref and music details before the agent loop starts.
+    plan = llm_engine.build_intake_plan(
+        user_name=job.get("user_name", ""),
+        mood=mood,
+        prayer_text=job.get("prayer_text"),
+        language=language,
+        music_source=job.get("music_source"),
+        user_history=job.get("user_history"),
+    )
 
-    system = _build_system_prompt(job)
+    # ── Step 2: pre-dispatch music + welcome immediately ────────────────────
+    # Music generation is slow (Suno / YouTube / hymn lookup). Dispatching it
+    # NOW — before the agent loop — mirrors the pipeline's parallel fan-out and
+    # guarantees worship + closing_hymn are always posted regardless of how the
+    # agent behaves.  The agent no longer needs a dispatch_music tool.
+    effective_job = job
+    if job.get("music_source") == "musicgen":
+        try:
+            import redis as _r
+            _rc = _r.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"))
+            if int(_rc.llen("ai:music")) >= 1:
+                effective_job = {**job, "music_source": "hymn"}
+                print("[agent] MusicGen queue backed up, falling back to hymn", flush=True)
+        except Exception:
+            pass
+    _celery_app.send_task("tasks.generate_music", args=[effective_job, plan])
+
+    if job.get("is_registered"):
+        _celery_app.send_task("tasks.generate_welcome", args=[job])
+
+    # ── Step 3: agent handles text segments only ─────────────────────────────
+    tools, handlers = _build_tools(job, plan)
+    system = _build_system_prompt(job, plan)
     messages: list[dict] = [
-        {"role": "user", "content": "Please conduct the worship service now."}
+        {"role": "user", "content": "Please generate the text segments for this worship service."}
     ]
 
     model = _get_agent_model()
-    print(f"[agent] starting session {token[:8]}… model={model}", flush=True)
+    print(f"[agent] starting session {token[:8]}… model={model} scripture={plan.get('scripture_ref')}", flush=True)
 
     for turn in range(MAX_TURNS):
         response = _call_llm(system, messages, tools, model)
@@ -142,59 +173,48 @@ def run_agent(job: dict) -> None:
 # System prompt
 # ---------------------------------------------------------------------------
 
-def _build_system_prompt(job: dict) -> str:
-    music_src  = job.get("music_source", "youtube")
-    registered = job.get("is_registered", False)
-    language   = job.get("language", "en")
-    mood       = job.get("mood", "Hopeful")
-    prayer     = job.get("prayer_text") or "(none provided)"
-    history    = json.dumps(job.get("user_history") or {})
+def _build_system_prompt(job: dict, plan: dict) -> str:
+    music_src    = job.get("music_source", "youtube")
+    language     = job.get("language", "en")
+    mood         = job.get("mood", "Hopeful")
+    prayer       = job.get("prayer_text") or "(none provided)"
+    scripture_ref = plan.get("scripture_ref", "John 3:16")
 
     sermon_note = (
-        "For the sermon/message: call find_sermon_video to get a YouTube video — do NOT call generate_sermon."
+        "For the sermon: call find_sermon_video (YouTube mode) — do NOT call generate_sermon."
         if music_src == "youtube"
-        else "For the sermon: call generate_sermon with the scripture_ref from the plan."
-    )
-
-    welcome_note = (
-        "This worshipper is registered — call generate_welcome and post it as the 'welcome' segment first."
-        if registered
-        else "This is a guest — skip the welcome segment."
+        else f"For the sermon: call generate_sermon with scripture_ref='{scripture_ref}'."
     )
 
     return f"""You are the AI worship conductor for AI Virtual Church.
-Your task: generate a complete, personal worship service for one worshipper.
+Your job: generate the TEXT segments for one worshipper's personal service.
+
+## Already handled for you (do NOT call these)
+- Worship music (worship + closing_hymn) is already being generated asynchronously.
+- Welcome greeting (if registered) is already dispatched.
+- You do NOT need to call dispatch_music or generate_welcome.
 
 ## Worshipper context
 - Mood: {mood}
 - Prayer: {prayer}
 - Language: {language}
-- Music source: {music_src}
-- Presenter gender: {job.get("presenter_gender", "female")}
-- User history: {history}
+- Scripture reference (already chosen): {scripture_ref}
 
-## Service order — FOLLOW THIS EXACTLY for fastest door-open time
-1. Call build_plan to get scripture_ref, music_prompt, music_query.
-2. Call dispatch_music immediately (it is slow and async — start it first).
-3. Call resolve_scripture with the scripture_ref from the plan.
-4. Call generate_opening_prayer — post it as 'opening_prayer' RIGHT AWAY.
-   (The doors open as soon as opening_prayer + music + narration are all ready.
-    Getting the prayer posted fast is the single biggest driver of door-open time.)
-5. {welcome_note}
-6. Post the scripture text as the 'scripture' segment.
-7. {sermon_note}
-8. Generate the benediction and post it as 'benediction'.
-9. Call finish_service when all segments above are posted.
+## Your task — generate these 4 segments IN THIS ORDER:
+
+1. Call resolve_scripture("{scripture_ref}") → post result as 'scripture'.
+2. Call generate_opening_prayer → review_content → post as 'opening_prayer'.
+   POST THIS AS FAST AS POSSIBLE — it opens the doors for the worshipper.
+3. {sermon_note} → review_content → post as 'sermon'.
+4. Call generate_benediction → review_content → post as 'benediction'.
+5. Call finish_service.
 
 ## Rules
-- Always call build_plan first to get the scripture_ref and music_prompt.
-- After generating any text with an LLM tool, call review_content before posting.
-  - If review fails, regenerate once with a slightly different angle.
-  - If it fails again, post a neutral fallback message — never leave a segment empty.
-- Post each segment as soon as it is ready; do not batch.
-- Never include the worshipper's name in any generated text.
-- The worship and closing_hymn music segments are handled automatically by dispatch_music.
-- Call finish_service once all required text segments are posted.
+- After every generate_* call, ALWAYS call review_content before posting.
+- If review fails: regenerate once with a different angle. If still failing: post a short neutral fallback.
+- Never include the worshipper's name in generated text.
+- Post each segment immediately — do not wait to batch them.
+- Do not call dispatch_music, generate_welcome, or build_plan — those are already done.
 """
 
 
@@ -227,7 +247,7 @@ def _call_llm(system: str, messages: list[dict], tools: list[dict], model: str) 
 # Tool registry
 # ---------------------------------------------------------------------------
 
-def _build_tools(job: dict) -> tuple[list[dict], dict[str, callable]]:
+def _build_tools(job: dict, plan: dict) -> tuple[list[dict], dict[str, callable]]:
     """Return (OpenAI-format tool schemas, {name: handler}) bound to this job."""
     token    = job["session_token"]
     language = job.get("language", "en")
@@ -276,24 +296,6 @@ def _build_tools(job: dict) -> tuple[list[dict], dict[str, callable]]:
         ).raise_for_status()
 
     # ---- handlers --------------------------------------------------------
-
-    def h_build_plan() -> dict:
-        return llm_engine.build_intake_plan(
-            user_name=job.get("user_name", ""),
-            mood=mood,
-            prayer_text=job.get("prayer_text"),
-            language=language,
-            music_source=job.get("music_source"),
-            user_history=job.get("user_history"),
-        )
-
-    def h_generate_welcome() -> dict:
-        text = llm_engine.generate_welcome(
-            user_name=job.get("user_name", ""),
-            mood=mood,
-            language=language,
-        )
-        return {"text": text}
 
     def h_resolve_scripture(scripture_ref: str) -> dict:
         try:
@@ -378,92 +380,55 @@ def _build_tools(job: dict) -> tuple[list[dict], dict[str, callable]]:
                     provider_ref=video_id, text_payload=title)
         return {"ok": True}
 
-    def h_dispatch_music(music_prompt: str = "", music_query: str = "") -> dict:
-        """Kick off async music generation — same task as the pipeline mode."""
-        # Build a minimal plan with just what generate_music needs.
-        plan = {
-            "music_prompt": music_prompt,
-            "music_query":  music_query,
-            "music_lyrics": "",
-        }
-        # Respect the same MusicGen-queue fallback as the pipeline.
-        effective_job = job
-        if job.get("music_source") == "musicgen":
-            try:
-                import redis as _r
-                client = _r.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"))
-                if int(client.llen("ai:music")) >= 1:
-                    effective_job = {**job, "music_source": "hymn"}
-                    print("[agent] MusicGen queue backed up, falling back to hymn", flush=True)
-            except Exception:
-                pass
-        _celery_app.send_task("tasks.generate_music", args=[effective_job, plan])
-        return {"ok": True, "note": "music dispatched asynchronously"}
-
     def h_finish_service() -> dict:
         return {"ok": True}
 
+    # build_plan, generate_welcome, dispatch_music removed — handled before the loop
     handlers: dict[str, callable] = {
-        "build_plan":             h_build_plan,
-        "generate_welcome":       h_generate_welcome,
-        "resolve_scripture":      h_resolve_scripture,
+        "resolve_scripture":       h_resolve_scripture,
         "generate_opening_prayer": h_generate_opening_prayer,
-        "generate_sermon":        h_generate_sermon,
-        "generate_benediction":   h_generate_benediction,
-        "find_sermon_video":      h_find_sermon_video,
-        "review_content":         h_review_content,
-        "post_text_segment":      h_post_text_segment,
-        "post_youtube_sermon":    h_post_youtube_sermon,
-        "dispatch_music":         h_dispatch_music,
-        "finish_service":         h_finish_service,
+        "generate_sermon":         h_generate_sermon,
+        "generate_benediction":    h_generate_benediction,
+        "find_sermon_video":       h_find_sermon_video,
+        "review_content":          h_review_content,
+        "post_text_segment":       h_post_text_segment,
+        "post_youtube_sermon":     h_post_youtube_sermon,
+        "finish_service":          h_finish_service,
     }
 
     schemas = [
-        _fn("build_plan",
-            "Build the service plan. Returns scripture_ref, music_prompt, music_query, "
-            "music_lyrics, and preaching_query. Call this first.",
-            {}),
-        _fn("generate_welcome",
-            "Generate a short, mood-aware welcome greeting for registered worshippers.",
-            {}),
         _fn("resolve_scripture",
             "Fetch the full text of a Bible passage by reference.",
             {"scripture_ref": _p("string", True, "e.g. 'John 3:16' or 'Psalm 23:1-6'")}),
         _fn("generate_opening_prayer",
-            "Generate the opening prayer text (2-3 paragraphs, no name).",
+            "Generate the opening prayer text (2-3 paragraphs, no worshipper name).",
             {}),
         _fn("generate_sermon",
-            "Generate the full sermon/message text (8 minutes of spoken prose).",
-            {"scripture_ref": _p("string", True, "The reference from the plan, e.g. 'Romans 8:28'")}),
+            "Generate the full sermon/message text (~8 minutes of spoken prose, no name).",
+            {"scripture_ref": _p("string", True, "e.g. 'Romans 8:28'")}),
         _fn("generate_benediction",
-            "Generate the closing benediction / sending text.",
+            "Generate the closing benediction text.",
             {}),
         _fn("find_sermon_video",
-            "Find a YouTube sermon video matching the mood (use when music_source=youtube).",
-            {"query": _p("string", False, "Search query hint from the plan's preaching_query")}),
+            "Find a YouTube sermon video matching the mood (youtube music_source only).",
+            {"query": _p("string", False, "Optional search hint")}),
         _fn("review_content",
-            "Check generated text for safety and appropriateness before posting.",
-            {"text": _p("string", True, "The generated text to review")}),
+            "Safety-check generated text before posting. Call after every generate_* call.",
+            {"text": _p("string", True, "The generated text to check")}),
         _fn("post_text_segment",
-            "Send a text segment to the frontend. Also triggers narration and avatar if enabled.",
+            "Deliver a text segment to the frontend (also triggers narration and avatar).",
             {
-                "segment": _p("string", True, "Segment name: welcome|scripture|opening_prayer|sermon|benediction"),
-                "text":    _p("string", True, "The final approved text content"),
+                "segment": _p("string", True, "scripture | opening_prayer | sermon | benediction"),
+                "text":    _p("string", True, "The reviewed text content"),
             }),
         _fn("post_youtube_sermon",
-            "Send a YouTube sermon video to the frontend as the sermon segment.",
+            "Deliver a YouTube video as the sermon segment.",
             {
                 "video_id": _p("string", True, "YouTube video ID"),
-                "title":    _p("string", True, "Video title shown in the player"),
-            }),
-        _fn("dispatch_music",
-            "Dispatch async music generation (worship + closing_hymn). Call early.",
-            {
-                "music_prompt": _p("string", False, "Suno style/mood prompt from the plan"),
-                "music_query":  _p("string", False, "YouTube search query from the plan"),
+                "title":    _p("string", True, "Video title"),
             }),
         _fn("finish_service",
-            "Signal that all required segments have been posted. Call last.",
+            "Call this once all 4 text segments are posted.",
             {}),
     ]
 

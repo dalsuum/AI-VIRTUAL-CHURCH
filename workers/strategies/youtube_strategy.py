@@ -146,7 +146,21 @@ _LANG_CONFIG: dict[str, dict] = {
         "required_title_terms": ["zomi", "tedim", "zolai", "chin christian"],
         "excluded_channels": _SOUTH_ASIAN_CHANNEL_KEYWORDS,
         "sermon_must_contain": ["zomi", "tedim", "zolai"],
-        "sermon_fallback": "Zomi Tedim Christian sermon",
+        "sermon_fallback": "Zomi Tedim pastor sunday sermon preaching",
+        # Sermon-only gate: title must ALSO contain at least one preaching indicator.
+        # This prevents kids' songs, pop music, or worship tracks from appearing as
+        # the "message" segment just because they contain "zomi" in the title.
+        "sermon_title_require_any": [
+            "sermon", "preaching", "message", "pastor", "rev", "rev.",
+            "sunday", "thugenna", "thu gen", "thugen",
+        ],
+        # Ordered fallback queries tried in sequence when primary search returns nothing.
+        "sermon_query_variants": [
+            "Zomi pastor sunday preaching sermon message",
+            "Zomi Tedim Christian sunday message pastor",
+            "Zomi Chin Christian sermon preaching",
+            "Tedim Zolai pastor preaching message",
+        ],
     },
     # ── template for a future language ────────────────────────────────────────
     # "kn": {                          # example: Karen
@@ -214,6 +228,7 @@ def search_video(
     christian_only: bool = False,
     language: str = "en",
     excluded_ids: list[str] | None = None,
+    sermon_title_require_any: list[str] | None = None,
 ) -> dict:
     """Embeddable, syndicated, safe-search video for ``query``.
 
@@ -264,6 +279,10 @@ def search_video(
             return False
         if cfg and not _passes_language_filter(item, cfg):
             return False
+        if sermon_title_require_any:
+            title_lower = item["snippet"].get("title", "").lower()
+            if not any(t in title_lower for t in sermon_title_require_any):
+                return False
         return True
 
     candidates = [item for item in items if _passes(item)]
@@ -291,32 +310,57 @@ def find_sermon_video(
     Language-specific behaviour is driven entirely by ``_LANG_CONFIG``: add a
     new entry there to extend filtering to a new language with zero code changes
     here.  For Burmese the query is forced to Myanmar script; for Tedim it must
-    contain "Zomi"/"Tedim"/"Zolai"; for English "Christian" is enforced.
+    contain "Zomi"/"Tedim"/"Zolai" in the title *and* a preaching indicator
+    (sermon/preaching/message/pastor/sunday/…) to prevent kids' songs or worship
+    music from appearing as the message segment.
+
+    Multiple query variants are tried in order when the primary search returns
+    nothing suitable; see ``sermon_query_variants`` in ``_LANG_CONFIG``.
     """
     safe_query = query.strip()
     cfg = _LANG_CONFIG.get(language)
 
+    sermon_title_require_any: list[str] | None = None
+
     if cfg:
         fallback = cfg.get("sermon_fallback", f"Christian sermon {mood}")
+        sermon_title_require_any = cfg.get("sermon_title_require_any")
         if not safe_query or not _query_satisfies(safe_query, cfg):
-            # LLM produced no query or a query in the wrong language — replace it.
             safe_query = f"{fallback} {mood}".strip()
-        # Prepend the first enforce term if still missing after the replacement
         must = cfg.get("sermon_must_contain", [])
         script_check = cfg.get("script_check")
         if must and not _query_satisfies(safe_query, cfg):
             prefix = must[0] if not script_check else fallback.split()[0]
             safe_query = f"{prefix} {safe_query}"
     else:
-        # Default (English or unrecognised language)
         if not safe_query:
             safe_query = f"Christian sermon {mood}"
         if "christian" not in safe_query.lower():
             safe_query = f"Christian {safe_query}"
 
-    return search_video(
-        query=safe_query, christian_only=True, language=language, excluded_ids=excluded_ids
-    )
+    # Build ordered list of queries to try: LLM query first, then config variants.
+    variants: list[str] = [safe_query]
+    if cfg:
+        for v in cfg.get("sermon_query_variants", []):
+            q = f"{v} {mood}".strip()
+            if q not in variants:
+                variants.append(q)
+
+    last_exc: Exception = LookupError("no queries configured")
+    for attempt_query in variants:
+        try:
+            return search_video(
+                query=attempt_query,
+                christian_only=True,
+                language=language,
+                excluded_ids=excluded_ids,
+                sermon_title_require_any=sermon_title_require_any,
+            )
+        except LookupError as exc:
+            last_exc = exc
+            print(f"[sermon] query {attempt_query!r} returned no results, trying next variant", flush=True)
+
+    raise last_exc
 
 
 class YouTubeStrategy(MusicStrategy):

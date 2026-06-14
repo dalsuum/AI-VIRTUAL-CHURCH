@@ -638,7 +638,12 @@ def build_intake_plan(*, user_name: str | None, mood: str, prayer_text: str | No
             "music_lyrics will be supplied separately — set it to an empty string. "
             "Write music_prompt as a short English style description for AI music generation "
             "(e.g. 'Zomi/Tedim Christian worship, congregational choir, acoustic band'). "
-            "Make music_query and preaching_query searches for Zomi or Tedim Chin Christian content."
+            "For preaching_query, generate a YouTube search string for a Zomi or Tedim Chin "
+            "Christian SERMON or PREACHING VIDEO — include words like 'sermon', 'preaching', "
+            "'pastor', or 'sunday service' together with 'Zomi' or 'Tedim' so the result is "
+            "an actual preaching video, not a worship song or kids' video. "
+            "Example: 'Zomi Tedim pastor sunday sermon preaching'. "
+            "music_query should similarly target Zomi or Tedim worship songs."
         )
     user = json.dumps({
         "user_name": user_name or "",

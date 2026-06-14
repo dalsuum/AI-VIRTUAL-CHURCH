@@ -732,10 +732,8 @@ def generate_welcome(*, user_name: str | None, mood: str, language: str = "en") 
             user_name,
         )
     except Exception as exc:
-        if language in ("my", "td"):
-            print(f"[llm] {language} welcome fallback: {exc}", flush=True)
-            return _ensure_exact_name(_fallback_welcome(user_name, mood, language), user_name)
-        raise
+        print(f"[llm] {language} welcome fallback: {exc}", flush=True)
+        return _ensure_exact_name(_fallback_welcome(user_name, mood, language), user_name)
 
 
 def generate_opening_prayer(*, user_name: str | None, mood: str, prayer_text: str | None, language: str = "en", user_history: dict | None = None) -> str:
@@ -761,10 +759,8 @@ def generate_opening_prayer(*, user_name: str | None, mood: str, prayer_text: st
             user_name,
         )
     except Exception as exc:
-        if language in ("my", "td"):
-            print(f"[llm] {language} opening prayer fallback: {exc}", flush=True)
-            return _ensure_exact_name(_fallback_opening_prayer(user_name, mood, language), user_name)
-        raise
+        print(f"[llm] {language} opening prayer fallback: {exc}", flush=True)
+        return _ensure_exact_name(_fallback_opening_prayer(user_name, mood, language), user_name)
 
 
 def generate_sermon(*, user_name: str | None, mood: str, scripture_ref: str, target_minutes: int = 8, language: str = "en", prayer_text: str | None = None, user_history: dict | None = None) -> str:
@@ -803,10 +799,8 @@ def generate_sermon(*, user_name: str | None, mood: str, scripture_ref: str, tar
     try:
         text = _strip_formatting(_complete(system, user, max_tokens=max_tokens, language=language))
     except Exception as exc:
-        if language in ("my", "td"):
-            print(f"[llm] {language} sermon fallback: {exc}", flush=True)
-            return _fallback_sermon(mood, scripture_ref, language)
-        raise
+        print(f"[llm] {language} sermon fallback: {exc}", flush=True)
+        return _fallback_sermon(mood, scripture_ref, language)
     return _strip_name(text, user_name)
 
 
@@ -829,10 +823,8 @@ def generate_benediction(*, user_name: str | None, mood: str, language: str = "e
             user_name,
         )
     except Exception as exc:
-        if language in ("my", "td"):
-            print(f"[llm] {language} benediction fallback: {exc}", flush=True)
-            return _ensure_exact_name(_fallback_benediction(user_name, mood, language), user_name)
-        raise
+        print(f"[llm] {language} benediction fallback: {exc}", flush=True)
+        return _ensure_exact_name(_fallback_benediction(user_name, mood, language), user_name)
 
 
 def generate_music_lyrics(*, mood: str, language: str) -> str:

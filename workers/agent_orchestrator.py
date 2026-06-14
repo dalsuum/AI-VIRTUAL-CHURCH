@@ -150,15 +150,18 @@ Your task: generate a complete, personal worship service for one worshipper.
 - Presenter gender: {job.get("presenter_gender", "female")}
 - User history: {history}
 
-## Service order
-1. {welcome_note}
-2. Call dispatch_music early — it is slow and runs asynchronously.
-3. Resolve the scripture reference from the plan.
-4. Post the scripture text as the 'scripture' segment.
-5. Generate the opening prayer and post it as 'opening_prayer'.
-6. {sermon_note}
-7. Generate the benediction and post it as 'benediction'.
-8. Call finish_service when all segments above are posted.
+## Service order — FOLLOW THIS EXACTLY for fastest door-open time
+1. Call build_plan to get scripture_ref, music_prompt, music_query.
+2. Call dispatch_music immediately (it is slow and async — start it first).
+3. Call resolve_scripture with the scripture_ref from the plan.
+4. Call generate_opening_prayer — post it as 'opening_prayer' RIGHT AWAY.
+   (The doors open as soon as opening_prayer + music + narration are all ready.
+    Getting the prayer posted fast is the single biggest driver of door-open time.)
+5. {welcome_note}
+6. Post the scripture text as the 'scripture' segment.
+7. {sermon_note}
+8. Generate the benediction and post it as 'benediction'.
+9. Call finish_service when all segments above are posted.
 
 ## Rules
 - Always call build_plan first to get the scripture_ref and music_prompt.

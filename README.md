@@ -281,24 +281,31 @@ Fast, predictable, and cheap — the LLM is only called for content generation.
 
 ### Agent mode
 
-When **AI Agent** is selected, `tasks.orchestrate` hands the job to `workers/agent_orchestrator.py`. A Claude / Gemini / ChatGPT agent (via OpenRouter) receives a system prompt describing the worshipper and a set of **12 tools**:
+When **AI Agent** is selected, `tasks.orchestrate` hands the job to `workers/agent_orchestrator.py`. Before the agent loop starts, the orchestrator pre-dispatches two guaranteed operations in parallel with the Celery pipeline:
+
+```
+run_agent(job)
+  ├─ build_intake_plan()          — one LLM call: get scripture_ref, music details
+  ├─ send_task("generate_music")  — dispatched immediately, async (worship + closing_hymn)
+  ├─ send_task("generate_welcome") — dispatched immediately (registered users only)
+  └─ agent loop (up to 24 turns) — handles 4 text segments only
+```
+
+The agent receives a system prompt with the pre-chosen `scripture_ref` and a set of **9 tools** (text-only — music and welcome are already running):
 
 | Tool | What it does |
 |------|-------------|
-| `build_plan` | Ask the LLM for scripture ref, music prompt, preaching query |
 | `resolve_scripture` | Fetch the Bible passage text |
 | `generate_opening_prayer` | Generate prayer text |
-| `generate_sermon` | Generate sermon text |
+| `generate_sermon` | Generate sermon text (or skipped for YouTube mode) |
 | `generate_benediction` | Generate benediction text |
-| `generate_welcome` | Generate personalised welcome greeting |
-| `find_sermon_video` | Find a YouTube sermon by mood (YouTube mode) |
+| `find_sermon_video` | Find a YouTube sermon by mood (YouTube mode only) |
 | `review_content` | Safety-check text before posting |
 | `post_text_segment` | Deliver a segment to the frontend + dispatch TTS/avatar |
 | `post_youtube_sermon` | Deliver a YouTube video as the sermon segment |
-| `dispatch_music` | Kick off async music generation |
 | `finish_service` | Signal that the service is complete |
 
-The agent reasons in a tool-use loop (up to 24 turns) and can: re-order segments, retry poor-quality output, skip unnecessary segments, and adapt content based on user history. The system prompt explicitly instructs it to call `dispatch_music` and `generate_opening_prayer` first to minimise door-open latency.
+The agent reasons in a tool-use loop (up to 24 turns) and can: retry poor-quality output, skip YouTube segments when a video is found, and adapt content based on user history. Pre-dispatching music guarantees worship segments always appear regardless of how the LLM provider orders its tool calls.
 
 ### Switching modes
 
@@ -1165,11 +1172,11 @@ before any state-changing request to bootstrap CSRF protection.
   `welcome` segment added to the segment enum — **DONE**
 - **Phase 9 — AI Agent Orchestration:** dual-mode orchestration (`pipeline` / `agent`)
   toggled at runtime from Admin Settings with no restart; `workers/agent_orchestrator.py`
-  implements a 12-tool Claude/Gemini/ChatGPT agent (via OpenRouter) that reasons about
-  segment order, retries poor output, and adapts to user context; agent provider selector
-  (`claude` / `gemini` / `chatgpt`) stored in Redis for instant hot-swap; preparation
-  screen replaced with a live segment-progress checklist (doors open the instant all
-  required steps are ready, no fixed countdown) — **DONE**
+  implements a pre-dispatch + 9-tool agent pattern via OpenRouter (Claude/Gemini/ChatGPT):
+  music + welcome dispatched before the agent loop so all providers reliably produce a
+  full 7-page service; agent provider selector (`claude` / `gemini` / `chatgpt`) stored
+  in Redis for instant hot-swap; preparation screen replaced with a live segment-progress
+  checklist (doors open the instant all required steps are ready, no fixed countdown) — **DONE**
 
 **Known gaps / next steps:** real WebSocket push (Reverb/Echo wiring is stubbed; polling
 works today), HeyGen avatar beyond stub, a production-grade crisis classifier extended to

@@ -1811,6 +1811,16 @@ onUnmounted(() => {
                 <strong>Gemini <span class="state">{{ settings.agent_provider === 'gemini' ? 'Active ✓' : '' }}</span></strong>
                 <span>Google Gemini 2.5 Flash via OpenRouter — fast and cost-efficient.</span>
               </button>
+              <button
+                type="button"
+                class="choice"
+                :class="{ active: settings.agent_provider === 'chatgpt' }"
+                :disabled="savingSettings"
+                @click="setAgentProvider('chatgpt')"
+              >
+                <strong>ChatGPT <span class="state">{{ settings.agent_provider === 'chatgpt' ? 'Active ✓' : '' }}</span></strong>
+                <span>OpenAI GPT-4o via OpenRouter — strong general reasoning.</span>
+              </button>
             </div>
           </template>
 

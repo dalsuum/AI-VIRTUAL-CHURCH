@@ -593,7 +593,7 @@ class AdminController extends Controller
             // 'agent' = AI agent that reasons about segment order and retries.
             'orchestration_mode' => ['sometimes', 'string', 'in:pipeline,agent'],
             // Which LLM powers the AI agent (only used when orchestration_mode = 'agent').
-            'agent_provider'     => ['sometimes', 'string', 'in:claude,gemini'],
+            'agent_provider'     => ['sometimes', 'string', 'in:claude,gemini,chatgpt'],
         ]);
 
         foreach (['narration_mode_en', 'narration_mode_my', 'narration_mode_td'] as $key) {

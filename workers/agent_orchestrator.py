@@ -43,9 +43,10 @@ _MUSIC_WEBHOOK   = _LARAVEL_WEBHOOK.replace("asset-ready", "music-track")
 
 # Model IDs used when the admin selects each provider.
 # Both go through OpenRouter so no extra API key is needed.
-_MODEL_CLAUDE = os.getenv("AGENT_LLM_MODEL_CLAUDE",
-                           os.getenv("AGENT_LLM_MODEL", "anthropic/claude-sonnet-4-6"))
-_MODEL_GEMINI = os.getenv("AGENT_LLM_MODEL_GEMINI", "google/gemini-2.5-flash-preview-05-20")
+_MODEL_CLAUDE  = os.getenv("AGENT_LLM_MODEL_CLAUDE",
+                            os.getenv("AGENT_LLM_MODEL", "anthropic/claude-sonnet-4-6"))
+_MODEL_GEMINI  = os.getenv("AGENT_LLM_MODEL_GEMINI",  "google/gemini-2.5-flash-preview-05-20")
+_MODEL_CHATGPT = os.getenv("AGENT_LLM_MODEL_CHATGPT", "openai/gpt-4o")
 
 
 def _get_agent_model() -> str:
@@ -57,7 +58,11 @@ def _get_agent_model() -> str:
         provider = (raw.decode() if isinstance(raw, bytes) else raw) or "claude"
     except Exception:
         provider = "claude"
-    return _MODEL_GEMINI if provider == "gemini" else _MODEL_CLAUDE
+    if provider == "gemini":
+        return _MODEL_GEMINI
+    if provider == "chatgpt":
+        return _MODEL_CHATGPT
+    return _MODEL_CLAUDE
 
 MAX_TURNS = 24   # hard cap — prevents runaway loops if the agent misbehaves
 

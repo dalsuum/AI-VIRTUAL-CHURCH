@@ -183,7 +183,7 @@ A single Celery app with one Redis broker and **named queues that mirror the wor
 | [llm_engine.py](workers/llm_engine.py) | Intake plan via OpenRouter; spoken prose generated directly in English/Myanmar/Tedim. Myanmar/Tedim prose is routed to the local FastAPI/Ollama services when configured, with short safe fallbacks if the local model times out or returns unusable text. Strips markdown / stage directions to clean spoken prose. |
 | [bible_api.py](workers/bible_api.py) | Resolves a scripture *reference* to verse *text* from bundled public-domain translations: BSB (English), Judson 1835 (Myanmar), Lai Siangtho 1932 (Tedim). The model never writes scripture. |
 | [classifier.py](workers/classifier.py) | Post-generation deny-list guardrail (`review() → (ok, reason)`). |
-| [strategies/](workers/strategies/) | `MusicStrategy` interface + `HymnStrategy` / `SunoStrategy` / `YouTubeStrategy`, returning a normalized `MusicResult`. YouTube sermon search is config-driven via `_LANG_CONFIG` in `youtube_strategy.py` — all three languages enforce a two-gate filter on the message segment: (1) the search **query** must contain a language anchor (`christian` / `ခရစ်ယာန်` / `zomi`\|`tedim`\|`zolai`), and (2) the video **title** must contain at least one preaching indicator to prevent worship songs, kids' content, or general community videos from appearing as a sermon. If the primary query yields nothing, four ordered fallback queries are tried before giving up. Per-language title indicators: **English** — sermon/preaching/message/pastor/rev/sunday/teaching/bible study/gospel; **Burmese** (`my`) — `တရားဟောချက်`/`တရားဟော`/`နုတ်ကပတ်တော်`/`သွန်သင်ချက်` plus pastor/sunday/rev; **Tedim** (`td`) — sermon/preaching/message/pastor/rev/sunday/thugenna. Both Burmese and Tedim also reject South Asian language channels (Telugu, Tamil, Kannada, …). Adding a new language requires only a new `_LANG_CONFIG` entry — no code changes elsewhere. |
+| [strategies/](workers/strategies/) | `MusicStrategy` interface + `HymnStrategy` / `SunoStrategy` / `YouTubeStrategy`, returning a normalized `MusicResult`. YouTube sermon search is config-driven via `_LANG_CONFIG` in `youtube_strategy.py` — all three languages enforce a three-gate filter on the message segment: (1) the search **query** must contain a language anchor (`christian` / `ခရစ်ယာန်` / `zomi`\|`tedim`\|`zolai`), (2) the video **title** must contain at least one preaching indicator, and (3) the title must **not** contain choir/music/song/concert keywords (`sermon_title_reject_any`). If the primary query yields nothing, four ordered fallback queries are tried before giving up. Per-language title indicators: **English** — sermon/preaching/message/pastor/rev/sunday/teaching/bible study/gospel; **Burmese** (`my`) — `တရားဟောချက်`/`တရားဟော`/`နုတ်ကပတ်တော်`/`သွန်သင်ချက်` plus pastor/sunday/rev; **Tedim** (`td`) — sermon/preaching/message/pastor/rev/thugenna/thu gen/thugen (note: "sunday" is excluded from the require-list to avoid "Mission Sunday Choir" events). Both Burmese and Tedim also reject South Asian language channels (Telugu, Tamil, Kannada, …). Adding a new language requires only a new `_LANG_CONFIG` entry — no code changes elsewhere. |
 | [hymns.py](workers/hymns.py) / [seed_hymns.py](workers/seed_hymns.py) | Public-domain hymn library (lyrics + recordings) and the one-time seeder that renders/downloads it into storage. |
 | [avatar.py](workers/avatar.py) | HeyGen render (submit → poll → store → URL). Key-gated. |
 | [narrator.py](workers/narrator.py) | OpenAI/Kokoro/Edge/MMS narration. `edge_tts` uses real Microsoft cloud TTS for all languages (Myanmar: `my-MM-NilarNeural`/`ThihaNeural`; Tedim: `EDGE_TTS_VOICE_TD`); `mms_tts` routes to local `facebook/mms-tts-mya`/`mms-tts-ctd`. MMS calls have a bounded timeout. |
@@ -395,12 +395,19 @@ source .venv/bin/activate && pip install -r requirements.txt
 python tools/seed_language_data.py        # Judson 1835 + Tedim 1932 Bibles + Myanmar hymns
 python tools/seed_tedim_hymns.py          # ZBC Labu Lui Tedim hymnal (~470 entries, polite delay)
 python tools/seed_tedim_midi.py           # optional: instrumental fallbacks (fluidsynth + ffmpeg)
+python tools/build_tedim_dataset.py       # Build the fine-tuning dataset
 
-# 5. Start the language APIs (two processes at different ports)
+# 5. (Optional but recommended) Fine-tune the Tedim model on a GPU server
+# This requires a machine with a GPU (e.g., cloud instance, Google Colab).
+# bash tools/setup_finetune_env.sh        # Run once to install GPU libraries
+# bash tools/run_tedim_finetune.sh
+# After training, update OLLAMA_MODEL_TD in workers/.env to your new model name.
+
+# 6. Start the language APIs (two processes at different ports)
 uvicorn api:app --host 127.0.0.1 --port 8001 --workers 1   # Tedim
 uvicorn api:app --host 127.0.0.1 --port 8002 --workers 1   # Burmese
 
-# 6. In production, install the systemd units
+# 7. In production, install the systemd units
 sudo cp /opt/ai-church/aivc-tedim-api.service /etc/systemd/system/
 sudo cp /opt/ai-church/aivc-burmese-api.service /etc/systemd/system/
 sudo systemctl daemon-reload

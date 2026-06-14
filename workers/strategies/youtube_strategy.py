@@ -186,9 +186,15 @@ _LANG_CONFIG: dict[str, dict] = {
         # Sermon-only gate: title must ALSO contain at least one preaching indicator.
         # This prevents kids' songs, pop music, or worship tracks from appearing as
         # the "message" segment just because they contain "zomi" in the title.
+        # "sunday" is intentionally excluded — "Mission Sunday" choir events pass it.
         "sermon_title_require_any": [
             "sermon", "preaching", "message", "pastor", "rev", "rev.",
-            "sunday", "thugenna", "thu gen", "thugen",
+            "thugenna", "thu gen", "thugen",
+        ],
+        # Reject choir/music events even when they contain "Tedim" + a preaching keyword.
+        "sermon_title_reject_any": [
+            "choir", "song", "songs", "hymn", "hymns", "chorus", "music",
+            "concert", "worship song", "worship music",
         ],
         # Ordered fallback queries tried in sequence when primary search returns nothing.
         "sermon_query_variants": [
@@ -265,6 +271,7 @@ def search_video(
     language: str = "en",
     excluded_ids: list[str] | None = None,
     sermon_title_require_any: list[str] | None = None,
+    sermon_title_reject_any: list[str] | None = None,
 ) -> dict:
     """Embeddable, syndicated, safe-search video for ``query``.
 
@@ -315,9 +322,12 @@ def search_video(
             return False
         if cfg and not _passes_language_filter(item, cfg):
             return False
+        title_lower = item["snippet"].get("title", "").lower()
         if sermon_title_require_any:
-            title_lower = item["snippet"].get("title", "").lower()
             if not any(t in title_lower for t in sermon_title_require_any):
+                return False
+        if sermon_title_reject_any:
+            if any(t in title_lower for t in sermon_title_reject_any):
                 return False
         return True
 
@@ -357,10 +367,12 @@ def find_sermon_video(
     cfg = _LANG_CONFIG.get(language)
 
     sermon_title_require_any: list[str] | None = None
+    sermon_title_reject_any: list[str] | None = None
 
     if cfg:
         fallback = cfg.get("sermon_fallback", f"Christian sermon {mood}")
         sermon_title_require_any = cfg.get("sermon_title_require_any")
+        sermon_title_reject_any = cfg.get("sermon_title_reject_any")
         if not safe_query or not _query_satisfies(safe_query, cfg):
             safe_query = f"{fallback} {mood}".strip()
         must = cfg.get("sermon_must_contain", [])
@@ -391,6 +403,7 @@ def find_sermon_video(
                 language=language,
                 excluded_ids=excluded_ids,
                 sermon_title_require_any=sermon_title_require_any,
+                sermon_title_reject_any=sermon_title_reject_any,
             )
         except LookupError as exc:
             last_exc = exc

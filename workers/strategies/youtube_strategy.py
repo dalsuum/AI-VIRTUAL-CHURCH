@@ -133,9 +133,24 @@ _LANG_CONFIG: dict[str, dict] = {
         "relevance_language": "my",
         "script_check": _has_myanmar_script,
         "excluded_channels": _SOUTH_ASIAN_CHANNEL_KEYWORDS,
-        # ခရစ်ယာန် = Christian (Myanmar), တရားဟောချက် = sermon/message
+        # ခရစ်ယာန် = Christian, တရားဟောချက် = sermon, နုတ်ကပတ်တော် = Word of God
         "sermon_must_contain": ["ခရစ်ယာန်"],
-        "sermon_fallback": "ခရစ်ယာန် တရားဟောချက်",
+        "sermon_fallback": "ခရစ်ယာန် တရားဟောချက် pastor sunday",
+        # Sermon-only gate: title must ALSO contain at least one preaching indicator.
+        # Prevents worship songs, kids' content, or general Myanmar videos from
+        # appearing as the message segment just because they pass the script check.
+        # တရားဟောချက် = sermon  နုတ်ကပတ်တော် = Word of God  သွန်သင်ချက် = teaching
+        "sermon_title_require_any": [
+            "တရားဟောချက်", "တရားဟော", "နုတ်ကပတ်တော်", "သွန်သင်ချက်",
+            "pastor", "sunday", "rev", "rev.",
+        ],
+        # Ordered fallback queries tried in sequence when primary search returns nothing.
+        "sermon_query_variants": [
+            "ခရစ်ယာန် တရားဟောချက် နုတ်ကပတ်တော် pastor sunday",
+            "ခရစ်ယာန် သွန်သင်ချက် နုတ်ကပတ်တော် sunday",
+            "ခရစ်ယာန် တရားဟောချက် pastor rev sunday sermon",
+            "Myanmar Christian sermon sunday pastor preaching",
+        ],
     },
     "td": {
         # ██ Tedim / Zolai (Zomi Chin) ██

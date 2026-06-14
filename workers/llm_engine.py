@@ -628,8 +628,13 @@ def build_intake_plan(*, user_name: str | None, mood: str, prayer_text: str | No
             " This service is conducted in the Burmese (Myanmar) language. Keep "
             "scripture_ref in ENGLISH format (e.g. 'Psalm 23:1-4'), but write "
             "music_prompt and music_lyrics for a Burmese-language worship song in Myanmar "
-            "Unicode, and make music_query and preaching_query searches for Burmese "
-            "(Myanmar) Christian content."
+            "Unicode. For preaching_query, generate a YouTube search string for a Myanmar "
+            "Christian SERMON or PREACHING VIDEO — write it in Myanmar Unicode and include "
+            "terms like 'တရားဟောချက်' (sermon), 'နုတ်ကပတ်တော်' (Word of God), or "
+            "'သွန်သင်ချက်' (teaching) together with 'ခရစ်ယာန်' (Christian) and optionally "
+            "English words 'pastor', 'sunday', or 'rev' which Myanmar church channels use. "
+            "Example: 'ခရစ်ယာန် တရားဟောချက် နုတ်ကပတ်တော် pastor sunday'. "
+            "music_query should target Burmese Christian worship songs in Myanmar Unicode."
         )
     elif language == "td":
         system += (

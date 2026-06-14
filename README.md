@@ -23,6 +23,7 @@ Redis queue so neither has to know the other's serializer.
   - [Frontend (Vue 3)](#frontend-vue-3)
 - [Data model](#data-model)
 - [The segment pipeline in detail](#the-segment-pipeline-in-detail)
+- [AI agent orchestration](#ai-agent-orchestration)
 - [Multilingual services (Myanmar & Tedim)](#multilingual-services-myanmar--tedim)
 - [Music: four sources + a reuse pool](#music-four-sources--a-reuse-pool)
 - [Narration & avatar (optional enrichments)](#narration--avatar-optional-enrichments)
@@ -254,6 +255,90 @@ The webhook is **idempotent per (session, segment)**: text arrives first, then a
 narration pass fills `audio_key` and a later avatar pass flips `asset_type` to `video`
 — each pass falls back to existing values for fields it doesn't carry, so nothing is
 erased.
+
+---
+
+## AI agent orchestration
+
+The system supports two orchestration modes switchable at runtime from **Admin → Settings** with no worker restart required.
+
+### Pipeline mode (default)
+
+A hard-coded Python function (`tasks._orchestrate_pipeline`) fans the job out into parallel Celery tasks:
+
+```
+orchestrate(job)
+  ├─ generate_welcome      (ai:sermon queue, registered users only)
+  ├─ generate_text_segments (ai:sermon queue)
+  │    ├─ resolve scripture
+  │    ├─ generate opening_prayer → post → [narrate] [avatar]
+  │    ├─ generate sermon        → post → [narrate] [avatar]
+  │    └─ generate benediction   → post → [narrate] [avatar]
+  └─ generate_music         (ai:music queue, parallel)
+```
+
+Fast, predictable, and cheap — the LLM is only called for content generation.
+
+### Agent mode
+
+When **AI Agent** is selected, `tasks.orchestrate` hands the job to `workers/agent_orchestrator.py`. A Claude / Gemini / ChatGPT agent (via OpenRouter) receives a system prompt describing the worshipper and a set of **12 tools**:
+
+| Tool | What it does |
+|------|-------------|
+| `build_plan` | Ask the LLM for scripture ref, music prompt, preaching query |
+| `resolve_scripture` | Fetch the Bible passage text |
+| `generate_opening_prayer` | Generate prayer text |
+| `generate_sermon` | Generate sermon text |
+| `generate_benediction` | Generate benediction text |
+| `generate_welcome` | Generate personalised welcome greeting |
+| `find_sermon_video` | Find a YouTube sermon by mood (YouTube mode) |
+| `review_content` | Safety-check text before posting |
+| `post_text_segment` | Deliver a segment to the frontend + dispatch TTS/avatar |
+| `post_youtube_sermon` | Deliver a YouTube video as the sermon segment |
+| `dispatch_music` | Kick off async music generation |
+| `finish_service` | Signal that the service is complete |
+
+The agent reasons in a tool-use loop (up to 24 turns) and can: re-order segments, retry poor-quality output, skip unnecessary segments, and adapt content based on user history. The system prompt explicitly instructs it to call `dispatch_music` and `generate_opening_prayer` first to minimise door-open latency.
+
+### Switching modes
+
+The toggle is stored in the `settings` DB table **and** mirrored to Redis (`ai:orchestration_mode`) so workers read it without a DB query and the change takes effect on the next service:
+
+```
+Admin → Settings → Orchestration mode
+  [ Pipeline (Active ✓) ]   [ AI Agent ]
+```
+
+### Agent model selection
+
+When agent mode is on, a second row of buttons lets you choose which LLM conducts the service. All three providers go through the existing **OpenRouter API key** — no extra credentials needed:
+
+```
+Agent model
+  [ Claude (Active ✓) ]   [ Gemini ]   [ ChatGPT ]
+```
+
+| Provider | Default model | Env override |
+|----------|--------------|--------------|
+| Claude | `anthropic/claude-sonnet-4-6` | `AGENT_LLM_MODEL_CLAUDE` |
+| Gemini | `google/gemini-2.5-flash-preview-05-20` | `AGENT_LLM_MODEL_GEMINI` |
+| ChatGPT | `openai/gpt-4o` | `AGENT_LLM_MODEL_CHATGPT` |
+
+The selection is stored in Redis (`ai:agent_provider`) and read per-job, so you can switch between runs without restarting the workers.
+
+### Dynamic preparation screen
+
+The worshipper-facing countdown screen (`PreparingView.vue`) was replaced with a **live progress checklist** that ticks off each step as the worker posts it:
+
+```
+◉ Service created
+◉ Scripture selected
+○ Opening prayer composed…   ← pulsing ring on the pending step
+○ Worship music ready…
+○ Voice narration ready…     (only shown when server TTS is on)
+```
+
+Doors open the instant all required steps check off — no fixed countdown to drain. The "Voice narration" step is hidden when narration is `off` or `browser`; the "Worship music" step is hidden when `music_source=musicgen` would not produce a hosted file.
 
 ---
 
@@ -681,8 +766,12 @@ The console is at `/#admin`. Access is role-based:
   countdown-card settings (`countdown_content_enabled`, `countdown_content_source` [`banners`/`testimonies`/`verses`/`both`/`all`],
   `countdown_banners`; banners are English-only; verse cards are mood-matched from bundled translations),
   `text_highlight_enabled` (word-by-word highlight on/off in the player), `music_reuse`
-  (the Suno pool toggle), `storage_backend` (`local` vs `s3` for generated audio), and
-  `avatar_enabled` (toggle HeyGen avatar rendering on/off without touching env vars).
+  (the Suno pool toggle), `storage_backend` (`local` vs `s3` for generated audio),
+  `avatar_enabled` (toggle HeyGen avatar rendering on/off without touching env vars),
+  **`orchestration_mode`** (`pipeline` = hard-coded Celery fan-out / `agent` = LLM agent
+  with tool use — see [AI agent orchestration](#ai-agent-orchestration)), and
+  **`agent_provider`** (`claude` / `gemini` / `chatgpt` — which model powers the agent;
+  visible only when `orchestration_mode = agent`).
   Plus the worshipper-facing **intake options** an admin curates without a redeploy:
   the **moods** offered at intake (add/remove — a new mood flows through the whole
   pipeline: the prayer/sermon tone, the music prompt, and hymn matching), which
@@ -932,6 +1021,9 @@ This includes:
 |-----|---------|
 | `REDIS_URL` | Celery broker/backend + the `ai:intake` list. |
 | `OPENROUTER_API_KEY` / `OPENROUTER_BASE_URL` / `LLM_MODEL` | Default OpenAI-compatible chat model for generation. |
+| `AGENT_LLM_MODEL_CLAUDE` | OpenRouter model ID used when agent provider = Claude (default `anthropic/claude-sonnet-4-6`). |
+| `AGENT_LLM_MODEL_GEMINI` | OpenRouter model ID used when agent provider = Gemini (default `google/gemini-2.5-flash-preview-05-20`). |
+| `AGENT_LLM_MODEL_CHATGPT` | OpenRouter model ID used when agent provider = ChatGPT (default `openai/gpt-4o`). |
 | `LLM_MODEL_MY` | Myanmar-specific model override for OpenRouter (e.g. `WYNN747/Burmese-GPT`). Falls back to `LLM_MODEL` if unset. |
 | `LLM_MODEL_TD` | Tedim-specific model override for OpenRouter. Falls back to `LLM_MODEL` if unset (note: low-resource language — a multilingual model is recommended). |
 | `TEDIM_LLM_URL` | Base URL of the local Tedim FastAPI service (default `http://127.0.0.1:8001`). Must match in both `workers/.env` and `backend/.env`. |
@@ -1071,6 +1163,13 @@ before any state-changing request to bootstrap CSRF protection.
 - **Phase 8 — Presenter UX:** presenter gender selection (`female`/`male`) per worshipper,
   locked per session, with sermon/support voice pairing; `avatar_enabled` admin toggle;
   `welcome` segment added to the segment enum — **DONE**
+- **Phase 9 — AI Agent Orchestration:** dual-mode orchestration (`pipeline` / `agent`)
+  toggled at runtime from Admin Settings with no restart; `workers/agent_orchestrator.py`
+  implements a 12-tool Claude/Gemini/ChatGPT agent (via OpenRouter) that reasons about
+  segment order, retries poor output, and adapts to user context; agent provider selector
+  (`claude` / `gemini` / `chatgpt`) stored in Redis for instant hot-swap; preparation
+  screen replaced with a live segment-progress checklist (doors open the instant all
+  required steps are ready, no fixed countdown) — **DONE**
 
 **Known gaps / next steps:** real WebSocket push (Reverb/Echo wiring is stubbed; polling
 works today), HeyGen avatar beyond stub, a production-grade crisis classifier extended to

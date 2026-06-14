@@ -662,7 +662,7 @@ def build_intake_plan(*, user_name: str | None, mood: str, prayer_text: str | No
                 "" if music_source == "musicgen" else ", using [Verse 1] / [Chorus] / [Verse 2] structural tags on their own lines",
             ),
             "music_query": "string, a short YouTube search query for a worship song",
-            "preaching_query": "string, a short YouTube search query for a Christian sermon on this theme",
+            "preaching_query": "string, a YouTube search query for a Christian sermon/preaching video — include 'Christian' plus terms like 'pastor', 'sunday', 'sermon', 'preaching', or 'gospel message' so the result is an actual preaching video",
         },
     })
     try:

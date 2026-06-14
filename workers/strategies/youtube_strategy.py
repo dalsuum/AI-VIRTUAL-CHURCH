@@ -152,6 +152,27 @@ _LANG_CONFIG: dict[str, dict] = {
             "Myanmar Christian sermon sunday pastor preaching",
         ],
     },
+    "en": {
+        # ██ English ██
+        # No script check or required title terms — any English title is fine.
+        # We do require "Christian" in the search query and at least one preaching
+        # indicator in the title to prevent music videos, conferences, or motivational
+        # content from appearing as the message segment.
+        "relevance_language": "en",
+        "excluded_channels": _EXCLUDED_CHANNEL_KEYWORDS,
+        "sermon_must_contain": ["christian"],
+        "sermon_fallback": "Christian sunday sermon pastor preaching",
+        "sermon_title_require_any": [
+            "sermon", "preaching", "message", "pastor", "rev", "rev.",
+            "sunday", "teaching", "bible study", "gospel",
+        ],
+        "sermon_query_variants": [
+            "Christian sunday sermon pastor preaching message",
+            "Christian pastor sunday preaching bible sermon",
+            "Christian sunday church sermon message",
+            "Christian preaching sunday pastor gospel message",
+        ],
+    },
     "td": {
         # ██ Tedim / Zolai (Zomi Chin) ██
         # Latin script → keyword gate on title and query.

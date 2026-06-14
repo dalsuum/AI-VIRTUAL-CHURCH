@@ -225,12 +225,10 @@ def _parse_lyric_page(html: str, url: str) -> dict | None:
     slug = url.rstrip("/").rsplit("/", 1)[-1]
     return {
         "slug": f"td-{slug}",
-        "source": "zbc-labu-lui",
         "title": title_td,
         "title_en": title_en,            # the English original this translates
         "lyrics": lyrics,
         "youtube_id": youtube_id,        # preferred playback: real Tedim singing
-        "url": url,                      # provenance
         "moods": _moods(title_en, title_td),
     }
 

@@ -590,8 +590,10 @@ class AdminController extends Controller
             'content_filter_keywords'   => ['sometimes', 'array'],
             'content_filter_keywords.*' => ['string', 'max:100'],
             // Orchestration mode: 'pipeline' = hard-coded Python flow (default);
-            // 'agent' = Claude agent that reasons about segment order and retries.
+            // 'agent' = AI agent that reasons about segment order and retries.
             'orchestration_mode' => ['sometimes', 'string', 'in:pipeline,agent'],
+            // Which LLM powers the AI agent (only used when orchestration_mode = 'agent').
+            'agent_provider'     => ['sometimes', 'string', 'in:claude,gemini'],
         ]);
 
         foreach (['narration_mode_en', 'narration_mode_my', 'narration_mode_td'] as $key) {
@@ -670,8 +672,12 @@ class AdminController extends Controller
         if (array_key_exists('orchestration_mode', $data)) {
             $mode = $data['orchestration_mode'];
             Setting::set('orchestration_mode', $mode);
-            // Mirror to Redis so workers can read the toggle without a DB query.
             Redis::set('ai:orchestration_mode', $mode);
+        }
+        if (array_key_exists('agent_provider', $data)) {
+            $provider = $data['agent_provider'];
+            Setting::set('agent_provider', $provider);
+            Redis::set('ai:agent_provider', $provider);
         }
 
         return response()->json(['ok' => true] + $this->settingsPayload());
@@ -708,6 +714,7 @@ class AdminController extends Controller
             'countdown_banners'         => Setting::countdownBanners(),
             'content_filter_keywords'   => Setting::filterKeywords(),
             'orchestration_mode'        => Setting::get('orchestration_mode', 'pipeline'),
+            'agent_provider'            => Setting::get('agent_provider', 'claude'),
         ];
     }
 

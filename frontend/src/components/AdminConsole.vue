@@ -326,6 +326,7 @@ function toggleServiceLanguage(key) {
 const setMusicReuse = (on) => saveSetting("music_reuse", on, "Music reuse updated.");
 const setAvatarEnabled = (on) => saveSetting("avatar_enabled", on, "Avatar rendering updated.");
 const setOrchestrationMode = (mode) => saveSetting("orchestration_mode", mode, "Orchestration mode updated.");
+const setAgentProvider = (provider) => saveSetting("agent_provider", provider, "Agent provider updated.");
 const setTextHighlightEnabled = (on) => saveSetting("text_highlight_enabled", on, "Text highlighting updated.");
 const setStorageBackend = (backend) => saveSetting("storage_backend", backend, "Storage backend updated.");
 const setScheduling = (on) => saveSetting("scheduling_enabled", on, "Scheduling updated.");
@@ -1779,10 +1780,41 @@ onUnmounted(() => {
               @click="setOrchestrationMode('agent')"
             >
               <strong>AI Agent <span class="state">{{ settings.orchestration_mode === 'agent' ? 'Active ✓' : '' }}</span></strong>
-              <span>Claude reasons about segment order, retries bad output, adapts to context.</span>
+              <span>An LLM reasons about segment order, retries bad output, adapts to context.</span>
             </button>
           </div>
-          <p v-else class="setting-desc">Loading…</p>
+
+          <!-- Agent provider selector — only shown when agent mode is active -->
+          <template v-if="settings && settings.orchestration_mode === 'agent'">
+            <p class="setting-desc" style="margin-top:1.1rem">
+              <strong>Agent model</strong> — which AI conducts the service in agent mode.
+              Both use your existing OpenRouter key; no extra API key needed.
+            </p>
+            <div class="choice-row">
+              <button
+                type="button"
+                class="choice"
+                :class="{ active: (settings.agent_provider || 'claude') === 'claude' }"
+                :disabled="savingSettings"
+                @click="setAgentProvider('claude')"
+              >
+                <strong>Claude <span class="state">{{ (settings.agent_provider || 'claude') === 'claude' ? 'Active ✓' : '' }}</span></strong>
+                <span>Anthropic claude-sonnet-4-6 via OpenRouter — best reasoning and instruction-following.</span>
+              </button>
+              <button
+                type="button"
+                class="choice"
+                :class="{ active: settings.agent_provider === 'gemini' }"
+                :disabled="savingSettings"
+                @click="setAgentProvider('gemini')"
+              >
+                <strong>Gemini <span class="state">{{ settings.agent_provider === 'gemini' ? 'Active ✓' : '' }}</span></strong>
+                <span>Google Gemini 2.5 Flash via OpenRouter — fast and cost-efficient.</span>
+              </button>
+            </div>
+          </template>
+
+          <p v-else-if="!settings" class="setting-desc">Loading…</p>
         </div>
 
         <div class="setting-block">

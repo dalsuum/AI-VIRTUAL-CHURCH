@@ -37,10 +37,27 @@ from tasks.celery_app import app as _celery_app    # noqa: E402
 
 _OPENROUTER_KEY  = os.environ["OPENROUTER_API_KEY"]
 _OPENROUTER_URL  = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
-_AGENT_MODEL     = os.getenv("AGENT_LLM_MODEL", "anthropic/claude-sonnet-4-6")
 _LARAVEL_WEBHOOK = os.environ["LARAVEL_WEBHOOK_URL"]
 _WORKER_SECRET   = os.environ["WORKER_WEBHOOK_SECRET"]
 _MUSIC_WEBHOOK   = _LARAVEL_WEBHOOK.replace("asset-ready", "music-track")
+
+# Model IDs used when the admin selects each provider.
+# Both go through OpenRouter so no extra API key is needed.
+_MODEL_CLAUDE = os.getenv("AGENT_LLM_MODEL_CLAUDE",
+                           os.getenv("AGENT_LLM_MODEL", "anthropic/claude-sonnet-4-6"))
+_MODEL_GEMINI = os.getenv("AGENT_LLM_MODEL_GEMINI", "google/gemini-2.5-flash-preview-05-20")
+
+
+def _get_agent_model() -> str:
+    """Read agent provider from Redis (set by admin toggle) and return the model ID."""
+    try:
+        import redis as _redis
+        client   = _redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"))
+        raw      = client.get("ai:agent_provider")
+        provider = (raw.decode() if isinstance(raw, bytes) else raw) or "claude"
+    except Exception:
+        provider = "claude"
+    return _MODEL_GEMINI if provider == "gemini" else _MODEL_CLAUDE
 
 MAX_TURNS = 24   # hard cap — prevents runaway loops if the agent misbehaves
 
@@ -62,10 +79,11 @@ def run_agent(job: dict) -> None:
         {"role": "user", "content": "Please conduct the worship service now."}
     ]
 
-    print(f"[agent] starting session {token[:8]}… model={_AGENT_MODEL}", flush=True)
+    model = _get_agent_model()
+    print(f"[agent] starting session {token[:8]}… model={model}", flush=True)
 
     for turn in range(MAX_TURNS):
-        response = _call_llm(system, messages, tools)
+        response = _call_llm(system, messages, tools, model)
         choice   = response["choices"][0]
         msg      = choice["message"]
         messages.append(msg)
@@ -179,7 +197,7 @@ Your task: generate a complete, personal worship service for one worshipper.
 # LLM call
 # ---------------------------------------------------------------------------
 
-def _call_llm(system: str, messages: list[dict], tools: list[dict]) -> dict:
+def _call_llm(system: str, messages: list[dict], tools: list[dict], model: str) -> dict:
     full_messages = [{"role": "system", "content": system}] + messages
     resp = requests.post(
         f"{_OPENROUTER_URL}/chat/completions",
@@ -188,7 +206,7 @@ def _call_llm(system: str, messages: list[dict], tools: list[dict]) -> dict:
             "Content-Type":  "application/json",
         },
         json={
-            "model":       _AGENT_MODEL,
+            "model":       model,
             "messages":    full_messages,
             "tools":       tools,
             "tool_choice": "auto",

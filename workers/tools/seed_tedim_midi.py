@@ -1,17 +1,13 @@
-"""OPTIONAL: seed Tedim instrumental renders from tedimhymn.com's MIDI library.
+"""OPTIONAL: seed Tedim instrumental renders from the Tedim Hymn 7th Edition MIDI library.
 
-The Tedim Hymn 7th Edition site (https://tedimhymn.com/) publishes ~448 MIDI
-tune files under /upload/midi/. This seeder downloads them and renders each to
-an instrumental MP3 (fluidsynth + ffmpeg — the same toolchain seed_hymns.py
-uses for the English hymnal), stored under:
+Downloads ~448 MIDI tune files and renders each to an instrumental MP3
+(fluidsynth + ffmpeg — same toolchain as seed_hymns.py), stored under:
 
     hymns_td/inst/<NORMALIZED-TITLE>.mp3
 
 TedimHymnStrategy uses these as its LAST fallback: a selected hymn with no
 YouTube embed and no Suno credit available can still play instrumentally with
-the verses on screen. Matching is by normalized title (letters only, upper-
-cased): the MIDI "001. PASIAN A MIN THANG HEN!.mid" and the labusaal hymn
-"Pasian A Min Thang Hen" normalize identically.
+the verses on screen. Matching is by normalized title (letters only, uppercased).
 
     sudo apt install fluidsynth fluid-soundfont-gm ffmpeg
     python workers/tools/seed_tedim_midi.py [--limit N]

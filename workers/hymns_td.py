@@ -1,12 +1,11 @@
-"""Tedim (ZBC Labu Lui) hymn library — load + mood selection.
+"""Tedim hymn library — load + mood selection.
 
 The Tedim counterpart of `hymns.py` / `hymns_my.py`. The data file
-(data/hymns_td.json) is produced on this machine by tools/seed_tedim_hymns.py,
-which collects the ZBC Labu Lui hymnal from labusaal.com — run it once per
-machine, exactly like seed_hymns.py seeds the English library. Each entry
-carries the Tedim title, the English original it translates, the verses, an
-optional YouTube id (real Tedim singing), and English mood tags derived from
-the original hymn's title plus Tedim-vocabulary signals.
+(data/hymns_td.json) is produced on this machine by tools/seed_tedim_hymns.py —
+run it once per deploy, exactly like seed_hymns.py seeds the English library.
+Each entry carries the Tedim title, the English original it translates, the
+verses, an optional YouTube id (real Tedim singing), and English mood tags
+derived from the original hymn's title plus Tedim-vocabulary signals.
 """
 
 from __future__ import annotations

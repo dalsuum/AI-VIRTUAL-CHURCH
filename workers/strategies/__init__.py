@@ -67,7 +67,7 @@ def get_strategy(music_source: str, language: str = "en") -> MusicStrategy:
     if language == "my" and music_source in ("hymn_sung", "hymn", "hymn_youtube", "youtube"):
         return MyanmarHymnStrategy()  # mood-matched Burmese hymn, sung, lyrics on screen
     if language == "td" and music_source in ("hymn_sung", "hymn", "hymn_youtube", "youtube"):
-        return TedimHymnStrategy()  # ZBC Labu Lui hymn: YouTube embed or cached render
+        return TedimHymnStrategy()  # Tedim hymn: YouTube embed or cached render
     if music_source == "suno":
         return SunoStrategy()
     if music_source == "musicgen":

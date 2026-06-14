@@ -1,4 +1,4 @@
-"""Tedim hymn strategy — a ZBC Labu Lui hymn, with the words on screen.
+"""Tedim hymn strategy — a Tedim hymn, with the words on screen.
 
 The seeded Tedim library (tools/seed_tedim_hymns.py) gives most hymns a
 YouTube embed of the hymn actually being sung in Tedim — that is the preferred
@@ -15,9 +15,9 @@ embeds. Selection order:
      as the Myanmar strategy: first worshipper pays the credit, every later
      selection plays the stored file free.
 
-  4. last resort — if tools/seed_tedim_midi.py has rendered the tune (Tedim
-     Hymn 7th Edition MIDI from tedimhymn.com), play that instrumental with the
-     verses on screen, like the English `hymn` source.
+  4. last resort — if tools/seed_tedim_midi.py has rendered the tune (optional
+     MIDI instrumental), play that with the verses on screen, like the English
+     `hymn` source.
 
 If no path is possible (no YouTube id, Suno unavailable, no instrumental),
 fetch() raises and generate_music skips the music segment gracefully — the

@@ -1,28 +1,15 @@
-"""Seed the Tedim (ZBC Labu Lui) hymn library used by the Tedim music source.
+"""Seed the Tedim hymn library used by the Tedim music source.
 
 Run once per machine, like seed_hymns.py (the English hymnal seeder) and the
-Myanmar importer. It collects the ZBC Labu Lui hymnal — ~470 Tedim translations
-of classic hymns — from labusaal.com, where the community publishes them:
-
-    https://labusaal.com/artist/zbc-labu-lui/    (index of every hymn)
-    https://labusaal.com/lyrics/<slug>/          (one page per hymn)
-
-For every hymn it extracts:
+Myanmar importer. For every hymn it extracts:
     * the Tedim title and the English original title (in parentheses) — the
-      English title is also the mood-tagging signal: these are all classic
-      hymns whose themes are known ("It Is Well With My Soul" -> grieving/
-      comfort), far more reliable than keyword-guessing the Tedim text;
-    * the Tedim verses (Key lines and print chrome stripped);
-    * the YouTube embed id, when the page has one — the Tedim music strategy
-      prefers this embed (real Tedim singing, zero AI credit).
+      English title is the mood-tagging signal: classic hymns whose themes are
+      known ("It Is Well With My Soul" → grieving/comfort);
+    * the Tedim verses (chrome stripped);
+    * the YouTube embed id when present — the Tedim music strategy prefers this
+      (real Tedim singing, zero AI credit).
 
-Output: workers/data/hymns_td.json, the file hymns_td.py serves at service time.
-
-The collection runs on YOUR server, at YOUR deploy time — the same way
-seed_hymns.py pulls Open Hymnal — so the data is always as fresh as the site
-and distribution stays between you and the publisher. ZBC Labu Lui is a Zomi
-Baptist Convention hymnal (1984 reprint of mission-era translations); confirm
-permission with ZBC / labusaal.com before promoting to production.
+Output: workers/data/hymns_td.json, served at service time by hymns_td.py.
 
     pip install requests beautifulsoup4
     python workers/tools/seed_tedim_hymns.py            # full run (~470 pages, polite 0.7s delay)
@@ -43,7 +30,7 @@ from bs4 import BeautifulSoup
 
 INDEX_URL = "https://labusaal.com/artist/zbc-labu-lui/"
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "hymns_td.json")
-CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".labusaal-cache")
+CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".hymn-cache")
 HEADERS = {"User-Agent": "aivirtual.church seeder (contact: site admin)"}
 DELAY = 0.7  # be a polite guest
 
@@ -141,7 +128,7 @@ _MOOD_RULES_TD: list[tuple[str, set[str]]] = [
     ("singlamteh", {"seeking", "grace"}),             # the cross
 ]
 
-# Page chrome that is NOT lyric text on a labusaal lyric page.
+# Page chrome that is NOT lyric text.
 _STOP_HEADINGS = re.compile(
     r"^(other songs|related lyrics|added by|share|write a comment|no comments|advertisement|video|leave a comment)",
     re.I,
@@ -179,7 +166,7 @@ def _get(url: str, session: requests.Session) -> str:
 
 
 def _index(session: requests.Session) -> list[str]:
-    """Every /lyrics/<slug>/ URL in the ZBC Labu Lui index, in page order."""
+    """Every /lyrics/<slug>/ URL in the hymn index, in page order."""
     soup = BeautifulSoup(_get(INDEX_URL, session), "html.parser")
     urls: list[str] = []
     for a in soup.select("a[href*='/lyrics/']"):
@@ -276,10 +263,7 @@ def main() -> None:
 
     out = {
         "info": {
-            "name": "ZBC Labu Lui (Tedim)",
-            "origin": INDEX_URL,
-            "license_note": "Zomi Baptist Convention hymnal (1984). Confirm "
-                            "permission with ZBC / labusaal.com for production use.",
+            "name": "Tedim Hymnal",
             "counts": {"hymns": len(hymns), "with_youtube": with_yt},
         },
         "hymns": hymns,

@@ -172,15 +172,15 @@ A single Celery app with one Redis broker and **named queues that mirror the wor
 | [api.py](workers/api.py) | Unified FastAPI app mounting Tedim, Burmese, `/tts/speak` MMS-TTS, and `/stt/transcribe` MMS-ASR routers plus `/health`. Typically run as two separate uvicorn instances: port 8001 (`aivc-tedim-api`) for Tedim/MMS requests, port 8002 (`aivc-burmese-api`) for Burmese. |
 | [mms_tts_api.py](workers/mms_tts_api.py) | Dedicated MMS speech app on port 8003. Mounts only `/tts/*` and `/stt/*` so PyTorch speech work can run separately from Ollama LLM inference. |
 | [hymns_my.py](workers/hymns_my.py) | Loader for the 852-song `data/hymns_my.json` Burmese library; mood-based selection for `MyanmarHymnStrategy`. |
-| [hymns_td.py](workers/hymns_td.py) | Loader for the seeded `data/hymns_td.json` ZBC Labu Lui Tedim library; mood selection + YouTube-embed priority for `TedimHymnStrategy`. |
+| [hymns_td.py](workers/hymns_td.py) | Loader for the seeded `data/hymns_td.json` Tedim hymn library; mood selection + YouTube-embed priority for `TedimHymnStrategy`. |
 | [strategies/hymn_my_strategy.py](workers/strategies/hymn_my_strategy.py) | Burmese hymn strategy: sings the selected hymn's actual verses through Suno customMode, caches under `hymns_my/<slug>.mp3`. Used for `hymn_sung`, `hymn`, `hymn_youtube`, and `youtube` sources in Myanmar services — `youtube` mode is redirected here because generic YouTube search cannot reliably filter Myanmar Christian content from pop music. |
 | [strategies/tedim_hymn_strategy.py](workers/strategies/tedim_hymn_strategy.py) | Tedim hymn strategy: YouTube embed (real Tedim singing) → Suno customMode render (cached) → instrumental fallback. |
 | [strategies/_suno_custom.py](workers/strategies/_suno_custom.py) | Shared helper that builds and calls Suno customMode with exact lyrics for a given language/style. **Lyric sanitization rules (must be kept up to date when the hymn data format changes):** (1) `ထပ်ဆိoရန်[။]` on its own line → `[Chorus]` — this is the classic Burmese hymnal "Repeat/Chorus" marker, not a lyric; (2) Burmese numeral verse prefixes `၁ lyric text` → `[Verse 1]\nlyric text`; standalone `၁` → `[Verse 1]`. Suno treats `[Verse N]`/`[Chorus]` as structural metatags and never sings them. Any new non-lyric patterns found in `hymns_my.json` must be added to `_MY_SECTION_TAGS` or the verse-number substitution in `sanitize_lyrics()` — never leave raw structural markers reaching the Suno prompt. |
 | [tools/seed_language_data.py](workers/tools/seed_language_data.py) | One-time seeder: downloads Judson 1835 (Myanmar) and Lai Siangtho 1932 (Tedim) Bibles, book index, and Myanmar hymns into `workers/data/`. |
-| [tools/seed_tedim_hymns.py](workers/tools/seed_tedim_hymns.py) | Collects the ZBC Labu Lui hymnal from labusaal.com (~470 entries with YouTube IDs and mood tags) into `data/hymns_td.json`. Polite delay; run once per deploy. |
-| [tools/seed_tedim_midi.py](workers/tools/seed_tedim_midi.py) | Optional: instrumental fallback renders from tedimhymn.com MIDI index (needs fluidsynth + ffmpeg). |
+| [tools/seed_tedim_hymns.py](workers/tools/seed_tedim_hymns.py) | Collects the Tedim hymnal (~470 entries with YouTube IDs and mood tags) into `data/hymns_td.json`. Polite delay; run once per deploy. |
+| [tools/seed_tedim_midi.py](workers/tools/seed_tedim_midi.py) | Optional: instrumental fallback renders from the Tedim Hymn 7th Edition MIDI library (needs fluidsynth + ffmpeg). |
 | [tools/import_myanmar_hymns.py](workers/tools/import_myanmar_hymns.py) | Regenerates `data/hymns_my.json` from the upstream dalsuum/myanmar-hymns source repo. |
-| [tools/build_tedim_dataset.py](workers/tools/build_tedim_dataset.py) | Builds a JSONL fine-tuning dataset (~56 600 examples, 31 MB) from the Lai Siangtho 1932 Bible, ZBC hymnal (467 hymns), and Zolai vocabulary/grammar guide. Outputs `data/tedim_finetune.jsonl` (90 % train) and `data/tedim_finetune_val.jsonl` (10 % val) in standard chat-format for LoRA fine-tuning on Llama 3 / Mistral. |
+| [tools/build_tedim_dataset.py](workers/tools/build_tedim_dataset.py) | Builds a JSONL fine-tuning dataset (~56 600 examples, 31 MB) from the Lai Siangtho 1932 Bible, Tedim hymnal (467 hymns), and Zolai vocabulary/grammar guide. Outputs `data/tedim_finetune.jsonl` (90 % train) and `data/tedim_finetune_val.jsonl` (10 % val) in standard chat-format for LoRA fine-tuning on Llama 3 / Mistral. |
 | [llm_engine.py](workers/llm_engine.py) | Intake plan via OpenRouter; spoken prose generated directly in English/Myanmar/Tedim. Myanmar/Tedim prose is routed to the local FastAPI/Ollama services when configured, with short safe fallbacks if the local model times out or returns unusable text. Strips markdown / stage directions to clean spoken prose. |
 | [bible_api.py](workers/bible_api.py) | Resolves a scripture *reference* to verse *text* from bundled public-domain translations: BSB (English), Judson 1835 (Myanmar), Lai Siangtho 1932 (Tedim). The model never writes scripture. |
 | [classifier.py](workers/classifier.py) | Post-generation deny-list guardrail (`review() → (ok, reason)`). |
@@ -357,7 +357,7 @@ Three languages are supported. Language is chosen on the intake form and **locke
 |----------|------|-------|-----------|-----|-------|
 | English | `en` | BSB (bundled) | `en-US-AriaNeural` / `en-US-GuyNeural` | OpenRouter (`LLM_MODEL`) | Open Hymnal (instrumental/sung) |
 | Myanmar | `my` | Judson 1835 (bundled) | `edge_tts` → `my-MM-NilarNeural`; `mms_tts` → `facebook/mms-tts-mya` | OpenRouter (`LLM_MODEL_MY`) | 852-song dalsuum/myanmar-hymns — sung via Suno customMode, cached |
-| Tedim (Zolai) | `td` | Lai Siangtho 1932 (bundled) | `mms_tts` → `facebook/mms-tts-ctd` (native); `edge_tts` → `EDGE_TTS_VOICE_TD` | local Ollama (`OLLAMA_MODEL_TD`) | ZBC Labu Lui (~470 hymns) — YouTube embed → Suno → instrumental |
+| Tedim (Zolai) | `td` | Lai Siangtho 1932 (bundled) | `mms_tts` → `facebook/mms-tts-ctd` (native); `edge_tts` → `EDGE_TTS_VOICE_TD` | local Ollama (`OLLAMA_MODEL_TD`) | Tedim hymnal (~470 hymns) — YouTube embed → Suno → instrumental |
 
 Myanmar and Tedim support two free narration modes: `edge_tts` (Microsoft cloud neural voices — `my-MM-NilarNeural` for Burmese, configurable for Tedim) and `mms_tts` (local Facebook MMS-TTS via `/tts/speak`). Burmese input to MMS-TTS is Myanmar Unicode only; the route rejects likely legacy-encoded Burmese.
 
@@ -485,7 +485,7 @@ ollama create burmese-myanmar -f ~/BurmeseModelfile
 cd /opt/ai-church/workers
 source .venv/bin/activate && pip install -r requirements.txt
 python tools/seed_language_data.py        # Judson 1835 + Tedim 1932 Bibles + Myanmar hymns
-python tools/seed_tedim_hymns.py          # ZBC Labu Lui Tedim hymnal (~470 entries, polite delay)
+python tools/seed_tedim_hymns.py          # Tedim hymnal (~470 entries, polite delay)
 python tools/seed_tedim_midi.py           # optional: instrumental fallbacks (fluidsynth + ffmpeg)
 python tools/build_tedim_dataset.py       # Build the fine-tuning dataset
 
@@ -514,9 +514,8 @@ sudo systemctl enable --now aivc-tedim-api aivc-burmese-api
 
 1. **Crisis intercept is English-keyword based** — a Burmese or Tedim prayer won't trip it. Extend `CrisisInterceptService` with Burmese and Tedim terms before promoting those language tabs.
 2. **Classifier guardrail** (`classifier.review`) reviews non-English text with an English-prompted model — spot-check its behavior on Burmese and Tedim sermons. LLM quality for these languages depends heavily on the selected model; use `LLM_MODEL_MY` and `LLM_MODEL_TD` to route to stronger multilingual models without touching the English path.
-3. **ZBC Labu Lui licensing** — `seed_tedim_hymns.py` collects the hymnal for your deployment. The generated `data/hymns_td.json` carries a `license_note`; confirm permission with ZBC / labusaal.com before production.
-4. **Player segment titles** (e.g. "Opening Prayer") are still English — the language is available on `GET /service/{token}` once `$session->language` is exposed there.
-5. **Suno Burmese-vocal quality** varies by model version. If a render is poor, delete `hymns_my/<slug>.mp3` from storage and the next service re-renders it.
+3. **Player segment titles** (e.g. "Opening Prayer") are still English — the language is available on `GET /service/{token}` once `$session->language` is exposed there.
+4. **Suno Burmese-vocal quality** varies by model version. If a render is poor, delete `hymns_my/<slug>.mp3` from storage and the next service re-renders it.
 
 ---
 
@@ -875,7 +874,7 @@ python seed_hymns.py
 
 #   Seed language data (required for Myanmar/Tedim language services):
 python tools/seed_language_data.py        # Judson 1835 + Tedim 1932 Bibles + Myanmar hymns
-python tools/seed_tedim_hymns.py          # ZBC Labu Lui Tedim hymnal (~470 entries)
+python tools/seed_tedim_hymns.py          # Tedim hymnal (~470 entries)
 python tools/seed_tedim_midi.py           # optional: Tedim instrumental fallbacks
 
 #   3a. Bridge consumer (Redis → Celery)
@@ -1164,7 +1163,7 @@ before any state-changing request to bootstrap CSRF protection.
   Judson 1835 (Myanmar) and Lai Siangtho 1932 (Tedim) Bible corpora, language-specific
   narration voices, local Ollama LLM services (FastAPI + `tedim-zolai` + `burmese-myanmar`
   models), direct target-language generation with legacy localization jobs disabled for
-  new services, Myanmar 852-hymn library (Suno customMode), Tedim ZBC Labu Lui hymnal (YouTube embed →
+  new services, Myanmar 852-hymn library (Suno customMode), Tedim hymnal (YouTube embed →
   Suno → instrumental), seeder tools (`seed_language_data.py`, `seed_tedim_hymns.py`,
   `seed_tedim_midi.py`) — **DONE**
 - **Phase 8 — Presenter UX:** presenter gender selection (`female`/`male`) per worshipper,
@@ -1184,7 +1183,7 @@ Burmese and Tedim keywords, rights for a non-public-domain Bible translation, fi
 Tedim GGUF (current `tedim-zolai` uses `llama3.2:1b` as base — quality improves
 significantly with a Tedim-corpus fine-tune on a larger model), a Vue bilingual segment
 component if you want bilingual side-by-side English plus target-language text,
-and ZBC Labu Lui licensing confirmation before production.
+and a Vue bilingual segment component if you want bilingual side-by-side English plus target-language text.
 
 ---
 

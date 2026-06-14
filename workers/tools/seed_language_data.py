@@ -17,8 +17,8 @@ It produces four files, all from dalsuum-owned public repos:
                            github.com/dalsuum/myanmar-hymns by
                            tools/import_myanmar_hymns.py (cleaning + mood tags)
 
-The Tedim HYMNS are seeded separately by seed_tedim_hymns.py (they come from
-labusaal.com, not a dalsuum repo). Safe to re-run: existing files are kept
+The Tedim HYMNS are seeded separately by seed_tedim_hymns.py (run once per
+deploy). Safe to re-run: existing files are kept
 unless --force is given.
 """
 

@@ -106,7 +106,7 @@ function catColor(cat) {
     <footer class="vocab-footer">
       <p>
         Reference: <em>Paunam Khenna Leh Kampau Luanzia</em> (Sia Cin Sian Pau) &nbsp;·&nbsp;
-        Lai Siangtho 1932 &nbsp;·&nbsp; ZBC Labu Lui Hymnal
+        Lai Siangtho 1932 &nbsp;·&nbsp; Tedim Hymnal
       </p>
     </footer>
   </div>

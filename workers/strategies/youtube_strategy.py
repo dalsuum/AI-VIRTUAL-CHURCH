@@ -21,7 +21,8 @@ routing (e.g. to a different strategy class for hymn sources).
     4. mood scoring             — rank remaining by mood keyword matches
 
   sermon slot :
-    1. sermon_title_require_any — at least one preaching indicator (word-boundary)
+    1. sermon_title_require_any — at least one preaching indicator
+       (word-boundary for Latin scripts, substring for non-Latin scripts)
     2. sermon_title_reject_any  — reject music/choir/concert events (word-boundary)
     3. channel_reject_any       — reject off-topic channels
 
@@ -181,9 +182,57 @@ def _search_youtube(query: str, **params) -> list[dict]:
     return resp.json().get("items", [])
 
 
+def search_video(query: str, category_id: str | None = None, english_only: bool = False) -> dict:
+    """Compatibility helper for strategies that need one embeddable YouTube video.
+
+    Returns {"video_id": str, "title": str}. Kept synchronous because Celery
+    callers run without an event loop.
+    """
+    params = {}
+    if category_id:
+        params["videoCategoryId"] = category_id
+    if english_only:
+        params.update({"relevanceLanguage": "en", "regionCode": "US"})
+
+    for item in _search_youtube(query, **params):
+        video_id = item.get("id", {}).get("videoId")
+        snippet = item.get("snippet", {})
+        title = snippet.get("title") or ""
+        if video_id and title:
+            return {"video_id": video_id, "title": title}
+
+    raise RuntimeError(f"No suitable YouTube video found for query {query!r}")
+
+
 def _wb(kw: str, title: str) -> bool:
     """Return True if `kw` appears as a whole word in `title`."""
     return bool(re.search(r"\b" + re.escape(kw) + r"\b", title))
+
+
+def _has_myanmar(text: str) -> bool:
+    """Return True when text contains Myanmar Unicode script."""
+    return re.search(r"[\u1000-\u109F]", text or "") is not None
+
+
+# Words that unambiguously identify a video as Zomi/Tedim content.
+# We check these against the lowercased title before applying the generic
+# sermon-indicator gate, mirroring the Myanmar-script check for Burmese.
+_TEDIM_IDENTITY_WORDS = frozenset([
+    "zomi", "tedim", "zolai",
+    "thugenna", "thugen",  # sermon/preaching in Tedim
+    "thu gen",             # two-word form of preaching
+])
+
+
+def _has_tedim_identity(text: str) -> bool:
+    """Return True when text contains a Zomi/Tedim community or language marker."""
+    lower = (text or "").lower()
+    return any(word in lower for word in _TEDIM_IDENTITY_WORDS)
+
+
+def _keyword_hit(kw: str, text: str) -> bool:
+    """Match Latin keywords on word boundaries; non-Latin keywords by substring."""
+    return _wb(kw, text) if kw.isascii() else kw in text
 
 
 # ── public music strategy ──────────────────────────────────────────────────────
@@ -278,23 +327,50 @@ def find_sermon_video(
     excluded = set(excluded_ids or [])
 
     anchor = lang_conf["query_anchor"]
-    queries = [
-        query,
-        f"{anchor} sermon {mood}",
-        f"{anchor} preaching {mood}",
-        f"{anchor} message of hope",
-        f"{anchor} sermon",
-    ]
+    if language == "my":
+        mood_terms = lang_conf.get("music_mood_keywords", {}).get(mood, [])
+        queries = [
+            query if _has_myanmar(query) else "",
+            *[f"{anchor} {term} တရားဟောချက်" for term in mood_terms[:2]],
+            f"{anchor} တရားဟောချက်",
+            f"{anchor} တရားဟော",
+            f"{anchor} နုတ်ကပတ်တော်",
+            f"{anchor} သွန်သင်ချက်",
+        ]
+    elif language == "td":
+        # Lead with native Tedim preaching vocabulary so results are in-language
+        # before falling back to English sermon terms.
+        queries = [
+            query if _has_tedim_identity(query) else "",
+            f"{anchor} thugenna",          # zomi christian thugenna
+            f"zomi thugenna {mood}",
+            f"zomi thu gen",
+            f"tedim christian sermon",
+            f"{anchor} sermon {mood}",
+            f"{anchor} sermon",
+        ]
+    else:
+        queries = [
+            query,
+            f"{anchor} sermon {mood}",
+            f"{anchor} preaching {mood}",
+            f"{anchor} message of hope",
+            f"{anchor} sermon",
+        ]
+    queries = list(dict.fromkeys(q for q in queries if q))
 
     require: list[str] = lang_conf.get("sermon_title_require_any", [])
     reject: list[str] = lang_conf.get("sermon_title_reject_any", [])
     channel_reject: list[str] = lang_conf.get("channel_reject_any", [])
+    search_params = {}
+    if language == "my":
+        search_params = {"relevanceLanguage": "my", "regionCode": "MM"}
 
     for q in queries:
         if not q:
             continue
         try:
-            results = _search_youtube(q)
+            results = _search_youtube(q, **search_params)
         except Exception as exc:
             print(f"[sermon] query {q!r} failed: {exc}", flush=True)
             continue
@@ -308,11 +384,24 @@ def find_sermon_video(
             title = (snippet.get("title") or "").lower()
             channel = (snippet.get("channelTitle") or "").lower()
 
+            # Burmese-mode sermons must show Myanmar script in the title.
+            # Channel/description text is too weak: an English sermon from a
+            # Burmese channel can still have localized metadata elsewhere.
+            if language == "my" and not _has_myanmar(title):
+                continue
+
+            # Tedim uses Latin script so we can't gate on a Unicode range.
+            # Instead require at least one Zomi/Tedim community word in the
+            # title — this blocks English sermons that happen to match the
+            # generic "sermon"/"preaching"/"message" require terms.
+            if language == "td" and not _has_tedim_identity(title):
+                continue
+
             # Gate 1: title must contain a preaching indicator (whole-word match).
-            if require and not any(_wb(kw, title) for kw in require):
+            if require and not any(_keyword_hit(kw, title) for kw in require):
                 continue
             # Gate 2: title must NOT contain a music/choir/event keyword (whole-word).
-            if any(_wb(kw, title) for kw in reject):
+            if any(_keyword_hit(kw, title) for kw in reject):
                 continue
             # Gate 3: reject off-topic channels.
             if any(kw in channel for kw in channel_reject):

@@ -81,6 +81,10 @@ const serverNarrationExpected = computed(() => {
   return Boolean(s && s.narration_enabled !== false && SERVER_VOICE_MODES.includes(s.narration_mode));
 });
 const openingPrayerTextReady = computed(() => Boolean(service.value?.segments?.opening_prayer));
+const openingPrayerAudioReady = computed(() => {
+  if (!serverNarrationExpected.value) return true;
+  return Boolean(service.value?.audios?.opening_prayer);
+});
 // Music segments (worship / closing_hymn) are never narrated — exclude them so
 // narrationSettled doesn't get stuck waiting for audio that will never arrive.
 const NARRATED_SEGMENTS = new Set(["opening_prayer", "scripture", "sermon", "benediction"]);
@@ -94,7 +98,7 @@ const narrationSettled = computed(() => {
     .every((k) => auds[k]);
 });
 const requiredOpeningMediaReady = computed(() => {
-  if (!textComposed.value || !openingPrayerTextReady.value) return false;
+  if (!openingPrayerTextReady.value || !openingPrayerAudioReady.value) return false;
   return !musicExpected.value || musicLanded.value;
 });
 // Enough is composed to begin worship. This intentionally waits longer for
@@ -141,7 +145,7 @@ async function poll() {
     // and (server-voice) narration have landed — or the grace window runs out (counted
     // only after opening is allowed). narrationSettled covers the late-arriving server
     // mp3s (the sermon especially) that attach after their text in OpenAI/Kokoro mode.
-    const mediaSettled = (!musicExpected.value || musicLanded.value) && narrationSettled.value;
+    const mediaSettled = textComposed.value && (!musicExpected.value || musicLanded.value) && narrationSettled.value;
     if (mediaReady.value && pollTimer && (mediaSettled || ++mediaGracePolls >= MEDIA_GRACE_POLLS.value)) {
       clearInterval(pollTimer);
       pollTimer = null;

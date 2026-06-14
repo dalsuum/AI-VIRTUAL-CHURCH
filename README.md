@@ -185,7 +185,7 @@ A single Celery app with one Redis broker and **named queues that mirror the wor
 | [llm_engine.py](workers/llm_engine.py) | Intake plan via OpenRouter; spoken prose generated directly in English/Myanmar/Tedim. Myanmar/Tedim prose is routed to the local FastAPI/Ollama services when configured, with short safe fallbacks if the local model times out or returns unusable text. Strips markdown / stage directions to clean spoken prose. |
 | [bible_api.py](workers/bible_api.py) | Resolves a scripture *reference* to verse *text* from bundled public-domain translations: BSB (English), Judson 1835 (Myanmar), Lai Siangtho 1932 (Tedim). The model never writes scripture. |
 | [classifier.py](workers/classifier.py) | Post-generation deny-list guardrail (`review() → (ok, reason)`). |
-| [strategies/](workers/strategies/) | `MusicStrategy` interface + `HymnStrategy` / `SunoStrategy` / `YouTubeStrategy`, returning a normalized `MusicResult`. All functions are synchronous — they run inside Celery tasks that have no event loop. `YouTubeStrategy` accepts a `language` argument so `_LANG_CONFIG` routes each service to its correct filter set. **Sermon slot** — three-gate filter: (1) title must contain a preaching indicator (`sermon_title_require_any`, whole-word), (2) title must NOT contain choir/music/concert keywords (`sermon_title_reject_any`, whole-word), (3) channel must not be in `channel_reject_any`. **Worship music slot** — three-gate filter: (1) title must contain at least one Christian/worship term (`music_title_require_any`) to block cartoons and secular videos, (2) title must not be in `music_title_reject_any`, (3) channel check. After both filters, results are scored by mood-keyword density and the best match wins. `"sunday"` is absent from all sermon require-lists — it caused "Mission Sunday Choir" events to appear as sermons. Per-language sermon require-lists: **English** — sermon/preaching/message/pastor/rev/teaching/bible study/gospel; **Burmese** (`my`) — `တရားဟောချက်`/`တရားဟော`/`နုတ်ကပတ်တော်`/`သွန်သင်ချက်` plus pastor/rev; **Tedim** (`td`) — sermon/preaching/message/pastor/rev/thugenna/thu gen/thugen. Tedim also rejects cartoon/animation/movie/drama from the music slot. Adding a new language requires only a new `_LANG_CONFIG` entry. |
+| [strategies/](workers/strategies/) | `MusicStrategy` interface + `HymnStrategy` / `SunoStrategy` / `YouTubeStrategy`, returning a normalized `MusicResult`. All functions are synchronous — they run inside Celery tasks that have no event loop. `YouTubeStrategy` accepts a `language` argument so `_LANG_CONFIG` routes each service to its correct filter set. **Sermon slot** — three-gate filter: (1) title must contain a preaching indicator (`sermon_title_require_any`; word-boundary for Latin scripts, substring for non-Latin scripts), (2) title must NOT contain choir/music/concert keywords (`sermon_title_reject_any`; same matching rules), (3) channel must not be in `channel_reject_any`. Burmese (`my`) sermon search also ignores English-only agent queries, searches with Burmese sermon terms, requests Myanmar-language/region results, and requires Myanmar script in the video title so English sermons cannot fill the Burmese sermon slot. **Tedim** (`td`) sermon search leads with native vocabulary queries (`thugenna`, `thu gen`) and requires at least one Zomi/Tedim identity word (zomi, tedim, zolai, thugenna, thugen, thu gen) in the video title — Tedim uses Latin script so a Unicode-range check is not possible; the identity-word gate serves the same role as the Myanmar-script check. **Worship music slot** — three-gate filter: (1) title must contain at least one Christian/worship term (`music_title_require_any`) to block cartoons and secular videos, (2) title must not be in `music_title_reject_any`, (3) channel check. After both filters, results are scored by mood-keyword density and the best match wins. `"sunday"` is absent from all sermon require-lists — it caused "Mission Sunday Choir" events to appear as sermons. Per-language sermon require-lists: **English** — sermon/preaching/message/pastor/rev/teaching/bible study/gospel; **Burmese** (`my`) — `တရားဟောချက်`/`တရားဟော`/`နုတ်ကပတ်တော်`/`သွန်သင်ချက်` plus pastor/rev; **Tedim** (`td`) — sermon/preaching/message/pastor/rev/thugenna/thu gen/thugen (+ identity gate). Tedim also rejects cartoon/animation/movie/drama from the music slot. Adding a new language requires only a new `_LANG_CONFIG` entry. |
 | [hymns.py](workers/hymns.py) / [seed_hymns.py](workers/seed_hymns.py) | Public-domain hymn library (lyrics + recordings) and the one-time seeder that renders/downloads it into storage. |
 | [avatar.py](workers/avatar.py) | HeyGen render (submit → poll → store → URL). Key-gated. |
 | [narrator.py](workers/narrator.py) | OpenAI/Kokoro/Edge/MMS narration. `edge_tts` uses real Microsoft cloud TTS for all languages (Myanmar: `my-MM-NilarNeural`/`ThihaNeural`; Tedim: `EDGE_TTS_VOICE_TD`); `mms_tts` routes to local `facebook/mms-tts-mya`/`mms-tts-ctd`. MMS calls have a bounded timeout. |
@@ -306,7 +306,7 @@ The agent receives a system prompt with the pre-chosen `scripture_ref` and a set
 | `post_youtube_sermon` | Deliver a YouTube video as the sermon segment |
 | `finish_service` | Signal that the service is complete |
 
-The agent reasons in a tool-use loop (up to 24 turns) and can: retry poor-quality output, skip YouTube segments when a video is found, and adapt content based on user history. Pre-dispatching music guarantees worship segments always appear regardless of how the LLM provider orders its tool calls.
+The agent reasons in a tool-use loop (up to 24 turns) and can: retry poor-quality output, skip YouTube segments when a video is found, and adapt content based on user history. Pre-dispatching music guarantees worship segments always appear regardless of how the LLM provider orders its tool calls. If the agent provider rejects a request or crashes before completion, `tasks.orchestrate` logs the sanitized provider error and falls back to pipeline mode for that service so the session does not stay active with no assets.
 
 ### Switching modes
 
@@ -329,7 +329,7 @@ Agent model
 | Provider | Default model | Env override |
 |----------|--------------|--------------|
 | Claude | `anthropic/claude-sonnet-4-6` | `AGENT_LLM_MODEL_CLAUDE` |
-| Gemini | `google/gemini-2.5-flash-preview-05-20` | `AGENT_LLM_MODEL_GEMINI` |
+| Gemini | `google/gemini-2.5-flash` | `AGENT_LLM_MODEL_GEMINI` |
 | ChatGPT | `openai/gpt-4o` | `AGENT_LLM_MODEL_CHATGPT` |
 
 The selection is stored in Redis (`ai:agent_provider`) and read per-job, so you can switch between runs without restarting the workers.
@@ -501,8 +501,8 @@ uvicorn api:app --host 127.0.0.1 --port 8001 --workers 1   # Tedim
 uvicorn api:app --host 127.0.0.1 --port 8002 --workers 1   # Burmese
 
 # 7. In production, install the systemd units
-sudo cp /opt/ai-church/aivc-tedim-api.service /etc/systemd/system/
-sudo cp /opt/ai-church/aivc-burmese-api.service /etc/systemd/system/
+sudo cp /opt/ai-church/.systemd/prod/aivc-tedim-api.service /etc/systemd/system/
+sudo cp /opt/ai-church/.systemd/prod/aivc-burmese-api.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now aivc-tedim-api aivc-burmese-api
 ```
@@ -556,6 +556,9 @@ audio. This is especially important for Myanmar and Zolai/Tedim, where MMS-TTS i
 staggered and can arrive after the text. AI-composed (`suno`) services use a longer
 Myanmar/Tedim countdown so the Suno track and first narrated prayer are ready before
 worship starts, while polling continues for later narration during the song.
+Once the player is open, finished text segments are shown immediately even if their
+narration audio is late or unavailable, so benediction text cannot remain hidden
+behind a loading state.
 
 **Countdown content.** The same screen can rotate randomized short cards while the worshipper
 waits. Admin Settings controls whether cards show and which sources to include
@@ -1029,7 +1032,7 @@ This includes:
 | `REDIS_URL` | Celery broker/backend + the `ai:intake` list. |
 | `OPENROUTER_API_KEY` / `OPENROUTER_BASE_URL` / `LLM_MODEL` | Default OpenAI-compatible chat model for generation. |
 | `AGENT_LLM_MODEL_CLAUDE` | OpenRouter model ID used when agent provider = Claude (default `anthropic/claude-sonnet-4-6`). |
-| `AGENT_LLM_MODEL_GEMINI` | OpenRouter model ID used when agent provider = Gemini (default `google/gemini-2.5-flash-preview-05-20`). |
+| `AGENT_LLM_MODEL_GEMINI` | OpenRouter model ID used when agent provider = Gemini (default `google/gemini-2.5-flash`). |
 | `AGENT_LLM_MODEL_CHATGPT` | OpenRouter model ID used when agent provider = ChatGPT (default `openai/gpt-4o`). |
 | `LLM_MODEL_MY` | Myanmar-specific model override for OpenRouter (e.g. `WYNN747/Burmese-GPT`). Falls back to `LLM_MODEL` if unset. |
 | `LLM_MODEL_TD` | Tedim-specific model override for OpenRouter. Falls back to `LLM_MODEL` if unset (note: low-resource language — a multilingual model is recommended). |

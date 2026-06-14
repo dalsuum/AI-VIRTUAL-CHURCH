@@ -52,6 +52,14 @@ async function ensureCsrf() {
   return csrfInflight;
 }
 
+// Force a fresh CSRF cookie from the server, discarding any cached token.
+// Call this whenever the server session has been cleared (e.g. after a 401
+// retry) so the next mutating request carries a token the server will accept.
+async function refreshCsrf() {
+  csrfInflight = null;
+  await fetch(`${APP_URL}/sanctum/csrf-cookie`, { credentials: "include" });
+}
+
 async function request(path, { method = "GET", body } = {}) {
   const mutating = method !== "GET" && method !== "HEAD";
   if (mutating) await ensureCsrf();
@@ -121,6 +129,8 @@ export const api = {
   // the intake form shows the name field again, and ensureSession will provision a
   // brand-new guest (carrying their new name) on the next service.
   clearSession: () => { dropSession(); rememberName(null); },
+
+  refreshCsrf,
 
   // Auth flows establish a server-side session (HttpOnly cookie set in response).
   // The frontend stores only the display name for greeting purposes.

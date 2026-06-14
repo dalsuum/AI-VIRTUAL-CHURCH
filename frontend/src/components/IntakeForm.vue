@@ -313,6 +313,9 @@ async function begin() {
     if (e?.status === 401) {
       try {
         api.clearSession();
+        // The server session is gone so the old XSRF-TOKEN cookie is stale.
+        // Force a fresh CSRF fetch before retrying or the next POST gets 419.
+        await api.refreshCsrf();
         await submitOnce();
         return;
       } catch (retryErr) {

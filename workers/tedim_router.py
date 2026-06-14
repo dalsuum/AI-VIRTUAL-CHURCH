@@ -122,41 +122,105 @@ async def translate(body: TranslateIn):
 
 
 def _validate_tedim(text: str) -> str:
-    """Reject clearly-degenerate model output (too short, or lacks any Tedim
-    markers) so llm_engine falls back to the hardcoded Tedim content instead of
-    storing garbage like a hymn title or a single English sentence."""
-    _TEDIM_MARKERS = ("hi", "ahi", "hong", "pasian", "topa", "zeisu", "krist",
+    """Reject degenerate model output so llm_engine falls back to hardcoded Tedim.
+
+    The 1B model produces word salad that passes a naive length+vocabulary check.
+    These stricter rules reject output that looks like Tedim words but isn't
+    grammatically coherent prose:
+
+    1. Minimum length (60 chars).
+    2. Must contain core Tedim theological vocabulary.
+    3. Must have at least 2 properly-placed sentence-final particles ('hi' / 'hen')
+       — genuine Tedim prose ends every declarative with 'hi' and every prayer with
+       'hen'. Word salad strings these randomly in the middle of fragments.
+    4. Must NOT start any sentence/fragment with 'hi' or 'hen' — those are
+       sentence-FINAL; leading them is always wrong.
+    5. No obvious word repetition (e.g. 'ka ka', 'nang nang') that marks random
+       token shuffling.
+    """
+    _TEDIM_MARKERS = ("pasian", "topa", "zeisu", "krist",
                       "lungdamna", "thungetna", "zangtal", "ka ", "na ", " in ")
     clean = text.strip()
+    lower = clean.lower()
+
     if len(clean) < 60:
         raise HTTPException(
             status_code=502,
             detail="Tedim model output too short; using fallback content.",
         )
-    lower = clean.lower()
     if not any(marker in lower for marker in _TEDIM_MARKERS):
         raise HTTPException(
             status_code=502,
             detail="Tedim model output lacks Tedim markers; using fallback content.",
         )
+
+    # Require at least 2 proper sentence-final 'hi' or 'hen' placements.
+    # Count occurrences of the word immediately before a sentence boundary.
+    terminal_hi = (
+        lower.count(" hi\n") + lower.count(" hi.")
+        + lower.count(" hi!") + lower.count(" hi,")
+        + lower.count(" hen\n") + lower.count(" hen.")
+        + lower.count(" hen!")
+    )
+    if lower.rstrip().endswith((" hi", " hen")):
+        terminal_hi += 1
+    if terminal_hi < 2:
+        raise HTTPException(
+            status_code=502,
+            detail="Tedim output lacks proper sentence-final particles; using fallback.",
+        )
+
+    # Reject if any line/fragment starts with 'hi' or 'hen' — always wrong.
+    for line in clean.splitlines():
+        stripped = line.strip().lower()
+        if stripped.startswith("hi ") or stripped.startswith("hen ") or stripped in ("hi", "hen"):
+            raise HTTPException(
+                status_code=502,
+                detail="Tedim output has sentence-initial 'hi'/'hen' (word salad); using fallback.",
+            )
+
+    # Reject obvious repeated-word token shuffling ('ka ka', 'nang nang', etc.).
+    import re as _re
+    if _re.search(r"\b(\w{2,})\s+\1\b", lower):
+        raise HTTPException(
+            status_code=502,
+            detail="Tedim output contains repeated-word patterns (word salad); using fallback.",
+        )
+
     return clean
+
+
+_TEDIM_SYSTEM_DEFAULT = (
+    "LANGUAGE LAW: Write EVERY sentence in Tedim Chin (Zolai / Zomi pau) ONLY. "
+    "ZERO English. No explanations or translations. "
+    "You are a Tedim (Zolai) worship assistant for a virtual church. "
+    "GRAMMAR — SOV: the verb always comes at the END of the sentence. "
+    "Subject marker 'in' follows the subject (e.g. 'Pasian in' = God [as subject]). "
+    "SENTENCE ENDINGS: every declarative sentence MUST end with 'hi'. "
+    "Every prayer or blessing sentence MUST end with 'hen'. "
+    "Never start a sentence with 'hi' or 'hen'. "
+    "PRONOUNS: ka (I/my), nang/na (you/your), amah (he/she), eite (we), amaute (they). "
+    "TENSE: past = verb+'khin hi'; future = verb+'ding hi'; present = verb+'hi'; negation = verb+'lo hi'. "
+    "CORRECT EXAMPLES — follow these patterns exactly: "
+    "'Pasian in na it hi.' = God loves you. "
+    "'Topa in na thungna hong za hi.' = The Lord hears your prayer. "
+    "'Zeisu in zangtal hong piak hi.' = Jesus gives salvation. "
+    "'Kha Siangtho in hong makaih hen.' = May the Holy Spirit guide you. "
+    "'Na kiangah Topa in om hi.' = The Lord is near you. "
+    "OPENING PRAYER PATTERN (follow this): "
+    "'Aw Topa Pasian, tuni in ka lungtang hong khol in na kiangah ka hong pai hi. "
+    "Ka lungkhamna pen nang kianga hi. Na lungdamna in hong kem in. "
+    "Zeisu Krist min in ka thungen hi. Amen.' "
+    "BENEDICTION PATTERN (follow this): "
+    "'Topa Pasian nopna in na lungtang kem hen. "
+    "Zeisu Krist itna in hong thahat sak hen. "
+    "Kha Siangtho in na lam hong makaih hen. Amen.'"
+)
 
 
 @router.post("/generate")
 async def generate(body: GenerateIn):
-    system = body.system or (
-        "LANGUAGE LAW: Write EVERY sentence in Tedim Chin (Zolai / Zomi pau) ONLY. "
-        "ZERO English sentences, ZERO English words. "
-        "You are a Tedim (Zolai) language assistant for a virtual church. "
-        "Write devotional content in natural Tedim using standard Zolai Latin orthography. "
-        "REQUIRED vocabulary: Pasian (God), Topa (the Lord), Zeisu Krist (Jesus Christ), "
-        "Kha Siangtho (Holy Spirit), thungetna (prayer), zangtal (salvation), lungdamna (grace). "
-        "GRAMMAR: SOV word order — verb at sentence END. "
-        "Subject marker 'in' after subject. "
-        "End declarative sentences with 'hi'; end prayers/blessings with 'hen'. "
-        "Pronouns: ka (I/my), nang (you), amah (he/she), eite (we), amaute (they). "
-        "Tense: verb+'khin hi' = past; verb+'ding hi' = future; verb+'hi' = present; verb+'lo hi' = negation."
-    )
+    system = body.system or _TEDIM_SYSTEM_DEFAULT
     out = _validate_tedim(_strip_english_paragraphs(
         await _ollama(body.prompt, system=system, max_tokens=body.max_tokens)
     ))

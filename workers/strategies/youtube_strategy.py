@@ -122,6 +122,14 @@ def _get_filter_keywords() -> list[str]:
 #   sermon_fallback     Search query used when the LLM query fails the
 #                       sermon_must_contain check.  Include a {mood} placeholder
 #                       if you want the worshipper's mood appended.
+#
+#   sermon_title_reject_any  list[str].  A title matching ANY of these strings
+#                            is rejected regardless of other filters.  Use to
+#                            block choir/music/concert events that mention a
+#                            preaching keyword incidentally (e.g. "Sunday Choir").
+#                            "sunday" is intentionally absent from every
+#                            sermon_title_require_any list — it is too broad and
+#                            caused choir events to appear as sermon segments.
 
 _LANG_CONFIG: dict[str, dict] = {
     "my": {
@@ -140,9 +148,18 @@ _LANG_CONFIG: dict[str, dict] = {
         # Prevents worship songs, kids' content, or general Myanmar videos from
         # appearing as the message segment just because they pass the script check.
         # တရားဟောချက် = sermon  နုတ်ကပတ်တော် = Word of God  သွန်သင်ချက် = teaching
+        # "sunday" removed — "Mission Sunday" choir/concert events contain it.
         "sermon_title_require_any": [
             "တရားဟောချက်", "တရားဟော", "နုတ်ကပတ်တော်", "သွန်သင်ချက်",
-            "pastor", "sunday", "rev", "rev.",
+            "pastor", "rev", "rev.",
+        ],
+        # Reject choir/music/concert events even when they pass the script + require gates.
+        # Myanmar script terms: ကော်ရပ် = choir, သီချင်း = song, ဓမ္မသီချင်း = hymn/gospel song
+        # Many Myanmar YouTube titles also mix in English keywords, so include both scripts.
+        "sermon_title_reject_any": [
+            "ကော်ရပ်", "သီချင်း", "ဓမ္မသီချင်း", "ဂီတ",
+            "choir", "song", "songs", "hymn", "hymns", "chorus", "music",
+            "concert", "worship song", "worship music",
         ],
         # Ordered fallback queries tried in sequence when primary search returns nothing.
         "sermon_query_variants": [
@@ -158,13 +175,19 @@ _LANG_CONFIG: dict[str, dict] = {
         # We do require "Christian" in the search query and at least one preaching
         # indicator in the title to prevent music videos, conferences, or motivational
         # content from appearing as the message segment.
+        # "sunday" removed from require list — "Sunday Choir" / "Sunday Concert" events pass it.
         "relevance_language": "en",
         "excluded_channels": _EXCLUDED_CHANNEL_KEYWORDS,
         "sermon_must_contain": ["christian"],
         "sermon_fallback": "Christian sunday sermon pastor preaching",
         "sermon_title_require_any": [
             "sermon", "preaching", "message", "pastor", "rev", "rev.",
-            "sunday", "teaching", "bible study", "gospel",
+            "teaching", "bible study", "gospel",
+        ],
+        # Reject choir/music/concert events that incidentally match preaching keywords.
+        "sermon_title_reject_any": [
+            "choir", "song", "songs", "hymn", "hymns", "chorus", "music",
+            "concert", "worship song", "worship music",
         ],
         "sermon_query_variants": [
             "Christian sunday sermon pastor preaching message",

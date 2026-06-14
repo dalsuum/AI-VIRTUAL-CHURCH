@@ -89,8 +89,14 @@ async def _ollama(prompt: str, system: str | None = None,
         "prompt": prompt,
         "stream": False,
         "options": {
-            "temperature": 0.75,
-            "top_p": 0.95,
+            # Low temperature forces the model to pick highest-confidence tokens
+            # rather than drifting into phonetic guessing of unknown Tedim words.
+            "temperature": 0.3,
+            "top_p": 0.85,
+            "top_k": 40,
+            # Penalise tokens the model has already used in this generation window;
+            # this breaks the "heng eite ... heng eite" looping pattern.
+            "repeat_penalty": 1.3,
             "num_ctx": 2048,
             "num_predict": max_tokens,
         },
@@ -125,18 +131,17 @@ def _validate_tedim(text: str) -> str:
     """Reject degenerate model output so llm_engine falls back to hardcoded Tedim.
 
     The 1B model produces word salad that passes a naive length+vocabulary check.
-    These stricter rules reject output that looks like Tedim words but isn't
-    grammatically coherent prose:
+    Rules applied in order:
 
     1. Minimum length (60 chars).
     2. Must contain core Tedim theological vocabulary.
-    3. Must have at least 2 properly-placed sentence-final particles ('hi' / 'hen')
-       — genuine Tedim prose ends every declarative with 'hi' and every prayer with
-       'hen'. Word salad strings these randomly in the middle of fragments.
-    4. Must NOT start any sentence/fragment with 'hi' or 'hen' — those are
-       sentence-FINAL; leading them is always wrong.
-    5. No obvious word repetition (e.g. 'ka ka', 'nang nang') that marks random
-       token shuffling.
+    3. Must have ≥ 2 properly-placed sentence-final particles ('hi' / 'hen').
+    4. At least 60% of sentences must end with a valid Tedim particle
+       (hi / hen / in / amen). In genuine Tedim prose EVERY sentence ends this
+       way; word salad has endings like 'te', 'eite', 'ka', 'zen', 'pai', 'tha'.
+    5. Must NOT start any sentence/fragment with 'hi' or 'hen'.
+    6. No consecutive repeated-word shuffling ('ka ka', 'nang nang', etc.).
+    7. No repeated 3-word phrase appearing 3+ times (model-looping pattern).
     """
     _TEDIM_MARKERS = ("pasian", "topa", "zeisu", "krist",
                       "lungdamna", "thungetna", "zangtal", "ka ", "na ", " in ")
@@ -155,7 +160,6 @@ def _validate_tedim(text: str) -> str:
         )
 
     # Require at least 2 proper sentence-final 'hi' or 'hen' placements.
-    # Count occurrences of the word immediately before a sentence boundary.
     terminal_hi = (
         lower.count(" hi\n") + lower.count(" hi.")
         + lower.count(" hi!") + lower.count(" hi,")
@@ -170,6 +174,25 @@ def _validate_tedim(text: str) -> str:
             detail="Tedim output lacks proper sentence-final particles; using fallback.",
         )
 
+    # In genuine Tedim every sentence ends with 'hi' (declarative), 'hen'
+    # (prayer/blessing), 'in' (polite imperative), or 'amen'. Word-salad output
+    # often has endings like 'te', 'eite', 'ka', 'zen', 'pai', 'tha'. Require
+    # at least 60% of sentences follow the correct pattern.
+    _VALID_FINALS = frozenset({"hi", "hen", "in", "amen"})
+    sentences = re.split(r"[.!?]+", lower)
+    sentences = [s.strip() for s in sentences if len(s.strip()) > 5]
+    if len(sentences) >= 3:
+        bad = sum(
+            1 for s in sentences
+            if not (s.split() and s.split()[-1] in _VALID_FINALS)
+        )
+        bad_ratio = bad / len(sentences)
+        if bad_ratio > 0.40:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Too many non-Tedim sentence endings ({bad_ratio:.0%}); using fallback.",
+            )
+
     # Reject if any line/fragment starts with 'hi' or 'hen' — always wrong.
     for line in clean.splitlines():
         stripped = line.strip().lower()
@@ -179,13 +202,25 @@ def _validate_tedim(text: str) -> str:
                 detail="Tedim output has sentence-initial 'hi'/'hen' (word salad); using fallback.",
             )
 
-    # Reject obvious repeated-word token shuffling ('ka ka', 'nang nang', etc.).
-    import re as _re
-    if _re.search(r"\b(\w{2,})\s+\1\b", lower):
+    # Reject obvious consecutive repeated-word shuffling ('ka ka', 'nang nang').
+    if re.search(r"\b(\w{2,})\s+\1\b", lower):
         raise HTTPException(
             status_code=502,
             detail="Tedim output contains repeated-word patterns (word salad); using fallback.",
         )
+
+    # Reject looping 3-gram patterns: the model gets stuck and repeats the same
+    # short phrase 3+ times (e.g. "heng eite tha" × 4, "zo lhai zen hi" × 3).
+    words = re.findall(r"\b\w+\b", lower)
+    if len(words) >= 6:
+        from collections import Counter
+        trigrams = [" ".join(words[i:i+3]) for i in range(len(words) - 2)]
+        top_count = Counter(trigrams).most_common(1)[0][1]
+        if top_count >= 3:
+            raise HTTPException(
+                status_code=502,
+                detail="Tedim output contains looping phrase patterns; using fallback.",
+            )
 
     return clean
 

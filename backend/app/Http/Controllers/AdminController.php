@@ -13,6 +13,7 @@ use App\Models\Testimony;
 use App\Models\User;
 use App\Services\PermissionService;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Str;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -588,6 +589,9 @@ class AdminController extends Controller
             // Keywords rejected from YouTube results to enforce Christian-only content.
             'content_filter_keywords'   => ['sometimes', 'array'],
             'content_filter_keywords.*' => ['string', 'max:100'],
+            // Orchestration mode: 'pipeline' = hard-coded Python flow (default);
+            // 'agent' = Claude agent that reasons about segment order and retries.
+            'orchestration_mode' => ['sometimes', 'string', 'in:pipeline,agent'],
         ]);
 
         foreach (['narration_mode_en', 'narration_mode_my', 'narration_mode_td'] as $key) {
@@ -663,6 +667,12 @@ class AdminController extends Controller
             $keywords = array_values(array_unique(array_filter(array_map('trim', $data['content_filter_keywords']))));
             Setting::setList('content_filter_keywords', $keywords);
         }
+        if (array_key_exists('orchestration_mode', $data)) {
+            $mode = $data['orchestration_mode'];
+            Setting::set('orchestration_mode', $mode);
+            // Mirror to Redis so workers can read the toggle without a DB query.
+            Redis::set('ai:orchestration_mode', $mode);
+        }
 
         return response()->json(['ok' => true] + $this->settingsPayload());
     }
@@ -697,6 +707,7 @@ class AdminController extends Controller
             'countdown_content_source'  => Setting::get('countdown_content_source', 'both'),
             'countdown_banners'         => Setting::countdownBanners(),
             'content_filter_keywords'   => Setting::filterKeywords(),
+            'orchestration_mode'        => Setting::get('orchestration_mode', 'pipeline'),
         ];
     }
 

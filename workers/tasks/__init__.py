@@ -116,9 +116,35 @@ def _narration_stagger(mode: str, language: str) -> int:
     return 0
 
 
+def _get_orchestration_mode() -> str:
+    """Read orchestration mode from Redis (written by the admin toggle). Defaults to 'pipeline'."""
+    try:
+        import redis as _redis
+        client = _redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"))
+        raw = client.get("ai:orchestration_mode")
+        if isinstance(raw, bytes):
+            raw = raw.decode()
+        return raw if raw in ("pipeline", "agent") else "pipeline"
+    except Exception:
+        return "pipeline"
+
+
 @app.task(name="tasks.orchestrate")
 def orchestrate(job: dict) -> None:
-    """Entry point. `job` is the JSON pushed by Laravel's DispatchServiceJob."""
+    """Entry point. Routes to AI agent or hard-coded pipeline based on admin toggle."""
+    mode  = _get_orchestration_mode()
+    token = job["session_token"]
+    print(f"[orchestrate] mode={mode} session={token[:8]}…", flush=True)
+
+    if mode == "agent":
+        import agent_orchestrator
+        agent_orchestrator.run_agent(job)
+    else:
+        _orchestrate_pipeline(job)
+
+
+def _orchestrate_pipeline(job: dict) -> None:
+    """Original hard-coded pipeline — runs when mode == 'pipeline'."""
     token = job["session_token"]
 
     # 1. Derive the spine of the service from the user's own input.
@@ -221,48 +247,43 @@ def generate_text_segments(job: dict, plan: dict) -> None:
                         provider_ref=video["video_id"], text_payload=video["title"])
         except Exception as exc:  # noqa: BLE001 — degrade gracefully, never block
             print(f"[sermon] youtube lookup failed for mood {mood!r}: {exc}", flush=True)
-    spoken = [
-        ("opening_prayer", llm_engine.generate_opening_prayer(
-            user_name=name, mood=mood, prayer_text=prayer_text, language=language,
-            user_history=user_history)),
-        ("benediction", llm_engine.generate_benediction(
-            user_name=name, mood=mood, language=language,
-            prayer_text=prayer_text, user_history=user_history)),
-    ]
-    # Only generate the sermon when we aren't sourcing it from YouTube.
-    if not youtube_mode:
-        sermon_minutes = 5 if job.get("music_source") == "musicgen" else 8
-        spoken.insert(1, ("sermon", llm_engine.generate_sermon(
-            user_name=name, mood=mood, scripture_ref=ref, language=language,
-            target_minutes=sermon_minutes, prayer_text=prayer_text,
-            user_history=user_history)))
 
-    deferred_narrations = []
-    for segment, text in spoken:
+    def _process_spoken_segment(segment_name, text):
+        nonlocal _narrate_slot
         ok, reason = classifier.review(text)
         if not ok:
-            _post_asset(token, segment, asset_type="text",
+            _post_asset(token, segment_name, asset_type="text",
                         text_payload="(content withheld pending review)")
-            continue
-        _post_asset(token, segment, asset_type="text", text_payload=text)
+            return
+        _post_asset(token, segment_name, asset_type="text", text_payload=text)
         # Optionally enrich the segment with a talking-head video. Only the spoken
         # segments get an avatar; scripture is shown as written, not performed.
-        seg_gender = _seg_gender(segment)
+        seg_gender = _seg_gender(segment_name)
         if job.get("avatar_enabled", True) and avatar.is_enabled():
-            render_avatar.delay(token, segment, text, seg_gender)
-        # Myanmar/Tedim sermon TTS is much slower than prayer/benediction on CPU.
-        # Defer it so the final prayer voice can land even if the message audio is slow.
+            render_avatar.delay(token, segment_name, text, seg_gender)
         if want_audio:
-            args = (token, segment, text, narration_mode, _narrate_voice(seg_gender), seg_gender, language)
-            if language in ("my", "td") and segment == "sermon":
-                deferred_narrations.append(args)
-            else:
-                narrate.apply_async(args, countdown=_narrate_slot)
-                _narrate_slot += _narrate_stagger
+            args = (token, segment_name, text, narration_mode, _narrate_voice(seg_gender), seg_gender, language)
+            narrate.apply_async(args, countdown=_narrate_slot)
+            _narrate_slot += _narrate_stagger
 
-    for args in deferred_narrations:
-        narrate.apply_async(args, countdown=_narrate_slot)
-        _narrate_slot += _narrate_stagger
+    # Generate sequentially so frontend can open as soon as opening_prayer lands
+    op_text = llm_engine.generate_opening_prayer(
+        user_name=name, mood=mood, prayer_text=prayer_text, language=language,
+        user_history=user_history)
+    _process_spoken_segment("opening_prayer", op_text)
+
+    if not youtube_mode:
+        sermon_minutes = 5 if job.get("music_source") == "musicgen" else 8
+        sermon_text = llm_engine.generate_sermon(
+            user_name=name, mood=mood, scripture_ref=ref, language=language,
+            target_minutes=sermon_minutes, prayer_text=prayer_text,
+            user_history=user_history)
+        _process_spoken_segment("sermon", sermon_text)
+
+    ben_text = llm_engine.generate_benediction(
+        user_name=name, mood=mood, language=language,
+        prayer_text=prayer_text, user_history=user_history)
+    _process_spoken_segment("benediction", ben_text)
 
 
 @app.task(name="tasks.repair_missing_narration")

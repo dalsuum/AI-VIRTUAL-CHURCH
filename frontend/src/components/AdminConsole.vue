@@ -325,6 +325,7 @@ function toggleServiceLanguage(key) {
 }
 const setMusicReuse = (on) => saveSetting("music_reuse", on, "Music reuse updated.");
 const setAvatarEnabled = (on) => saveSetting("avatar_enabled", on, "Avatar rendering updated.");
+const setOrchestrationMode = (mode) => saveSetting("orchestration_mode", mode, "Orchestration mode updated.");
 const setTextHighlightEnabled = (on) => saveSetting("text_highlight_enabled", on, "Text highlighting updated.");
 const setStorageBackend = (backend) => saveSetting("storage_backend", backend, "Storage backend updated.");
 const setScheduling = (on) => saveSetting("scheduling_enabled", on, "Scheduling updated.");
@@ -1745,6 +1746,40 @@ onUnmounted(() => {
             >
               <strong>Disabled</strong>
               <span>Show plain text without moving highlights.</span>
+            </button>
+          </div>
+          <p v-else class="setting-desc">Loading…</p>
+        </div>
+
+        <div class="setting-block">
+          <h2>Orchestration mode</h2>
+          <p class="setting-desc">
+            <strong>Pipeline</strong> runs each service through a fixed, hard-coded
+            sequence of steps — fast, predictable, and cheap.<br>
+            <strong>AI Agent</strong> hands the conductor role to Claude: it decides
+            which segments to generate, in what order, and whether to retry poor output.
+            Agent mode uses more LLM tokens per service but can adapt to context.
+          </p>
+          <div v-if="settings" class="choice-row">
+            <button
+              type="button"
+              class="choice"
+              :class="{ active: (settings.orchestration_mode || 'pipeline') === 'pipeline' }"
+              :disabled="savingSettings"
+              @click="setOrchestrationMode('pipeline')"
+            >
+              <strong>Pipeline <span class="state">{{ (settings.orchestration_mode || 'pipeline') === 'pipeline' ? 'Active ✓' : '' }}</span></strong>
+              <span>Hard-coded flow — fast, low cost, always consistent.</span>
+            </button>
+            <button
+              type="button"
+              class="choice"
+              :class="{ active: settings.orchestration_mode === 'agent' }"
+              :disabled="savingSettings"
+              @click="setOrchestrationMode('agent')"
+            >
+              <strong>AI Agent <span class="state">{{ settings.orchestration_mode === 'agent' ? 'Active ✓' : '' }}</span></strong>
+              <span>Claude reasons about segment order, retries bad output, adapts to context.</span>
             </button>
           </div>
           <p v-else class="setting-desc">Loading…</p>

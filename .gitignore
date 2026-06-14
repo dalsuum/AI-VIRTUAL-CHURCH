@@ -15,8 +15,16 @@ venv/
 *.log
 *.out
 
-# Local data dumps
-workers/data/
+# Large seeded data files (generated at deploy from public repos/tools)
+workers/data/bsb.json
+workers/data/judson1835.json
+workers/data/tedim1932.json
+workers/data/hymns_my.json
+workers/data/books_en.json
+workers/data/burmese_church_vocab.json
+workers/data/eng_myan_dict.db
+workers/data/*.jsonl
+# hymns_td.json is committed directly — not ignored
 
 # Laravel storage symlink (regenerated via `php artisan storage:link`)
 backend/public/storage
@@ -24,12 +32,13 @@ backend/public/storage
 # Node
 node_modules/
 
+# Compiled frontend assets
+frontend/dist/
+
 # PHP dependencies
 vendor/
 
 # OS / editor
 .DS_Store
 
-# Generated/seeded language data (run workers/tools/seed_tedim_hymns.py at deploy)
-workers/data/hymns_td.json
-workers/tools/.labusaal-cache/
+workers/tools/.hymn-cache/

@@ -172,12 +172,12 @@ A single Celery app with one Redis broker and **named queues that mirror the wor
 | [api.py](workers/api.py) | Unified FastAPI app mounting Tedim, Burmese, `/tts/speak` MMS-TTS, and `/stt/transcribe` MMS-ASR routers plus `/health`. Typically run as two separate uvicorn instances: port 8001 (`aivc-tedim-api`) for Tedim/MMS requests, port 8002 (`aivc-burmese-api`) for Burmese. |
 | [mms_tts_api.py](workers/mms_tts_api.py) | Dedicated MMS speech app on port 8003. Mounts only `/tts/*` and `/stt/*` so PyTorch speech work can run separately from Ollama LLM inference. |
 | [hymns_my.py](workers/hymns_my.py) | Loader for the 852-song `data/hymns_my.json` Burmese library; mood-based selection for `MyanmarHymnStrategy`. |
-| [hymns_td.py](workers/hymns_td.py) | Loader for the seeded `data/hymns_td.json` Tedim hymn library; mood selection + YouTube-embed priority for `TedimHymnStrategy`. |
-| [strategies/hymn_my_strategy.py](workers/strategies/hymn_my_strategy.py) | Burmese hymn strategy: sings the selected hymn's actual verses through Suno customMode, caches under `hymns_my/<slug>.mp3`. Used for `hymn_sung`, `hymn`, `hymn_youtube`, and `youtube` sources in Myanmar services — `youtube` mode is redirected here because generic YouTube search cannot reliably filter Myanmar Christian content from pop music. |
+| [hymns_td.py](workers/hymns_td.py) | Loader for `data/hymns_td.json` (bundled, 467 hymns); mood selection + YouTube-embed priority for `TedimHymnStrategy`. |
+| [strategies/hymn_my_strategy.py](workers/strategies/hymn_my_strategy.py) | Burmese hymn strategy: sings the selected hymn's actual verses through Suno customMode, caches under `hymns_my/<slug>.mp3`. Used for `hymn_sung`, `hymn`, and `hymn_youtube` sources in Myanmar services. The `youtube` music source is **not** routed here — it uses YouTubeStrategy's live search (fast API call) so worshippers are not blocked waiting for a Suno render. |
 | [strategies/tedim_hymn_strategy.py](workers/strategies/tedim_hymn_strategy.py) | Tedim hymn strategy: YouTube embed (real Tedim singing) → Suno customMode render (cached) → instrumental fallback. |
 | [strategies/_suno_custom.py](workers/strategies/_suno_custom.py) | Shared helper that builds and calls Suno customMode with exact lyrics for a given language/style. **Lyric sanitization rules (must be kept up to date when the hymn data format changes):** (1) `ထပ်ဆိoရန်[။]` on its own line → `[Chorus]` — this is the classic Burmese hymnal "Repeat/Chorus" marker, not a lyric; (2) Burmese numeral verse prefixes `၁ lyric text` → `[Verse 1]\nlyric text`; standalone `၁` → `[Verse 1]`. Suno treats `[Verse N]`/`[Chorus]` as structural metatags and never sings them. Any new non-lyric patterns found in `hymns_my.json` must be added to `_MY_SECTION_TAGS` or the verse-number substitution in `sanitize_lyrics()` — never leave raw structural markers reaching the Suno prompt. |
 | [tools/seed_language_data.py](workers/tools/seed_language_data.py) | One-time seeder: downloads Judson 1835 (Myanmar) and Lai Siangtho 1932 (Tedim) Bibles, book index, and Myanmar hymns into `workers/data/`. |
-| [tools/seed_tedim_hymns.py](workers/tools/seed_tedim_hymns.py) | Collects the Tedim hymnal (~470 entries with YouTube IDs and mood tags) into `data/hymns_td.json`. Polite delay; run once per deploy. |
+| [tools/seed_tedim_hymns.py](workers/tools/seed_tedim_hymns.py) | Refreshes `data/hymns_td.json` if you want to pick up newly added hymns. Not required at deploy — the file is bundled in the repo. |
 | [tools/seed_tedim_midi.py](workers/tools/seed_tedim_midi.py) | Optional: instrumental fallback renders from the Tedim Hymn 7th Edition MIDI library (needs fluidsynth + ffmpeg). |
 | [tools/import_myanmar_hymns.py](workers/tools/import_myanmar_hymns.py) | Regenerates `data/hymns_my.json` from the upstream dalsuum/myanmar-hymns source repo. |
 | [tools/build_tedim_dataset.py](workers/tools/build_tedim_dataset.py) | Builds a JSONL fine-tuning dataset (~56 600 examples, 31 MB) from the Lai Siangtho 1932 Bible, Tedim hymnal (467 hymns), and Zolai vocabulary/grammar guide. Outputs `data/tedim_finetune.jsonl` (90 % train) and `data/tedim_finetune_val.jsonl` (10 % val) in standard chat-format for LoRA fine-tuning on Llama 3 / Mistral. |
@@ -485,7 +485,7 @@ ollama create burmese-myanmar -f ~/BurmeseModelfile
 cd /opt/ai-church/workers
 source .venv/bin/activate && pip install -r requirements.txt
 python tools/seed_language_data.py        # Judson 1835 + Tedim 1932 Bibles + Myanmar hymns
-python tools/seed_tedim_hymns.py          # Tedim hymnal (~470 entries, polite delay)
+# Note: hymns_td.json is bundled in the repo — no seed step needed
 python tools/seed_tedim_midi.py           # optional: instrumental fallbacks (fluidsynth + ffmpeg)
 python tools/build_tedim_dataset.py       # Build the fine-tuning dataset
 
@@ -874,7 +874,7 @@ python seed_hymns.py
 
 #   Seed language data (required for Myanmar/Tedim language services):
 python tools/seed_language_data.py        # Judson 1835 + Tedim 1932 Bibles + Myanmar hymns
-python tools/seed_tedim_hymns.py          # Tedim hymnal (~470 entries)
+# hymns_td.json is bundled — no Tedim hymn seed step needed
 python tools/seed_tedim_midi.py           # optional: Tedim instrumental fallbacks
 
 #   3a. Bridge consumer (Redis → Celery)

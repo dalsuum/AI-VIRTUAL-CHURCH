@@ -23,11 +23,11 @@ app.conf.update(
     accept_content=["json"],
     result_serializer="json",
     task_routes={
-        # Orchestration entrypoint. Without an explicit route it lands on the
-        # default "celery" queue, which the workers don't consume — so it must
-        # be pinned to a queue they do listen on. (It can't go to "ai:intake":
-        # that Redis list is owned by the bridge consumer's raw BLPOP.)
-        "tasks.orchestrate": {"queue": "ai:sermon"},
+        # Orchestration entrypoint on its own queue so it is never blocked by a
+        # long-running generate_text_segments task (3-5 min). The dedicated worker
+        # in aivc-workers-orchestrate.service consumes only ai:orchestrate, so
+        # every new service starts within seconds of submission.
+        "tasks.orchestrate": {"queue": "ai:orchestrate"},
         "tasks.generate_text_segments": {"queue": "ai:sermon"},
         "tasks.generate_welcome": {"queue": "ai:sermon"},
         "tasks.generate_music": {"queue": "ai:music"},

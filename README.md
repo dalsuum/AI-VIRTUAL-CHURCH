@@ -182,7 +182,7 @@ A single Celery app with one Redis broker and **named queues that mirror the wor
 | [tools/seed_tedim_midi.py](workers/tools/seed_tedim_midi.py) | Optional: instrumental fallback renders from the Tedim Hymn 7th Edition MIDI library (needs fluidsynth + ffmpeg). |
 | [tools/import_myanmar_hymns.py](workers/tools/import_myanmar_hymns.py) | Regenerates `data/hymns_my.json` from the upstream dalsuum/myanmar-hymns source repo. |
 | [tools/build_tedim_dataset.py](workers/tools/build_tedim_dataset.py) | Builds a JSONL fine-tuning dataset (~56 600 examples, 31 MB) from the Lai Siangtho 1932 Bible, Tedim hymnal (467 hymns), and Zolai vocabulary/grammar guide. Outputs `data/tedim_finetune.jsonl` (90 % train) and `data/tedim_finetune_val.jsonl` (10 % val) in standard chat-format for LoRA fine-tuning on Llama 3 / Mistral. |
-| [llm_engine.py](workers/llm_engine.py) | Intake plan via OpenRouter; spoken prose generated directly in English/Myanmar/Tedim. Myanmar/Tedim prose is routed to the local FastAPI/Ollama services when configured, with short safe fallbacks if the local model times out or returns unusable text. Strips markdown / stage directions to clean spoken prose. |
+| [llm_engine.py](workers/llm_engine.py) | Intake plan via OpenRouter; spoken prose generated directly in English/Myanmar/Tedim. Myanmar/Tedim prose is routed to the local FastAPI/Ollama services when configured. **Safe hardcoded fallbacks apply to all languages** (English included) — if OpenRouter or the local model times out or returns unusable text at any segment (welcome, prayer, sermon, benediction), the fallback fires instead of leaving the service frozen. Strips markdown / stage directions to clean spoken prose. |
 | [bible_api.py](workers/bible_api.py) | Resolves a scripture *reference* to verse *text* from bundled public-domain translations: BSB (English), Judson 1835 (Myanmar), Lai Siangtho 1932 (Tedim). The model never writes scripture. |
 | [classifier.py](workers/classifier.py) | Post-generation deny-list guardrail (`review() → (ok, reason)`). |
 | [strategies/](workers/strategies/) | `MusicStrategy` interface + `HymnStrategy` / `SunoStrategy` / `YouTubeStrategy`, returning a normalized `MusicResult`. All functions are synchronous — they run inside Celery tasks that have no event loop. `YouTubeStrategy` accepts a `language` argument so `_LANG_CONFIG` routes each service to its correct filter set. **Sermon slot** — three-gate filter: (1) title must contain a preaching indicator (`sermon_title_require_any`; word-boundary for Latin scripts, substring for non-Latin scripts), (2) title must NOT contain choir/music/concert keywords (`sermon_title_reject_any`; same matching rules), (3) channel must not be in `channel_reject_any`. Burmese (`my`) sermon search also ignores English-only agent queries, searches with Burmese sermon terms, requests Myanmar-language/region results, and requires Myanmar script in the video title so English sermons cannot fill the Burmese sermon slot. **Tedim** (`td`) sermon search leads with native vocabulary queries (`thugenna`, `thu gen`) and requires at least one Zomi/Tedim identity word (zomi, tedim, zolai, thugenna, thugen, thu gen) in the video title — Tedim uses Latin script so a Unicode-range check is not possible; the identity-word gate serves the same role as the Myanmar-script check. **Worship music slot** — three-gate filter: (1) title must contain at least one Christian/worship term (`music_title_require_any`) to block cartoons and secular videos, (2) title must not be in `music_title_reject_any`, (3) channel check. After both filters, results are scored by mood-keyword density and the best match wins. `"sunday"` is absent from all sermon require-lists — it caused "Mission Sunday Choir" events to appear as sermons. Per-language sermon require-lists: **English** — sermon/preaching/message/pastor/rev/teaching/bible study/gospel; **Burmese** (`my`) — `တရားဟောချက်`/`တရားဟော`/`နုတ်ကပတ်တော်`/`သွန်သင်ချက်` plus pastor/rev; **Tedim** (`td`) — sermon/preaching/message/pastor/rev/thugenna/thu gen/thugen (+ identity gate). Tedim also rejects cartoon/animation/movie/drama from the music slot. Adding a new language requires only a new `_LANG_CONFIG` entry. |
@@ -1179,15 +1179,18 @@ before any state-changing request to bootstrap CSRF protection.
   music + welcome dispatched before the agent loop so all providers reliably produce a
   full 7-page service; agent provider selector (`claude` / `gemini` / `chatgpt`) stored
   in Redis for instant hot-swap; preparation screen replaced with a live segment-progress
-  checklist (doors open the instant all required steps are ready, no fixed countdown) — **DONE**
+  checklist (doors open the instant all required steps are ready, no fixed countdown);
+  dedicated `ai:orchestrate` queue (2-worker pool) so new services are never queued behind
+  long content-generation tasks; LLM safe-fallbacks now cover all languages (English,
+  Myanmar, Tedim) — any segment that fails at OpenRouter or local Ollama returns a
+  hardcoded fallback instead of leaving the service frozen — **DONE**
 
 **Known gaps / next steps:** real WebSocket push (Reverb/Echo wiring is stubbed; polling
 works today), HeyGen avatar beyond stub, a production-grade crisis classifier extended to
 Burmese and Tedim keywords, rights for a non-public-domain Bible translation, fine-tuned
 Tedim GGUF (current `tedim-zolai` uses `llama3.2:1b` as base — quality improves
 significantly with a Tedim-corpus fine-tune on a larger model), a Vue bilingual segment
-component if you want bilingual side-by-side English plus target-language text,
-and a Vue bilingual segment component if you want bilingual side-by-side English plus target-language text.
+component for side-by-side English plus target-language text.
 
 ---
 

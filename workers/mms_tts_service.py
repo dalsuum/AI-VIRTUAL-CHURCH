@@ -21,6 +21,11 @@ from pydantic import BaseModel
 
 router = APIRouter(prefix="/tts", tags=["mms-tts"])
 
+# The trusted root directory for fine-tuned models from the Voice Studio.
+# Any path loaded from active_models.json will be verified against this base.
+VOICE_STUDIO_BASE_DIR = "/opt/ai-church/backend/storage/app/voice-studio"
+
+
 DEFAULT_MODELS = {
     "tedim": os.getenv("MMS_TTS_MODEL_TD", "facebook/mms-tts-ctd"),
     "burmese": os.getenv("MMS_TTS_MODEL_MY", "facebook/mms-tts-mya"),
@@ -87,15 +92,20 @@ def _model_name(lang: str) -> str:
 
     active_file = os.getenv(
         "MMS_TTS_ACTIVE_MODELS_FILE",
-        "/opt/ai-church/backend/storage/app/voice-studio/active_models.json",
+        os.path.join(VOICE_STUDIO_BASE_DIR, "active_models.json"),
     )
     lang_key = {"tedim": "td", "burmese": "my"}.get(lang, lang)
     try:
         with open(active_file, encoding="utf-8") as handle:
             models = json.load(handle)
-        candidate = models.get(lang_key)
-        if candidate and os.path.isdir(candidate):
-            return candidate
+        candidate_path = models.get(lang_key)
+        if candidate_path and isinstance(candidate_path, str):
+            # Security: Prevent path traversal. Ensure the model path is a legitimate,
+            # resolved path safely within the expected voice studio directory.
+            safe_base = os.path.realpath(VOICE_STUDIO_BASE_DIR)
+            resolved_path = os.path.realpath(candidate_path)
+            if resolved_path.startswith(safe_base) and os.path.isdir(resolved_path):
+                return resolved_path
     except (OSError, json.JSONDecodeError):
         pass
 
@@ -121,10 +131,13 @@ async def speak(body: TTSIn) -> Response:
     model, tokenizer = _load(body.lang)
     inputs = tokenizer(text, return_tensors="pt")
 
+    def _generate():
+        with torch.no_grad():
+            return model(**inputs).waveform[0].cpu().numpy()
+
     async with _lock:
         torch.manual_seed(body.seed)
-        with torch.no_grad():
-            wav = model(**inputs).waveform[0].cpu().numpy()
+        wav = await asyncio.to_thread(_generate)
 
     buf = io.BytesIO()
     scipy.io.wavfile.write(buf, rate=model.config.sampling_rate, data=wav)

@@ -1,0 +1,2183 @@
+From 918ce02e6b3cb99780dfd6096ba40bd977a66003 Mon Sep 17 00:00:00 2001
+From: Dalcinsuum <dalcinsuum@users.noreply.github.com>
+Date: Fri, 12 Jun 2026 08:05:02 +0000
+Subject: [PATCH] Add Myanmar (my) and Tedim (td) service languages
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Three-language services: English (main) | Myanmar | Tedim Chin (Zolai),
+selected via tabs on the intake form and locked per session like the
+music source.
+
+Pipeline (language threads end-to-end):
+- service_sessions.language column (migration) -> intake validation
+  (in:en,my,td) -> DispatchServiceJob Redis payload -> Celery workers
+- llm_engine: every generator takes language=; Burmese pinned to Myanmar
+  Unicode, Tedim anchored to the Zomi Christian register (Pasian, Topa,
+  Zeisu, Kha Siangtho); scripture_ref stays English (worker contract)
+- bible_api: multi-translation via canonical 66-book index
+  (data/books_en.json) — en: BSB (unchanged), my: Judson 1835,
+  td: Lai Siangtho 1932; localized scripture headings
+- narration: my -> my-MM-NilarNeural (EDGE_TTS_VOICE_MY); td has no
+  edge-tts voice so server TTS is skipped (read-along) unless
+  EDGE_TTS_VOICE_TD is set
+
+Music:
+- my: 852-song dalsuum/myanmar-hymns library (cleaned, mood-tagged,
+  data/hymns_my.json), sung via Suno customMode, cached per hymn
+- td: ZBC Labu Lui library SEEDED at deploy by
+  workers/tools/seed_tedim_hymns.py (labusaal.com; not committed —
+  gitignored; confirm permission with ZBC for production). Playback:
+  YouTube embed of real Tedim singing -> cached Suno render ->
+  optional tedimhymn.com MIDI instrumental (seed_tedim_midi.py)
+
+Frontend: IntakeForm three-language tabs, full my/td UI strings,
+Padauk/Noto Sans Myanmar fonts. Tedim strings flagged for native review.
+
+Known gaps: crisis intercept + classifier are English-keyword based;
+extend with my/td terms before production.
+---
+ .gitignore                                    |   4 +
+ MULTILINGUAL.md                               | 194 ++++++++++++
+ .../Http/Controllers/ServiceController.php    |   8 +
+ backend/app/Jobs/DispatchServiceJob.php       |   4 +
+ backend/app/Models/ServiceSession.php         |   2 +-
+ ...00001_add_language_to_service_sessions.php |  28 ++
+ frontend/src/components/IntakeForm.vue        | 210 +++++++++++--
+ workers/bible_api.py                          | 118 +++++--
+ workers/hymns_my.py                           |  50 +++
+ workers/hymns_td.py                           |  53 ++++
+ workers/llm_engine.py                         |  70 ++++-
+ workers/strategies/__init__.py                |  19 +-
+ workers/strategies/_suno_custom.py            |  60 ++++
+ workers/strategies/hymn_my_strategy.py        |  66 ++++
+ workers/strategies/tedim_hymn_strategy.py     |  92 ++++++
+ workers/tasks/__init__.py                     |  35 ++-
+ workers/tools/import_myanmar_hymns.py         | 139 +++++++++
+ workers/tools/seed_language_data.py           | 116 +++++++
+ workers/tools/seed_tedim_hymns.py             | 295 ++++++++++++++++++
+ workers/tools/seed_tedim_midi.py              | 115 +++++++
+ 20 files changed, 1605 insertions(+), 73 deletions(-)
+ create mode 100644 MULTILINGUAL.md
+ create mode 100644 backend/database/migrations/2026_06_12_000001_add_language_to_service_sessions.php
+ create mode 100644 workers/hymns_my.py
+ create mode 100644 workers/hymns_td.py
+ create mode 100644 workers/strategies/_suno_custom.py
+ create mode 100644 workers/strategies/hymn_my_strategy.py
+ create mode 100644 workers/strategies/tedim_hymn_strategy.py
+ create mode 100644 workers/tools/import_myanmar_hymns.py
+ create mode 100644 workers/tools/seed_language_data.py
+ create mode 100644 workers/tools/seed_tedim_hymns.py
+ create mode 100644 workers/tools/seed_tedim_midi.py
+
+diff --git a/.gitignore b/.gitignore
+index 731ed3a..939ef9e 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -26,3 +26,7 @@ node_modules/
+ 
+ # OS / editor
+ .DS_Store
++
++# Generated/seeded language data (run workers/tools/seed_tedim_hymns.py at deploy)
++workers/data/hymns_td.json
++workers/tools/.labusaal-cache/
+diff --git a/MULTILINGUAL.md b/MULTILINGUAL.md
+new file mode 100644
+index 0000000..80a30c7
+--- /dev/null
++++ b/MULTILINGUAL.md
+@@ -0,0 +1,194 @@
++# Multilingual Integration — AI Virtual Church
++## English (main) · မြန်မာ (Myanmar) · Zolai (Tedim Chin)
++
++Three language tabs on the intake form; the choice locks per session and the
++whole service follows it:
++
++| | **my — Burmese** | **td — Tedim Chin (Zolai)** |
++|---|---|---|
++| Prayers / sermon / benediction | LLM writes Burmese (Myanmar Unicode only) | LLM writes Tedim (Latin script, Pasian/Topa/Zeisu register) |
++| Scripture | **Judson 1835 သမ္မာကျမ်း** (public domain) | **Lai Siangtho 1932** (public domain) |
++| Hymns | 852-song dalsuum/myanmar-hymns library, sung via Suno customMode, cached | **ZBC Labu Lui** (~470 hymns, seeded from labusaal.com): YouTube embed of real Tedim singing preferred → Suno render cached → tedimhymn.com instrumental |
++| Narration | edge-tts **my-MM-NilarNeural** | none exists in edge-tts → read-along service (text on screen), unless `EDGE_TTS_VOICE_TD` is set |
++| UI | Padauk / Noto Sans Myanmar | Latin script |
++
++English services are completely unchanged.
++
++## How the language flows
++
++```
++IntakeForm.vue ──language: 'my'|'td'──▶  POST /service/{token}/intake
++                                          │  ServiceController validates in:en,my,td,
++                                          │  locks it on service_sessions.language
++                                          ▼
++                              DispatchServiceJob → Redis ai:intake JSON {language}
++                                          │
++                                          ▼
++              tasks.orchestrate ── language threads into every consumer:
++                ├─ llm_engine.*        prompts pinned to the service language
++                ├─ bible_api.resolve(ref, lang)  → Judson 1835 / Lai Siangtho 1932
++                ├─ get_strategy(src, language)   → Myanmar/Tedim hymn strategy
++                └─ narration voice     → my-MM-NilarNeural / EDGE_TTS_VOICE_TD or skip
++```
++
++Design notes:
++- **Scripture references stay English** ("Psalm 23:1-4") — they're worker
++  contract, not worshipper-facing text. `bible_api` parses them against a
++  vendored canonical English book index (`data/books_en.json`) and reads the
++  verses from the translation file by canonical 1-66 book number; the on-screen
++  heading is rewritten to that translation's own book name (ဆာလံကျမ်း / Late 23…).
++  Adding another dalsuum/bible translation is one line in `_LANG_FILES`.
++- **Mood values stay English** (Grateful, Anxious…) — the worker's mood
++  matching and the hymn tags use that vocabulary; the form shows Burmese labels.
++- **Burmese hymns are lyrics-only** in the source repo (no MP3s exist), so
++  `MyanmarHymnStrategy` sings the selected hymn's *actual verses* through Suno
++  customMode and caches the render under `hymns_my/<slug>.mp3` — first service
++  pays the credit, every later selection of that hymn plays free.
++- **Tedim hymns are SEEDED, not bundled.** `tools/seed_tedim_hymns.py` collects
++  the ZBC Labu Lui hymnal from labusaal.com on YOUR server at deploy time — the
++  exact pattern seed_hymns.py already uses for Open Hymnal. Each entry carries
++  the Tedim title, the English original it translates (also the mood-tagging
++  signal), the verses, and the page's YouTube embed id when present (~80%+ of
++  pages). ZBC Labu Lui is a Zomi Baptist Convention hymnal (1984 reprint of
++  mission-era translations): **confirm permission with ZBC / labusaal.com
++  before production.**
++- **Tedim playback chain**: YouTube embed (real Tedim singing, zero AI cost) →
++  Suno customMode render cached under `hymns_td/<slug>.mp3` → instrumental
++  render of the matching Tedim Hymn 7th Edition tune (optional
++  `tools/seed_tedim_midi.py`, fluidsynth) → music segment skipped gracefully.
++- **Tedim narration is off by default** — edge-tts has no Tedim voice, and an
++  English voice reading Tedim text would be gibberish. The service runs
++  read-along (all text on screen). Set `EDGE_TTS_VOICE_TD` only if you find a
++  voice you judge acceptable.
++
++## What's in this bundle
++
++```
++workers/
++  data/judson1835.json        Judson 1835 Burmese Bible (12.7 MB, dalsuum/bible)
++  data/tedim1932.json         Lai Siangtho 1932 Tedim Bible (5.2 MB, dalsuum/bible)
++  data/books_en.json          canonical 66-book English index (name/abbr → number)
++  data/hymns_my.json          852 Burmese songs, cleaned + mood-tagged (~1.7 MB)
++  (data/hymns_td.json)        NOT bundled — generated by seed_tedim_hymns.py below
++  tools/import_myanmar_hymns.py  regenerates hymns_my.json from the source repo
++  tools/seed_tedim_hymns.py   SEEDS the Tedim library from labusaal.com (run once)
++  tools/seed_tedim_midi.py    OPTIONAL — instrumental renders from tedimhymn.com
++  bible_api.py                REPLACES — language registry ('en'|'my'|'td')
++  hymns_my.py                 NEW — Burmese library loader + mood selection
++  hymns_td.py                 NEW — Tedim library loader + mood selection
++  llm_engine.py               REPLACES — every generator takes language
++  tasks/__init__.py           REPLACES — threads language through the pipeline
++  strategies/__init__.py      REPLACES — get_strategy(source, language)
++  strategies/_suno_custom.py  NEW — shared "sing these exact verses" helper
++  strategies/hymn_my_strategy.py  NEW — Burmese hymn sung via Suno, cached
++  strategies/tedim_hymn_strategy.py NEW — YouTube embed → Suno → instrumental
++backend/
++  database/migrations/2026_06_12_000001_add_language_to_service_sessions.php
++  app/Jobs/DispatchServiceJob.php   REPLACES — adds 'language' to the Redis payload
++  PATCHES.md                  two small hand-edits (ServiceSession, ServiceController)
++frontend/
++  src/components/IntakeForm.vue  REPLACES — English | မြန်မာ | Zolai tabs, full
++                                 Burmese + Tedim UI strings, Myanmar Unicode
++                                 fonts, sends language with the intake
++```
++
++> The Tedim UI strings are best-effort Zolai — please review them as a native
++> speaker (marked with a NOTE in the component).
++
++## Install
++
++`workers/data/` is gitignored by repo convention (like bsb.json) — seed it at deploy:
++
++```bash
++python workers/tools/seed_language_data.py   # Judson 1835 + Tedim 1932 bibles, book index, Myanmar hymns
++python workers/tools/seed_tedim_hymns.py     # ZBC Labu Lui Tedim hymnal from labusaal.com
++python workers/tools/seed_tedim_midi.py      # optional: instrumental fallbacks (fluidsynth + ffmpeg)
++```
++
++
++```bash
++# 1. Copy worker files over the repo (data/ is new, the rest replace 1:1)
++cp -r bundle/workers/* AI-VIRTUAL-CHURCH/workers/
++
++# 2. Backend
++cp bundle/backend/database/migrations/*.php AI-VIRTUAL-CHURCH/backend/database/migrations/
++cp bundle/backend/app/Jobs/DispatchServiceJob.php AI-VIRTUAL-CHURCH/backend/app/Jobs/
++#    then apply the two edits in backend/PATCHES.md
++cd AI-VIRTUAL-CHURCH/backend && php artisan migrate
++
++# 3. Frontend
++cp bundle/frontend/src/components/IntakeForm.vue AI-VIRTUAL-CHURCH/frontend/src/components/
++cd ../frontend && npm run build
++
++# 4. Seed the Tedim hymn library (once per machine, ~470 pages, polite delay)
++pip install beautifulsoup4
++python workers/tools/seed_tedim_hymns.py
++#    optional instrumental fallback (needs fluidsynth + ffmpeg):
++python workers/tools/seed_tedim_midi.py
++
++# 5. Restart the Celery workers + bridge so the new modules load
++```
++
++## Configuration (all optional)
++
++| Env var | Default | Purpose |
++|---|---|---|
++| `BIBLE_DATA_FILE_MY` | `workers/data/judson1835.json` | swap the Burmese translation |
++| `BIBLE_DATA_FILE_TD` | `workers/data/tedim1932.json` | swap the Tedim translation |
++| `EDGE_TTS_VOICE_MY` | `my-MM-NilarNeural` | Burmese narration voice (`my-MM-ThihaNeural` = male) |
++| `EDGE_TTS_VOICE_TD` | *(empty = narration off)* | Tedim narration voice, if you find one acceptable |
++| `SUNO_MY_STYLE` / `SUNO_TD_STYLE` | traditional hymn / choir | Suno style prompt per language |
++| `SUNO_CUSTOM_MAX_LYRICS` | `2800` | lyric chars sent to Suno customMode |
++
++`SUNO_API_KEY` (already configured for the suno source) is required for Burmese
++hymn audio; without it the music segment is skipped gracefully and the service
++still runs with all spoken segments in Burmese.
++
++## Verified in this environment
++
++- `bible_api.resolve(..., 'my')` correct for John 3:16, Psalm 23 (whole chapter
++  and ranges), Psalms/Psalm both, 1 John, 2 Corinthians, Proverbs, Song of
++  Solomon, Isaiah, Matthew, Philippians, Revelation — output is Judson Unicode.
++- `hymns_my.json`: 852 songs, 0 duplicate slugs, chord lines stripped from
++  modern songs, every entry mood-tagged (+ "default").
++- `get_strategy('hymn_sung', language='my')` → `MyanmarHymnStrategy`;
++  `language='en'` unchanged → `HymnStrategy`. `tasks` imports cleanly with the
++  replacements in place.
++- `IntakeForm.vue` compiles with @vue/compiler-sfc; no hardcoded English left in
++  the template; Burmese strings are Myanmar Unicode.
++
++## Verified for Tedim in this environment
++
++- `bible_api.resolve(..., 'td')` correct for John 3:16, Psalm 23 ranges,
++  Matthew, Philippians, 1 John — output is Lai Siangtho 1932; Burmese and
++  English paths unaffected.
++- Seeder smoke-tested against live labusaal.com pages (12/12 parsed, 10 with
++  YouTube embeds, titles + English originals + mood tags extracted; full
++  corpus is collected on your server, not bundled here).
++- `get_strategy('hymn_sung', language='td')` → `TedimHymnStrategy`; a live
++  fetch returned a YouTube-embed MusicResult with the verses riding along.
++- tedimhymn.com MIDI index parsed: 448 tunes discoverable by the seeder.
++- IntakeForm with three tabs compiles under @vue/compiler-sfc.
++
++## Known gaps to close before production
++
++1. **Crisis intercept is English-keyword based.** A Burmese or Tedim prayer
++   won't trip it. Extend `CrisisInterceptService` with Burmese and Tedim terms
++   (see PATCHES.md note) before promoting the tabs.
++2. **Classifier guardrail** (`classifier.review`) reviews non-English text with
++   an English-prompted model — spot-check its behavior on Burmese and Tedim
++   sermons. **LLM Tedim quality is the bigger open question**: Tedim is very
++   low-resource, so `meta-llama/llama-3.3-70b-instruct:free` may produce weak
++   or mixed-language Tedim. Review a few generated services with native
++   speakers; consider pointing `LLM_MODEL` at a stronger model, or running the
++   Tedim tab with LLM segments in English + scripture/hymns in Tedim until
++   you're satisfied.
++2b. **ZBC Labu Lui licensing** — the seeder's output is for your deployment;
++   confirm permission with ZBC / labusaal.com (the data file carries a
++   license_note reminding you).
++3. **Player chrome** (ServicePlayer segment titles like "Opening Prayer") is
++   still English; same STRINGS-dict pattern applies if you want it localized —
++   the language is available on `GET /service/{token}` once you expose
++   `$session->language` there.
++4. Suno's Burmese-vocal quality varies by model version; if a render is poor,
++   delete `hymns_my/<slug>.mp3` from storage and the next service re-renders it.
+diff --git a/backend/app/Http/Controllers/ServiceController.php b/backend/app/Http/Controllers/ServiceController.php
+index a2f2c3a..5628c1c 100644
+--- a/backend/app/Http/Controllers/ServiceController.php
++++ b/backend/app/Http/Controllers/ServiceController.php
+@@ -47,6 +47,11 @@ class ServiceController extends Controller
+ 
+         $data = $request->validate([
+             'mood'          => ['required', 'string', 'max:100'],
++            // Service language ('en' | 'my' | 'td'), chosen on the intake form's
++            // language tab. Locked per session like music_source; the worker keys
++            // the LLM output language, Bible translation, hymn library, and TTS
++            // voice off it.
++            'language'      => ['nullable', 'string', 'in:en,my,td'],
+             // User-supplied single-word feeling, stored for admin review only.
+             'custom_mood'   => ['nullable', 'string', 'max:50', 'regex:/^[A-Za-z]+$/'],
+             'prayer_text'   => ['nullable', 'string', 'max:5000'],
+@@ -57,6 +62,9 @@ class ServiceController extends Controller
+             'contact_email' => ['nullable', 'email', 'max:255'],
+         ]);
+ 
++        // Lock the service language now, alongside the already-locked music source.
++        $session->update(['language' => $data['language'] ?? 'en']);
++
+         // A future time is only honoured while scheduling is enabled; otherwise the
+         // service begins now (the UI hides the option, this guards direct calls).
+         if (! empty($data['scheduled_at']) && ! Setting::schedulingEnabled()) {
+diff --git a/backend/app/Jobs/DispatchServiceJob.php b/backend/app/Jobs/DispatchServiceJob.php
+index 36f8e7e..f31ea5a 100644
+--- a/backend/app/Jobs/DispatchServiceJob.php
++++ b/backend/app/Jobs/DispatchServiceJob.php
+@@ -32,6 +32,10 @@ class DispatchServiceJob implements ShouldQueue
+             'session_id'   => $session->id,
+             'session_token'=> $session->session_token,
+             'music_source' => $session->music_source, // 'hymn_sung' | 'hymn' | 'suno' | 'youtube'
++            // Service language ('en' | 'my'), locked at session start like the music
++            // source. Drives the LLM output language, the Bible translation (BSB vs
++            // Judson 1835 Burmese), the hymn library, and the narration voice.
++            'language'     => $session->language ?? 'en',
+             // How spoken segments are voiced (global admin setting). 'openai' tells
+             // the worker to synthesize TTS audio; 'browser'/'off' leave it to the
+             // client (browser speech) or silent, so the worker skips narration.
+diff --git a/backend/app/Models/ServiceSession.php b/backend/app/Models/ServiceSession.php
+index 43dfeae..2d0a075 100644
+--- a/backend/app/Models/ServiceSession.php
++++ b/backend/app/Models/ServiceSession.php
+@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
+ class ServiceSession extends Model
+ {
+     protected $fillable = [
+-        'user_id', 'session_token', 'status', 'music_source', 'scheduled_at', 'contact_email', 'started_at', 'ended_at',
++        'user_id', 'session_token', 'status', 'music_source', 'language', 'scheduled_at', 'contact_email', 'started_at', 'ended_at',
+     ];
+     protected $casts = [
+         'scheduled_at' => 'datetime',
+diff --git a/backend/database/migrations/2026_06_12_000001_add_language_to_service_sessions.php b/backend/database/migrations/2026_06_12_000001_add_language_to_service_sessions.php
+new file mode 100644
+index 0000000..fef0839
+--- /dev/null
++++ b/backend/database/migrations/2026_06_12_000001_add_language_to_service_sessions.php
+@@ -0,0 +1,28 @@
++<?php
++
++use Illuminate\Database\Migrations\Migration;
++use Illuminate\Database\Schema\Blueprint;
++use Illuminate\Support\Facades\Schema;
++
++/**
++ * Service language ('en' | 'my'). Chosen on the intake form's language tab and
++ * locked per session, like music_source: every downstream consumer — the LLM
++ * prompts, the Bible translation (BSB vs Judson 1835), the hymn library
++ * (Open Hymnal vs dalsuum/myanmar-hymns), and the edge-tts voice — keys off it.
++ */
++return new class extends Migration
++{
++    public function up(): void
++    {
++        Schema::table('service_sessions', function (Blueprint $table) {
++            $table->string('language', 5)->default('en')->after('music_source');
++        });
++    }
++
++    public function down(): void
++    {
++        Schema::table('service_sessions', function (Blueprint $table) {
++            $table->dropColumn('language');
++        });
++    }
++};
+diff --git a/frontend/src/components/IntakeForm.vue b/frontend/src/components/IntakeForm.vue
+index a474994..a8c6522 100644
+--- a/frontend/src/components/IntakeForm.vue
++++ b/frontend/src/components/IntakeForm.vue
+@@ -6,6 +6,140 @@ import { api } from "../composables/useApi";
+ 
+ const emit = defineEmits(["started", "intercepted"]);
+ 
++// ---- Service language ------------------------------------------------------
++// 'en' | 'my' | 'td'. Drives (a) this form's own labels, (b) the language sent
++// with the intake so the whole service — prayers, sermon, scripture (Judson
++// 1835 Burmese / Lai Siangtho 1932 Tedim), hymns (dalsuum/myanmar-hymns / ZBC
++// Labu Lui), narration voice — is conducted in that language.
++// Persisted so a returning worshipper lands back on their tab.
++// NOTE: the Tedim (Zolai) strings below are best-effort — please have a native
++// speaker review them (you wrote the Zolai dictionary; corrections welcome).
++const LANGS = ["en", "my", "td"];
++const stored = localStorage.getItem("service_language");
++const language = ref(LANGS.includes(stored) ? stored : "en");
++function setLanguage(l) {
++  language.value = l;
++  localStorage.setItem("service_language", l);
++}
++
++// UI strings per language. Myanmar text is Myanmar Unicode (rendered with
++// Padauk / Noto Sans Myanmar below) — never Zawgyi.
++const STRINGS = {
++  en: {
++    welcome: "Welcome",
++    welcomeBack: (n) => `Welcome back, ${n}`,
++    sub: "Let us prepare a service just for you.",
++    subBack: "It's good to see you again. Let us prepare a service just for you.",
++    nameLabel: "Your name (optional)",
++    namePh: "We'll give you a visitor name if you'd rather not say",
++    emailLabel: "Email",
++    emailReq: "(required — we'll send you a reminder)",
++    emailOpt: "(optional)",
++    emailPhLater: "Enter your email to receive a reminder",
++    emailPhNow: "So we can welcome you back",
++    moodLabel: "How are you feeling today?",
++    customMoodLabel: "Or describe your feeling in one word (optional)",
++    customMoodPh: "e.g. sad, hopeful, numb…",
++    prayerLabel: "Prayer request (optional)",
++    prayerPh: "Share what is on your heart…",
++    musicLabel: "Music for your service",
++    whenLabel: "When would you like your service?",
++    now: "Right now", nowDesc: "Begin immediately",
++    later: "Schedule it", laterDesc: "Pick a future time",
++    historyLabel: "Your previous services",
++    begin: "Begin my service", schedule: "Schedule my service",
++    preparing: "Preparing your service…",
++    localTime: "Your local time",
++  },
++  my: {
++    welcome: "ကြိုဆိုပါသည်",
++    welcomeBack: (n) => `ပြန်လည်ကြိုဆိုပါသည်၊ ${n}`,
++    sub: "သင့်အတွက် ဝတ်ပြုကိုးကွယ်ခြင်းအစီအစဉ်ကို ပြင်ဆင်ပေးပါမည်။",
++    subBack: "ပြန်လည်တွေ့ရသည့်အတွက် ဝမ်းမြောက်ပါသည်။ သင့်အတွက် ဝတ်ပြုကိုးကွယ်ခြင်းကို ပြင်ဆင်ပေးပါမည်။",
++    nameLabel: "သင့်အမည် (ရွေးချယ်နိုင်သည်)",
++    namePh: "မဖော်ပြလိုပါက ဧည့်သည်အမည် သတ်မှတ်ပေးပါမည်",
++    emailLabel: "အီးမေးလ်",
++    emailReq: "(လိုအပ်သည် — သတိပေးချက် ပေးပို့ပါမည်)",
++    emailOpt: "(ရွေးချယ်နိုင်သည်)",
++    emailPhLater: "သတိပေးချက်ရရန် သင့်အီးမေးလ်ကို ရိုက်ထည့်ပါ",
++    emailPhNow: "နောက်တစ်ကြိမ် ကြိုဆိုနိုင်ရန်",
++    moodLabel: "ယနေ့ မည်သို့ ခံစားနေရပါသနည်း။",
++    customMoodLabel: "သို့မဟုတ် သင့်ခံစားချက်ကို စကားလုံးတစ်လုံးဖြင့် ဖော်ပြပါ (ရွေးချယ်နိုင်သည်)",
++    customMoodPh: "ဥပမာ — ဝမ်းနည်း၊ မျှော်လင့်…",
++    prayerLabel: "ဆုတောင်းချက် (ရွေးချယ်နိုင်သည်)",
++    prayerPh: "သင့်စိတ်နှလုံးထဲမှ အရာများကို မျှဝေပါ…",
++    musicLabel: "ဝတ်ပြုခြင်းအတွက် တေးဂီတ",
++    whenLabel: "ဝတ်ပြုခြင်းကို မည်သည့်အချိန်တွင် ပြုလုပ်လိုပါသနည်း။",
++    now: "ယခုချက်ချင်း", nowDesc: "ချက်ချင်း စတင်မည်",
++    later: "အချိန်ဇယားသတ်မှတ်မည်", laterDesc: "နောင်အချိန်တစ်ခု ရွေးပါ",
++    historyLabel: "ယခင်ဝတ်ပြုခြင်းများ",
++    begin: "ဝတ်ပြုခြင်း စတင်မည်", schedule: "ဝတ်ပြုခြင်း စီစဉ်မည်",
++    preparing: "သင့်ဝတ်ပြုခြင်းကို ပြင်ဆင်နေပါသည်…",
++    localTime: "သင့်ဒေသစံတော်ချိန်",
++  },
++  td: {
++    welcome: "Hong kipahpih ung",
++    welcomeBack: (n) => `Hong kipahpih kik ung, ${n}`,
++    sub: "Nangma adingin Pasian biakna hun ka bawlsak ding uh hi.",
++    subBack: "Na hong pai kik ka kipak mahmah uh hi. Nangma adingin biakna hun ka bawlsak ding uh hi.",
++    nameLabel: "Na min (na deih leh)",
++    namePh: "Na gen nop kei leh khualpa min kong pia ding uh hi",
++    emailLabel: "Email",
++    emailReq: "(kisam hi — theihsakna kong khak ding uh hi)",
++    emailOpt: "(na deih leh)",
++    emailPhLater: "Theihsakna na muh nadingin na email gelh in",
++    emailPhNow: "Nang hong kipahpih kik thei nadingin",
++    moodLabel: "Tuni in na lungsim bangci hiam?",
++    customMoodLabel: "A hih kei leh na lungsim thuakna kammal khat tawh gen in (na deih leh)",
++    customMoodPh: "gentehna — dah, lametna…",
++    prayerLabel: "Thungetna (na deih leh)",
++    prayerPh: "Na lungsim sunga om thute hong gen in…",
++    musicLabel: "Na biakna ading lasa",
++    whenLabel: "Bang hun in na biakna na deih hiam?",
++    now: "Tu in", nowDesc: "Tu in kipan pah ding",
++    later: "Hun khen ding", laterDesc: "Mailam hun khat teel in",
++    historyLabel: "Na biakna masate",
++    begin: "Ka biakna kipan ding", schedule: "Ka biakna hun khen ding",
++    preparing: "Na biakna ka bawl laitak uh hi…",
++    localTime: "Na omna mun hun",
++  },
++};
++const t = computed(() => STRINGS[language.value]);
++
++// Display labels for the default mood set (the VALUE sent to the backend stays
++// English — the admin's moods config and the worker's mood matching are English).
++const MOOD_MY = {
++  Grateful: "ကျေးဇူးတင်ခြင်း", Anxious: "စိုးရိမ်ပူပန်ခြင်း", Grieving: "ဝမ်းနည်းကြေကွဲခြင်း",
++  Joyful: "ဝမ်းမြောက်ခြင်း", Seeking: "ရှာဖွေခြင်း", Hopeful: "မျှော်လင့်ခြင်း",
++};
++const MOOD_TD = {
++  Grateful: "Lungdam", Anxious: "Lunghimawh", Grieving: "Dahna",
++  Joyful: "Nopna", Seeking: "Pasian zon", Hopeful: "Lametna",
++};
++const moodLabel = (m) =>
++  (language.value === "my" && MOOD_MY[m]) ||
++  (language.value === "td" && MOOD_TD[m]) || m;
++
++// Music-source copy per language (values unchanged).
++const SOURCE_MY = {
++  hymn_sung:    { title: "ဓမ္မသီချင်း (သီဆို)", desc: "မြန်မာဓမ္မသီချင်းကို သီဆိုပြီး စာသားများကို ဖန်သားပြင်တွင် ပြသပေးမည်" },
++  hymn:         { title: "ဓမ္မသီချင်း", desc: "မြန်မာဓမ္မသီချင်း — စာသားနှင့်အတူ လိုက်ဆိုနိုင်သည်" },
++  hymn_youtube: { title: "ဓမ္မသီချင်း (YouTube)", desc: "သင့်ခံစားချက်နှင့် ကိုက်ညီသော ဓမ္မသီချင်း" },
++  suno:         { title: "AI ရေးစပ်တေးဂီတ", desc: "သင့်အတွက် အသစ်ဖန်တီးထားသော ဝတ်ပြုတေးဂီတ" },
++  youtube:      { title: "ခေတ်သစ်ဝတ်ပြုတေးဂီတ (YouTube)", desc: "ရှိပြီးသား ဝတ်ပြုတေးဂီတနှင့် တရားဒေသနာ" },
++};
++const SOURCE_TD = {
++  hymn_sung:    { title: "ZBC Labu la (sak)", desc: "Tedim labu la khat, a kammal te screen ah kilang ding" },
++  hymn:         { title: "ZBC Labu la", desc: "Labu la — a kammal te tawh sak khawm thei" },
++  hymn_youtube: { title: "Labu la (YouTube)", desc: "Na lungsim tawh kituak labu la" },
++  suno:         { title: "AI phuah lasa", desc: "Nangma ading a kiphuah biakna lasa thak" },
++  youtube:      { title: "Tulai biakna lasa (YouTube)", desc: "Om sa biakna lasa leh thugenna" },
++};
++const sourceLabel = (s_) =>
++  (language.value === "my" && SOURCE_MY[s_.value]) ||
++  (language.value === "td" && SOURCE_TD[s_.value]) || s_;
++
++
+ // Every music source the app knows about, with its copy. The admin decides which of
+ // these actually appear (config.music_sources); we render that subset in this order.
+ const MUSIC_SOURCES = [
+@@ -134,6 +268,7 @@ async function begin() {
+ 
+     const res = await api.submitIntake(session_token, {
+       mood: selectedMood.value,
++      language: language.value,
+       custom_mood: trimmedCustomMood || null,
+       prayer_text: prayerText.value || null,
+       scheduled_at: scheduledIso,
+@@ -158,18 +293,25 @@ async function begin() {
+ </script>
+ 
+ <template>
+-  <div class="intake">
+-    <h1>{{ returningName ? `Welcome back, ${returningName}` : "Welcome" }}</h1>
+-    <p class="sub">
+-      {{ returningName
+-        ? "It's good to see you again. Let us prepare a service just for you."
+-        : "Let us prepare a service just for you." }}
+-    </p>
++  <div class="intake" :class="{ 'lang-my': language === 'my' }">
++    <!-- Service language tabs: the whole service — UI, prayers, sermon,
++         scripture (Judson 1835), hymns, narration voice — follows this choice. -->
++    <div class="lang-tabs" role="tablist" aria-label="Service language">
++      <button type="button" role="tab" class="lang-tab" :aria-selected="language === 'en'"
++              :class="{ active: language === 'en' }" @click="setLanguage('en')">English</button>
++      <button type="button" role="tab" class="lang-tab lang-tab-my" :aria-selected="language === 'my'"
++              :class="{ active: language === 'my' }" @click="setLanguage('my')">မြန်မာ</button>
++      <button type="button" role="tab" class="lang-tab" :aria-selected="language === 'td'"
++              :class="{ active: language === 'td' }" @click="setLanguage('td')">Zolai</button>
++    </div>
++
++    <h1>{{ returningName ? t.welcomeBack(returningName) : t.welcome }}</h1>
++    <p class="sub">{{ returningName ? t.subBack : t.sub }}</p>
+ 
+     <!-- Previous services for returning worshippers -->
+     <template v-if="returningName && historyLoaded && history.length">
+       <div class="history">
+-        <p class="history-label">Your previous services</p>
++        <p class="history-label">{{ t.historyLabel }}</p>
+         <div v-for="s in history" :key="s.session_token" class="history-row">
+           <span class="history-date">{{ fmtHistoryDate(s.date) }}</span>
+           <span class="badge pending history-mood">{{ s.mood }}</span>
+@@ -179,31 +321,31 @@ async function begin() {
+     </template>
+ 
+     <template v-if="!returningName">
+-      <label class="field-label" for="name">Your name (optional)</label>
++      <label class="field-label" for="name">{{ t.nameLabel }}</label>
+       <input
+         id="name"
+         v-model="name"
+         type="text"
+         class="text-input"
+-        placeholder="We'll give you a visitor name if you'd rather not say"
++        :placeholder="t.namePh"
+         autocomplete="name"
+       />
+     </template>
+ 
+     <label class="field-label" for="email">
+-      Email <span v-if="when === 'later'">(required — we'll send you a reminder)</span><span v-else>(optional)</span>
++      {{ t.emailLabel }} <span v-if="when === 'later'">{{ t.emailReq }}</span><span v-else>{{ t.emailOpt }}</span>
+     </label>
+     <input
+       id="email"
+       v-model="email"
+       type="email"
+       class="text-input"
+-      :placeholder="when === 'later' ? 'Enter your email to receive a reminder' : 'So we can welcome you back'"
++      :placeholder="when === 'later' ? t.emailPhLater : t.emailPhNow"
+       autocomplete="email"
+       :required="when === 'later'"
+     />
+ 
+-    <label class="field-label">How are you feeling today?</label>
++    <label class="field-label">{{ t.moodLabel }}</label>
+     <div class="mood-grid">
+       <button
+         v-for="m in moods"
+@@ -213,30 +355,30 @@ async function begin() {
+         :class="{ active: selectedMood === m }"
+         @click="selectedMood = m"
+       >
+-        {{ m }}
++        {{ moodLabel(m) }}
+       </button>
+     </div>
+ 
+-    <label class="field-label" for="custom-mood">Or describe your feeling in one word (optional)</label>
++    <label class="field-label" for="custom-mood">{{ t.customMoodLabel }}</label>
+     <input
+       id="custom-mood"
+       v-model="customMood"
+       type="text"
+       class="text-input"
+-      placeholder="e.g. sad, hopeful, numb…"
++      :placeholder="t.customMoodPh"
+       maxlength="50"
+       autocomplete="off"
+     />
+ 
+-    <label class="field-label" for="prayer">Prayer request (optional)</label>
++    <label class="field-label" for="prayer">{{ t.prayerLabel }}</label>
+     <textarea
+       id="prayer"
+       v-model="prayerText"
+       rows="3"
+-      placeholder="Share what is on your heart…"
++      :placeholder="t.prayerPh"
+     ></textarea>
+ 
+-    <label class="field-label">Music for your service</label>
++    <label class="field-label">{{ t.musicLabel }}</label>
+     <div class="source-row">
+       <button
+         v-for="s in musicSources"
+@@ -246,13 +388,13 @@ async function begin() {
+         :class="{ active: musicSource === s.value }"
+         @click="musicSource = s.value"
+       >
+-        <strong>{{ s.title }}</strong>
+-        <span>{{ s.desc }}</span>
++        <strong>{{ sourceLabel(s).title }}</strong>
++        <span>{{ sourceLabel(s).desc }}</span>
+       </button>
+     </div>
+ 
+     <template v-if="schedulingEnabled">
+-      <label class="field-label">When would you like your service?</label>
++      <label class="field-label">{{ t.whenLabel }}</label>
+       <div class="source-row">
+         <button
+           type="button"
+@@ -260,8 +402,8 @@ async function begin() {
+           :class="{ active: when === 'now' }"
+           @click="when = 'now'"
+         >
+-          <strong>Right now</strong>
+-          <span>Begin immediately</span>
++          <strong>{{ t.now }}</strong>
++          <span>{{ t.nowDesc }}</span>
+         </button>
+         <button
+           type="button"
+@@ -269,8 +411,8 @@ async function begin() {
+           :class="{ active: when === 'later' }"
+           @click="when = 'later'"
+         >
+-          <strong>Schedule it</strong>
+-          <span>Pick a future time</span>
++          <strong>{{ t.later }}</strong>
++          <span>{{ t.laterDesc }}</span>
+         </button>
+       </div>
+       <input
+@@ -280,19 +422,31 @@ async function begin() {
+         class="schedule-input"
+         aria-label="Service date and time"
+       />
+-      <small v-if="when === 'later'" class="tz-hint">Your local time · {{ localTimezone }}</small>
++      <small v-if="when === 'later'" class="tz-hint">{{ t.localTime }} · {{ localTimezone }}</small>
+     </template>
+ 
+     <p v-if="error" class="error">{{ error }}</p>
+ 
+     <button class="begin" :disabled="loading" @click="begin">
+-      {{ loading ? "Preparing your service…" : (when === "later" ? "Schedule my service" : "Begin my service") }}
++      {{ loading ? t.preparing : (when === "later" ? t.schedule : t.begin) }}
+     </button>
+   </div>
+ </template>
+ 
+ <style scoped>
++/* Myanmar Unicode fonts only (Padauk / Noto Sans Myanmar) — never Zawgyi. */
++@import url("https://fonts.googleapis.com/css2?family=Padauk:wght@400;700&family=Noto+Sans+Myanmar:wght@400;600&display=swap");
++
+ .intake { max-width: 460px; margin: 0 auto; }
++.intake.lang-my, .intake.lang-my input, .intake.lang-my textarea, .intake.lang-my button {
++  font-family: "Padauk", "Noto Sans Myanmar", "Myanmar Text", sans-serif;
++  line-height: 1.9; /* Myanmar script needs taller lines for stacked diacritics */
++}
++.lang-tabs { display: flex; gap: 0; margin-bottom: 1.25rem; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
++.lang-tab { flex: 1; padding: 0.55rem; border: none; background: var(--surface); color: var(--text-muted); cursor: pointer; font: inherit; transition: background 0.12s ease, color 0.12s ease; }
++.lang-tab + .lang-tab { border-left: 1px solid var(--border); }
++.lang-tab.active { background: var(--primary); color: var(--on-primary); font-weight: 600; }
++.lang-tab-my { font-family: "Padauk", "Noto Sans Myanmar", "Myanmar Text", sans-serif; }
+ h1 { font-size: 1.55rem; margin: 0 0 0.35rem; letter-spacing: -0.02em; }
+ .sub { color: var(--text-muted); margin: 0 0 1.5rem; line-height: 1.55; }
+ .field-label { display: block; font-size: 0.85rem; color: var(--text-muted); margin: 1rem 0 0.5rem; }
+diff --git a/workers/bible_api.py b/workers/bible_api.py
+index 408d89b..2b602df 100644
+--- a/workers/bible_api.py
++++ b/workers/bible_api.py
+@@ -1,11 +1,25 @@
+ """Resolve a scripture reference to full text from a local public-domain Bible.
+ 
+-The ESV API needs publisher approval we don't have yet, so we serve verse text from
+-a bundled copy of the Berean Standard Bible (BSB) — public domain, modern English,
+-complete, no key, no network. Data file vendored from dalsuum/bible's `3034.json`.
+-
+-Switch translations with BIBLE_DATA_FILE once you hold rights to another text; any
+-file from that repo shares this schema (book -> chapter -> verse -> {"text": ...}).
++Two languages are served, both from bundled public-domain data (no key, no network):
++
++  'en' — Berean Standard Bible (BSB), the existing behavior. Data file from
++         dalsuum/bible's `3034.json`, vendored as data/bsb.json (BIBLE_DATA_FILE).
++  'my' — သမ္မာကျမ်း (Judson, 1835), public domain. Vendored from dalsuum/bible's
++         `judson1835.json` as data/judson1835.json (BIBLE_DATA_FILE_MY).
++  'td' — Lai Siangtho (Tedim, 1932), public domain. Vendored from dalsuum/bible's
++         `tedim1932.json` as data/tedim1932.json (BIBLE_DATA_FILE_TD).
++
++The LLM always emits ENGLISH references ("John 3:16") regardless of service
++language — references are part of the worker contract, not the worshipper-facing
++text. The non-English files' book names are in their own language (ရှင်ယောဟန် /
++Johan), so they can't index an English reference by themselves. Every file uses
++canonical 1-66 numbering (Genesis=1 … Revelation=66), so for those languages we
++parse the reference against a vendored canonical English book index
++(data/books_en.json, from dalsuum/bible's category.json) and look the verses up
++in the translation file by that number. Adding another dalsuum/bible translation
++is one line in _LANG_FILES.
++
++Schema shared by every dalsuum/bible file: book -> chapter -> verse -> {"text": ...}.
+ """
+ 
+ from __future__ import annotations
+@@ -15,8 +29,15 @@ import json
+ import os
+ import re
+ 
+-_DEFAULT_DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "bsb.json")
+-DATA_FILE = os.getenv("BIBLE_DATA_FILE", _DEFAULT_DATA)
++_DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
++DATA_FILE = os.getenv("BIBLE_DATA_FILE", os.path.join(_DATA_DIR, "bsb.json"))
++BOOKS_EN_FILE = os.path.join(_DATA_DIR, "books_en.json")
++
++# Non-English translations (all dalsuum/bible schema, canonical 1-66 numbering).
++_LANG_FILES = {
++    "my": os.getenv("BIBLE_DATA_FILE_MY", os.path.join(_DATA_DIR, "judson1835.json")),
++    "td": os.getenv("BIBLE_DATA_FILE_TD", os.path.join(_DATA_DIR, "tedim1932.json")),
++}
+ 
+ # Book-name variants the model emits that don't match the data file's `name` field.
+ _ALIASES = {
+@@ -44,30 +65,46 @@ def _norm(s: str) -> str:
+     return re.sub(r"\s+", " ", s.replace(".", "").strip().lower())
+ 
+ 
+-@functools.lru_cache(maxsize=1)
+-def _bible() -> dict:
+-    with open(DATA_FILE, encoding="utf-8") as fh:
++@functools.lru_cache(maxsize=4)
++def _bible(lang: str = "en") -> dict:
++    path = _LANG_FILES.get(lang, DATA_FILE)
++    with open(path, encoding="utf-8") as fh:
+         return json.load(fh)
+ 
+ 
+-@functools.lru_cache(maxsize=1)
+-def _book_index() -> dict[str, str]:
+-    """Map every normalized name/shortname/abbr in the data file to its book number.
++@functools.lru_cache(maxsize=4)
++def _book_index(lang: str = "en") -> dict[str, str]:
++    """Map every normalized English name/shortname/abbr to a book number.
+ 
+-    Built from the file itself so it tracks that file's own numbering (the WEB data
+-    includes the Apocrypha, so book numbers are not the canonical 1-66)."""
++    'en': built from the data file itself so it tracks that file's own numbering
++    (some files include the Apocrypha, so numbers aren't always canonical 1-66).
++    Other languages: their book names aren't English — index the vendored
++    canonical English book list instead; every _LANG_FILES translation uses
++    canonical 1-66 numbering, so the canonical number IS that file's book key.
++    """
+     index: dict[str, str] = {}
+-    for num, book in _bible()["book"].items():
++    if lang in _LANG_FILES:
++        with open(BOOKS_EN_FILE, encoding="utf-8") as fh:
++            books = json.load(fh)
++        for num, info in books.items():
++            for key in [info.get("name", ""), info.get("shortname", ""), *info.get("abbr", [])]:
++                if key:
++                    index[_norm(key)] = num
++                    # The model freely writes "Psalms"/"Proverb"-style variants;
++                    # register a naive plural alongside each singular name.
++                    if key and not key.endswith("s"):
++                        index[_norm(key) + "s"] = num
++        return index
++    for num, book in _bible("en")["book"].items():
+         info = book.get("info", {})
+-        keys = [info.get("name", ""), info.get("shortname", ""), *info.get("abbr", [])]
+-        for key in keys:
++        for key in [info.get("name", ""), info.get("shortname", ""), *info.get("abbr", [])]:
+             if key:
+                 index[_norm(key)] = num
+     return index
+ 
+ 
+-def _parse(reference: str) -> tuple[str, str, int, int] | None:
+-    """Reference string -> (book_number, chapter, verse_start, verse_end), or None."""
++def _parse(reference: str, lang: str = "en") -> tuple[str, str, int | None, int | None] | None:
++    """English reference string -> (book_number, chapter, verse_start, verse_end)."""
+     m = _REF_RE.match(reference)
+     if not m:
+         return None
+@@ -77,9 +114,10 @@ def _parse(reference: str) -> tuple[str, str, int, int] | None:
+     if ordinal:
+         ordinal = _ORDINALS.get(_norm(ordinal), _norm(ordinal))
+         name = f"{ordinal} {name}"
+-    name = _ALIASES.get(name, name)
+-
+-    book_num = _book_index().get(name)
++    # Try the aliased form first, then the raw name — the alias table targets the
++    # BSB file's naming ("psalms"), the canonical index uses singular ("Psalm").
++    index = _book_index(lang)
++    book_num = index.get(_ALIASES.get(name, name)) or index.get(name)
+     if not book_num:
+         return None
+ 
+@@ -89,18 +127,38 @@ def _parse(reference: str) -> tuple[str, str, int, int] | None:
+     return book_num, chapter, v1, v2
+ 
+ 
+-def resolve(reference: str) -> str:
++def book_title(reference: str, lang: str = "en") -> str:
++    """The display name of the referenced book in the target language.
++
++    Used to caption non-English scripture with the translation's own book name
++    ('John 3:16' -> 'ရှင်ယောဟန်ခရစ်ဝင်' for 'my', 'Johan 3:16' for 'td') so the
++    worshipper-facing heading matches the service language. Returns "" when the
++    reference can't be parsed."""
++    parsed = _parse(reference, lang)
++    if not parsed:
++        return ""
++    book_num, chapter, v1, v2 = parsed
++    name = _bible(lang)["book"].get(book_num, {}).get("info", {}).get("name", "")
++    if not name:
++        return ""
++    suffix = f" {chapter}" + (f":{v1}" + (f"-{v2}" if v2 and v2 != v1 else "") if v1 else "")
++    return f"{name}{suffix}"
++
++
++def resolve(reference: str, lang: str = "en") -> str:
+     """Return the verse text for a reference like 'Psalm 23:1-4' or 'John 3:16'.
+ 
+-    Whole-chapter references ('Psalm 23') return the full chapter. Returns "" if the
+-    reference can't be parsed or isn't present in the data file — the caller degrades
+-    to showing the bare reference rather than aborting the service."""
+-    parsed = _parse(reference)
++    `lang` selects the translation ('en' BSB, 'my' Judson 1835, 'td' Tedim
++    1932); the reference
++    itself is always English. Whole-chapter references ('Psalm 23') return the
++    full chapter. Returns "" if the reference can't be parsed or isn't present —
++    the caller degrades to showing the bare reference rather than aborting."""
++    parsed = _parse(reference, lang)
+     if not parsed:
+         return ""
+ 
+     book_num, chapter, v1, v2 = parsed
+-    verses = _bible()["book"].get(book_num, {}).get("chapter", {}).get(chapter, {}).get("verse", {})
++    verses = _bible(lang)["book"].get(book_num, {}).get("chapter", {}).get(chapter, {}).get("verse", {})
+     if not verses:
+         return ""
+ 
+diff --git a/workers/hymns_my.py b/workers/hymns_my.py
+new file mode 100644
+index 0000000..5fd579f
+--- /dev/null
++++ b/workers/hymns_my.py
+@@ -0,0 +1,50 @@
++"""Burmese hymn library (dalsuum/myanmar-hymns) — load + mood selection.
++
++The Burmese counterpart of `hymns.py`. 852 songs (410 classic hymnal + 442 modern
++worship, Burmese lyrics only, chord lines stripped) live in data/hymns_my.json,
++produced once by tools/import_myanmar_hymns.py. Each entry carries English mood
++tags ("grateful", "anxious", …) matched against the worshipper's mood/prompt the
++same way `hymns.select` does, plus "default" so selection can never fail.
++
++Unlike the English library there are no pre-rendered recordings; the audio for a
++selected hymn is composed at service time (see strategies/hymn_my_strategy.py),
++while these lyrics ride along for on-screen display either way.
++"""
++
++from __future__ import annotations
++
++import functools
++import json
++import os
++import random
++
++_DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "hymns_my.json")
++
++
++@functools.lru_cache(maxsize=1)
++def _library() -> list[dict]:
++    with open(_DATA, encoding="utf-8") as fh:
++        return json.load(fh)["hymns"]
++
++
++def all_hymns() -> list[dict]:
++    return _library()
++
++
++def select(*, mood: str, prompt: str = "", query: str = "", prefer_source: str | None = "hymnal") -> dict:
++    """Pick a mood-appropriate Burmese hymn.
++
++    Match the lowercase mood/prompt words against each hymn's English mood tags;
++    fall back to the "default"-tagged pool (every hymn) when nothing matches, so
++    this never raises. `prefer_source` biases the pick toward the classic hymnal
++    ("hymnal") over modern songs when both match — closing hymns should feel like
++    a hymnal, not a praise set; pass None to weight them equally.
++    """
++    hay = f"{mood} {prompt} {query}".lower()
++    matched = [h for h in _library() if any(tag != "default" and tag in hay for tag in h["moods"])]
++    pool = matched or _library()
++    if prefer_source:
++        preferred = [h for h in pool if h["source"] == prefer_source]
++        if preferred:
++            pool = preferred
++    return random.choice(pool)
+diff --git a/workers/hymns_td.py b/workers/hymns_td.py
+new file mode 100644
+index 0000000..e43d17e
+--- /dev/null
++++ b/workers/hymns_td.py
+@@ -0,0 +1,53 @@
++"""Tedim (ZBC Labu Lui) hymn library — load + mood selection.
++
++The Tedim counterpart of `hymns.py` / `hymns_my.py`. The data file
++(data/hymns_td.json) is produced on this machine by tools/seed_tedim_hymns.py,
++which collects the ZBC Labu Lui hymnal from labusaal.com — run it once per
++machine, exactly like seed_hymns.py seeds the English library. Each entry
++carries the Tedim title, the English original it translates, the verses, an
++optional YouTube id (real Tedim singing), and English mood tags derived from
++the original hymn's title plus Tedim-vocabulary signals.
++"""
++
++from __future__ import annotations
++
++import functools
++import json
++import os
++import random
++
++_DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "hymns_td.json")
++
++
++@functools.lru_cache(maxsize=1)
++def _library() -> list[dict]:
++    if not os.path.exists(_DATA):
++        raise RuntimeError(
++            "The Tedim hymn library is not seeded — run "
++            "`python workers/tools/seed_tedim_hymns.py` to collect it before "
++            "using the Tedim music source."
++        )
++    with open(_DATA, encoding="utf-8") as fh:
++        return json.load(fh)["hymns"]
++
++
++def all_hymns() -> list[dict]:
++    return _library()
++
++
++def select(*, mood: str, prompt: str = "", query: str = "", prefer_youtube: bool = True) -> dict:
++    """Pick a mood-appropriate Tedim hymn.
++
++    Match the lowercase mood/prompt words against each hymn's mood tags; fall
++    back to the whole library when nothing matches, so this never raises.
++    `prefer_youtube` biases the pick toward hymns that carry a YouTube embed —
++    real Tedim voices at zero AI cost — when any matching hymn has one.
++    """
++    hay = f"{mood} {prompt} {query}".lower()
++    matched = [h for h in _library() if any(tag != "default" and tag in hay for tag in h["moods"])]
++    pool = matched or _library()
++    if prefer_youtube:
++        with_yt = [h for h in pool if h.get("youtube_id")]
++        if with_yt:
++            pool = with_yt
++    return random.choice(pool)
+diff --git a/workers/llm_engine.py b/workers/llm_engine.py
+index 12ffb16..5b30394 100644
+--- a/workers/llm_engine.py
++++ b/workers/llm_engine.py
+@@ -118,7 +118,41 @@ def _addressing(user_name: str | None) -> str:
+     )
+ 
+ 
+-def build_intake_plan(*, user_name: str | None, mood: str, prayer_text: str | None) -> dict:
++def _language_instruction(language: str) -> str:
++    """One system-prompt line fixing the output language of a spoken segment.
++
++    'my' services are conducted entirely in Burmese. The instruction pins the
++    script too — Myanmar Unicode only, never Zawgyi or romanization — because the
++    player renders with Unicode fonts (Padauk/Noto Sans Myanmar) and edge-tts's
++    my-MM voices expect Unicode text.
++
++    'td' services are conducted in Tedim Chin (Zolai / Zomi pau, Latin script).
++    The instruction anchors the model with the community's own Christian
++    register — Pasian (God), Topa (the Lord), Zeisu (Jesus) — the vocabulary of
++    the Lai Siangtho (1932) and the ZBC hymnal, which the scripture and hymn
++    segments already use."""
++    if language == "my":
++        return (
++            "Write your ENTIRE response in the Burmese (Myanmar) language, using "
++            "Myanmar Unicode script only (never Zawgyi, never romanized Burmese, "
++            "no English words). Use natural, reverent Burmese as spoken in a "
++            "Christian worship service."
++        )
++    if language == "td":
++        return (
++            "Write your ENTIRE response in the Tedim Chin language (Zolai / Zomi "
++            "pau), in its standard Latin orthography — no English sentences, no "
++            "Burmese script. Use the natural, reverent register of a Zomi "
++            "Christian worship service, with the community's established terms: "
++            "Pasian for God, Topa for the Lord, Zeisu for Jesus, Kha Siangtho "
++            "for the Holy Spirit, thungetna for prayer. Keep sentences short and "
++            "clear; if a precise Tedim word is uncertain, choose simpler Tedim "
++            "rather than borrowing English."
++        )
++    return ""
++
++
++def build_intake_plan(*, user_name: str | None, mood: str, prayer_text: str | None, language: str = "en") -> dict:
+     """
+     First pass: derive the service's spine from the user input.
+     Returns scripture reference, a Suno music prompt, and a YouTube search query.
+@@ -129,6 +163,24 @@ def build_intake_plan(*, user_name: str | None, mood: str, prayer_text: str | No
+         "community. Avoid politics and fringe doctrine. Output ONLY valid JSON, no prose, "
+         "no markdown fences."
+     )
++    if language == "my":
++        # The scripture reference is part of the worker contract (bible_api parses
++        # English references and serves the Judson 1835 Burmese text), so it stays
++        # English; the music prompt and search queries face Burmese providers/users.
++        system += (
++            " This service is conducted in the Burmese (Myanmar) language. Keep "
++            "scripture_ref in ENGLISH format (e.g. 'Psalm 23:1-4'), but write "
++            "music_prompt for a Burmese-language worship song, and make music_query "
++            "and preaching_query searches for Burmese (Myanmar) Christian content."
++        )
++    elif language == "td":
++        system += (
++            " This service is conducted in the Tedim Chin (Zomi) language. Keep "
++            "scripture_ref in ENGLISH format (e.g. 'Psalm 23:1-4'), but write "
++            "music_prompt for a Tedim/Zomi-language worship song, and make "
++            "music_query and preaching_query searches for Zomi or Tedim Chin "
++            "Christian content."
++        )
+     user = json.dumps({
+         "user_name": user_name or "",
+         "mood": mood,
+@@ -145,7 +197,7 @@ def build_intake_plan(*, user_name: str | None, mood: str, prayer_text: str | No
+     return json.loads(raw)
+ 
+ 
+-def generate_welcome(*, user_name: str | None, mood: str) -> str:
++def generate_welcome(*, user_name: str | None, mood: str, language: str = "en") -> str:
+     """
+     A short "welcome back" greeting shown on the countdown screen while the rest of
+     the service is still composing. Tuned to the feeling the worshipper chose, it is
+@@ -159,16 +211,20 @@ def generate_welcome(*, user_name: str | None, mood: str) -> str:
+         "encouragement if seeking or hopeful. Spoken cadence, one short paragraph, no "
+         "headings, no scripture citation. Stay within mainstream Christian hope and grace."
+     )
++    if language != "en":
++        system = f"{system} {_language_instruction(language)}"
+     user = f"{_addressing(user_name)}\nFeeling they chose today: {mood}"
+     return _strip_formatting(_complete(system, user, max_tokens=180))
+ 
+ 
+-def generate_opening_prayer(*, user_name: str | None, mood: str, prayer_text: str | None) -> str:
++def generate_opening_prayer(*, user_name: str | None, mood: str, prayer_text: str | None, language: str = "en") -> str:
+     system = (
+         "You are a warm, pastoral voice opening a worship service. Write a personalized "
+         "opening prayer (120-180 words) that gently acknowledges the person's situation "
+         "without exposing sensitive detail bluntly. Spoken cadence, no headings."
+     )
++    if language != "en":
++        system = f"{system} {_language_instruction(language)}"
+     user = (
+         f"{_addressing(user_name)}\nMood: {mood}\n"
+         f"What they shared: {prayer_text or '(nothing specific)'}"
+@@ -176,7 +232,7 @@ def generate_opening_prayer(*, user_name: str | None, mood: str, prayer_text: st
+     return _strip_formatting(_complete(system, user, max_tokens=500))
+ 
+ 
+-def generate_sermon(*, user_name: str | None, mood: str, scripture_ref: str, target_minutes: int = 8) -> str:
++def generate_sermon(*, user_name: str | None, mood: str, scripture_ref: str, target_minutes: int = 8, language: str = "en") -> str:
+     """Preaching segment, built around the user's mood and the chosen passage."""
+     system = (
+         "You are an expository preacher writing for spoken delivery by a digital avatar. "
+@@ -188,6 +244,8 @@ def generate_sermon(*, user_name: str | None, mood: str, scripture_ref: str, tar
+         "of any kind. If the theme touches a serious medical or safety emergency, do not "
+         "advise; close gently and defer to real-world help."
+     )
++    if language != "en":
++        system = f"{system} {_language_instruction(language)}"
+     user = (
+         f"Scripture focus: {scripture_ref}\n"
+         f"Listener's theme/mood: {mood}\n"
+@@ -199,10 +257,12 @@ def generate_sermon(*, user_name: str | None, mood: str, scripture_ref: str, tar
+     return _strip_name(text, user_name)
+ 
+ 
+-def generate_benediction(*, user_name: str | None, mood: str) -> str:
++def generate_benediction(*, user_name: str | None, mood: str, language: str = "en") -> str:
+     system = (
+         "Write a short closing benediction (50-90 words) for spoken delivery. Personal, "
+         "hopeful, sends the listener out with peace. No headings."
+     )
++    if language != "en":
++        system = f"{system} {_language_instruction(language)}"
+     user = f"{_addressing(user_name)}\nMood: {mood}"
+     return _strip_formatting(_complete(system, user, max_tokens=250))
+diff --git a/workers/strategies/__init__.py b/workers/strategies/__init__.py
+index 61689c0..99f5fa3 100644
+--- a/workers/strategies/__init__.py
++++ b/workers/strategies/__init__.py
+@@ -46,13 +46,28 @@ class MusicStrategy(ABC):
+         raise NotImplementedError
+ 
+ 
+-def get_strategy(music_source: str) -> MusicStrategy:
+-    """Factory: resolve the user's preference string to a concrete strategy."""
++def get_strategy(music_source: str, language: str = "en") -> MusicStrategy:
++    """Factory: resolve the user's preference string to a concrete strategy.
++
++    `language` is the service language ('en' | 'my' | 'td'). Burmese services
++    route every hymn-flavored source to MyanmarHymnStrategy, and Tedim services
++    to TedimHymnStrategy — the English hymnal/recordings and the HymnSite
++    YouTube channel are all English-language material, so serving them inside a
++    non-English service would break the worship's language. Suno and
++    modern-worship YouTube remain language-neutral choices either way (the Suno
++    prompt and YouTube query are built from the intake plan, which the LLM writes
++    for the service's language)."""
++    from .hymn_my_strategy import MyanmarHymnStrategy
+     from .hymn_strategy import HymnStrategy
++    from .tedim_hymn_strategy import TedimHymnStrategy
+     from .hymn_youtube_strategy import HymnYouTubeStrategy
+     from .suno_strategy import SunoStrategy
+     from .youtube_strategy import YouTubeStrategy
+ 
++    if language == "my" and music_source in ("hymn_sung", "hymn", "hymn_youtube"):
++        return MyanmarHymnStrategy()  # mood-matched Burmese hymn, sung, lyrics on screen
++    if language == "td" and music_source in ("hymn_sung", "hymn", "hymn_youtube"):
++        return TedimHymnStrategy()  # ZBC Labu Lui hymn: YouTube embed or cached render
+     if music_source == "suno":
+         return SunoStrategy()
+     if music_source == "youtube":
+diff --git a/workers/strategies/_suno_custom.py b/workers/strategies/_suno_custom.py
+new file mode 100644
+index 0000000..9ea9878
+--- /dev/null
++++ b/workers/strategies/_suno_custom.py
+@@ -0,0 +1,60 @@
++"""Shared helper: sing a hymn's verses through Suno customMode.
++
++Both non-English hymn strategies (Myanmar, Tedim) compose their singing the
++same way — submit the hymn's verbatim verses as customMode lyrics so the
++vocals sing the real hymn, poll, download — so the machinery lives here once.
++SunoStrategy supplies the gateway plumbing (headers, polling, mirror-aware
++download); only the submit body differs from prompt-mode generation.
++"""
++
++from __future__ import annotations
++
++import os
++
++import requests
++
++from .suno_strategy import SunoStrategy
++
++# Suno customMode caps prompt (lyrics) length; stay safely under and cut on a
++# verse boundary so the sung text never ends mid-line.
++MAX_LYRICS = int(os.getenv("SUNO_CUSTOM_MAX_LYRICS", "2800"))
++
++
++def trim_on_verse(lyrics: str, limit: int = MAX_LYRICS) -> str:
++    if len(lyrics) <= limit:
++        return lyrics
++    cut = lyrics[:limit]
++    for sep in ("\n\n", "\n"):
++        idx = cut.rfind(sep)
++        if idx > limit // 2:
++            return cut[:idx].rstrip()
++    return cut.rstrip()
++
++
++def sing(*, title: str, lyrics: str, style: str) -> bytes:
++    """Submit verses to Suno customMode and return the finished MP3 bytes.
++
++    Raises on any provider failure — callers degrade the same way every music
++    strategy does (generate_music skips the segment rather than crashing).
++    """
++    suno = SunoStrategy()  # raises KeyError early if SUNO_API_KEY is missing
++    resp = requests.post(
++        f"{suno.BASE_URL}/generate",
++        headers=suno._headers,
++        json={
++            "prompt": trim_on_verse(lyrics),  # customMode: prompt == the exact lyrics
++            "style": style,
++            "title": title[:80],
++            "customMode": True,
++            "instrumental": False,
++            "model": suno.MODEL,
++            "callBackUrl": suno.CALLBACK_URL,
++        },
++        timeout=30,
++    )
++    resp.raise_for_status()
++    body = resp.json()
++    if body.get("code") != 200:
++        raise RuntimeError(f"Suno submit rejected: {body.get('msg')!r} ({body.get('code')})")
++    track = suno._poll(body["data"]["taskId"])
++    return suno._download(track)
+diff --git a/workers/strategies/hymn_my_strategy.py b/workers/strategies/hymn_my_strategy.py
+new file mode 100644
+index 0000000..7259f85
+--- /dev/null
++++ b/workers/strategies/hymn_my_strategy.py
+@@ -0,0 +1,66 @@
++"""Myanmar hymn strategy — a Burmese hymn, sung, with the words on screen.
++
++The Burmese library (dalsuum/myanmar-hymns) is lyrics-only: there are no
++public-domain recordings or MIDI renders to pre-seed the way seed_hymns.py does
++for the English hymnal. So this strategy composes the singing at service time:
++
++  1. hymns_my.select() picks a mood-appropriate hymn (852 songs, never fails);
++  2. the hymn's ACTUAL Burmese verses are submitted to Suno (KIE gateway) in
++     customMode, so the generated vocals sing the real hymn text — not an AI
++     paraphrase — in a traditional congregational style;
++  3. the verses also ride along in `lyrics` for on-screen display, exactly like
++     the English hymn sources, so the worshipper can sing along.
++
++Generated tracks are cached under hymns_my/<slug>.mp3 in the same storage backend
++as everything else: the first worshipper to receive a given hymn pays the Suno
++credit, every later service that selects it plays the stored file free — the
++Burmese analog of the pre-seeded English library, just filled lazily.
++
++Requires SUNO_API_KEY (same credential as SunoStrategy). If Suno fails or no key
++is set and no cached render exists, fetch() raises and generate_music skips the
++music segment gracefully, matching every other strategy's degradation path.
++"""
++
++from __future__ import annotations
++
++import os
++
++import storage
++from hymns_my import select
++
++from . import MusicResult, MusicStrategy
++from ._suno_custom import sing
++
++CACHE_KEY = "hymns_my/{slug}.mp3"
++
++_STYLE = os.getenv(
++    "SUNO_MY_STYLE",
++    "Traditional Christian hymn, reverent congregational choir with piano and organ, "
++    "sung in the Burmese (Myanmar) language",
++)
++
++
++
++class MyanmarHymnStrategy(MusicStrategy):
++    """Mood-matched Burmese hymn: cached render if we have one, else sing it via Suno."""
++
++    def fetch(self, *, mood: str, prompt: str, query: str) -> MusicResult:
++        hymn = select(mood=mood, prompt=prompt, query=query)
++        slug, title, lyrics = hymn["slug"], hymn["title"], hymn["lyrics"]
++        key = CACHE_KEY.format(slug=slug)
++
++        if not storage.exists(key):
++            audio = sing(title=title, lyrics=lyrics, style=_STYLE)
++            storage.upload_bytes(key, audio, "audio/mpeg")
++
++        # RAW object key, like the other audio strategies; generate_music presigns it.
++        # Never pooled by mood (the cache above already reuses by hymn, which keeps
++        # variety — pooling by mood would pin one hymn per mood).
++        return MusicResult(
++            asset_type="audio",
++            storage_key=key,
++            provider_ref=slug,
++            title=title,
++            lyrics=lyrics,
++        )
++
+diff --git a/workers/strategies/tedim_hymn_strategy.py b/workers/strategies/tedim_hymn_strategy.py
+new file mode 100644
+index 0000000..c4dfef6
+--- /dev/null
++++ b/workers/strategies/tedim_hymn_strategy.py
+@@ -0,0 +1,92 @@
++"""Tedim hymn strategy — a ZBC Labu Lui hymn, with the words on screen.
++
++The seeded Tedim library (tools/seed_tedim_hymns.py) gives most hymns a
++YouTube embed of the hymn actually being sung in Tedim — that is the preferred
++playback: real Zomi voices, zero AI credit, exactly like YouTubeStrategy's
++embeds. Selection order:
++
++  1. hymns_td.select() picks a mood-appropriate hymn, biased toward entries
++     that carry a YouTube id;
++  2. if the chosen hymn has a YouTube id -> return a "youtube" MusicResult
++     (provider_ref = video id) with the Tedim verses riding along in `lyrics`
++     for on-screen display;
++  3. otherwise -> sing the hymn's actual verses through Suno customMode and
++     cache the render under hymns_td/<slug>.mp3, the same lazy-library pattern
++     as the Myanmar strategy: first worshipper pays the credit, every later
++     selection plays the stored file free.
++
++  4. last resort — if tools/seed_tedim_midi.py has rendered the tune (Tedim
++     Hymn 7th Edition MIDI from tedimhymn.com), play that instrumental with the
++     verses on screen, like the English `hymn` source.
++
++If no path is possible (no YouTube id, Suno unavailable, no instrumental),
++fetch() raises and generate_music skips the music segment gracefully — the
++standard degradation path shared by every strategy.
++"""
++
++from __future__ import annotations
++
++import os
++import re
++
++import storage
++from hymns_td import select
++
++from . import MusicResult, MusicStrategy
++from ._suno_custom import sing
++
++CACHE_KEY = "hymns_td/{slug}.mp3"
++INSTRUMENTAL_KEY = "hymns_td/inst/{norm}.mp3"  # seeded by tools/seed_tedim_midi.py
++
++
++def _norm_title(name: str) -> str:
++    """Letters only, uppercased — matches seed_tedim_midi.py's keying."""
++    return re.sub(r"[^A-Z]", "", name.upper())[:80]
++
++_STYLE = os.getenv(
++    "SUNO_TD_STYLE",
++    "Traditional Christian hymn, reverent congregational choir with piano and organ, "
++    "sung in the Tedim Chin (Zomi) language",
++)
++
++
++class TedimHymnStrategy(MusicStrategy):
++    """Mood-matched Tedim hymn: YouTube embed when we have one, else a cached Suno render."""
++
++    def fetch(self, *, mood: str, prompt: str, query: str) -> MusicResult:
++        hymn = select(mood=mood, prompt=prompt, query=query)
++        slug, lyrics = hymn["slug"], hymn["lyrics"]
++        # Caption with both titles: the Tedim name worshippers know, plus the
++        # English original it translates (e.g. "… (Blessed Assurance)").
++        title = hymn["title"] + (f" ({hymn['title_en']})" if hymn.get("title_en") else "")
++
++        if hymn.get("youtube_id"):
++            # Embedded clip: no stored file, never pooled — mirrors YouTubeStrategy,
++            # but unlike that strategy the hymn's verses ride along for display.
++            return MusicResult(
++                asset_type="youtube",
++                provider_ref=hymn["youtube_id"],
++                title=title,
++                lyrics=lyrics,
++            )
++
++        key = CACHE_KEY.format(slug=slug)
++        if not storage.exists(key):
++            try:
++                audio = sing(title=hymn["title"], lyrics=lyrics, style=_STYLE)
++                storage.upload_bytes(key, audio, "audio/mpeg")
++            except Exception:  # noqa: BLE001 — fall through to the instrumental
++                inst = INSTRUMENTAL_KEY.format(norm=_norm_title(hymn["title"]))
++                if not storage.exists(inst):
++                    raise  # nothing left to play; generate_music skips music
++                key = inst  # seeded tune render: instrumental + on-screen verses
++
++        # RAW object key, like the other audio strategies; generate_music presigns
++        # it. Never pooled by mood — the per-hymn cache above already reuses.
++        return MusicResult(
++            asset_type="audio",
++            storage_key=key,
++            provider_ref=slug,
++            title=title,
++            lyrics=lyrics,
++        )
+diff --git a/workers/tasks/__init__.py b/workers/tasks/__init__.py
+index f34c9ab..4635374 100644
+--- a/workers/tasks/__init__.py
++++ b/workers/tasks/__init__.py
+@@ -62,6 +62,7 @@ def orchestrate(job: dict) -> None:
+     # 1. Derive the spine of the service from the user's own input.
+     plan = llm_engine.build_intake_plan(
+         user_name=job["user_name"], mood=job["mood"], prayer_text=job.get("prayer_text"),
++        language=job.get("language", "en"),
+     )
+ 
+     # 1b. Registered worshippers get a short, mood-aware "welcome back" greeting up
+@@ -79,7 +80,8 @@ def orchestrate(job: dict) -> None:
+ @app.task(name="tasks.generate_welcome")
+ def generate_welcome(job: dict) -> None:
+     """Short mood-aware greeting for the countdown screen (registered users only)."""
+-    text = llm_engine.generate_welcome(user_name=job["user_name"], mood=job["mood"])
++    text = llm_engine.generate_welcome(user_name=job["user_name"], mood=job["mood"],
++                                       language=job.get("language", "en"))
+     _post_asset(job["session_token"], "welcome", asset_type="text", text_payload=text)
+ 
+ 
+@@ -87,20 +89,39 @@ def generate_welcome(job: dict) -> None:
+ def generate_text_segments(job: dict, plan: dict) -> None:
+     token, name, mood = job["session_token"], job["user_name"], job["mood"]
+     ref = plan["scripture_ref"]
++    language = job.get("language", "en")  # 'en' | 'my' — the whole service's language
+ 
+     # Synthesize TTS audio only when the admin chose a server voice provider —
+     # 'openai', 'kokoro', or 'edge_tts' — server generates audio. In 'browser'/'off'
+     # the client handles (or skips) reading aloud, so we deliver text only.
+     narration_mode = job.get("narration_mode")
+     narration_voice = job.get("edge_tts_voice", "en-US-AriaNeural")
++    # Narration must be voiced in the service's language. 'my': when the
++    # configured edge-tts voice isn't a my-MM one (the admin default is
++    # English), substitute the Burmese neural voice. 'td': edge-tts ships NO
++    # Tedim voice — narrating Tedim text with an English voice would be
++    # gibberish, so server TTS is skipped entirely unless the admin points
++    # EDGE_TTS_VOICE_TD at a voice they've judged acceptable. The text segments
++    # still display; the service runs read-along.
++    if language == "my" and not narration_voice.startswith("my-"):
++        narration_voice = os.getenv("EDGE_TTS_VOICE_MY", "my-MM-NilarNeural")
++    td_voice = os.getenv("EDGE_TTS_VOICE_TD", "")
++    if language == "td":
++        narration_voice = td_voice
+     want_audio = narration_mode in ("openai", "kokoro", "edge_tts") and narrator.is_enabled(narration_mode)
++    if language == "td" and not td_voice:
++        want_audio = False  # no Tedim TTS voice exists; read-along service
+ 
+     # Scripture: model picks the reference, the bundled public-domain Bible supplies
+     # the words. If resolution fails (unparseable/missing reference), still give the
+     # listener the reference rather than aborting the whole text segment.
+     try:
+-        scripture_text = bible_api.resolve(ref)
+-        scripture_payload = f"{ref}\n\n{scripture_text}"
++        scripture_text = bible_api.resolve(ref, lang=language)
++        # Caption non-English scripture with the translation's own book name
++        # ('John 3:16' -> 'ရှင်ယောဟန်ခရစ်ဝင် 3:16' for 'my', 'Johan 3:16' for
++        # 'td') so no English leaks into the worshipper-facing text.
++        heading = (bible_api.book_title(ref, lang=language) or ref) if language != "en" else ref
++        scripture_payload = f"{heading}\n\n{scripture_text}"
+     except Exception as exc:  # noqa: BLE001 — degrade gracefully, never block the service
+         print(f"[scripture] resolve failed for {ref!r}: {exc}", flush=True)
+         scripture_text = ""
+@@ -134,13 +155,13 @@ def generate_text_segments(job: dict, plan: dict) -> None:
+ 
+     spoken = [
+         ("opening_prayer", llm_engine.generate_opening_prayer(
+-            user_name=name, mood=mood, prayer_text=job.get("prayer_text"))),
+-        ("benediction", llm_engine.generate_benediction(user_name=name, mood=mood)),
++            user_name=name, mood=mood, prayer_text=job.get("prayer_text"), language=language)),
++        ("benediction", llm_engine.generate_benediction(user_name=name, mood=mood, language=language)),
+     ]
+     # Only generate the sermon when we aren't sourcing it from YouTube.
+     if not youtube_mode:
+         spoken.insert(1, ("sermon", llm_engine.generate_sermon(
+-            user_name=name, mood=mood, scripture_ref=ref)))
++            user_name=name, mood=mood, scripture_ref=ref, language=language)))
+ 
+     for segment, text in spoken:
+         ok, reason = classifier.review(text)
+@@ -182,7 +203,7 @@ def generate_music(job: dict, plan: dict) -> None:
+             title=reuse.get("title"),
+         )
+     else:
+-        strategy = get_strategy(job["music_source"])
++        strategy = get_strategy(job["music_source"], language=job.get("language", "en"))
+         # Music depends on external providers (YouTube/Suno + S3 upload). If their
+         # keys are missing or the call fails, skip music rather than crash the task.
+         try:
+diff --git a/workers/tools/import_myanmar_hymns.py b/workers/tools/import_myanmar_hymns.py
+new file mode 100644
+index 0000000..aa09537
+--- /dev/null
++++ b/workers/tools/import_myanmar_hymns.py
+@@ -0,0 +1,139 @@
++"""Import the Burmese hymn library from github.com/dalsuum/myanmar-hymns.
++
++Converts the Flutter app's two XML songbooks into one clean JSON data file the
++worker can serve at service time:
++
++    assets/songs/hymns.xml   410 classic hymnal songs (Burmese, numbered)
++    assets/songs/modern.xml  515 modern songs (Burmese lyrics + chord lines)
++        -> workers/data/hymns_my.json
++
++What this does, and why:
++
++  * The source XML reuses odd tag names (<publication> per song, the lyrics live
++    in <publisher>) — we map them to honest names (id/title/lyrics).
++  * modern.xml is NOT well-formed XML: it contains raw control characters
++    (\x0c form feeds) that break strict parsers. We strip the C0 range first.
++  * Modern songs interleave guitar-chord lines with the words. Chord lines are
++    useless for on-screen worship display and poison TTS/Suno input, so lines
++    that are chords-only (or "Key : G" markers) are removed.
++  * Each hymn is tagged with English mood keywords (the same vocabulary the
++    rest of the app uses — hymns.select matches the worshipper's mood against
++    these) using Burmese keyword heuristics on the title + lyrics. Every hymn
++    also carries "default" so selection can never fail.
++
++Run from the repo root with a checkout of myanmar-hymns next to it:
++
++    python workers/tools/import_myanmar_hymns.py ../myanmar-hymns
++"""
++
++from __future__ import annotations
++
++import json
++import os
++import re
++import sys
++import unicodedata
++import xml.etree.ElementTree as ET
++
++OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "hymns_my.json")
++
++# C0 control characters (except \t \n \r) — present in modern.xml, illegal in XML 1.0.
++_CTRL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
++
++# A line that is only chord symbols / fret junk, e.g. "G   D7  Em" or "C/G".
++_CHORD_LINE = re.compile(r"^\s*(?:[A-G][#b]?(?:m|maj|min|dim|aug|sus|add)?[0-9]*(?:/[A-G][#b]?)?[\s.|()-]*)+\s*$")
++_KEY_LINE = re.compile(r"^\s*key\s*[:=]", re.I)
++
++# Burmese keyword -> English mood tags (the vocabulary tasks/hymns.select uses).
++_MOOD_RULES: list[tuple[str, set[str]]] = [
++    ("ချီးမွမ်း", {"joyful", "praise", "grateful", "joy"}),       # praise
++    ("ကျေးဇူး",   {"grateful", "grace"}),                          # thanks / grace
++    ("ဝမ်းမြောက်", {"joyful", "joy", "happy"}),                    # rejoice
++    ("နှစ်သိမ့်",  {"grieving", "comfort", "anxious", "loss"}),    # comfort
++    ("ဆုတောင်း",  {"seeking", "prayer"}),                          # prayer
++    ("ပဌနာ",      {"seeking", "prayer"}),                          # supplication
++    ("မျှော်လင့်", {"hopeful", "hope"}),                            # hope
++    ("မေတ္တာ",     {"grateful", "love"}),                           # love
++    ("ငြိမ်သက်",  {"anxious", "peace", "comfort"}),                # peace
++    ("ကယ်တင်",   {"seeking", "hopeful", "assurance"}),            # salvation
++    ("ယုံကြည်",   {"anxious", "assurance", "hopeful", "fear"}),    # faith / trust
++    ("ကောင်းကင်", {"hopeful", "hope"}),                            # heaven
++    ("နာမတော်",   {"praise", "joyful"}),                           # His name
++    ("ဝိညာဉ်",    {"seeking"}),                                    # spirit
++    ("ခွန်အား",    {"anxious", "hope", "assurance"}),               # strength
++    ("သခင်ယေရှု", {"default"}),                                    # Lord Jesus (neutral)
++]
++
++_HAS_MYANMAR = re.compile(r"[\u1000-\u109f]")
++
++
++def _clean_lyrics(raw: str, *, drop_chords: bool) -> str:
++    text = _CTRL.sub("", unicodedata.normalize("NFC", raw or ""))
++    lines = []
++    for line in text.splitlines():
++        line = line.rstrip()
++        if drop_chords and (_KEY_LINE.match(line) or (_CHORD_LINE.match(line) and not _HAS_MYANMAR.search(line))):
++            continue
++        lines.append(line)
++    out = "\n".join(lines)
++    out = re.sub(r"\n{3,}", "\n\n", out)          # at most one blank line
++    out = re.sub(r"[ \t]{2,}", " ", out)
++    return out.strip()
++
++
++def _moods(title: str, lyrics: str) -> list[str]:
++    hay = f"{title}\n{lyrics}"
++    tags: set[str] = {"default"}
++    for keyword, mood_tags in _MOOD_RULES:
++        if keyword in hay:
++            tags |= mood_tags
++    return sorted(tags)
++
++
++def _parse(path: str, *, source: str, drop_chords: bool) -> list[dict]:
++    data = _CTRL.sub("", open(path, encoding="utf-8").read())
++    root = ET.fromstring(data)
++    hymns = []
++    for position, song in enumerate(root, start=1):  # <publication> per song
++        # ~130 hymnal entries carry an EMPTY <id> in the source XML; the slug is
++        # the audio-cache key, so it must be unique — fall back to the song's
++        # 1-based position in the file, which is stable across re-imports.
++        sid = (song.findtext("id") or "").strip() or f"p{position}"
++        title = _CTRL.sub("", unicodedata.normalize("NFC", (song.findtext("title") or "").strip()))
++        lyrics = _clean_lyrics(song.findtext("publisher") or "", drop_chords=drop_chords)
++        if not title or len(lyrics) < 30:  # skip empty / fragment entries
++            continue
++        # Burmese services should sing Burmese: keep only songs whose lyrics are
++        # actually in Myanmar script (modern.xml carries ~73 English-only songs).
++        if not _HAS_MYANMAR.search(lyrics):
++            continue
++        hymns.append({
++            "slug": f"{source}-{sid}",
++            "source": source,            # "hymnal" (classic 410) | "modern"
++            "number": int(sid) if sid.isdigit() else None,
++            "title": title,
++            "lyrics": lyrics,
++            "moods": _moods(title, lyrics),
++        })
++    return hymns
++
++
++def main() -> None:
++    repo = sys.argv[1] if len(sys.argv) > 1 else "../myanmar-hymns"
++    songs_dir = os.path.join(repo, "assets", "songs")
++
++    hymnal = _parse(os.path.join(songs_dir, "hymns.xml"), source="hymnal", drop_chords=False)
++    modern = _parse(os.path.join(songs_dir, "modern.xml"), source="modern", drop_chords=True)
++
++    out = {"info": {"name": "Myanmar Hymns", "origin": "github.com/dalsuum/myanmar-hymns",
++                    "counts": {"hymnal": len(hymnal), "modern": len(modern)}},
++           "hymns": hymnal + modern}
++
++    os.makedirs(os.path.dirname(OUT), exist_ok=True)
++    with open(OUT, "w", encoding="utf-8") as fh:
++        json.dump(out, fh, ensure_ascii=False, indent=1)
++    print(f"wrote {OUT}: {len(hymnal)} hymnal + {len(modern)} modern songs")
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/workers/tools/seed_language_data.py b/workers/tools/seed_language_data.py
+new file mode 100644
+index 0000000..9288ec3
+--- /dev/null
++++ b/workers/tools/seed_language_data.py
+@@ -0,0 +1,116 @@
++"""Seed the multilingual data files into workers/data/ (gitignored, like bsb.json).
++
++This repo's convention keeps workers/data/ out of git — bsb.json is vendored at
++deploy, not committed. The Myanmar/Tedim languages follow the same rule, so run
++this once per machine (before first service, alongside seed_hymns.py):
++
++    pip install requests
++    python workers/tools/seed_language_data.py
++
++It produces four files, all from dalsuum-owned public repos:
++
++    data/judson1835.json   သမ္မာကျမ်း (Judson, 1835)  — github.com/dalsuum/bible
++    data/tedim1932.json    Lai Siangtho (Tedim, 1932) — github.com/dalsuum/bible
++    data/books_en.json     canonical 66-book English index, extracted from the
++                           same repo's category.json (name/abbr -> book number)
++    data/hymns_my.json     852 Burmese songs, built from
++                           github.com/dalsuum/myanmar-hymns by
++                           tools/import_myanmar_hymns.py (cleaning + mood tags)
++
++The Tedim HYMNS are seeded separately by seed_tedim_hymns.py (they come from
++labusaal.com, not a dalsuum repo). Safe to re-run: existing files are kept
++unless --force is given.
++"""
++
++from __future__ import annotations
++
++import argparse
++import json
++import os
++import sys
++import tempfile
++
++import requests
++
++sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
++
++DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
++
++BIBLE_RAW = os.getenv("DALSUUM_BIBLE_RAW", "https://raw.githubusercontent.com/dalsuum/bible/master")
++HYMNS_RAW = os.getenv("DALSUUM_HYMNS_RAW", "https://raw.githubusercontent.com/dalsuum/myanmar-hymns/master")
++
++BIBLES = {"judson1835.json": "/json/judson1835.json", "tedim1932.json": "/json/tedim1932.json"}
++
++
++def _fetch(url: str) -> bytes:
++    resp = requests.get(url, timeout=120)
++    resp.raise_for_status()
++    return resp.content
++
++
++def _seed_bibles(force: bool) -> None:
++    for name, path in BIBLES.items():
++        out = os.path.join(DATA_DIR, name)
++        if os.path.exists(out) and not force:
++            print(f"  {name}: already present, skipping")
++            continue
++        data = _fetch(BIBLE_RAW + path)
++        json.loads(data)  # fail loudly on a bad download, before writing
++        open(out, "wb").write(data)
++        print(f"  {name}: {len(data) / 1e6:.1f} MB ✓")
++
++
++def _seed_books_index(force: bool) -> None:
++    out = os.path.join(DATA_DIR, "books_en.json")
++    if os.path.exists(out) and not force:
++        print("  books_en.json: already present, skipping")
++        return
++    cat = json.loads(_fetch(BIBLE_RAW + "/category.json"))
++    books = {
++        str(b["id"]): {
++            "name": b["info"]["name"],
++            "shortname": b["info"].get("shortname", ""),
++            "abbr": b["info"].get("abbr", []),
++        }
++        for b in cat["book"]
++    }
++    assert len(books) == 66 and books["43"]["name"] == "John", "unexpected canonical index"
++    json.dump(books, open(out, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
++    print(f"  books_en.json: {len(books)} books ✓")
++
++
++def _seed_myanmar_hymns(force: bool) -> None:
++    out = os.path.join(DATA_DIR, "hymns_my.json")
++    if os.path.exists(out) and not force:
++        print("  hymns_my.json: already present, skipping")
++        return
++    # import_myanmar_hymns expects a myanmar-hymns checkout layout; download just
++    # the two songbook XMLs into a temp dir shaped like the repo and point it there.
++    with tempfile.TemporaryDirectory() as tmp:
++        songs = os.path.join(tmp, "assets", "songs")
++        os.makedirs(songs)
++        for fn in ("hymns.xml", "modern.xml"):
++            open(os.path.join(songs, fn), "wb").write(_fetch(f"{HYMNS_RAW}/assets/songs/{fn}"))
++        import import_myanmar_hymns  # noqa: PLC0415 — sibling tool, path set above
++
++        sys.argv = ["import_myanmar_hymns.py", tmp]
++        import_myanmar_hymns.main()
++
++
++def main() -> None:
++    ap = argparse.ArgumentParser()
++    ap.add_argument("--force", action="store_true", help="re-download even if files exist")
++    args = ap.parse_args()
++
++    os.makedirs(DATA_DIR, exist_ok=True)
++    print("Seeding Bible translations (dalsuum/bible)…")
++    _seed_bibles(args.force)
++    print("Seeding canonical book index…")
++    _seed_books_index(args.force)
++    print("Seeding Myanmar hymn library (dalsuum/myanmar-hymns)…")
++    _seed_myanmar_hymns(args.force)
++    print("Done. Next: python workers/tools/seed_tedim_hymns.py  (Tedim hymnal)")
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/workers/tools/seed_tedim_hymns.py b/workers/tools/seed_tedim_hymns.py
+new file mode 100644
+index 0000000..facc8fd
+--- /dev/null
++++ b/workers/tools/seed_tedim_hymns.py
+@@ -0,0 +1,295 @@
++"""Seed the Tedim (ZBC Labu Lui) hymn library used by the Tedim music source.
++
++Run once per machine, like seed_hymns.py (the English hymnal seeder) and the
++Myanmar importer. It collects the ZBC Labu Lui hymnal — ~470 Tedim translations
++of classic hymns — from labusaal.com, where the community publishes them:
++
++    https://labusaal.com/artist/zbc-labu-lui/    (index of every hymn)
++    https://labusaal.com/lyrics/<slug>/          (one page per hymn)
++
++For every hymn it extracts:
++    * the Tedim title and the English original title (in parentheses) — the
++      English title is also the mood-tagging signal: these are all classic
++      hymns whose themes are known ("It Is Well With My Soul" -> grieving/
++      comfort), far more reliable than keyword-guessing the Tedim text;
++    * the Tedim verses (Key lines and print chrome stripped);
++    * the YouTube embed id, when the page has one — the Tedim music strategy
++      prefers this embed (real Tedim singing, zero AI credit).
++
++Output: workers/data/hymns_td.json, the file hymns_td.py serves at service time.
++
++The collection runs on YOUR server, at YOUR deploy time — the same way
++seed_hymns.py pulls Open Hymnal — so the data is always as fresh as the site
++and distribution stays between you and the publisher. ZBC Labu Lui is a Zomi
++Baptist Convention hymnal (1984 reprint of mission-era translations); confirm
++permission with ZBC / labusaal.com before promoting to production.
++
++    pip install requests beautifulsoup4
++    python workers/tools/seed_tedim_hymns.py            # full run (~470 pages, polite 0.7s delay)
++    python workers/tools/seed_tedim_hymns.py --limit 5  # smoke test
++"""
++
++from __future__ import annotations
++
++import argparse
++import json
++import os
++import re
++import sys
++import time
++
++import requests
++from bs4 import BeautifulSoup
++
++INDEX_URL = "https://labusaal.com/artist/zbc-labu-lui/"
++OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "hymns_td.json")
++CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".labusaal-cache")
++HEADERS = {"User-Agent": "aivirtual.church seeder (contact: site admin)"}
++DELAY = 0.7  # be a polite guest
++
++# Not worship hymns — national/patriotic songs in the hymnal's back pages.
++EXCLUDE_SLUGS = {"kawlgam-lapi", "i-khamtung-gam"}
++
++# English-original-title keywords -> mood tags (the app's mood vocabulary).
++# Matched lowercase against the parenthesized English title.
++_MOOD_RULES: list[tuple[str, set[str]]] = [
++    ("praise",      {"joyful", "praise", "grateful", "joy"}),
++    ("joy",         {"joyful", "joy", "happy"}),
++    ("rejoice",     {"joyful", "joy"}),
++    ("thank",       {"grateful"}),
++    ("bless",       {"grateful", "grace"}),
++    ("grace",       {"grateful", "grace", "hopeful"}),
++    ("assurance",   {"anxious", "assurance", "hopeful"}),
++    ("trust",       {"anxious", "assurance", "fear"}),
++    ("faith",       {"anxious", "assurance", "hopeful"}),
++    ("comfort",     {"grieving", "comfort", "anxious"}),
++    ("well with my soul", {"grieving", "comfort", "anxious", "loss"}),
++    ("abide",       {"grieving", "comfort", "lonely"}),
++    ("shelter",     {"anxious", "comfort", "fear"}),
++    ("storm",       {"anxious", "comfort", "fear"}),
++    ("peace",       {"anxious", "peace", "comfort"}),
++    ("rest",        {"anxious", "peace", "comfort"}),
++    ("prayer",      {"seeking", "prayer"}),
++    ("pray",        {"seeking", "prayer"}),
++    ("hope",        {"hopeful", "hope"}),
++    ("heaven",      {"hopeful", "hope"}),
++    ("home",        {"hopeful", "comfort"}),
++    ("love",        {"grateful", "love"}),
++    ("shepherd",    {"comfort", "assurance", "anxious"}),
++    ("lead",        {"seeking", "journey", "anxious"}),
++    ("guide",       {"seeking", "journey", "anxious"}),
++    ("saviour",     {"seeking", "hopeful"}),
++    ("savior",      {"seeking", "hopeful"}),
++    ("salvation",   {"seeking", "hopeful", "assurance"}),
++    ("redeem",      {"grateful", "hopeful"}),
++    ("cross",       {"seeking", "grace"}),
++    ("holy",        {"praise", "seeking"}),
++    ("christmas",   {"joyful", "joy"}),
++    ("noel",        {"joyful", "joy"}),
++    ("angels",      {"joyful", "joy"}),
++    ("morning",     {"joyful", "grateful"}),
++    ("evening",     {"peace", "comfort"}),
++    ("disconsolate", {"grieving", "comfort", "loss"}),
++    ("sorrow",      {"grieving", "comfort", "loss"}),
++    ("weep",        {"grieving", "comfort"}),
++    ("wings",       {"comfort", "anxious", "assurance"}),
++    ("hide",        {"comfort", "anxious", "fear"}),
++    ("refuge",      {"comfort", "anxious", "fear"}),
++    ("rock",        {"assurance", "anxious"}),
++    ("foundation",  {"assurance", "anxious", "hope"}),
++    ("promise",     {"assurance", "hopeful"}),
++    ("written there", {"assurance", "hopeful"}),
++    ("victory",     {"hopeful", "joyful"}),
++    ("triumph",     {"hopeful", "joyful"}),
++    ("story",       {"seeking", "grateful"}),
++    ("calling",     {"seeking"}),
++    ("calls",       {"seeking"}),
++    ("come",        {"seeking"}),
++    ("surrender",   {"seeking", "prayer"}),
++    ("need thee",   {"seeking", "anxious", "prayer"}),
++    ("friend",      {"comfort", "lonely", "prayer"}),
++    ("alone",       {"lonely", "comfort"}),
++    ("crown",       {"praise", "joyful"}),
++    ("hail",        {"praise", "joyful"}),
++    ("worship",     {"praise", "seeking"}),
++    ("glory",       {"praise", "joyful"}),
++    ("sing",        {"joyful", "praise"}),
++    ("song",        {"joyful", "praise"}),
++]
++
++# Tedim-vocabulary signals, matched lowercase against the TEDIM title — a second
++# net for hymns whose English title carries no keyword.
++_MOOD_RULES_TD: list[tuple[str, set[str]]] = [
++    ("lungdam",   {"joyful", "grateful", "joy"}),     # joy / thanks
++    ("phat",      {"praise", "joyful"}),              # praise
++    ("dahna",     {"grieving", "comfort", "loss"}),   # sorrow
++    ("thupha",    {"grateful", "grace", "hopeful"}),  # blessing
++    ("itna",      {"grateful", "love"}),              # love
++    ("muang",     {"anxious", "assurance", "fear"}),  # trust
++    ("um in",     {"anxious", "assurance"}),          # believe/trust
++    ("thu nge",   {"seeking", "prayer"}),             # prayer (thu ngetna)
++    ("thunget",   {"seeking", "prayer"}),
++    ("thumna",    {"seeking", "prayer"}),
++    ("vantung",   {"hopeful", "hope"}),               # heaven
++    ("kha siangtho", {"seeking"}),                    # Holy Spirit
++    ("hehpihna",  {"grateful", "grace"}),             # mercy/grace
++    ("gupna",     {"seeking", "hopeful"}),            # salvation
++    ("hong gum",  {"seeking", "hopeful", "assurance"}),
++    ("nopna",     {"joyful", "peace"}),               # gladness
++    ("nuam",      {"joyful", "peace", "comfort"}),    # pleasant/glad
++    ("kilemna",   {"peace", "anxious"}),              # peace
++    ("singlamteh", {"seeking", "grace"}),             # the cross
++]
++
++# Page chrome that is NOT lyric text on a labusaal lyric page.
++_STOP_HEADINGS = re.compile(
++    r"^(other songs|related lyrics|added by|share|write a comment|no comments|advertisement|video|leave a comment)",
++    re.I,
++)
++_KEY_LINE = re.compile(r"^\s*key\s+[A-G][#b]?m?\s*$", re.I)
++_YT_EMBED = re.compile(r"youtube\.com/embed/([A-Za-z0-9_-]{6,})")
++_TITLE_SPLIT = re.compile(r"^(?P<td>.*?)\s*\((?P<en>[^()]*(?:\([^()]*\)[^()]*)?)\)\s*(?P<tune>\d+(?:st|nd|rd|th)\s+Tune)?\s*$", re.I)
++
++
++def _moods(english_title: str, tedim_title: str = "") -> list[str]:
++    tags: set[str] = {"default"}
++    en = english_title.lower()
++    for keyword, mood_tags in _MOOD_RULES:
++        if keyword in en:
++            tags |= mood_tags
++    td = tedim_title.lower()
++    for keyword, mood_tags in _MOOD_RULES_TD:
++        if keyword in td:
++            tags |= mood_tags
++    return sorted(tags)
++
++
++def _get(url: str, session: requests.Session) -> str:
++    """Fetch with a tiny on-disk cache so a re-run never re-downloads."""
++    os.makedirs(CACHE_DIR, exist_ok=True)
++    key = re.sub(r"[^a-z0-9-]", "_", url.lower())[-120:]
++    path = os.path.join(CACHE_DIR, key)
++    if os.path.exists(path):
++        return open(path, encoding="utf-8").read()
++    resp = session.get(url, headers=HEADERS, timeout=30)
++    resp.raise_for_status()
++    open(path, "w", encoding="utf-8").write(resp.text)
++    time.sleep(DELAY)
++    return resp.text
++
++
++def _index(session: requests.Session) -> list[str]:
++    """Every /lyrics/<slug>/ URL in the ZBC Labu Lui index, in page order."""
++    soup = BeautifulSoup(_get(INDEX_URL, session), "html.parser")
++    urls: list[str] = []
++    for a in soup.select("a[href*='/lyrics/']"):
++        href = a.get("href", "").split("#")[0]
++        if href and href not in urls:
++            urls.append(href)
++    return urls
++
++
++def _parse_lyric_page(html: str, url: str) -> dict | None:
++    soup = BeautifulSoup(html, "html.parser")
++
++    h1 = soup.find("h1")
++    if not h1:
++        return None
++    raw_title = h1.get_text(" ", strip=True)
++    m = _TITLE_SPLIT.match(raw_title)
++    title_td = (m.group("td") if m else raw_title).strip(" ,")
++    title_en = (m.group("en") if m else "").strip()
++
++    yt = _YT_EMBED.search(html)
++    youtube_id = yt.group(1) if yt else None
++
++    # The lyric body is the run of paragraph-ish blocks after the LYRIC heading
++    # and before the next section heading. Walk the document in order; keep
++    # text once we're inside the lyric, stop at the first chrome heading.
++    lines: list[str] = []
++    in_lyric = False
++    for el in soup.find_all(["h1", "h2", "h3", "h4", "p", "em", "strong"]):
++        text = el.get_text("\n", strip=True)
++        if not text:
++            continue
++        if el.name in ("h2", "h3", "h4"):
++            label = text.lower()
++            if label.startswith("lyric"):
++                in_lyric = True
++                continue
++            if in_lyric and _STOP_HEADINGS.match(label):
++                break
++            continue
++        if not in_lyric or el.name != "p":
++            continue
++        if _STOP_HEADINGS.match(text) or text.lower() in ("print",):
++            continue
++        for ln in text.split("\n"):
++            ln = ln.strip()
++            if not ln or _KEY_LINE.match(ln):
++                continue
++            lines.append(ln)
++        lines.append("")  # paragraph break
++
++    lyrics = re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
++    if len(lyrics) < 40:
++        return None
++
++    slug = url.rstrip("/").rsplit("/", 1)[-1]
++    return {
++        "slug": f"td-{slug}",
++        "source": "zbc-labu-lui",
++        "title": title_td,
++        "title_en": title_en,            # the English original this translates
++        "lyrics": lyrics,
++        "youtube_id": youtube_id,        # preferred playback: real Tedim singing
++        "url": url,                      # provenance
++        "moods": _moods(title_en, title_td),
++    }
++
++
++def main() -> None:
++    ap = argparse.ArgumentParser()
++    ap.add_argument("--limit", type=int, default=0, help="only seed the first N hymns (smoke test)")
++    args = ap.parse_args()
++
++    session = requests.Session()
++    urls = [u for u in _index(session) if u.rstrip("/").rsplit("/", 1)[-1] not in EXCLUDE_SLUGS]
++    if args.limit:
++        urls = urls[: args.limit]
++    print(f"{len(urls)} hymn pages to collect from {INDEX_URL}")
++
++    hymns, with_yt, failed = [], 0, []
++    for i, url in enumerate(urls, 1):
++        try:
++            hymn = _parse_lyric_page(_get(url, session), url)
++        except Exception as exc:  # noqa: BLE001 — collect what we can, report the rest
++            failed.append((url, str(exc)))
++            continue
++        if not hymn:
++            failed.append((url, "no lyric body found"))
++            continue
++        hymns.append(hymn)
++        with_yt += bool(hymn["youtube_id"])
++        if i % 25 == 0:
++            print(f"  {i}/{len(urls)} … ({with_yt} with YouTube)")
++
++    out = {
++        "info": {
++            "name": "ZBC Labu Lui (Tedim)",
++            "origin": INDEX_URL,
++            "license_note": "Zomi Baptist Convention hymnal (1984). Confirm "
++                            "permission with ZBC / labusaal.com for production use.",
++            "counts": {"hymns": len(hymns), "with_youtube": with_yt},
++        },
++        "hymns": hymns,
++    }
++    os.makedirs(os.path.dirname(OUT), exist_ok=True)
++    json.dump(out, open(OUT, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
++    print(f"wrote {OUT}: {len(hymns)} hymns, {with_yt} with YouTube embeds, {len(failed)} failed")
++    for url, why in failed[:10]:
++        print(f"  FAILED {url}: {why}")
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/workers/tools/seed_tedim_midi.py b/workers/tools/seed_tedim_midi.py
+new file mode 100644
+index 0000000..4ad83c2
+--- /dev/null
++++ b/workers/tools/seed_tedim_midi.py
+@@ -0,0 +1,115 @@
++"""OPTIONAL: seed Tedim instrumental renders from tedimhymn.com's MIDI library.
++
++The Tedim Hymn 7th Edition site (https://tedimhymn.com/) publishes ~448 MIDI
++tune files under /upload/midi/. This seeder downloads them and renders each to
++an instrumental MP3 (fluidsynth + ffmpeg — the same toolchain seed_hymns.py
++uses for the English hymnal), stored under:
++
++    hymns_td/inst/<NORMALIZED-TITLE>.mp3
++
++TedimHymnStrategy uses these as its LAST fallback: a selected hymn with no
++YouTube embed and no Suno credit available can still play instrumentally with
++the verses on screen. Matching is by normalized title (letters only, upper-
++cased): the MIDI "001. PASIAN A MIN THANG HEN!.mid" and the labusaal hymn
++"Pasian A Min Thang Hen" normalize identically.
++
++    sudo apt install fluidsynth fluid-soundfont-gm ffmpeg
++    python workers/tools/seed_tedim_midi.py [--limit N]
++
++Skips gracefully (with a message) if fluidsynth/ffmpeg are missing; safe to
++re-run — already-rendered titles are skipped.
++"""
++
++from __future__ import annotations
++
++import argparse
++import os
++import re
++import shutil
++import subprocess
++import sys
++import tempfile
++import time
++
++import requests
++
++sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
++import storage  # noqa: E402
++
++BASE = "https://tedimhymn.com/"
++HEADERS = {"User-Agent": "aivirtual.church seeder (contact: site admin)"}
++KEY = "hymns_td/inst/{norm}.mp3"
++
++_SOUNDFONTS = [
++    "/usr/share/sounds/sf2/FluidR3_GM.sf2",
++    "/usr/share/sounds/sf2/default-GM.sf2",
++    "/usr/share/soundfonts/FluidR3_GM.sf2",
++    "/usr/share/soundfonts/default.sf2",
++]
++
++
++def norm_title(name: str) -> str:
++    """Letters only, uppercased — shared with TedimHymnStrategy's lookup."""
++    return re.sub(r"[^A-Z]", "", name.upper())
++
++
++def _soundfont() -> str | None:
++    return next((p for p in _SOUNDFONTS if os.path.exists(p)), None)
++
++
++def _midi_urls() -> list[tuple[str, str]]:
++    """(url, normalized-title) for every MIDI linked from the homepage."""
++    html = requests.get(BASE, headers=HEADERS, timeout=30).text
++    out, seen = [], set()
++    for rel in re.findall(r"href=[\"']([^\"']*upload/midi/[^\"']+\.midi?)[\"']", html, re.I):
++        fname = rel.rsplit("/", 1)[-1]
++        title = re.sub(r"^\d+[A-Z]?\.\s*", "", fname.rsplit(".", 1)[0])  # drop "001. "
++        norm = norm_title(title)
++        if norm and norm not in seen:
++            seen.add(norm)
++            out.append((BASE.rstrip("/") + "/" + rel.lstrip("/"), norm))
++    return out
++
++
++def main() -> None:
++    ap = argparse.ArgumentParser()
++    ap.add_argument("--limit", type=int, default=0)
++    args = ap.parse_args()
++
++    sf = _soundfont()
++    if not (sf and shutil.which("fluidsynth") and shutil.which("ffmpeg")):
++        print("fluidsynth + soundfont + ffmpeg required — skipping instrumental seed.\n"
++              "    sudo apt install fluidsynth fluid-soundfont-gm ffmpeg")
++        return
++
++    urls = _midi_urls()
++    if args.limit:
++        urls = urls[: args.limit]
++    print(f"{len(urls)} MIDI tunes from {BASE}")
++
++    done = skipped = failed = 0
++    for url, norm in urls:
++        key = KEY.format(norm=norm[:80])
++        if storage.exists(key):
++            skipped += 1
++            continue
++        try:
++            midi = requests.get(url, headers=HEADERS, timeout=30).content
++            with tempfile.TemporaryDirectory() as tmp:
++                mid, wav, mp3 = (os.path.join(tmp, f"t.{e}") for e in ("mid", "wav", "mp3"))
++                open(mid, "wb").write(midi)
++                subprocess.run(["fluidsynth", "-ni", sf, mid, "-F", wav, "-r", "44100"],
++                               check=True, capture_output=True)
++                subprocess.run(["ffmpeg", "-y", "-i", wav, "-b:a", "128k", mp3],
++                               check=True, capture_output=True)
++                storage.upload_bytes(key, open(mp3, "rb").read(), "audio/mpeg")
++            done += 1
++            time.sleep(0.4)  # be a polite guest
++        except Exception as exc:  # noqa: BLE001 — render what we can
++            failed += 1
++            print(f"  FAILED {url.rsplit('/',1)[-1]}: {exc}")
++    print(f"rendered {done}, skipped {skipped} existing, {failed} failed")
++
++
++if __name__ == "__main__":
++    main()
+-- 
+2.43.0
+

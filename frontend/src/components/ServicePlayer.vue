@@ -42,11 +42,17 @@ const stages = computed(() => {
   if (s?.music_asset && ["audio", "youtube"].includes(s.music_asset.asset_type)) {
     list.push({ kind: "worship", key: "worship", label: "Worship" });
   }
+
   for (const seg of SEGMENTS) {
     const text = s?.segments?.[seg.key];
     // A segment can be a sourced YouTube clip instead of text — the preaching
     // message in YouTube mode. Embedded clips have no text body.
     const embed = s?.embeds?.[seg.key] || null;
+
+    // Audio/video can arrive after the text. Never keep a finished text segment
+    // hidden behind a loading screen just because narration is late or failed.
+    const audio = s?.narration_enabled === false ? null : (s?.audios?.[seg.key] || null);
+
     if (text || embed) {
       // video may be a single URL or a JSON array of part URLs (long segments).
       const rawVideo = s.videos?.[seg.key] || null;
@@ -62,8 +68,10 @@ const stages = computed(() => {
         embed,
         videoParts,                          // array of part URLs, or null
         video: videoParts?.[0] || null,      // first part for initial render
-        audio: s.narration_enabled === false ? null : (s.audios?.[seg.key] || null),
+        audio,
       });
+    } else if (s?.status !== "complete") {
+      list.push({ kind: "loading", key: seg.key, label: seg.label });
     }
   }
   list.push({ kind: "closing", key: "closing", label: "Testimony & Offering" });
@@ -471,6 +479,15 @@ watch(stages, (list) => {
         </template>
       </template>
 
+      <!-- Loading stage (for incomplete segments when streaming service) -->
+      <template v-else-if="current.kind === 'loading'">
+        <h2 class="stage-title">{{ current.label }}</h2>
+        <div class="loading-state" style="text-align: center; padding: 2rem 0; color: var(--text-muted);">
+          <div class="spinner" aria-hidden="true" style="margin: 0 auto 1rem; width: 32px; height: 32px; border: 3px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin 1s linear infinite;"></div>
+          <p>Composing message...</p>
+        </div>
+      </template>
+
       <!-- Closing: testimony + offering -->
       <template v-else>
         <h2 class="stage-title">Before you go</h2>
@@ -584,4 +601,8 @@ watch(stages, (list) => {
 .nav.end { background: var(--success); color: var(--on-primary, #fff); border-color: var(--success); }
 .nav.end:hover { filter: brightness(1.05); }
 .pos { color: var(--text-muted); font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
 </style>

@@ -45,7 +45,7 @@ _MUSIC_WEBHOOK   = _LARAVEL_WEBHOOK.replace("asset-ready", "music-track")
 # Both go through OpenRouter so no extra API key is needed.
 _MODEL_CLAUDE  = os.getenv("AGENT_LLM_MODEL_CLAUDE",
                             os.getenv("AGENT_LLM_MODEL", "anthropic/claude-sonnet-4-6"))
-_MODEL_GEMINI  = os.getenv("AGENT_LLM_MODEL_GEMINI",  "google/gemini-2.5-flash-preview-05-20")
+_MODEL_GEMINI  = os.getenv("AGENT_LLM_MODEL_GEMINI",  "google/gemini-2.5-flash")
 _MODEL_CHATGPT = os.getenv("AGENT_LLM_MODEL_CHATGPT", "openai/gpt-4o")
 
 
@@ -239,6 +239,15 @@ def _call_llm(system: str, messages: list[dict], tools: list[dict], model: str) 
         },
         timeout=120,
     )
+    if not resp.ok:
+        try:
+            err = resp.json().get("error", resp.json())
+        except ValueError:
+            err = (resp.text or "")[:1000]
+        print(
+            f"[agent] OpenRouter request failed status={resp.status_code} model={model} body={json.dumps(err, ensure_ascii=False)[:1000]}",
+            flush=True,
+        )
     resp.raise_for_status()
     return resp.json()
 

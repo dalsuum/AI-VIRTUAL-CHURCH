@@ -157,6 +157,12 @@ class ServiceController extends Controller
      */
     public function resume(Request $request, string $token): JsonResponse
     {
+        if (! $request->hasSession()) {
+            return response()->json([
+                'message' => 'Session cookies are required to resume this service.',
+            ], 400);
+        }
+
         $session = ServiceSession::where('session_token', $token)->firstOrFail();
         $user    = $session->user;
 

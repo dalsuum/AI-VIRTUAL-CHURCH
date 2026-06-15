@@ -51,12 +51,11 @@ class MusicStrategy(ABC):
 def get_strategy(music_source: str, language: str = "en") -> MusicStrategy:
     """Factory: resolve the user's preference string to a concrete strategy.
 
-    `language` is the service language ('en' | 'my' | 'td'). Burmese and Tedim
-    services route all hymn-flavoured sources — including 'youtube' — to their
-    own strategy classes (MyanmarHymnStrategy / TedimHymnStrategy).  Those
-    libraries already contain hundreds of YouTube-embed hymns, so routing through
-    YouTubeStrategy's live API search is unnecessary and unreliable for those
-    languages.  English uses YouTubeStrategy for 'youtube' as before."""
+    `language` is the service language ('en' | 'my' | 'td'). Tedim routes all
+    hymn-flavoured sources *including* 'youtube' to TedimHymnStrategy (hundreds
+    of embedded hymns, no live API search needed). Burmese routes only explicit
+    hymn sources (hymn/hymn_sung/hymn_youtube) to MyanmarHymnStrategy (Suno);
+    'youtube' falls through to YouTubeStrategy for a fast live search instead."""
     from .hymn_my_strategy import MyanmarHymnStrategy
     from .hymn_strategy import HymnStrategy
     from .tedim_hymn_strategy import TedimHymnStrategy
@@ -64,7 +63,7 @@ def get_strategy(music_source: str, language: str = "en") -> MusicStrategy:
     from .suno_strategy import SunoStrategy
     from .youtube_strategy import YouTubeStrategy
 
-    if language == "my" and music_source in ("hymn_sung", "hymn", "hymn_youtube", "youtube"):
+    if language == "my" and music_source in ("hymn_sung", "hymn", "hymn_youtube"):
         return MyanmarHymnStrategy()  # mood-matched Burmese hymn, sung, lyrics on screen
     if language == "td" and music_source in ("hymn_sung", "hymn", "hymn_youtube", "youtube"):
         return TedimHymnStrategy()  # Tedim hymn: YouTube embed or cached render

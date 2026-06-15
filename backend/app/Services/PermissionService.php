@@ -34,6 +34,9 @@ class PermissionService
         'permissions.view',
         'language_review.view',
         'system.view',
+        'ads.view',
+        'ads.manage',
+        'ads.analytics',
     ];
 
     /** Only these roles appear in the permissions matrix. Admin is always full access. */
@@ -50,6 +53,8 @@ class PermissionService
             'prayer_requests.view',
             'donors.view',
             'voice_studio.view',
+            'ads.view',
+            'ads.analytics',
         ],
         'presenter' => [
             'dashboard.view',

@@ -8,6 +8,8 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import MusicPlayer from "./MusicPlayer.vue";
 import TestimonyWall from "./TestimonyWall.vue";
 import OfferingForm from "./OfferingForm.vue";
+import AdCarousel from "./AdCarousel.vue";
+import { api } from "../composables/useApi.js";
 
 const props = defineProps({
   service: { type: Object, required: true },
@@ -383,11 +385,42 @@ function onKey(e) {
   if (e.key === "ArrowRight") next();
   else if (e.key === "ArrowLeft") prev();
 }
-onMounted(() => window.addEventListener("keydown", onKey));
+
+// ── Ad carousel integration ────────────────────────────────────────────────
+
+const activeAds    = ref([]);
+const showStartAd  = ref(false);
+const showEndAd    = ref(false);
+
+// A stable session token for impression tracking — use the service session token.
+const sessionToken = computed(() => props.service?.session_token || '');
+
+onMounted(async () => {
+  window.addEventListener("keydown", onKey);
+  // Fetch active ads — fire and forget so a failure never blocks the service.
+  try {
+    const res = await api.fetchActiveAds(props.service?.language, props.service?.mood);
+    activeAds.value = res.ads || [];
+    // Show start ad only when one is active for the 'start' location.
+    if (activeAds.value.some(a => a.status === 'active' && (a.locations || []).includes('start'))) {
+      showStartAd.value = true;
+    }
+  } catch { /* non-critical — ads must never block the service */ }
+});
+
 onUnmounted(() => {
   window.removeEventListener("keydown", onKey);
   stopNarration();
 });
+
+// When the worshipper clicks "End service", show the end ad first (if any).
+function requestExit() {
+  if (activeAds.value.some(a => a.status === 'active' && (a.locations || []).includes('end'))) {
+    showEndAd.value = true;
+  } else {
+    emit('exit');
+  }
+}
 
 // If the stage list grows after the service finishes composing (it shouldn't, since
 // we only enter the player once complete) keep the index in range.
@@ -416,102 +449,132 @@ watch(stages, (list) => {
       ></span>
     </div>
 
-    <p v-if="musicFallbackNotice && atStart" class="stage-hint">{{ musicFallbackNotice }}</p>
+    <p v-if="musicFallbackNotice && atStart && !showStartAd" class="stage-hint">{{ musicFallbackNotice }}</p>
 
-    <div class="stage" :key="current.key">
-      <!-- Worship -->
-      <template v-if="current.kind === 'worship'">
-        <h2 class="stage-title">Worship</h2>
-        <MusicPlayer :asset="service.music_asset" @ended="onMediaEnded" />
-        <p class="stage-hint">Let the music settle your heart. We'll continue when it ends.</p>
-      </template>
+    <!-- Start ad gate: shown before the first stage when an active start ad exists. -->
+    <AdCarousel
+      v-if="showStartAd"
+      :ads="activeAds"
+      location="start"
+      :session-token="sessionToken"
+      :language="service.language || ''"
+      :mood="service.mood || ''"
+      @done="showStartAd = false"
+    />
 
-      <!-- Spoken segment -->
-      <template v-else-if="current.kind === 'segment'">
-        <h2 class="stage-title">{{ current.label }}</h2>
+    <!-- Normal stage content (shown after any start ad clears) -->
+    <template v-else>
+      <div class="stage" :key="current.key">
+        <!-- Worship -->
+        <template v-if="current.kind === 'worship'">
+          <h2 class="stage-title">Worship</h2>
+          <MusicPlayer :asset="service.music_asset" @ended="onMediaEnded" />
+          <p class="stage-hint">Let the music settle your heart. We'll continue when it ends.</p>
+        </template>
 
-        <!-- A YouTube-sourced segment (the preaching message in YouTube mode):
-             embed the clip and auto-advance when it ends, same as worship. -->
-        <MusicPlayer
-          v-if="current.embed"
-          :asset="{ asset_type: 'youtube', provider_ref: current.embed.provider_ref, title: current.embed.title }"
-          @ended="onMediaEnded"
-        />
+        <!-- Spoken segment -->
+        <template v-else-if="current.kind === 'segment'">
+          <h2 class="stage-title">{{ current.label }}</h2>
 
-        <template v-else>
-          <video
-            v-if="current.video"
-            ref="mediaEl"
-            class="avatar"
-            :src="currentVideoSrc"
-            controls
-            playsinline
+          <!-- A YouTube-sourced segment (the preaching message in YouTube mode):
+               embed the clip and auto-advance when it ends, same as worship. -->
+          <MusicPlayer
+            v-if="current.embed"
+            :asset="{ asset_type: 'youtube', provider_ref: current.embed.provider_ref, title: current.embed.title }"
             @ended="onMediaEnded"
-            @error="onMediaError"
-            @timeupdate="onMediaTimeUpdate"
-          ></video>
-          <audio
-            v-else-if="current.audio"
-            ref="mediaEl"
-            class="narration"
-            :src="current.audio"
-            controls
-            @ended="onMediaEnded"
-            @error="onMediaError"
-            @timeupdate="onMediaTimeUpdate"
-          ></audio>
-          <p v-if="mediaNote && (current.audio || current.video)" class="media-note">{{ mediaNote }}</p>
-          <button
-            v-else-if="usesBrowserSpeech"
-            class="read-aloud"
-            type="button"
-            @click="toggleNarration"
-          >
-            {{ narrating ? "⏸ Stop reading" : "🔊 Read aloud" }}
-          </button>
-          <div class="stage-text">
-            <p v-for="(para, pi) in paragraphs" :key="pi">
-              <template v-for="({ word, idx }) in para.words" :key="idx">
-                <span :class="{ highlight: textHighlightEnabled && idx === highlightedWordIndex }">{{ word }}</span>{{ ' ' }}
-              </template>
-            </p>
+          />
+
+          <template v-else>
+            <video
+              v-if="current.video"
+              ref="mediaEl"
+              class="avatar"
+              :src="currentVideoSrc"
+              controls
+              playsinline
+              @ended="onMediaEnded"
+              @error="onMediaError"
+              @timeupdate="onMediaTimeUpdate"
+            ></video>
+            <audio
+              v-else-if="current.audio"
+              ref="mediaEl"
+              class="narration"
+              :src="current.audio"
+              controls
+              @ended="onMediaEnded"
+              @error="onMediaError"
+              @timeupdate="onMediaTimeUpdate"
+            ></audio>
+            <p v-if="mediaNote && (current.audio || current.video)" class="media-note">{{ mediaNote }}</p>
+            <button
+              v-else-if="usesBrowserSpeech"
+              class="read-aloud"
+              type="button"
+              @click="toggleNarration"
+            >
+              {{ narrating ? "⏸ Stop reading" : "🔊 Read aloud" }}
+            </button>
+            <div class="stage-text">
+              <p v-for="(para, pi) in paragraphs" :key="pi">
+                <template v-for="({ word, idx }) in para.words" :key="idx">
+                  <span :class="{ highlight: textHighlightEnabled && idx === highlightedWordIndex }">{{ word }}</span>{{ ' ' }}
+                </template>
+              </p>
+            </div>
+          </template>
+        </template>
+
+        <!-- Loading stage (for incomplete segments when streaming service) -->
+        <template v-else-if="current.kind === 'loading'">
+          <h2 class="stage-title">{{ current.label }}</h2>
+          <div class="loading-state" style="text-align: center; padding: 2rem 0; color: var(--text-muted);">
+            <div class="spinner" aria-hidden="true" style="margin: 0 auto 1rem; width: 32px; height: 32px; border: 3px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin 1s linear infinite;"></div>
+            <p>Composing message...</p>
           </div>
         </template>
-      </template>
 
-      <!-- Loading stage (for incomplete segments when streaming service) -->
-      <template v-else-if="current.kind === 'loading'">
-        <h2 class="stage-title">{{ current.label }}</h2>
-        <div class="loading-state" style="text-align: center; padding: 2rem 0; color: var(--text-muted);">
-          <div class="spinner" aria-hidden="true" style="margin: 0 auto 1rem; width: 32px; height: 32px; border: 3px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin 1s linear infinite;"></div>
-          <p>Composing message...</p>
-        </div>
-      </template>
+        <!-- Closing: testimony + offering -->
+        <template v-else>
+          <h2 class="stage-title">Before you go</h2>
+          <p class="stage-hint">Share what God has done, and give as you feel led.</p>
+          <TestimonyWall />
+          <OfferingForm />
+        </template>
+      </div>
 
-      <!-- Closing: testimony + offering -->
-      <template v-else>
-        <h2 class="stage-title">Before you go</h2>
-        <p class="stage-hint">Share what God has done, and give as you feel led.</p>
-        <TestimonyWall />
-        <OfferingForm />
-      </template>
+      <!-- Between-stage ad slot: shown below stage content, above controls. -->
+      <AdCarousel
+        v-if="activeAds.length"
+        :ads="activeAds"
+        location="between"
+        :session-token="sessionToken"
+        :language="service.language || ''"
+        :mood="service.mood || ''"
+        @done="() => {}"
+      />
+
+      <nav class="controls">
+        <button class="nav prev" :disabled="atStart" @click="prev">‹ Previous</button>
+        <span class="pos">{{ index + 1 }} / {{ stages.length }}</span>
+        <!-- On the last stage the forward action ends the service rather than dead-ending
+             on a disabled button. -->
+        <button v-if="!atEnd" class="nav next" @click="next">Next ›</button>
+        <button v-else class="nav end" @click="requestExit">End service</button>
+      </nav>
+    </template>
+
+    <!-- End-of-service ad overlay: shown when worshipper clicks "End service". -->
+    <div v-if="showEndAd" class="end-ad-overlay">
+      <AdCarousel
+        :ads="activeAds"
+        location="end"
+        :session-token="sessionToken"
+        :language="service.language || ''"
+        :mood="service.mood || ''"
+        @done="emit('exit')"
+      />
     </div>
-
-    <!-- Ad slot: only shown when the admin has enabled it and pasted HTML. -->
-    <div
-      v-if="service.ad_slot_enabled && service.ad_slot_html"
-      class="ad-slot"
-      v-html="service.ad_slot_html"
-    ></div>
-
-    <nav class="controls">
-      <button class="nav prev" :disabled="atStart" @click="prev">‹ Previous</button>
-      <span class="pos">{{ index + 1 }} / {{ stages.length }}</span>
-      <!-- On the last stage the forward action ends the service rather than dead-ending
-           on a disabled button. -->
-      <button v-if="!atEnd" class="nav next" @click="next">Next ›</button>
-      <button v-else class="nav end" @click="emit('exit')">End service</button>
-    </nav>
   </section>
 </template>
 
@@ -622,6 +685,22 @@ watch(stages, (list) => {
 .nav.end { background: var(--success); color: var(--on-primary, #fff); border-color: var(--success); }
 .nav.end:hover { filter: brightness(1.05); }
 .pos { color: var(--text-muted); font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+
+/* End-of-service ad overlay */
+.end-ad-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 1.5rem;
+}
+.end-ad-overlay > * {
+  max-width: 480px;
+  width: 100%;
+}
 
 @keyframes spin {
   to { transform: rotate(360deg); }

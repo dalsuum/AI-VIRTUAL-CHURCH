@@ -271,6 +271,21 @@ export const api = {
     request(`/admin/songs/${id}`, { method: "PATCH", body: payload }),
   adminDeleteSong: (id) =>
     request(`/admin/songs/${id}`, { method: "DELETE" }),
+  // Bulk song import (CSV/JSON) — multipart, so it can't use the JSON helper.
+  adminImportSongs: async (file) => {
+    await ensureCsrf();
+    const fd = new FormData();
+    fd.append("file", file, file.name);
+    const res = await fetch(`${BASE_URL}/admin/songs/import`, {
+      method: "POST",
+      credentials: "include",
+      headers: { Accept: "application/json", "X-XSRF-TOKEN": getCsrfToken() },
+      body: fd,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw Object.assign(new Error(data.message || "Import failed"), { status: res.status, data });
+    return data;
+  },
   adminGetPermissions: () => request("/admin/permissions"),
   adminUpdatePermissions: (permissions) =>
     request("/admin/permissions", { method: "PATCH", body: { permissions } }),

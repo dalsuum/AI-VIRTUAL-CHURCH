@@ -82,6 +82,144 @@ class SongController extends Controller
     }
 
     /**
+     * Bulk import from an uploaded CSV or JSON file. Existing songs (same
+     * title + language) are skipped, so re-importing the same file is a no-op.
+     * Returns a per-file summary: how many were added, skipped, and any rows
+     * that could not be parsed.
+     *
+     * CSV columns (header row, case-insensitive): language, title, artist,
+     * category, lyrics, url. JSON: an array of objects with the same keys.
+     */
+    public function import(Request $request): JsonResponse
+    {
+        PermissionService::require($request->user(), 'lyrics.manage');
+
+        $request->validate([
+            // 5 MB cap; CSV is often sniffed as text/plain, so allow txt too.
+            'file' => ['required', 'file', 'max:5120', 'mimes:csv,txt,json'],
+        ]);
+
+        $file = $request->file('file');
+        $ext  = strtolower($file->getClientOriginalExtension());
+
+        try {
+            $rows = $ext === 'json'
+                ? $this->parseJsonImport($file->getRealPath())
+                : $this->parseCsvImport($file->getRealPath());
+        } catch (\Throwable $e) {
+            return response()->json(['ok' => false, 'message' => 'Could not parse file: ' . $e->getMessage()], 422);
+        }
+
+        // Existing title|language keys, lower-cased, so the dedupe is case-insensitive.
+        $existing = Song::query()
+            ->get(['title', 'language'])
+            ->map(fn ($s) => $this->dedupeKey($s->title, $s->language))
+            ->flip();
+
+        $imported = 0;
+        $skipped  = 0;
+        $errors   = [];
+
+        foreach ($rows as $i => $raw) {
+            $song = $this->normaliseImportRow($raw);
+            if ($song === null) {
+                $errors[] = 'Row ' . ($i + 1) . ': missing title or lyrics.';
+                continue;
+            }
+
+            $key = $this->dedupeKey($song['title'], $song['language']);
+            if ($existing->has($key)) {
+                $skipped++;
+                continue;
+            }
+
+            Song::create($song);
+            $existing->put($key, true);   // guard against duplicates within the file
+            $imported++;
+        }
+
+        return response()->json([
+            'ok'       => true,
+            'imported' => $imported,
+            'skipped'  => $skipped,
+            'errors'   => array_slice($errors, 0, 20),   // cap the payload
+        ]);
+    }
+
+    /** Lower-cased "title|language" key for case-insensitive dedupe. */
+    private function dedupeKey(string $title, string $language): string
+    {
+        return mb_strtolower(trim($title)) . '|' . $language;
+    }
+
+    /** Parse a JSON import file into an array of raw row arrays. */
+    private function parseJsonImport(string $path): array
+    {
+        $data = json_decode((string) file_get_contents($path), true, 512, JSON_THROW_ON_ERROR);
+
+        return is_array($data) ? array_values($data) : [];
+    }
+
+    /** Parse a CSV import file (quoted, multi-line lyrics supported) into rows. */
+    private function parseCsvImport(string $path): array
+    {
+        $rows   = [];
+        $header = null;
+        $fh = fopen($path, 'r');
+        if ($fh === false) {
+            return [];
+        }
+
+        try {
+            while (($cols = fgetcsv($fh)) !== false) {
+                if ($header === null) {
+                    $header = array_map(fn ($h) => strtolower(trim((string) $h)), $cols);
+                    continue;
+                }
+                // Pad/truncate so array_combine never fails on ragged rows.
+                $cols = array_pad(array_slice($cols, 0, count($header)), count($header), null);
+                $rows[] = array_combine($header, $cols);
+            }
+        } finally {
+            fclose($fh);
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Turn a raw import row (from CSV or JSON) into a validated songs payload,
+     * or null when it lacks the required title/lyrics. Unknown languages fall
+     * back to 'my'; has_chords is derived from inline chord markers.
+     */
+    private function normaliseImportRow(array $raw): ?array
+    {
+        $get = fn (string $k) => isset($raw[$k]) ? trim((string) $raw[$k]) : '';
+
+        $title  = $get('title');
+        $lyrics = isset($raw['lyrics']) ? (string) $raw['lyrics'] : '';
+        if ($title === '' || trim($lyrics) === '') {
+            return null;
+        }
+
+        $language = strtolower($get('language'));
+        if (! in_array($language, self::LANGUAGES, true)) {
+            $language = 'my';
+        }
+
+        return [
+            'language'   => $language,
+            'title'      => $title,
+            'artist'     => $get('artist') ?: null,
+            'category'   => $get('category') ?: null,
+            'lyrics'     => $lyrics,
+            'has_chords' => (bool) preg_match('/\[[A-G][^\s\]]*\]/', $lyrics),
+            'source'     => $get('source') ?: 'import',
+            'url'        => $get('url') ?: null,
+        ];
+    }
+
+    /**
      * Validate + normalise the payload. On update every field is optional
      * (PATCH-style); has_chords is auto-derived from inline [Chord] markers
      * unless the client sends it explicitly.

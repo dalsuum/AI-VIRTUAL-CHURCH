@@ -123,6 +123,108 @@ async function save() {
   }
 }
 
+// ── Bulk export / import ───────────────────────────────────────────────────────
+// Export reflects the current view (language filter + search) so admins can export
+// "all", just Myanmar, just a search, etc. Import is CSV/JSON only — reliable,
+// structured formats; the backend skips songs that already exist.
+const exportOpen = ref(false);
+const importing  = ref(false);
+const fileInput  = ref(null);
+
+const EXPORT_COLS = ["language", "title", "artist", "category", "lyrics", "has_chords", "source", "url"];
+
+function stamp() { return new Date().toISOString().slice(0, 10); }
+
+function downloadBlob(content, filename, mime) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function csvCell(v) {
+  const s = v == null ? "" : String(v);
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function exportCsv() {
+  const lines = [EXPORT_COLS.join(",")];
+  for (const s of filtered.value) lines.push(EXPORT_COLS.map((c) => csvCell(s[c])).join(","));
+  // Leading BOM so Excel reads the Myanmar/Tedim UTF-8 correctly.
+  downloadBlob("﻿" + lines.join("\r\n"), `songs-${stamp()}.csv`, "text/csv;charset=utf-8");
+}
+
+function exportJson() {
+  const rows = filtered.value.map((s) => Object.fromEntries(EXPORT_COLS.map((c) => [c, s[c] ?? null])));
+  downloadBlob(JSON.stringify(rows, null, 2), `songs-${stamp()}.json`, "application/json");
+}
+
+function exportTxt() {
+  const sep = "\n" + "—".repeat(40) + "\n\n";
+  const blocks = filtered.value.map((s) => {
+    const head = [`Title: ${s.title}`];
+    if (s.artist) head.push(`Artist: ${s.artist}`);
+    head.push(`Language: ${s.language.toUpperCase()}`);
+    if (s.category) head.push(`Category: ${s.category}`);
+    return head.join("\n") + "\n\n" + (s.lyrics || "");
+  });
+  downloadBlob(blocks.join(sep) + "\n", `songs-${stamp()}.txt`, "text/plain;charset=utf-8");
+}
+
+async function exportPdf() {
+  const container = document.createElement("div");
+  container.style.cssText = "font-family:'Padauk','Noto Sans Myanmar',sans-serif;padding:8px;color:#111;";
+  container.innerHTML = filtered.value.map((s) => `
+    <section style="page-break-inside:avoid;margin-bottom:26px;">
+      <h2 style="margin:0 0 2px;font-size:17px;">${escapeHtml(s.title)}</h2>
+      <div style="font-size:11px;color:#555;margin-bottom:8px;">${
+        [s.artist, s.language?.toUpperCase(), s.category].filter(Boolean).map(escapeHtml).join(" · ")
+      }</div>
+      <pre style="white-space:pre-wrap;font-family:inherit;font-size:13px;line-height:1.7;margin:0;">${escapeHtml(s.lyrics || "")}</pre>
+    </section>`).join("");
+  const { default: html2pdf } = await import("html2pdf.js");
+  await html2pdf()
+    .set({ margin: 10, filename: `songs-${stamp()}.pdf`, html2canvas: { scale: 2 }, jsPDF: { unit: "mm", format: "a4" } })
+    .from(container)
+    .save();
+}
+
+function doExport(fmt) {
+  exportOpen.value = false;
+  if (!filtered.value.length) return;
+  ({ csv: exportCsv, txt: exportTxt, pdf: exportPdf, json: exportJson })[fmt]?.();
+}
+
+function triggerImport() { fileInput.value?.click(); }
+
+async function onImportFile(e) {
+  const file = e.target.files?.[0];
+  e.target.value = ""; // let the same file be re-selected later
+  if (!file) return;
+  importing.value = true;
+  message.value = "";
+  status.value = "";
+  try {
+    const res = await api.adminImportSongs(file);
+    await loadSongs();
+    let msg = `Imported ${res.imported}, skipped ${res.skipped} (already present).`;
+    if (res.errors?.length) msg += ` ${res.errors.length} row(s) skipped for errors.`;
+    message.value = msg;
+    status.value = "success";
+  } catch (err) {
+    message.value = `Import failed: ${err.data?.message || err.message || "Unknown error."}`;
+    status.value = "error";
+  } finally {
+    importing.value = false;
+    setTimeout(() => (message.value = ""), 8000);
+  }
+}
+
 // ── Chord helpers ──────────────────────────────────────────────────────────────
 // Common worship chords for one-click insertion at the cursor (manual entry).
 const CHORD_PALETTE = ["C", "D", "E", "F", "G", "A", "B", "Am", "Em", "Dm", "G7", "Csus4", "C/E"];
@@ -181,7 +283,22 @@ const langLabel = (v) => LANGUAGES.find((l) => l.value === v)?.label || v;
     <div v-if="!editing" class="panel">
       <div class="panel-head">
         <h2>Song Library</h2>
-        <button class="btn primary" @click="newSong">+ New Song</button>
+        <div class="head-actions">
+          <div class="menu">
+            <button class="btn" :disabled="!filtered.length" @click="exportOpen = !exportOpen">Export ▾</button>
+            <div v-if="exportOpen" class="menu-pop">
+              <button type="button" @click="doExport('csv')">CSV</button>
+              <button type="button" @click="doExport('txt')">TXT</button>
+              <button type="button" @click="doExport('pdf')">PDF</button>
+              <button type="button" @click="doExport('json')">JSON</button>
+            </div>
+          </div>
+          <button class="btn" :disabled="importing" @click="triggerImport">
+            {{ importing ? "Importing…" : "Import" }}
+          </button>
+          <input ref="fileInput" type="file" accept=".csv,.json,application/json,text/csv" hidden @change="onImportFile" />
+          <button class="btn primary" @click="newSong">+ New Song</button>
+        </div>
       </div>
 
       <div class="filters">
@@ -290,8 +407,13 @@ const langLabel = (v) => LANGUAGES.find((l) => l.value === v)?.label || v;
 <style scoped>
 .lyrics-mgr { color: var(--text); }
 .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius, 12px); padding: 1.25rem 1.4rem; }
-.panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
+.panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; gap: 0.6rem; flex-wrap: wrap; }
 .panel-head h2 { font-size: 1.3rem; font-weight: 700; margin: 0; }
+.head-actions { display: flex; align-items: center; gap: 0.5rem; }
+.menu { position: relative; }
+.menu-pop { position: absolute; right: 0; top: calc(100% + 0.3rem); z-index: 10; display: flex; flex-direction: column; min-width: 120px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 0.3rem; box-shadow: 0 8px 24px rgba(0,0,0,0.25); }
+.menu-pop button { text-align: left; padding: 0.45rem 0.7rem; border: none; background: transparent; color: var(--text); cursor: pointer; font: inherit; font-size: 0.85rem; border-radius: 6px; }
+.menu-pop button:hover { background: var(--bg); color: var(--primary); }
 
 .filters { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; margin-bottom: 0.9rem; }
 .lang-tabs { display: flex; gap: 0.35rem; flex-wrap: wrap; }

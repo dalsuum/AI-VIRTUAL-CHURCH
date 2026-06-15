@@ -108,6 +108,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/grammar-review', [AdminController::class, 'grammarReviewSave']);
 
         // Song library CRUD — each method enforces the `lyrics.manage` permission.
+        Route::post('/songs/import',   [SongController::class, 'import']);
         Route::get('/songs/{song}',    [SongController::class, 'show']);
         Route::post('/songs',          [SongController::class, 'store']);
         Route::patch('/songs/{song}',  [SongController::class, 'update']);

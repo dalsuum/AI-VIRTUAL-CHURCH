@@ -256,11 +256,59 @@ def _local_llm_url(language: str) -> tuple[str, str] | None:
 # is intentionally NOT routed here (stays on Ollama tedim-zolai).
 _NLLB_TGT = {"my": "mya_Mymr"}
 
+# NLLB emits Myanmar with a space between every syllable cluster (and sometimes a
+# trailing dash). The local nllb_service cleans its own output; HF Inference does
+# not, so normalize HF results here too — mirrors nllb_service._clean_myanmar.
+_MY_SPACE = re.compile(r"(?<=[က-႟])\s+(?=[က-႟])")
+
+
+def _clean_myanmar(text: str) -> str:
+    text = _MY_SPACE.sub("", text)
+    text = text.replace(" ။", "။").replace(" ၊", "၊")
+    return text.strip().strip("-").strip()
+
+
+def _translate_via_hf(text: str, language: str) -> str:
+    """Translate English → target language via Hugging Face Inference (off-box GPU).
+
+    Primary Burmese path: keeps the 2.3 GB model off this CPU box and avoids the
+    swap-thrashing timeouts that forced the bad Ollama fallback. Raises on any
+    failure (incl. missing token or HF cold-start 503) so the caller falls back to
+    the local NLLB service."""
+    # HF's FREE serverless tier no longer hosts NLLB-200 ("Model not supported by
+    # provider hf-inference"). So HF is OFF unless an explicit endpoint is set —
+    # a paid HF Inference Endpoint or another provider's NLLB URL. Until then this
+    # raises immediately and we go straight to the local NLLB service.
+    url = (os.getenv("NLLB_HF_URL") or "").strip()
+    token = (os.getenv("NLLB_HF_TOKEN") or os.getenv("HF_TOKEN") or "").strip()
+    tgt = _NLLB_TGT.get(language)
+    if not url or not token or not tgt:
+        raise RuntimeError("HF NLLB endpoint not configured")
+    resp = requests.post(
+        url,
+        headers={"Authorization": f"Bearer {token}"},
+        json={"inputs": text, "parameters": {"src_lang": "eng_Latn", "tgt_lang": tgt}},
+        timeout=60,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    if isinstance(data, dict) and data.get("error"):
+        raise RuntimeError(f"HF error: {data['error']}")
+    if isinstance(data, list) and data:
+        out = data[0].get("translation_text", "")
+    elif isinstance(data, dict):
+        out = data.get("translation_text", "")
+    else:
+        out = ""
+    out = (out or "").strip()
+    if not out:
+        raise RuntimeError("HF returned empty translation")
+    return _clean_myanmar(out) if language == "my" else out
+
 
 def _translate_via_nllb(text: str, language: str) -> str:
     """Translate English prose into the target language with the local NLLB
-    service (workers/nllb_api.py on NLLB_URL). Raises on any failure so the
-    caller can fall back to the Ollama model."""
+    service (workers/nllb_api.py on NLLB_URL). Fallback for HF. Raises on failure."""
     base = (os.getenv("NLLB_URL") or "").rstrip("/")
     tgt = _NLLB_TGT.get(language)
     if not base or not tgt:
@@ -400,18 +448,23 @@ def _complete(system: str, user: str, max_tokens: int = 1500, language: str = "e
     # (The strict-JSON intake plan is excluded by _should_use_local_llm and still
     # runs on the cloud chat model below.)
     # Burmese prose PRIMARY path: generate the segment in English, then translate
-    # with the local NLLB service — far more fluent than the Ollama burmese-myanmar
-    # model. On any failure (NLLB down, or output fails the Myanmar plausibility
-    # guard) fall through to the Ollama model, then to the cloud/hardcoded fallback.
-    if language == "my" and _should_use_local_llm(system, language) and os.getenv("NLLB_URL"):
-        try:
-            english = _gen_english_source(system, user, max_tokens, language)
-            translated = _translate_via_nllb(english, language)
-            if _is_my_plausible(translated, min_myanmar_chars=10):
-                return translated
-            print("[llm] NLLB Burmese output failed plausibility guard, trying Ollama", flush=True)
-        except Exception as exc:
-            print(f"[llm] NLLB Burmese path failed ({exc}), trying Ollama", flush=True)
+    # via NLLB — HF Inference first (off-box GPU, fast/reliable), then the local
+    # NLLB service. The Ollama burmese-myanmar model is deliberately NOT in this
+    # chain: it emits word-salad, so on translation failure we RAISE and let the
+    # caller serve its safe curated/hardcoded Burmese fallback instead.
+    if language == "my" and _should_use_local_llm(system, language):
+        english = _gen_english_source(system, user, max_tokens, language)
+        last_exc: Exception | None = None
+        for name, translate in (("HF", _translate_via_hf), ("local-NLLB", _translate_via_nllb)):
+            try:
+                translated = translate(english, language)
+                if _is_my_plausible(translated, min_myanmar_chars=10):
+                    return translated
+                print(f"[llm] {name} Burmese output failed plausibility guard", flush=True)
+            except Exception as exc:
+                last_exc = exc
+                print(f"[llm] {name} Burmese translate failed ({exc})", flush=True)
+        raise RuntimeError(f"Burmese translation unavailable (HF + local NLLB failed): {last_exc}")
 
     if _should_use_local_llm(system, language) and _local_llm_url(language):
         try:

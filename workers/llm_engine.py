@@ -1244,6 +1244,33 @@ def generate_benediction(*, user_name: str | None, mood: str, language: str = "e
         return _ensure_exact_name(_fallback_benediction(user_name, mood, language), user_name)
 
 
+def _library_lyrics_for_mood(mood: str, language: str) -> str | None:
+    """Return a curated library song's lyrics whose mood/category/title matches.
+
+    The library (admin Lyrics tab → GET /songs) is the human-checked source of
+    correct vocabulary and phrasing. We search it with the worshipper's mood and
+    accept the first song whose stored lyrics pass the language guard. Returns
+    None when the library is unreachable or holds no matching, in-language song —
+    callers then compose fresh lyrics."""
+    keyword = (mood or "").strip()
+    if not keyword:
+        return None
+    try:
+        import song_library
+
+        songs = song_library.get_songs(language=language, search=keyword)
+    except Exception as exc:  # noqa: BLE001 — never block composition on the library
+        print(f"[llm] song library lookup unavailable ({exc}), composing instead", flush=True)
+        return None
+
+    for song in songs:
+        lyrics = str((song or {}).get("lyrics") or "").strip()
+        if lyrics and _lyrics_match_language(lyrics, language):
+            print(f"[llm] reusing library song {song.get('title')!r} for mood {keyword!r}", flush=True)
+            return lyrics
+    return None
+
+
 def generate_music_lyrics(*, mood: str, language: str) -> str:
     """Generate worship song lyrics via the local language-specific LLM.
 
@@ -1255,6 +1282,12 @@ def generate_music_lyrics(*, mood: str, language: str) -> str:
     """
     if language not in ("td", "my"):
         return _fallback_music_lyrics(mood, language)
+
+    # 1. Prefer an existing worship song from the library whose mood/keywords match.
+    #    Reusing a curated, human-checked song guarantees correct vocabulary and
+    #    phrasing — only fall through to LLM composition when nothing matches.
+    if library := _library_lyrics_for_mood(mood, language):
+        return library
 
     if language == "td":
         system = (
@@ -1269,17 +1302,17 @@ def generate_music_lyrics(*, mood: str, language: str) -> str:
             "lungdamna (grace), lungtang (heart), nuntakna (life), zangtal (salvation), "
             "hong (come/arrive), sungah (in/within), kilemna (praise). "
             "Do NOT use English, Mizo, Falam, or Haka words. "
-                "Output ONLY the tagged lyric sections — no explanations."
+            "Output ONLY the tagged lyric sections — no explanations."
         )
         user = (
-                f"Write a complete Tedim worship song for someone feeling {mood}.\n"
-                "Do NOT write just one sentence. You MUST provide full lyrics for all three sections below:\n\n"
-                "[Verse 1]\n"
-                "<write 4 lines of Tedim lyrics here>\n\n"
-                "[Chorus]\n"
-                "<write 4 lines of Tedim lyrics here>\n\n"
-                "[Verse 2]\n"
-                "<write 4 lines of Tedim lyrics here>"
+            f"Write a complete Tedim worship song for someone feeling {mood}.\n"
+            "Do NOT write just one sentence. You MUST provide full lyrics for all three sections below:\n\n"
+            "[Verse 1]\n"
+            "<write 4 lines of Tedim lyrics here>\n\n"
+            "[Chorus]\n"
+            "<write 4 lines of Tedim lyrics here>\n\n"
+            "[Verse 2]\n"
+            "<write 4 lines of Tedim lyrics here>"
         )
     else:  # my
         system = (
@@ -1287,21 +1320,21 @@ def generate_music_lyrics(*, mood: str, language: str) -> str:
             "Write worship song lyrics ONLY in Myanmar Burmese using Myanmar Unicode script. "
             "Use: ဘုရားသခင် (God), ကိုယ်တော် (Lord), ယေရှုခရစ်တော် (Jesus Christ). "
             "Do NOT use English words or Zawgyi encoding. "
-                "Output ONLY the tagged lyric sections — no explanations."
+            "Output ONLY the tagged lyric sections — no explanations."
         )
         user = (
-                f"Write a complete Burmese worship song for someone feeling {mood}.\n"
-                "Do NOT write just one sentence. You MUST provide full lyrics for all three sections below:\n\n"
-                "[Verse 1]\n"
-                "<write 4 lines of Burmese lyrics here>\n\n"
-                "[Chorus]\n"
-                "<write 4 lines of Burmese lyrics here>\n\n"
-                "[Verse 2]\n"
-                "<write 4 lines of Burmese lyrics here>"
+            f"Write a complete Burmese worship song for someone feeling {mood}.\n"
+            "Do NOT write just one sentence. You MUST provide full lyrics for all three sections below:\n\n"
+            "[Verse 1]\n"
+            "<write 4 lines of Burmese lyrics here>\n\n"
+            "[Chorus]\n"
+            "<write 4 lines of Burmese lyrics here>\n\n"
+            "[Verse 2]\n"
+            "<write 4 lines of Burmese lyrics here>"
         )
 
     try:
-            raw = _complete(system, user, max_tokens=2000, language=language)
+        raw = _complete(system, user, max_tokens=2000, language=language)
         if language == "td":
             raw = _fix_tedim_vocab(raw)
         text = _strip_formatting(raw)

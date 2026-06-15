@@ -135,6 +135,16 @@ class ServiceController extends Controller
             ], 202);
         }
 
+        // Guard: if this session already triggered the pipeline, don't burn a second GPU job.
+        if (in_array($session->status, ['active', 'processing', 'complete'])) {
+            return response()->json([
+                'intercepted'   => false,
+                'session_token' => $session->session_token,
+                'intake_id'     => $intake->id,
+                'status'        => $session->status,
+            ], 202);
+        }
+
         $session->update(['status' => 'active', 'scheduled_at' => null]);
         DispatchServiceJob::dispatch($session->id);
 

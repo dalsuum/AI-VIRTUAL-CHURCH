@@ -268,42 +268,42 @@ def _clean_myanmar(text: str) -> str:
     return text.strip().strip("-").strip()
 
 
+_HF_SPACE_CLIENT = None
+
+
+def _hf_space_client():
+    """Cached gradio_client for the NLLB Space (avoids re-reading its API per call).
+
+    HF's free serverless tier no longer hosts NLLB-200, so we run it ourselves as a
+    ZeroGPU Gradio Space and call it here. NLLB_HF_SPACE = "owner/space" (or a full
+    https://…hf.space URL). Returns None when not configured."""
+    global _HF_SPACE_CLIENT
+    space = (os.getenv("NLLB_HF_SPACE") or "").strip()
+    if not space:
+        return None
+    if _HF_SPACE_CLIENT is None:
+        from gradio_client import Client
+        token = (os.getenv("NLLB_HF_TOKEN") or os.getenv("HF_TOKEN") or "").strip() or None
+        _HF_SPACE_CLIENT = Client(space, token=token, verbose=False)
+    return _HF_SPACE_CLIENT
+
+
 def _translate_via_hf(text: str, language: str) -> str:
-    """Translate English → target language via Hugging Face Inference (off-box GPU).
+    """Translate English → target language via the NLLB ZeroGPU Space (off-box GPU).
 
     Primary Burmese path: keeps the 2.3 GB model off this CPU box and avoids the
     swap-thrashing timeouts that forced the bad Ollama fallback. Raises on any
-    failure (incl. missing token or HF cold-start 503) so the caller falls back to
-    the local NLLB service."""
-    # HF's FREE serverless tier no longer hosts NLLB-200 ("Model not supported by
-    # provider hf-inference"). So HF is OFF unless an explicit endpoint is set —
-    # a paid HF Inference Endpoint or another provider's NLLB URL. Until then this
-    # raises immediately and we go straight to the local NLLB service.
-    url = (os.getenv("NLLB_HF_URL") or "").strip()
-    token = (os.getenv("NLLB_HF_TOKEN") or os.getenv("HF_TOKEN") or "").strip()
+    failure (not configured, Space sleeping/cold) so the caller falls back to the
+    local NLLB service."""
     tgt = _NLLB_TGT.get(language)
-    if not url or not token or not tgt:
-        raise RuntimeError("HF NLLB endpoint not configured")
-    resp = requests.post(
-        url,
-        headers={"Authorization": f"Bearer {token}"},
-        json={"inputs": text, "parameters": {"src_lang": "eng_Latn", "tgt_lang": tgt}},
-        timeout=60,
-    )
-    resp.raise_for_status()
-    data = resp.json()
-    if isinstance(data, dict) and data.get("error"):
-        raise RuntimeError(f"HF error: {data['error']}")
-    if isinstance(data, list) and data:
-        out = data[0].get("translation_text", "")
-    elif isinstance(data, dict):
-        out = data.get("translation_text", "")
-    else:
-        out = ""
-    out = (out or "").strip()
+    client = _hf_space_client()
+    if client is None or not tgt:
+        raise RuntimeError("HF NLLB Space not configured")
+    out = client.predict(text, "eng_Latn", tgt, api_name="/translate")
+    out = (out or "").strip().rstrip("-").strip()
     if not out:
-        raise RuntimeError("HF returned empty translation")
-    return _clean_myanmar(out) if language == "my" else out
+        raise RuntimeError("HF Space returned empty translation")
+    return out
 
 
 def _translate_via_nllb(text: str, language: str) -> str:

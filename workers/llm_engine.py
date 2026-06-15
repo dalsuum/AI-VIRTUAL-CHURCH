@@ -268,6 +268,28 @@ def _clean_myanmar(text: str) -> str:
     return text.strip().strip("-").strip()
 
 
+def _is_looped(text: str) -> bool:
+    """True if a translation degenerated into a repeated-word loop (NLLB beam
+    search sometimes does this). Mirrors the Tedim router's trigram guard so a
+    looped Burmese segment is rejected and the safe fallback fires instead."""
+    words = text.split()
+    if len(words) < 6:
+        return False
+    # same word repeated 4+ times in a row
+    run = 1
+    for a, b in zip(words, words[1:]):
+        run = run + 1 if a == b else 1
+        if run >= 4:
+            return True
+    # any trigram occurring 3+ times
+    trigrams = [" ".join(words[i:i + 3]) for i in range(len(words) - 2)]
+    if trigrams:
+        from collections import Counter
+        if Counter(trigrams).most_common(1)[0][1] >= 3:
+            return True
+    return False
+
+
 _HF_SPACE_CLIENT = None
 
 
@@ -303,6 +325,8 @@ def _translate_via_hf(text: str, language: str) -> str:
     out = (out or "").strip().rstrip("-").strip()
     if not out:
         raise RuntimeError("HF Space returned empty translation")
+    if _is_looped(out):
+        raise RuntimeError("HF Space output degenerated into a repetition loop")
     return out
 
 
@@ -319,7 +343,10 @@ def _translate_via_nllb(text: str, language: str) -> str:
         timeout=LOCAL_LLM_TIMEOUT,
     )
     resp.raise_for_status()
-    return (resp.json().get("translation") or "").strip()
+    out = (resp.json().get("translation") or "").strip()
+    if _is_looped(out):
+        raise RuntimeError("local NLLB output degenerated into a repetition loop")
+    return out
 
 
 def _gen_english_source(system: str, user: str, max_tokens: int, language: str) -> str:

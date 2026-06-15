@@ -33,6 +33,8 @@ def translate(text: str, src_lang: str = "eng_Latn", tgt_lang: str = "mya_Mymr")
             forced_bos_token_id=bos,
             max_new_tokens=512,
             num_beams=4,
+            no_repeat_ngram_size=3,
+            repetition_penalty=1.3,
         )
     return tokenizer.batch_decode(out, skip_special_tokens=True)[0].strip()
 

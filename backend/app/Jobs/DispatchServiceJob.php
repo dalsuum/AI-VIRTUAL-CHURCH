@@ -236,7 +236,22 @@ class DispatchServiceJob implements ShouldQueue
                 }
             }
 
-            return $tedimHits >= 4 && $coreHits >= 2 && $englishHits <= 1;
+            // Tedim declarative sentences end with "hi"; benedictive endings use "hen".
+            // These are the most reliable Tedim-specific markers, matching the Python
+            // guard in llm_engine.py.
+            $terminalTedim = substr_count($lower, " hi\n")
+                + substr_count($lower, " hi.")
+                + substr_count($lower, " hi!")
+                + substr_count($lower, " hen\n")
+                + substr_count($lower, " hen.")
+                + substr_count($lower, " hen!");
+
+            if (str_ends_with(rtrim($lower), ' hi') || str_ends_with(rtrim($lower), ' hen')) {
+                $terminalTedim++;
+            }
+
+            // The lyric body must clearly be Tedim/Zolai.
+            return $tedimHits >= 5 && $coreHits >= 2 && $englishHits === 0 && $terminalTedim >= 2;
         }
 
         return true;

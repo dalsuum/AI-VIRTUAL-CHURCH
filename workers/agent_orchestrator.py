@@ -169,7 +169,7 @@ def run_agent(job: dict) -> None:
                 raw_args = raw_args.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
                 args = json.loads(raw_args)
             except json.JSONDecodeError:
-                match = re.search(r"\{.*\}", raw_args, re.DOTALL)
+                match = re.search(r"\{.*?\}", raw_args, re.DOTALL)
                 if match:
                     try:
                         args = json.loads(match.group(0))
@@ -231,9 +231,9 @@ def _build_system_prompt(job: dict, plan: dict) -> str:
     scripture_ref = plan.get("scripture_ref", "John 3:16")
 
     sermon_note = (
-        "For the sermon: call find_sermon_video (YouTube mode) — do NOT call generate_sermon."
+        "For the sermon: call find_and_post_sermon_video() (YouTube mode) — do NOT call generate_and_post_sermon."
         if music_src == "youtube"
-        else f"For the sermon: call generate_sermon with scripture_ref='{scripture_ref}'."
+        else f"For the sermon: call generate_and_post_sermon with scripture_ref='{scripture_ref}'."
     )
 
     return f"""You are the AI worship conductor for AI Virtual Church.
@@ -250,18 +250,17 @@ Your job: generate the TEXT segments for one worshipper's personal service.
 - Language: {language}
 - Scripture reference (already chosen): {scripture_ref}
 
-## Your task — generate these 4 segments IN THIS ORDER:
+## Your task — execute these steps IN THIS ORDER:
 
-1. Call resolve_scripture("{scripture_ref}") → post result as 'scripture'.
-2. Call generate_opening_prayer → post as 'opening_prayer'.
-   POST THIS AS FAST AS POSSIBLE — it opens the doors for the worshipper.
-3. {sermon_note} → post as 'sermon'.
-4. Call generate_benediction → post as 'benediction'.
-5. Call finish_service.
+1. Call resolve_and_post_scripture(scripture_ref="{scripture_ref}").
+2. Call generate_and_post_opening_prayer().
+3. {sermon_note}
+4. Call generate_and_post_benediction().
+5. Call finish_service().
 
 ## Rules
-- The `post_text_segment` tool has a built-in safety review. If it rejects the content, you should regenerate it with a different angle. If it still fails, post a short, neutral, safe fallback text.
-- Never include the worshipper's name in generated text.
+- The tools automatically handle safety review and delivery to the frontend.
+- Do not attempt to write the sermon or prayer text yourself; the tools will generate and deliver them.
 - Post each segment immediately — do not wait to batch them.
 - CRITICAL: If the user provides a prayer, extract their specific core keywords and include them in the `query` argument when calling find_sermon_video.
 - Do not call dispatch_music, generate_welcome, or build_plan — those are already done.
@@ -339,6 +338,8 @@ def _build_tools(job: dict, plan: dict) -> tuple[list[dict], dict[str, callable]
         and narrator.is_enabled(narration_mode)
     )
 
+    _narrate_slot = 0
+
     def _seg_gender(segment: str) -> str:
         return gender if segment == "sermon" else ("female" if gender == "male" else "male")
 
@@ -363,7 +364,7 @@ def _build_tools(job: dict, plan: dict) -> tuple[list[dict], dict[str, callable]
 
     # ---- handlers --------------------------------------------------------
 
-    def h_resolve_scripture(scripture_ref: str = "") -> dict:
+    def h_resolve_and_post_scripture(scripture_ref: str = "") -> dict:
         scripture_ref = scripture_ref or ""
         effective_ref = scripture_ref.strip() if scripture_ref.strip() else plan.get("scripture_ref", "")
         if effective_ref != scripture_ref:
@@ -378,12 +379,13 @@ def _build_tools(job: dict, plan: dict) -> tuple[list[dict], dict[str, callable]
                 text = bible_api.resolve(effective_ref, lang=language)
 
             heading = (bible_api.book_title(effective_ref, lang=language) or effective_ref) if language != "en" else effective_ref
-            return {"heading": heading, "text": text, "full": f"{heading}\n\n{text}"}
+            full_text = f"{heading}\n\n{text}"
+            return h_post_text_segment("scripture", full_text)
         except Exception as exc:  # noqa: BLE001
             print(f"[agent] resolve_scripture error for {effective_ref!r}: {exc}", flush=True)
-            return {"heading": effective_ref, "text": "", "full": effective_ref, "error": str(exc)}
+            return {"error": str(exc)}
 
-    def h_generate_opening_prayer() -> dict:
+    def h_generate_and_post_opening_prayer() -> dict:
         text = llm_engine.generate_opening_prayer(
             user_name=job.get("user_name", ""),
             mood=mood,
@@ -391,9 +393,9 @@ def _build_tools(job: dict, plan: dict) -> tuple[list[dict], dict[str, callable]
             language=language,
             user_history=job.get("user_history"),
         )
-        return {"text": text}
+        return h_post_text_segment("opening_prayer", text)
 
-    def h_generate_sermon(scripture_ref: str) -> dict:
+    def h_generate_and_post_sermon(scripture_ref: str = "") -> dict:
         minutes = 5 if job.get("music_source") == "musicgen" else 8
         text = llm_engine.generate_sermon(
             user_name=job.get("user_name", ""),
@@ -404,9 +406,9 @@ def _build_tools(job: dict, plan: dict) -> tuple[list[dict], dict[str, callable]
             prayer_text=job.get("prayer_text"),
             user_history=job.get("user_history"),
         )
-        return {"text": text}
+        return h_post_text_segment("sermon", text)
 
-    def h_generate_benediction() -> dict:
+    def h_generate_and_post_benediction() -> dict:
         text = llm_engine.generate_benediction(
             user_name=job.get("user_name", ""),
             mood=mood,
@@ -414,9 +416,9 @@ def _build_tools(job: dict, plan: dict) -> tuple[list[dict], dict[str, callable]
             prayer_text=job.get("prayer_text"),
             user_history=job.get("user_history"),
         )
-        return {"text": text}
+        return h_post_text_segment("benediction", text)
 
-    def h_find_sermon_video(query: str = "") -> dict:
+    def h_find_and_post_sermon_video(query: str = "") -> dict:
         query = query or ""
         past  = (job.get("user_history") or {}).get("past_video_ids", [])
         
@@ -424,9 +426,13 @@ def _build_tools(job: dict, plan: dict) -> tuple[list[dict], dict[str, callable]
         if effective_query != query:
             print(f"[agent] find_sermon_video missing/empty query. Falling back to plan: {effective_query!r}", flush=True)
             
-        video = _find_sermon_video(mood=mood, query=effective_query, language=language, excluded_ids=past)
-        return {"video_id": video["video_id"], "title": video["title"]}
+        try:
+            video = _find_sermon_video(mood=mood, query=effective_query, language=language, excluded_ids=past)
+            return h_post_youtube_sermon(video["video_id"], video["title"])
+        except Exception as exc:
+            return {"error": str(exc)}
 
+    # Kept as internal helper, removed from agent tools
     def h_post_text_segment(segment: str = "", text: str = "") -> dict:
         segment = segment or ""
         text = text or ""
@@ -444,17 +450,19 @@ def _build_tools(job: dict, plan: dict) -> tuple[list[dict], dict[str, callable]
 
         narrated = {"opening_prayer", "scripture", "sermon", "benediction"}
         if want_audio and segment in narrated:
+            nonlocal _narrate_slot
             g = _seg_gender(segment)
-            stagger = 0
+            stagger_step = 0
             if narration_mode == "kokoro":
-                stagger = 45
+                stagger_step = 45
             elif language in ("my", "td") and narration_mode in ("edge_tts", "mms_tts"):
-                stagger = int(os.getenv("MMS_TTS_STAGGER_SECONDS", "5"))
+                stagger_step = int(os.getenv("MMS_TTS_STAGGER_SECONDS", "60"))
             _celery_app.send_task(
                 "tasks.narrate",
                 args=[token, segment, text, narration_mode, _narrate_voice(g), g, language],
-                countdown=stagger,
+                countdown=_narrate_slot,
             )
+            _narrate_slot += stagger_step
 
         avatared = {"opening_prayer", "sermon", "benediction"}
         if job.get("avatar_enabled", True) and segment in avatared:
@@ -467,6 +475,7 @@ def _build_tools(job: dict, plan: dict) -> tuple[list[dict], dict[str, callable]
 
         return {"ok": True, "segment": segment}
 
+    # Kept as internal helper
     def h_post_youtube_sermon(video_id: str = "", title: str = "") -> dict:
         video_id = video_id or ""
         title = title or ""
@@ -477,46 +486,31 @@ def _build_tools(job: dict, plan: dict) -> tuple[list[dict], dict[str, callable]
     def h_finish_service() -> dict:
         return {"ok": True}
 
-    # build_plan, generate_welcome, dispatch_music removed — handled before the loop
     handlers: dict[str, callable] = {
-        "resolve_scripture":       h_resolve_scripture,
-        "generate_opening_prayer": h_generate_opening_prayer,
-        "generate_sermon":         h_generate_sermon,
-        "generate_benediction":    h_generate_benediction,
-        "find_sermon_video":       h_find_sermon_video,
-        "post_text_segment":       h_post_text_segment,
-        "post_youtube_sermon":     h_post_youtube_sermon,
-        "finish_service":          h_finish_service,
+        "resolve_and_post_scripture":       h_resolve_and_post_scripture,
+        "generate_and_post_opening_prayer": h_generate_and_post_opening_prayer,
+        "generate_and_post_sermon":         h_generate_and_post_sermon,
+        "generate_and_post_benediction":    h_generate_and_post_benediction,
+        "find_and_post_sermon_video":       h_find_and_post_sermon_video,
+        "finish_service":                   h_finish_service,
     }
 
     schemas = [
-        _fn("resolve_scripture",
-            "Fetch the full text of a Bible passage by reference.",
+        _fn("resolve_and_post_scripture",
+            "Fetch and deliver the Bible passage to the frontend.",
             {"scripture_ref": _p("string", True, "e.g. 'John 3:16' or 'Psalm 23:1-6'")}),
-        _fn("generate_opening_prayer",
-            "Generate the opening prayer text (2-3 paragraphs, no worshipper name).",
+        _fn("generate_and_post_opening_prayer",
+            "Generate and deliver the opening prayer (2-3 paragraphs, no worshipper name).",
             {}),
-        _fn("generate_sermon",
-            "Generate the full sermon/message text (~8 minutes of spoken prose, no name).",
+        _fn("generate_and_post_sermon",
+            "Generate and deliver the full sermon/message text (~8 minutes of spoken prose, no name).",
             {"scripture_ref": _p("string", True, "e.g. 'Romans 8:28'")}),
-        _fn("generate_benediction",
-            "Generate the closing benediction text.",
+        _fn("generate_and_post_benediction",
+            "Generate and deliver the closing benediction text.",
             {}),
-        _fn("find_sermon_video",
-            "Find a YouTube sermon video matching the mood (youtube music_source only). MUST include specific thematic keywords from the user's prayer if provided.",
+        _fn("find_and_post_sermon_video",
+            "Find and deliver a YouTube sermon video matching the mood (youtube mode only). MUST include specific thematic keywords from the user's prayer if provided.",
             {"query": _p("string", True, "A YouTube search query including 'Christian sermon' AND 1-2 specific keywords from the worshipper's prayer.")}),
-        _fn("post_text_segment",
-            "Deliver a text segment to the frontend (also triggers narration and avatar).",
-            {
-                "segment": _p("string", True, "scripture | opening_prayer | sermon | benediction"),
-                "text":    _p("string", True, "The reviewed text content"),
-            }),
-        _fn("post_youtube_sermon",
-            "Deliver a YouTube video as the sermon segment.",
-            {
-                "video_id": _p("string", True, "YouTube video ID"),
-                "title":    _p("string", True, "Video title"),
-            }),
         _fn("finish_service",
             "Call this once all 4 text segments are posted.",
             {}),

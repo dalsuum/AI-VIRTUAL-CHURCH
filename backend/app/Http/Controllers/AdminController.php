@@ -605,6 +605,10 @@ class AdminController extends Controller
             // Ad slot — raw HTML/embed pasted by the admin (Google Ads, custom banner, etc.)
             'ad_slot_enabled' => ['sometimes', 'boolean'],
             'ad_slot_html'    => ['sometimes', 'nullable', 'string', 'max:8000'],
+            // AI chord detection for the song editor. Off = manual ChordPro only.
+            // The model id/endpoint can be set here or fall back to env (AI_CHORD_MODEL).
+            'ai_chords_enabled' => ['sometimes', 'boolean'],
+            'ai_chords_model'   => ['sometimes', 'nullable', 'string', 'max:255'],
         ]);
 
         foreach (['narration_mode_en', 'narration_mode_my', 'narration_mode_td'] as $key) {
@@ -701,6 +705,12 @@ class AdminController extends Controller
         if (array_key_exists('ad_slot_html', $data)) {
             Setting::set('ad_slot_html', $data['ad_slot_html'] ?? '');
         }
+        if (array_key_exists('ai_chords_enabled', $data)) {
+            Setting::set('ai_chords_enabled', $data['ai_chords_enabled'] ? '1' : '0');
+        }
+        if (array_key_exists('ai_chords_model', $data)) {
+            Setting::set('ai_chords_model', $data['ai_chords_model'] ?? '');
+        }
 
         return response()->json(['ok' => true] + $this->settingsPayload());
     }
@@ -740,6 +750,8 @@ class AdminController extends Controller
             'agent_provider'            => Setting::get('agent_provider', 'claude'),
             'ad_slot_enabled'           => Setting::get('ad_slot_enabled', '0') === '1',
             'ad_slot_html'              => Setting::get('ad_slot_html', ''),
+            'ai_chords_enabled'         => Setting::get('ai_chords_enabled', '0') === '1',
+            'ai_chords_model'           => Setting::get('ai_chords_model', env('AI_CHORD_MODEL', '')),
         ];
     }
 

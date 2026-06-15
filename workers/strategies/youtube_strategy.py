@@ -144,11 +144,11 @@ _LANG_CONFIG: dict[str, dict] = {
         # pasian = God (Tedim), topa = Lord, zeisu = Jesus, krist = Christ.
         "music_title_require_any": [
             "christian", "worship", "praise", "church",
-            "pasian", "topa", "zeisu", "krist",
+            "pasian", "topa", "zeisu", "krist", "phatna", "lungdam", "labu",
         ],
         # cartoon, animation, drama, film — "Zomi Song 2015" was a cartoon thumbnail.
         "music_title_reject_any": [
-            "reaction", "interview", "podcast", "vlog", "album",
+            "reaction", "interview", "podcast", "vlog", "album", "teaser",
             "cartoon", "animation", "movie", "drama", "film",
         ],
         "channel_reject_any": [
@@ -166,7 +166,7 @@ _LANG_CONFIG: dict[str, dict] = {
         # Target Zomi/Tedim modern worship artists — sampled randomly per request for variety.
         "preferred_artists": [
             "Thang Taung", "Zomi Worship Collective", "Phillip Ruth",
-            "We Worship", "FEMC Worship", "ZACC Worship", "Khai Pi", "Cin Bawi",
+            "We Worship Zomi", "FEMC Worship", "ZACC Worship", "Khai Pi", "Cin Bawi",
         ],
     },
 }
@@ -255,10 +255,19 @@ _TEDIM_IDENTITY_WORDS = frozenset([
 ])
 
 
-def _has_tedim_identity(text: str) -> bool:
+def _has_tedim_identity(text: str, is_music: bool = False) -> bool:
     """Return True when text contains a Zomi/Tedim community or language marker."""
     lower = (text or "").lower()
-    return any(word in lower for word in _TEDIM_IDENTITY_WORDS)
+    if any(word in lower for word in _TEDIM_IDENTITY_WORDS):
+        return True
+    if is_music:
+        for word in ["pasian", "topa", "zeisu", "krist", "phatna", "lungdam", "labu", "zacc", "gupna", "itna"]:
+            if _wb(word, lower):
+                return True
+        for name in ["khai pi", "cin bawi", "thang taung", "phillip ruth", "zomi worship", "femc worship", "we worship zomi"]:
+            if name in lower:
+                return True
+    return False
 
 
 def _keyword_hit(kw: str, text: str) -> bool:
@@ -324,6 +333,14 @@ class YouTubeStrategy(MusicStrategy):
                 title = (snippet.get("title") or "").lower()
                 channel = (snippet.get("channelTitle") or "").lower()
                 desc = (snippet.get("description") or "").lower()
+
+                # Burmese-mode music must show Myanmar script in the title.
+                if self.language == "my" and not _has_myanmar(title):
+                    continue
+
+                # Tedim mode music must have a Zomi/Tedim identity word in the title or channel.
+                if self.language == "td" and not (_has_tedim_identity(title, is_music=True) or _has_tedim_identity(channel, is_music=True)):
+                    continue
 
                 # Gate 1: must contain at least one Christian/worship term.
                 if music_require and not any(kw in title for kw in music_require):

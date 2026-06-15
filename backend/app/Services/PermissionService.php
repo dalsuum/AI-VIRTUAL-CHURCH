@@ -30,6 +30,7 @@ class PermissionService
         'users.view',
         'settings.view',
         'music_pool.view',
+        'lyrics.manage',
         'voice_training.view',
         'permissions.view',
         'language_review.view',

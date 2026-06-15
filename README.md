@@ -159,7 +159,7 @@ A single Celery app with one Redis broker and **named queues that mirror the wor
 | `ai:orchestrate` | `orchestrate` | Session startup only (~20 s: build plan, fan out). Dedicated 2-worker pool (`aivc-workers-orchestrate.service`) so new requests are never blocked behind long content-generation tasks. |
 | `ai:sermon` | `generate_text_segments`, `generate_welcome` | LLM plan + direct target-language prayer / sermon / benediction + welcome greeting. Legacy `localize_segment_*` tasks remain importable but are not dispatched for new services. |
 | `ai:music` | `generate_music` | Hymn, Suno, or YouTube, resolved per session |
-| `ai:avatar` | `render_avatar` | HeyGen talking-head video |
+| `ai:avatar` | `render_avatar` | D-ID talking-head video |
 | `ai:narration` | `narrate`, `narrate_tedim`, `narrate_burmese` | text-to-speech of the spoken segments (English Edge/OpenAI/Kokoro; Myanmar/Tedim via local MMS-TTS) |
 
 | Module | Responsibility |
@@ -192,7 +192,7 @@ A single Celery app with one Redis broker and **named queues that mirror the wor
 | [classifier.py](workers/classifier.py) | Post-generation deny-list guardrail (`review() → (ok, reason)`). |
 | [strategies/](workers/strategies/) | `MusicStrategy` interface + `HymnStrategy` / `SunoStrategy` / `YouTubeStrategy`, returning a normalized `MusicResult`. All functions are synchronous — they run inside Celery tasks that have no event loop. `YouTubeStrategy` accepts a `language` argument so `_LANG_CONFIG` routes each service to its correct filter set. **Sermon slot** — three-gate filter: (1) title must contain a preaching indicator (`sermon_title_require_any`; word-boundary for Latin scripts, substring for non-Latin scripts), (2) title must NOT contain choir/music/concert keywords (`sermon_title_reject_any`; same matching rules), (3) channel must not be in `channel_reject_any`. Burmese (`my`) sermon search also ignores English-only agent queries, searches with Burmese sermon terms, requests Myanmar-language/region results, and requires Myanmar script in the video title so English sermons cannot fill the Burmese sermon slot. **Tedim** (`td`) sermon search leads with native vocabulary queries (`thugenna`, `thu gen`) and requires at least one Zomi/Tedim identity word (zomi, tedim, zolai, thugenna, thugen, thu gen) in the video title — Tedim uses Latin script so a Unicode-range check is not possible; the identity-word gate serves the same role as the Myanmar-script check. **Worship music slot** — three-gate filter: (1) title must contain at least one Christian/worship term (`music_title_require_any`) to block cartoons and secular videos, (2) title must not be in `music_title_reject_any`, (3) channel check. After both filters, results are scored by mood-keyword density and the best match wins. `"sunday"` is absent from all sermon require-lists — it caused "Mission Sunday Choir" events to appear as sermons. Per-language sermon require-lists: **English** — sermon/preaching/message/pastor/rev/teaching/bible study/gospel; **Burmese** (`my`) — `တရားဟောချက်`/`တရားဟော`/`နုတ်ကပတ်တော်`/`သွန်သင်ချက်` plus pastor/rev; **Tedim** (`td`) — sermon/preaching/message/pastor/rev/thugenna/thu gen/thugen (+ identity gate). Tedim also rejects cartoon/animation/movie/drama from the music slot. Adding a new language requires only a new `_LANG_CONFIG` entry. |
 | [hymns.py](workers/hymns.py) / [seed_hymns.py](workers/seed_hymns.py) | Public-domain hymn library (lyrics + recordings) and the one-time seeder that renders/downloads it into storage. |
-| [data/myanmar_lyrics_collection.json](workers/data/myanmar_lyrics_collection.json) | Collected Myanmar worship lyrics corpus produced by `tools/collect_myanmar_lyrics.py`. Used as a source for Suno lyric prompts and future fine-tuning datasets. |
+| [data/myanmar_lyrics_collection.json](workers/data/myanmar_lyrics_collection.json) | Myanmar worship lyrics corpus consumed by the worker (Suno prompts / fine-tuning). **This file is now a derived export — do not hand-edit it.** The `songs` DB table is the single source of truth (admin Lyrics tab); the backend regenerates this JSON from the DB after every song create/update/delete via `App\Services\SongCorpusService`. Rebuild manually with `php artisan songs:export-corpus`; seed the DB from a legacy JSON with `php artisan songs:import-corpus` (idempotent). |
 | [test_llm_engine.py](workers/test_llm_engine.py) | Unit tests for `llm_engine` — covers `_strip_formatting`, `_is_my_plausible`, `_fix_tedim_vocab`, and the per-segment fallback behaviour. Run with `python -m unittest test_llm_engine`. |
 | [test_agent_orchestrator.py](workers/test_agent_orchestrator.py) | Unit tests for `agent_orchestrator` — covers JSON parse tolerance, MAX_TURNS recovery, and tool-call error handling. Run with `python -m unittest test_agent_orchestrator`. |
 | [avatar.py](workers/avatar.py) | HeyGen render (submit → poll → store → URL). Key-gated. |
@@ -633,10 +633,10 @@ and the worshipper still gets every segment as text.
   browser voice, because that skips or mangles their words. MMS-TTS narration is staggered
   for non-English services; scripture, opening prayer, and benediction are prioritized,
   and the longer message audio is deferred so it cannot block the last prayer.
-- **Avatar** — [avatar.py](workers/avatar.py) renders a HeyGen talking-head of the
-  spoken segments (submit → poll → store → URL). Requires `HEYGEN_API_KEY` +
-  `HEYGEN_AVATAR_ID` + `HEYGEN_VOICE_ID`. Can be toggled without touching env vars via
-  the `avatar_enabled` admin setting. **Stub-level** in the current build.
+- **Avatar** — avatar.py renders a D-ID talking-head of the
+  spoken segments (submit → poll → store → URL). Requires `D_ID_API_KEY` +
+  `D_ID_SOURCE_URL_FEMALE` + `D_ID_SOURCE_URL_MALE`. Can be toggled without touching env vars via
+  the `avatar_enabled` admin setting. **Implemented** in the current build.
 
 **Presenter gender pairing.** Each worshipper has a `presenter_gender` preference
 (`female`/`male`, default `female`) set in their profile and locked onto the session at
@@ -1135,7 +1135,7 @@ This includes:
 | `YOUTUBE_API_KEY` | YouTube Data API search (only if `music_source=youtube`). |
 | `TTS_API_KEY` / `TTS_BASE_URL` / `TTS_MODEL` / `TTS_VOICE` / `TTS_FORMAT` | Narration (`openai` voice). Absent ⇒ that mode off (browser speech still works). |
 | `KOKORO_API_KEY` / `KOKORO_BASE_URL` / `KOKORO_MODEL` / `KOKORO_VOICE` / `KOKORO_FORMAT` | Narration (`kokoro` voice — hexgrad/kokoro-82m via OpenRouter). Defaults to the `OPENROUTER_*` LLM credentials. |
-| `HEYGEN_API_KEY` / `HEYGEN_AVATAR_ID` / `HEYGEN_VOICE_ID` / `HEYGEN_API_BASE` | Avatar. All three IDs required to enable. |
+| `D_ID_API_KEY` / `D_ID_SOURCE_URL_FEMALE` / `D_ID_SOURCE_URL_MALE` | Avatar. All three keys required to enable. Fallback source URLs are provided if absent. |
 | `LOCAL_MEDIA_DIR` / `LOCAL_MEDIA_URL` | **Set ⇒ local storage** (write into Laravel's `storage/app/public`, serve over HTTP). Unset ⇒ S3. |
 | `S3_ENDPOINT` / `S3_ACCESS_KEY` / `S3_SECRET_KEY` / `S3_BUCKET` / `S3_REGION` | S3-compatible object storage (prod). |
 | `BIBLE_DATA_FILE` | Override the bundled BSB with another same-schema translation. |
@@ -1228,7 +1228,7 @@ before any state-changing request to bootstrap CSRF protection.
 - **Phase 2 — AI pipeline:** LLM engine, Celery tasks, Bible resolver, Redis bus — **DONE**
 - **Phase 3 — Media:** hymn (sung + instrumental) + Suno + YouTube strategies, the
   mood-keyed Suno reuse pool, and local/S3 storage — **DONE**; narration (TTS) — **DONE**
-  (browser speech locally, OpenAI-compatible server path); HeyGen avatar — **STUB**
+  (browser speech locally, OpenAI-compatible server path); D-ID avatar — **DONE**
 - **Phase 4 — Commerce + Safety:** crisis intercept + classifier — **DONE**; Stripe
   offering + ledger — **DONE**
 - **Phase 5 — Polish:** progress tracker, testimony wall, admin console, scheduled

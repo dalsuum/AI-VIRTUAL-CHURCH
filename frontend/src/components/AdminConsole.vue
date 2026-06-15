@@ -8,6 +8,7 @@ import ThemeToggle from "./ThemeToggle.vue";
 import VoiceStudio from "./VoiceStudio.vue";
 import PermissionsMatrix from "./PermissionsMatrix.vue";
 import AdsManager from "./AdsManager.vue";
+import AdminLyricsManager from "./AdminLyricsManager.vue";
 
 const authed      = ref(false);
 const currentUser = ref(null); // { id, name, role, permissions: string[] }
@@ -33,6 +34,7 @@ const TABS = [
   { name: "donors",         label: "Donors",           can: () => can("donors.view"),          load: loadDonors },
   { name: "testimonies",    label: "Testimonies",      can: () => can("testimonies.view"),     load: loadTestimonies },
   { name: "users",          label: "Users",            can: () => can("users.view"),           load: loadUsers },
+  { name: "lyrics",         label: "Lyrics",           can: () => can("lyrics.manage"),        load: null },
   { name: "prayer",         label: "Prayer Requests",  can: () => can("prayer_requests.view"), load: loadPrayerRequests },
   { name: "settings",       label: "Settings",         can: () => can("settings.view"),        load: loadSettings },
   { name: "music-pool",     label: "AI Music Pool",    can: () => can("music_pool.view"),      load: loadMusicTracks },
@@ -313,6 +315,8 @@ const setAgentProvider = (provider) => saveSetting("agent_provider", provider, "
 const setTextHighlightEnabled = (on) => saveSetting("text_highlight_enabled", on, "Text highlighting updated.");
 const setRunpodEnabled = (on) => saveSetting("runpod_enabled", on ? "1" : "0", "Premium GPU usage updated.");
 const setStorageBackend = (backend) => saveSetting("storage_backend", backend, "Storage backend updated.");
+const setAiChordsEnabled = (on) => saveSetting("ai_chords_enabled", on, "AI chord detection updated.");
+const setAiChordsModel = (v) => saveSetting("ai_chords_model", v.trim(), "AI chord model updated.");
 const setScheduling = (on) => saveSetting("scheduling_enabled", on, "Scheduling updated.");
 const setDefaultMusicSource = (src) => saveSetting("default_music_source", src, "Default music source updated.");
 const setCountdownEnabled = (on) => saveSetting("countdown_content_enabled", on, "Countdown content updated.");
@@ -1296,6 +1300,11 @@ onUnmounted(() => {
         </table>
       </div>
 
+      <!-- Lyrics Manager -->
+      <section v-else-if="tab === 'lyrics' && can('lyrics.manage')">
+        <AdminLyricsManager />
+      </section>
+
       <!-- Prayer Requests -->
       <div v-else-if="tab === 'prayer'" class="table-wrap">
         <div class="table-head">
@@ -1984,6 +1993,48 @@ onUnmounted(() => {
               <strong>{{ b.label }}</strong>
               <span>{{ b.hint }}</span>
             </button>
+          </div>
+          <p v-else class="setting-desc">Loading…</p>
+        </div>
+
+        <div class="setting-block">
+          <h2>AI chord detection</h2>
+          <p class="setting-desc">
+            When enabled, the Lyrics editor can offer AI-assisted chord suggestions
+            (manual ChordPro entry always works). Set the model id/endpoint below, or
+            leave blank to fall back to the <code>AI_CHORD_MODEL</code> env var.
+          </p>
+          <div v-if="settings" class="choice-row">
+            <button
+              type="button"
+              class="choice"
+              :class="{ active: settings.ai_chords_enabled === true }"
+              :disabled="savingSettings || settingsReadOnly"
+              @click="setAiChordsEnabled(true)"
+            >
+              <strong>Enabled</strong>
+              <span>Show the AI chord-detection action in the song editor.</span>
+            </button>
+            <button
+              type="button"
+              class="choice"
+              :class="{ active: settings.ai_chords_enabled === false }"
+              :disabled="savingSettings || settingsReadOnly"
+              @click="setAiChordsEnabled(false)"
+            >
+              <strong>Disabled</strong>
+              <span>Manual chord entry only.</span>
+            </button>
+          </div>
+          <div v-if="settings" class="ai-model-row">
+            <input
+              :value="settings.ai_chords_model"
+              class="pool-input"
+              type="text"
+              placeholder="AI chord model id / endpoint (optional)"
+              :disabled="savingSettings || settingsReadOnly"
+              @change="setAiChordsModel($event.target.value)"
+            />
           </div>
           <p v-else class="setting-desc">Loading…</p>
         </div>

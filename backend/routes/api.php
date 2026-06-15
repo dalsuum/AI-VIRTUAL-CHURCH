@@ -6,6 +6,7 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\ConfigController;
 use App\Http\Controllers\OfferingController;
 use App\Http\Controllers\ServiceController;
+use App\Http\Controllers\SongController;
 use App\Http\Controllers\TestimonyController;
 use App\Http\Controllers\UpdateController;
 use App\Http\Controllers\VoiceboxController;
@@ -16,6 +17,9 @@ use Illuminate\Support\Facades\Route;
 
 // Public app configuration (intake options) — read before a worshipper has a session.
 Route::get('/config', [ConfigController::class, 'show']);
+
+// Public worship song library — feeds the front song panel (my/td).
+Route::get('/songs', [SongController::class, 'index']);
 
 // Public auth — rate-limited per IP to slow credential stuffing and account spam.
 Route::middleware('throttle:auth')->group(function () {
@@ -102,6 +106,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/permissions',  [AdminController::class, 'getPermissions']);
         Route::get('/grammar-review',  [AdminController::class, 'grammarReview']);
         Route::post('/grammar-review', [AdminController::class, 'grammarReviewSave']);
+
+        // Song library CRUD — each method enforces the `lyrics.manage` permission.
+        Route::get('/songs/{song}',    [SongController::class, 'show']);
+        Route::post('/songs',          [SongController::class, 'store']);
+        Route::patch('/songs/{song}',  [SongController::class, 'update']);
+        Route::delete('/songs/{song}', [SongController::class, 'destroy']);
 
         // Ads — reads available to staff with ads.view permission.
         Route::get('/ads',           [AdController::class, 'index']);

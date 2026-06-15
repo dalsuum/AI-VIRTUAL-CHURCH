@@ -5,15 +5,15 @@
   { "zolai": "Zeisu Krist",  "english": "Jesus Christ",                      "category": "Theology",  "notes": "" },
   { "zolai": "Kha Siangtho", "english": "Holy Spirit",                       "category": "Theology",  "notes": "" },
   { "zolai": "Thu Siangtho", "english": "Holy Bible / Holy Word",            "category": "Theology",  "notes": "" },
-  { "zolai": "zangtal",      "english": "salvation",                         "category": "Theology",  "notes": "" },
-  { "zolai": "lungdamna",    "english": "grace / blessing",                  "category": "Theology",  "notes": "" },
+  { "zolai": "hotkhiatna",   "english": "salvation",                         "category": "Theology",  "notes": "hong hotkhia = to save/rescue. NOT zangtal (= free of charge)" },
+  { "zolai": "lungdamna",    "english": "thanksgiving / gratitude",          "category": "Theology",  "notes": "lungdam = to be glad/thankful. NOT 'grace'" },
   { "zolai": "itna",         "english": "love (noun)",                       "category": "Theology",  "notes": "" },
   { "zolai": "kumdan",       "english": "glory / honour",                    "category": "Theology",  "notes": "" },
   { "zolai": "Lai Siangtho", "english": "Holy Bible (the Tedim Bible name)", "category": "Theology",  "notes": "Lai Siangtho 1932 edition" },
 
   { "zolai": "biakinn",      "english": "church",                            "category": "Worship",   "notes": "NOT koici, NOT kohhran" },
   { "zolai": "thungetna",    "english": "prayer (noun)",                     "category": "Worship",   "notes": "NOT tawngtaina (Mizo word)" },
-  { "zolai": "thungeta",     "english": "to pray",                           "category": "Worship",   "notes": "NOT tawngtai (Mizo word)" },
+  { "zolai": "thungen",      "english": "to pray",                           "category": "Worship",   "notes": "thu + ngen = 'request word'. NOT tawngtai (Mizo word)" },
   { "zolai": "kiphatna",     "english": "praise / worship (noun)",           "category": "Worship",   "notes": "" },
   { "zolai": "kilemna",      "english": "praise",                            "category": "Worship",   "notes": "" },
   { "zolai": "phat",         "english": "to praise",                         "category": "Worship",   "notes": "" },
@@ -71,8 +71,8 @@
   { "zolai": "muanna",       "english": "peace",                             "category": "Nouns",     "notes": "" },
   { "zolai": "ngaihdamna",   "english": "forgiveness",                       "category": "Nouns",     "notes": "" },
   { "zolai": "thahatna",     "english": "strength",                          "category": "Nouns",     "notes": "" },
-  { "zolai": "sungkuanna",   "english": "faith / trust",                     "category": "Nouns",     "notes": "" },
-  { "zolai": "thupha",       "english": "gospel / good news",                "category": "Nouns",     "notes": "" },
+  { "zolai": "upna",         "english": "faith / belief",                    "category": "Nouns",     "notes": "um = to believe. NOT sungkuanna (= family/household)" },
+  { "zolai": "thupha",       "english": "blessing / benediction",            "category": "Nouns",     "notes": "thu + pha = 'good word'. Gospel = Lungdamna Thu" },
   { "zolai": "siamna",       "english": "knowledge / wisdom",                "category": "Nouns",     "notes": "" },
   { "zolai": "diklam",       "english": "righteousness / right path",        "category": "Nouns",     "notes": "" },
 
@@ -105,13 +105,13 @@
   { "zolai": "cim",          "english": "wise / clever",                     "category": "Adjectives","notes": "" },
 
   { "zolai": "khat",         "english": "one",                               "category": "Numbers",   "notes": "" },
-  { "zolai": "nnih",         "english": "two",                               "category": "Numbers",   "notes": "" },
+  { "zolai": "nih",          "english": "two",                               "category": "Numbers",   "notes": "" },
   { "zolai": "thum",         "english": "three",                             "category": "Numbers",   "notes": "" },
   { "zolai": "li",           "english": "four",                              "category": "Numbers",   "notes": "" },
   { "zolai": "nga",          "english": "five",                              "category": "Numbers",   "notes": "" },
   { "zolai": "guk",          "english": "six",                               "category": "Numbers",   "notes": "" },
   { "zolai": "sagih",        "english": "seven",                             "category": "Numbers",   "notes": "" },
   { "zolai": "giat",         "english": "eight",                             "category": "Numbers",   "notes": "" },
-  { "zolai": "ko",           "english": "nine",                              "category": "Numbers",   "notes": "" },
-  { "zolai": "som",          "english": "ten",                               "category": "Numbers",   "notes": "" }
+  { "zolai": "kua",          "english": "nine",                              "category": "Numbers",   "notes": "" },
+  { "zolai": "sawm",         "english": "ten",                               "category": "Numbers",   "notes": "" }
 ]

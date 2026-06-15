@@ -86,7 +86,12 @@ async def transcribe(
     audio: UploadFile = File(...),
 ) -> dict:
     target_lang = _target_lang(lang)
-    suffix = os.path.splitext(audio.filename or "")[1] or ".webm"
+    
+    # Sanitize the suffix to prevent path traversal or invalid characters
+    raw_suffix = os.path.splitext(audio.filename or "")[1]
+    suffix = "".join(c for c in raw_suffix if c.isalnum() or c == ".")
+    if not suffix or len(suffix) > 10:
+        suffix = ".webm"
 
     try:
         data = await audio.read()

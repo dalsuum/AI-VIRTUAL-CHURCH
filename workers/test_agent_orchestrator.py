@@ -40,8 +40,8 @@ class TestAgentOrchestrator(unittest.TestCase):
                                 "id": "call_123",
                                 "type": "function",
                                 "function": {
-                                    "name": "post_text_segment",
-                                    "arguments": "{ invalid json -> fallback to {} -> triggers TypeError"
+                                    "name": "generate_and_post_sermon",
+                                    "arguments": "{ invalid json -> fallback to {} -> triggers safe default"
                                 }
                             },
                             {
@@ -74,7 +74,7 @@ class TestAgentOrchestrator(unittest.TestCase):
     def test_find_sermon_video_fallback(
         self, mock_post_asset, mock_call_llm, mock_send_task, mock_build_plan, mock_find_video
     ):
-        """Verify find_sermon_video falls back to the plan's preaching_query when missing."""
+        """Verify find_and_post_sermon_video falls back to the plan's preaching_query when missing."""
         mock_build_plan.return_value = {
             "scripture_ref": "John 3:16", 
             "preaching_query": "specific fallback query"
@@ -90,7 +90,7 @@ class TestAgentOrchestrator(unittest.TestCase):
                     "role": "assistant",
                     "content": "",
                     "tool_calls": [
-                        {"id": "call_1", "type": "function", "function": {"name": "find_sermon_video", "arguments": "{}"}},
+                        {"id": "call_1", "type": "function", "function": {"name": "find_and_post_sermon_video", "arguments": "{}"}},
                         {"id": "call_2", "type": "function", "function": {"name": "finish_service", "arguments": "{}"}}
                     ]
                 }

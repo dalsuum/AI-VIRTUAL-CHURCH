@@ -112,7 +112,7 @@ def _narration_stagger(mode: str, language: str) -> int:
     if mode == "kokoro":
         return 45
     if language in ("my", "td") and mode in ("edge_tts", "mms_tts"):
-        return int(os.getenv("MMS_TTS_STAGGER_SECONDS", "5"))
+        return int(os.getenv("MMS_TTS_STAGGER_SECONDS", "60"))
     return 0
 
 

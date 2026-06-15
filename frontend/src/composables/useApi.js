@@ -173,6 +173,15 @@ export const api = {
     return request(`/config${qs ? `?${qs}` : ""}`);
   },
 
+  // Worship song library (public read for the front song panel).
+  getSongs: (params = {}) => {
+    const qs = new URLSearchParams();
+    if (params.language) qs.set("language", params.language);
+    if (params.search) qs.set("search", params.search);
+    const q = qs.toString();
+    return request(`/songs${q ? `?${q}` : ""}`);
+  },
+
   updateGuestEmail: (email) =>
     request("/me/email", { method: "PATCH", body: { email } }),
 
@@ -254,6 +263,14 @@ export const api = {
     request(`/admin/music-tracks/${id}`, { method: "PATCH", body: payload }),
   adminDeleteMusicTrack: (id) =>
     request(`/admin/music-tracks/${id}`, { method: "DELETE" }),
+  // Song library CRUD (admin Lyrics tab; requires lyrics.manage).
+  adminGetSong: (id) => request(`/admin/songs/${id}`),
+  adminCreateSong: (payload) =>
+    request("/admin/songs", { method: "POST", body: payload }),
+  adminUpdateSong: (id, payload) =>
+    request(`/admin/songs/${id}`, { method: "PATCH", body: payload }),
+  adminDeleteSong: (id) =>
+    request(`/admin/songs/${id}`, { method: "DELETE" }),
   adminGetPermissions: () => request("/admin/permissions"),
   adminUpdatePermissions: (permissions) =>
     request("/admin/permissions", { method: "PATCH", body: { permissions } }),

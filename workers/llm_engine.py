@@ -22,6 +22,17 @@ import requests
 session_prompt_tokens: contextvars.ContextVar[int] = contextvars.ContextVar("session_prompt_tokens", default=0)
 session_completion_tokens: contextvars.ContextVar[int] = contextvars.ContextVar("session_completion_tokens", default=0)
 
+def reset_session_tokens() -> dict:
+    """Resets the token trackers for a new Celery task and returns the final count."""
+    usage = {
+        "prompt_tokens": session_prompt_tokens.get(),
+        "completion_tokens": session_completion_tokens.get()
+    }
+    session_prompt_tokens.set(0)
+    session_completion_tokens.set(0)
+    return usage
+
+
 # ---------------------------------------------------------------------------
 # Burmese prayer corpus — loaded once at startup from prayers_my.json
 # ---------------------------------------------------------------------------
@@ -177,7 +188,7 @@ def _ensure_exact_name(text: str, user_name: str | None) -> str:
 _OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 _OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 _OPENROUTER_MODEL = os.getenv("LLM_MODEL", "meta-llama/llama-3.3-70b-instruct:free")
-LOCAL_LLM_TIMEOUT = int(os.getenv("LOCAL_LLM_TIMEOUT", "45"))
+LOCAL_LLM_TIMEOUT = int(os.getenv("LOCAL_LLM_TIMEOUT", "120"))
 
 _RUNPOD_CACHE = {"value": False, "time": 0.0}
 
@@ -911,7 +922,9 @@ def _lyrics_match_language(lyrics: str, language: str) -> bool:
         return False
     lower = text.lower()
     if language == "my":
-        return bool(re.search(r"[\u1000-\u109f]", text))
+        # Use the same logic as _is_my_plausible: count characters to ensure
+        # it's a full song, not a one-sentence fragment. A full song will have >200 chars.
+        return sum(1 for ch in text if "က" <= ch <= "႟") >= 200
     if language == "td":
         # Reject common non-Tedim Chin worship terms that often indicate Mizo/Falam/Haka drift.
         forbidden_hits = sum(
@@ -999,7 +1012,10 @@ def build_intake_plan(*, user_name: str | None, mood: str, prayer_text: str | No
             "scripture_ref in ENGLISH format (e.g. 'Psalm 23:1-4')."
         )
         if music_source in ("suno", "musicgen"):
-            system += " Write music_prompt and music_lyrics for a Burmese-language worship song in Myanmar Unicode."
+            system += (
+                " music_lyrics will be supplied separately — set it to an empty string. "
+                "Write music_prompt as a short English style description for AI music generation."
+            )
         if music_source == "youtube":
             system += (
                 " For preaching_query, generate a YouTube search string for a Myanmar "
@@ -1040,10 +1056,13 @@ def build_intake_plan(*, user_name: str | None, mood: str, prayer_text: str | No
     
     if music_source in ("suno", "musicgen"):
         schema["music_prompt"] = "string, a short style prompt for AI worship-music generation"
-        schema["music_lyrics"] = "string, original singable worship lyrics in the service language, {} and a chorus{}".format(
-            "1 short verse" if music_source == "musicgen" else "2 short verses",
-            "" if music_source == "musicgen" else ", using [Verse 1] / [Chorus] / [Verse 2] structural tags on their own lines",
-        )
+        if language in ("my", "td"):
+            schema["music_lyrics"] = "string, MUST be empty string"
+        else:
+            schema["music_lyrics"] = "string, original singable worship lyrics in the service language, {} and a chorus{}".format(
+                "1 short verse" if music_source == "musicgen" else "2 short verses",
+                "" if music_source == "musicgen" else ", using [Verse 1] / [Chorus] / [Verse 2] structural tags on their own lines",
+            )
         
     if music_source in ("youtube", "hymn_youtube"):
         schema["music_query"] = "string, a short YouTube search query for a worship song. MUST include 1-2 specific thematic keywords from the user's prayer_text if provided."
@@ -1250,12 +1269,17 @@ def generate_music_lyrics(*, mood: str, language: str) -> str:
             "lungdamna (grace), lungtang (heart), nuntakna (life), zangtal (salvation), "
             "hong (come/arrive), sungah (in/within), kilemna (praise). "
             "Do NOT use English, Mizo, Falam, or Haka words. "
-            "Start each section with a Suno structural tag on its own line: "
-            "[Verse 1], [Chorus], [Verse 2]. Output ONLY the tagged lyric sections — no explanations."
+                "Output ONLY the tagged lyric sections — no explanations."
         )
         user = (
-            f"Write 2 short verses and 1 chorus of a Tedim worship song "
-            f"for someone feeling {mood}."
+                f"Write a complete Tedim worship song for someone feeling {mood}.\n"
+                "Do NOT write just one sentence. You MUST provide full lyrics for all three sections below:\n\n"
+                "[Verse 1]\n"
+                "<write 4 lines of Tedim lyrics here>\n\n"
+                "[Chorus]\n"
+                "<write 4 lines of Tedim lyrics here>\n\n"
+                "[Verse 2]\n"
+                "<write 4 lines of Tedim lyrics here>"
         )
     else:  # my
         system = (
@@ -1263,16 +1287,21 @@ def generate_music_lyrics(*, mood: str, language: str) -> str:
             "Write worship song lyrics ONLY in Myanmar Burmese using Myanmar Unicode script. "
             "Use: ဘုရားသခင် (God), ကိုယ်တော် (Lord), ယေရှုခရစ်တော် (Jesus Christ). "
             "Do NOT use English words or Zawgyi encoding. "
-            "Start each section with a Suno structural tag on its own line: "
-            "[Verse 1], [Chorus], [Verse 2]. Output ONLY the tagged lyric sections — no explanations."
+                "Output ONLY the tagged lyric sections — no explanations."
         )
         user = (
-            f"Write 2 short verses and 1 chorus of a Burmese worship song "
-            f"for someone feeling {mood}."
+                f"Write a complete Burmese worship song for someone feeling {mood}.\n"
+                "Do NOT write just one sentence. You MUST provide full lyrics for all three sections below:\n\n"
+                "[Verse 1]\n"
+                "<write 4 lines of Burmese lyrics here>\n\n"
+                "[Chorus]\n"
+                "<write 4 lines of Burmese lyrics here>\n\n"
+                "[Verse 2]\n"
+                "<write 4 lines of Burmese lyrics here>"
         )
 
     try:
-        raw = _complete(system, user, max_tokens=400, language=language)
+            raw = _complete(system, user, max_tokens=2000, language=language)
         if language == "td":
             raw = _fix_tedim_vocab(raw)
         text = _strip_formatting(raw)

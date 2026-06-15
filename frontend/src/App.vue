@@ -7,14 +7,17 @@ import AdminConsole from "./components/AdminConsole.vue";
 import PasswordReset from "./components/PasswordReset.vue";
 import ThemeToggle from "./components/ThemeToggle.vue";
 import ZolaiVocabulary from "./components/ZolaiVocabulary.vue";
+import MyanmarLyrics from "./components/MyanmarLyrics.vue";
 import { api } from "./composables/useApi";
 
 // The admin console lives at #admin so it never collides with the worship flow.
-const isAdminRoute = ref(window.location.hash === "#admin");
-const isVocabRoute = ref(window.location.hash === "#vocabulary");
+const isAdminRoute  = ref(window.location.hash === "#admin");
+const isVocabRoute  = ref(window.location.hash === "#vocabulary");
+const isLyricsRoute = ref(window.location.hash === "#lyrics");
 window.addEventListener("hashchange", () => {
-  isAdminRoute.value = window.location.hash === "#admin";
-  isVocabRoute.value = window.location.hash === "#vocabulary";
+  isAdminRoute.value  = window.location.hash === "#admin";
+  isVocabRoute.value  = window.location.hash === "#vocabulary";
+  isLyricsRoute.value = window.location.hash === "#lyrics";
 });
 
 // view: "intake" | "preparing" | "service" | "intercepted" | "reset"
@@ -221,6 +224,7 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
 <template>
   <AdminConsole v-if="isAdminRoute" />
   <ZolaiVocabulary v-else-if="isVocabRoute" />
+  <MyanmarLyrics v-else-if="isLyricsRoute" />
 
   <div v-else class="page">
     <header class="topbar">
@@ -229,6 +233,10 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
         <span class="brand-name">AI Virtual Church</span>
       </a>
       <div class="topbar-right">
+        <nav class="topbar-nav">
+          <a href="#lyrics" class="nav-link" :class="{ active: isLyricsRoute }">🎵 သီချင်း</a>
+          <a href="#vocabulary" class="nav-link" :class="{ active: isVocabRoute }">📖 Zolai</a>
+        </nav>
         <ThemeToggle />
       </div>
     </header>
@@ -318,6 +326,17 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
   border-bottom: 1px solid var(--border);
 }
 .topbar-right { display: flex; align-items: center; gap: 0.75rem; }
+.topbar-nav { display: flex; align-items: center; gap: 0.25rem; }
+.nav-link {
+  display: inline-flex; align-items: center; gap: 0.25rem;
+  padding: 0.35rem 0.65rem;
+  font-size: 0.8rem; font-family: "Padauk", "Noto Sans Myanmar", sans-serif;
+  color: var(--text-muted); text-decoration: none;
+  border: 1px solid transparent; border-radius: var(--radius-sm);
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+.nav-link:hover { color: var(--primary); border-color: var(--border); }
+.nav-link.active { color: var(--primary); background: var(--primary-soft); border-color: var(--primary); font-weight: 600; }
 .brand { display: inline-flex; align-items: center; gap: 0.55rem; text-decoration: none; color: var(--text); font-weight: 600; }
 .brand-mark {
   display: inline-flex; align-items: center; justify-content: center;

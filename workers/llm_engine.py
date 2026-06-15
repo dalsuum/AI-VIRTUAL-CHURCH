@@ -355,8 +355,23 @@ def _call_chat_api(api_key: str, base_url: str, model_name: str, system: str, us
 
 
 def _complete(system: str, user: str, max_tokens: int = 1500, language: str = "en") -> str:
-    # RunPod GPU mode routes ALL languages through the cloud endpoint,
-    # bypassing local Ollama even for my/td. Falls through on failure.
+    # Burmese/Tedim prose ALWAYS prefers the purpose-built local Ollama model.
+    # RunPod's generic English Llama cannot write Myanmar/Zolai and caps output,
+    # so it would only ever fail the language guard — route around it for my/td
+    # prose and fall through to RunPod/OpenRouter only if the local model fails.
+    # (The strict-JSON intake plan is excluded by _should_use_local_llm and still
+    # runs on the cloud chat model below.)
+    if _should_use_local_llm(system, language) and _local_llm_url(language):
+        try:
+            text = _complete_local(system, user, max_tokens, language)
+            if language == "td":
+                text = _fix_tedim_vocab(text)
+            return text
+        except Exception as exc:
+            print(f"[llm] local {language} model failed ({exc}), falling back to RunPod/OpenRouter", flush=True)
+
+    # RunPod GPU mode routes remaining languages (and my/td prose if local failed)
+    # through the cloud endpoint. Falls through on failure.
     if _is_runpod_enabled(language):
         api_key, base_url, model_name = _get_api_config(language)
         try:
@@ -365,14 +380,7 @@ def _complete(system: str, user: str, max_tokens: int = 1500, language: str = "e
                 text = _fix_tedim_vocab(text)
             return text
         except Exception as exc:
-            print(f"[llm] RunPod failed ({exc}), falling back to local/OpenRouter", flush=True)
-
-    # Local Ollama for Burmese and Tedim when RunPod is disabled (or failed).
-    if _should_use_local_llm(system, language):
-        text = _complete_local(system, user, max_tokens, language)
-        if language == "td":
-            text = _fix_tedim_vocab(text)
-        return text
+            print(f"[llm] RunPod failed ({exc}), falling back to OpenRouter", flush=True)
 
     # OpenRouter
     api_key = _OPENROUTER_API_KEY
@@ -1334,7 +1342,9 @@ def generate_music_lyrics(*, mood: str, language: str) -> str:
         )
 
     try:
-        raw = _complete(system, user, max_tokens=2000, language=language)
+        # A 3-section song is short; a tight token budget lets the small local
+        # Ollama box finish well inside LOCAL_LLM_TIMEOUT instead of timing out.
+        raw = _complete(system, user, max_tokens=700, language=language)
         if language == "td":
             raw = _fix_tedim_vocab(raw)
         text = _strip_formatting(raw)

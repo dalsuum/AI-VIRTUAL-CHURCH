@@ -4,18 +4,17 @@ import { ChordProParser, HtmlDivFormatter } from "chordsheetjs";
 import { api } from "../composables/useApi.js";
 
 // ── Data loading ────────────────────────────────────────────────────────────
-// Songs are served as static JSON bundled in public/data/ — no backend or
-// external site needed. (hymns_my.json: 852 hymns; myanmar_lyrics_collection.json:
-// 39 worship songs.)
+// Two sources: the static classic/modern hymn corpus (hymns_my.json: 852 hymns,
+// not in the DB) and the admin-managed library read live from the backend
+// (GET /songs — the single source of truth for worship songs).
 const loading = ref(true);
 const error   = ref("");
 const allSongs = ref([]);   // { id, title, lyrics, source, url }
 
 onMounted(async () => {
   try {
-    const [hymnRes, newRes, libRes] = await Promise.all([
+    const [hymnRes, libRes] = await Promise.all([
       fetch("/data/hymns_my.json").then((r) => r.json()),
-      fetch("/data/myanmar_lyrics_collection.json").then((r) => r.json()),
       // Admin-managed library (may be empty / unreachable — degrade gracefully).
       api.getSongs().catch(() => ({ songs: [] })),
     ]);
@@ -30,15 +29,6 @@ onMounted(async () => {
       url:    null,
     }));
 
-    const newSongs = (Array.isArray(newRes) ? newRes : []).map((s) => ({
-      id: ++id,
-      title:  s.title,
-      lyrics: s.lyrics,
-      source: "praise",
-      hasChords: false,
-      url:    s.url || null,
-    }));
-
     // Admin-CRUD songs: Myanmar join the praise list; Zolai get their own tab.
     const library = (libRes.songs || []).map((s) => ({
       id: ++id,
@@ -49,7 +39,7 @@ onMounted(async () => {
       url:    null,
     }));
 
-    allSongs.value = [...hymns, ...newSongs, ...library];
+    allSongs.value = [...hymns, ...library];
   } catch (e) {
     error.value = "သီချင်းများ ဖတ်ရန် မရနိုင်ပါ။ (Could not load songs.)";
   } finally {

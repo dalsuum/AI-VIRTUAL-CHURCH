@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use App\Models\Song;
 use App\Services\PermissionService;
-use App\Services\SongCorpusService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -59,7 +58,6 @@ class SongController extends Controller
 
         $data = $this->validated($request);
         $song = Song::create($data);
-        $this->syncCorpus();
 
         return response()->json(['ok' => true, 'song' => $song], 201);
     }
@@ -70,7 +68,6 @@ class SongController extends Controller
 
         $song->fill($this->validated($request, true));
         $song->save();
-        $this->syncCorpus();
 
         return response()->json(['ok' => true, 'song' => $song->fresh()]);
     }
@@ -80,7 +77,6 @@ class SongController extends Controller
         PermissionService::require($request->user(), 'lyrics.manage');
 
         $song->delete();
-        $this->syncCorpus();
 
         return response()->json(['ok' => true]);
     }
@@ -121,19 +117,5 @@ class SongController extends Controller
         }
 
         return $data;
-    }
-
-    /**
-     * Refresh the worker Myanmar lyrics corpus from the DB after a write. The DB
-     * is authoritative; the JSON is a derived export. Best-effort so a filesystem
-     * hiccup can never fail an otherwise-successful admin save.
-     */
-    private function syncCorpus(): void
-    {
-        try {
-            SongCorpusService::export();
-        } catch (\Throwable $e) {
-            report($e);
-        }
     }
 }

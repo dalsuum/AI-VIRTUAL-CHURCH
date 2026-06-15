@@ -7,6 +7,7 @@ import { api } from "../composables/useApi";
 import ThemeToggle from "./ThemeToggle.vue";
 import VoiceStudio from "./VoiceStudio.vue";
 import PermissionsMatrix from "./PermissionsMatrix.vue";
+import AdsManager from "./AdsManager.vue";
 
 const authed      = ref(false);
 const currentUser = ref(null); // { id, name, role, permissions: string[] }
@@ -37,6 +38,7 @@ const TABS = [
   { name: "music-pool",     label: "AI Music Pool",    can: () => can("music_pool.view"),      load: loadMusicTracks },
   { name: "voice-studio",   label: "Voice Studio",     can: () => can("voice_studio.view"),    load: null },
   { name: "voice-training", label: "Voice Training",   can: () => can("voice_training.view"),  load: () => { loadVoiceTrainingStatus(); scheduleVoiceTrainingPoll(); } },
+  { name: "ads",            label: "Ads",              can: () => can("ads.view"),             load: null },
   { name: "permissions",    label: "Permissions",      can: () => can("permissions.view"),     load: loadPermissions },
   { name: "grammar-review", label: "Language Review",  can: () => can("language_review.view"), load: () => { grData.value = null; loadGrammarReview(); } },
   { name: "system",         label: "System",           can: () => can("system.view"),          load: () => { loadUpdateStatus(); scheduleUpdatePoll(); loadVoiceboxStatus(); scheduleVoiceboxPoll(); } },
@@ -2141,6 +2143,11 @@ onUnmounted(() => {
             <p v-else class="sys-empty">No Voice Studio datasets yet.</p>
           </template>
         </div>
+      </section>
+
+      <!-- Ads management -->
+      <section v-else-if="tab === 'ads'" class="settings">
+        <AdsManager />
       </section>
 
       <section v-else-if="tab === 'permissions' && isAdminUser" class="settings">

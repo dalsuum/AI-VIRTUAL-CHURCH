@@ -808,6 +808,7 @@ The console is at `/#admin`. Access is role-based:
   - The cache lives at `/tmp/aivc_update_status.json`, refreshed by the `aivc-update-checker`
     systemd timer (every hour, 5 min after boot) and on demand via the **Refresh now** button.
     The dashboard auto-polls every 30 s while the tab is open (4 s while a check is running).
+- **Ads** — full ad-campaign CRUD with multi-slide carousel, in-browser Cropper.js image editor, audience targeting (language + mood), and billing by impression/click. See [Ad Management](#ad-management) below.
 - **Voice Studio** — in-browser TTS training-data recorder and automatic MMS/VITS
   fine-tune feeder. Displays Tedim and Burmese recording-script sentences one at
   a time; click **Record**, speak, review playback, optionally run **STT check**
@@ -821,6 +822,64 @@ The console is at `/#admin`. Access is role-based:
   `VOICE_TRAIN_MAX_LOAD`, it launches the configured MMS/VITS fine-tune command.
   **Export Dataset** remains available for inspection/debugging, but training no
   longer depends on manual export.
+
+---
+
+## Ad Management
+
+Ads appear in the service player at three positions:
+
+| Position | When |
+|---|---|
+| `start` | Before the first stage (start ad clears before worship begins). |
+| `between` | In the content area below each stage, above Previous/Next. |
+| `end` | Shown as a fixed overlay when the worshipper clicks "End service"; dismissing it exits. |
+
+### Admin UI (`#admin` → Ads tab)
+
+- **List view** — shows all campaigns with live impression/click/revenue totals.
+- **Edit view** — two-column layout: ad settings on the left, slide manager on the right.
+  - Set status (`draft` / `active` / `paused`), type (`slideshow` / `html`), locations, slide duration, billing rates, and audience targeting.
+  - **Image slides** — upload an image and crop it in-browser with Cropper.js (free aspect ratio, max 1200×800 WebP output at 88% quality).
+  - **HTML slides** — paste any HTML (embed codes, custom banners).
+  - Reorder slides with ↑/↓ buttons (persisted to `sort_order`).
+- **Analytics tab** — per-campaign table: impressions, clicks, CTR, total view time, and revenue.
+
+### Database tables
+
+| Table | Purpose |
+|---|---|
+| `ads` | Campaign header — status, type, locations JSON, targeting, billing rates, slide duration. |
+| `ad_slides` | Individual slides — `image_path` (stored in `storage/app/public/ads/{ad_id}/`) or `html_content`, plus per-slide `duration_seconds` override and `link_url`. |
+| `ad_impressions` | One row per shown ad — `duration_ms`, `clicked`, `location`, `session_token`, `language`, `mood`. |
+
+### API endpoints
+
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| `GET` | `/ads/active` | Public | Fetch active ads for a given `?language=` + `?mood=`. |
+| `POST` | `/ads/track` | Public (throttle 60/min) | Record an impression or click. |
+| `GET` | `/admin/ads` | staff + `ads.view` | List ads with stats. |
+| `GET` | `/admin/ads/{ad}` | staff + `ads.view` | Single ad with slides. |
+| `GET` | `/admin/ads-analytics` | staff + `ads.analytics` | Per-campaign analytics. |
+| `POST` | `/admin/ads` | admin | Create ad. |
+| `PATCH` | `/admin/ads/{ad}` | admin | Update ad. |
+| `DELETE` | `/admin/ads/{ad}` | admin | Delete ad + all slides + images. |
+| `POST` | `/admin/ads/{ad}/slides` | admin | Add slide (image or HTML). |
+| `PATCH` | `/admin/ads/{ad}/slides/{slide}` | admin | Update slide. |
+| `DELETE` | `/admin/ads/{ad}/slides/{slide}` | admin | Delete slide + image file. |
+| `POST` | `/admin/ads/{ad}/slides/{slide}/image` | admin | Upload + store cropped image (WebP). |
+| `POST` | `/admin/ads/{ad}/reorder` | admin | Persist new slide order. |
+
+### Permissions
+
+| Permission | Default roles |
+|---|---|
+| `ads.view` | moderator |
+| `ads.analytics` | moderator |
+| `ads.manage` | admin only |
+
+Admins always have all three. The permissions matrix in the admin console lets you grant `ads.view` / `ads.analytics` to the presenter role as well.
 
 ---
 
@@ -1106,6 +1165,8 @@ before any state-changing request to bootstrap CSRF protection.
 | `POST` | `/internal/asset-ready` | **Worker callback** — `X-Worker-Secret` header, no user auth. |
 | `POST` | `/internal/music-track` | **Worker callback** — banks a fresh Suno track in the reuse pool (`X-Worker-Secret`, no user auth). |
 | `POST` | `/webhooks/stripe` | **Stripe webhook** — signature-verified, no user auth. |
+| `GET` | `/ads/active` | Return active ads matching `?language=`+`?mood=` (targeting filters applied server-side). |
+| `POST` | `/ads/track` | Record an ad impression or click (rate-limited 60/min per IP). |
 
 ### Authenticated (`auth:sanctum`)
 

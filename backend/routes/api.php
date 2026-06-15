@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AdController;
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\ConfigController;
@@ -36,6 +37,10 @@ Route::post('/internal/music-track', [WebhookController::class, 'musicTrack']);
 
 // Stripe offering webhook (Stripe-signature verified, no user auth)
 Route::post('/webhooks/stripe', [OfferingController::class, 'webhook']);
+
+// Public ad endpoints — no auth required; track is throttled to prevent abuse.
+Route::get('/ads/active', [AdController::class, 'activeForService']);
+Route::post('/ads/track', [AdController::class, 'track'])->middleware('throttle:60,1');
 
 // Authenticated user routes
 Route::middleware('auth:sanctum')->group(function () {
@@ -97,6 +102,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/permissions',  [AdminController::class, 'getPermissions']);
         Route::get('/grammar-review',  [AdminController::class, 'grammarReview']);
         Route::post('/grammar-review', [AdminController::class, 'grammarReviewSave']);
+
+        // Ads — reads available to staff with ads.view permission.
+        Route::get('/ads',           [AdController::class, 'index']);
+        Route::get('/ads/{ad}',      [AdController::class, 'show']);
+        Route::get('/ads-analytics', [AdController::class, 'analytics']);
+
         Route::get('/voice-training/status', [VoiceTrainingController::class, 'status']);
         Route::post('/voice-training/start', [VoiceTrainingController::class, 'start']);
         Route::get('/updates/status',        [UpdateController::class, 'status']);
@@ -129,6 +140,16 @@ Route::middleware('auth:sanctum')->group(function () {
 
         // Permissions write
         Route::patch('/permissions', [AdminController::class, 'updatePermissions']);
+
+        // Ads — admin writes (create, update, delete, slide management, image upload).
+        Route::post('/ads',                               [AdController::class, 'store']);
+        Route::patch('/ads/{ad}',                         [AdController::class, 'update']);
+        Route::delete('/ads/{ad}',                        [AdController::class, 'destroy']);
+        Route::post('/ads/{ad}/slides',                   [AdController::class, 'storeSlide']);
+        Route::patch('/ads/{ad}/slides/{slide}',          [AdController::class, 'updateSlide']);
+        Route::delete('/ads/{ad}/slides/{slide}',         [AdController::class, 'destroySlide']);
+        Route::post('/ads/{ad}/slides/{slide}/image',     [AdController::class, 'uploadSlideImage']);
+        Route::post('/ads/{ad}/reorder',                  [AdController::class, 'reorderSlides']);
 
         // System actions (destructive — git pull, package installs, service restarts)
         // Route::post('/updates/check',           [UpdateController::class, 'check']);

@@ -273,6 +273,42 @@ export const api = {
   adminGrammarReviewSave: (payload) =>
     request('/admin/grammar-review', { method: 'POST', body: payload }),
 
+  // Ads management
+  adminAds: () => request('/admin/ads'),
+  adminAd: (id) => request(`/admin/ads/${id}`),
+  adminCreateAd: (payload) => request('/admin/ads', { method: 'POST', body: payload }),
+  adminUpdateAd: (id, payload) => request(`/admin/ads/${id}`, { method: 'PATCH', body: payload }),
+  adminDeleteAd: (id) => request(`/admin/ads/${id}`, { method: 'DELETE' }),
+  adminCreateSlide: (adId, payload) => request(`/admin/ads/${adId}/slides`, { method: 'POST', body: payload }),
+  adminUpdateSlide: (adId, slideId, payload) => request(`/admin/ads/${adId}/slides/${slideId}`, { method: 'PATCH', body: payload }),
+  adminDeleteSlide: (adId, slideId) => request(`/admin/ads/${adId}/slides/${slideId}`, { method: 'DELETE' }),
+  adminReorderSlides: (adId, order) => request(`/admin/ads/${adId}/reorder`, { method: 'POST', body: { order } }),
+  adminAdsAnalytics: () => request('/admin/ads-analytics'),
+  // Image upload uses FormData — can't use the JSON helper
+  adminUploadSlideImage: async (adId, slideId, blob, filename) => {
+    await ensureCsrf();
+    const fd = new FormData();
+    fd.append('image', blob, filename);
+    const res = await fetch(`${BASE_URL}/admin/ads/${adId}/slides/${slideId}/image`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'X-XSRF-TOKEN': getCsrfToken(), Accept: 'application/json' },
+      body: fd,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw Object.assign(new Error(data.message || 'Upload failed'), { status: res.status, data });
+    return data;
+  },
+  // Public ad fetching + tracking (no auth needed)
+  fetchActiveAds: (language, mood) => {
+    const p = new URLSearchParams();
+    if (language) p.set('language', language);
+    if (mood) p.set('mood', mood);
+    const q = p.toString();
+    return request(`/ads/active${q ? `?${q}` : ''}`);
+  },
+  trackAdImpression: (payload) => request('/ads/track', { method: 'POST', body: payload }),
+
   // Voice Studio — available to all authenticated users (each user's data is isolated).
   voiceStatus:   () => request("/voice-studio/status"),
   voiceScript:   (lang) => request(`/voice-studio/script/${lang}`),

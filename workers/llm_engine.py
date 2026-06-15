@@ -268,6 +268,27 @@ def _clean_myanmar(text: str) -> str:
     return text.strip().strip("-").strip()
 
 
+_SENT_SPLIT = re.compile(r"(?<=[.!?။])\s+")
+
+
+def _chunk_english(text: str, max_chars: int = 800) -> list[str]:
+    """Split English into sentence-grouped chunks so NLLB never truncates a long
+    segment (it caps input AND output at 512 tokens). Sentence-aware so chunk
+    boundaries fall between sentences, not mid-thought."""
+    sents = [s for s in _SENT_SPLIT.split(text.strip()) if s]
+    chunks: list[str] = []
+    cur = ""
+    for s in sents:
+        if cur and len(cur) + len(s) + 1 > max_chars:
+            chunks.append(cur)
+            cur = s
+        else:
+            cur = f"{cur} {s}".strip()
+    if cur:
+        chunks.append(cur)
+    return chunks or [text.strip()]
+
+
 def _is_looped(text: str) -> bool:
     """True if a translation degenerated into a repeated-word loop (NLLB beam
     search sometimes does this). Mirrors the Tedim router's trigram guard so a
@@ -321,13 +342,19 @@ def _translate_via_hf(text: str, language: str) -> str:
     client = _hf_space_client()
     if client is None or not tgt:
         raise RuntimeError("HF NLLB Space not configured")
-    out = client.predict(text, "eng_Latn", tgt, api_name="/translate")
-    out = (out or "").strip().rstrip("-").strip()
-    if not out:
+    parts: list[str] = []
+    for chunk in _chunk_english(text):
+        out = (client.predict(chunk, "eng_Latn", tgt, api_name="/translate") or "").strip()
+        if not out:
+            continue
+        # Loop check needs word spacing; then collapse NLLB's per-syllable spaces.
+        if _is_looped(out):
+            raise RuntimeError("HF Space output degenerated into a repetition loop")
+        parts.append(_clean_myanmar(out) if language == "my" else out)
+    result = ("" if language == "my" else " ").join(parts).strip()
+    if not result:
         raise RuntimeError("HF Space returned empty translation")
-    if _is_looped(out):
-        raise RuntimeError("HF Space output degenerated into a repetition loop")
-    return out
+    return result
 
 
 def _translate_via_nllb(text: str, language: str) -> str:
@@ -337,16 +364,27 @@ def _translate_via_nllb(text: str, language: str) -> str:
     tgt = _NLLB_TGT.get(language)
     if not base or not tgt:
         raise RuntimeError(f"NLLB not configured for language {language!r}")
-    resp = requests.post(
-        f"{base}/nllb/translate",
-        json={"text": text, "src_lang": "eng_Latn", "tgt_lang": tgt},
-        timeout=LOCAL_LLM_TIMEOUT,
-    )
-    resp.raise_for_status()
-    out = (resp.json().get("translation") or "").strip()
-    if _is_looped(out):
-        raise RuntimeError("local NLLB output degenerated into a repetition loop")
-    return out
+    parts: list[str] = []
+    for chunk in _chunk_english(text):
+        # Per-chunk timeout: chunks are <=800 chars, so even the CPU box finishes
+        # one well inside this. Keep it short so a down/slow fallback doesn't hang
+        # the whole service (HF Space is the primary path anyway).
+        resp = requests.post(
+            f"{base}/nllb/translate",
+            json={"text": chunk, "src_lang": "eng_Latn", "tgt_lang": tgt},
+            timeout=int(os.getenv("NLLB_LOCAL_TIMEOUT", "60")),
+        )
+        resp.raise_for_status()
+        out = (resp.json().get("translation") or "").strip()
+        if not out:
+            continue
+        if _is_looped(out):
+            raise RuntimeError("local NLLB output degenerated into a repetition loop")
+        parts.append(out)
+    result = ("" if language == "my" else " ").join(parts).strip()
+    if not result:
+        raise RuntimeError("local NLLB returned empty translation")
+    return result
 
 
 def _gen_english_source(system: str, user: str, max_tokens: int, language: str) -> str:

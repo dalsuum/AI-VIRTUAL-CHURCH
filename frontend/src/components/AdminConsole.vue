@@ -1989,55 +1989,6 @@ onUnmounted(() => {
         </div>
 
         <div class="setting-block">
-          <h2>Ad Slot</h2>
-          <p class="setting-desc">
-            Show an advertisement in the service player, below each stage's content.
-            Paste a Google Ads embed code (<code>&lt;ins class="adsbygoogle"…&gt;</code>) or any
-            custom HTML banner. The slot is hidden from worshippers when disabled.
-          </p>
-          <template v-if="settings">
-            <div class="choice-row" style="margin-bottom:1rem">
-              <button
-                type="button"
-                class="choice"
-                :class="{ active: settings.ad_slot_enabled === true }"
-                :disabled="savingSettings || settingsReadOnly"
-                @click="saveSetting('ad_slot_enabled', true, 'Ad slot enabled.')"
-              >
-                <strong>Enabled</strong>
-                <span>Show the ad slot in the service player.</span>
-              </button>
-              <button
-                type="button"
-                class="choice"
-                :class="{ active: settings.ad_slot_enabled === false }"
-                :disabled="savingSettings || settingsReadOnly"
-                @click="saveSetting('ad_slot_enabled', false, 'Ad slot disabled.')"
-              >
-                <strong>Disabled</strong>
-                <span>Hide the ad slot (HTML is preserved).</span>
-              </button>
-            </div>
-            <textarea
-              v-model="settings.ad_slot_html"
-              class="pool-lyrics"
-              rows="6"
-              placeholder="Paste Google Ads embed code or custom HTML here…"
-              :disabled="savingSettings || settingsReadOnly"
-              style="font-family:monospace;font-size:0.8rem"
-            ></textarea>
-            <div style="margin-top:0.6rem">
-              <button
-                class="chip primary-chip"
-                :disabled="savingSettings || settingsReadOnly"
-                @click="saveSetting('ad_slot_html', settings.ad_slot_html, 'Ad slot HTML saved.')"
-              >Save ad code</button>
-            </div>
-          </template>
-          <p v-else class="setting-desc">Loading…</p>
-        </div>
-
-        <div class="setting-block">
           <h2>Change password</h2>
           <p class="setting-desc">Update the password for your admin account.</p>
           <div class="pw-form">
@@ -2147,7 +2098,7 @@ onUnmounted(() => {
 
       <!-- Ads management -->
       <section v-else-if="tab === 'ads'" class="settings">
-        <AdsManager />
+        <AdsManager :settings="settings" :saving="savingSettings" :read-only="settingsReadOnly" @save-setting="saveSetting" />
       </section>
 
       <section v-else-if="tab === 'permissions' && isAdminUser" class="settings">

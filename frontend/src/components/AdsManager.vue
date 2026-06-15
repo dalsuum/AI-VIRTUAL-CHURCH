@@ -4,6 +4,13 @@ import Cropper from 'cropperjs';
 import 'cropperjs/dist/cropper.css';
 import { api } from '../composables/useApi.js';
 
+const props = defineProps({
+  settings:  { type: Object,   default: null },
+  saving:    { type: Boolean,  default: false },
+  readOnly:  { type: Boolean,  default: false },
+});
+const emit = defineEmits(['save-setting']);
+
 // ── State ────────────────────────────────────────────────────────────────────
 const ads        = ref([]);
 const analytics  = ref([]);
@@ -346,6 +353,44 @@ function backToList() {
 
     <p v-if="notice" class="ads-notice">{{ notice }}</p>
 
+    <!-- ── Quick HTML / Google Ads slot ── -->
+    <div v-if="settings" class="slot-panel">
+      <div class="slot-header">
+        <div class="slot-title-row">
+          <strong>Quick Ad Slot</strong>
+          <span class="slot-hint">Paste a Google Ads embed code or any custom HTML — shown in the service player between stages.</span>
+        </div>
+        <div class="slot-toggle">
+          <button
+            type="button"
+            class="toggle-btn"
+            :class="{ active: settings.ad_slot_enabled === true }"
+            :disabled="saving || readOnly"
+            @click="emit('save-setting', 'ad_slot_enabled', true, 'Ad slot enabled.')"
+          >Enabled</button>
+          <button
+            type="button"
+            class="toggle-btn"
+            :class="{ active: settings.ad_slot_enabled !== true }"
+            :disabled="saving || readOnly"
+            @click="emit('save-setting', 'ad_slot_enabled', false, 'Ad slot disabled.')"
+          >Disabled</button>
+        </div>
+      </div>
+      <textarea
+        v-model="settings.ad_slot_html"
+        class="slot-textarea"
+        rows="4"
+        placeholder="Paste Google Ads embed code or custom HTML here…"
+        :disabled="saving || readOnly"
+      ></textarea>
+      <button
+        class="chip primary-chip"
+        :disabled="saving || readOnly"
+        @click="emit('save-setting', 'ad_slot_html', settings.ad_slot_html, 'Ad slot code saved.')"
+      >Save ad code</button>
+    </div>
+
     <!-- ── List view ── -->
     <template v-if="view === 'list'">
       <div v-if="busy" class="ads-loading">Loading…</div>
@@ -607,6 +652,46 @@ function backToList() {
 </template>
 
 <style scoped>
+/* Quick slot panel */
+.slot-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem 1.2rem;
+  margin-bottom: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: .65rem;
+}
+.slot-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.slot-title-row { display: flex; flex-direction: column; gap: .2rem; }
+.slot-title-row strong { font-size: .95rem; }
+.slot-hint { font-size: .78rem; color: var(--text-muted); }
+.slot-toggle { display: flex; gap: .35rem; flex-shrink: 0; }
+.toggle-btn {
+  padding: .3rem .75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  cursor: pointer;
+  font-size: .82rem;
+  font-weight: 500;
+}
+.toggle-btn.active { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
+.toggle-btn:disabled { opacity: .5; cursor: default; }
+.slot-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: .5rem .7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-family: monospace;
+  font-size: .8rem;
+  resize: vertical;
+}
+
 .ads-mgr { padding: 0.25rem 0; }
 .ads-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.1rem; flex-wrap: wrap; gap: .5rem; }
 .ads-breadcrumb { display: flex; align-items: center; gap: .4rem; font-size: .95rem; }

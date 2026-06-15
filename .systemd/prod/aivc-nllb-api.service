@@ -1,0 +1,17 @@
+[Unit]
+Description=AI Church — NLLB Translation (English → Burmese)
+# Independent PyTorch service on port 8004. Kept separate from the Ollama LLM
+# APIs (8001/8002) and the MMS speech app (8003) so translation inference does
+# not compete with them for CPU.
+After=redis-server.service
+
+[Service]
+User=simon
+WorkingDirectory=/opt/ai-church/workers
+# One uvicorn worker: an asyncio semaphore serializes CPU-heavy translation anyway.
+ExecStart=/usr/bin/env bash -lc 'set -a; . ./.env; set +a; exec .venv/bin/uvicorn nllb_api:app --host 127.0.0.1 --port 8004 --workers 1'
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

@@ -173,6 +173,7 @@ A single Celery app with one Redis broker and **named queues that mirror the wor
 | [burmese_router.py](workers/burmese_router.py) | FastAPI router: `POST /burmese/translate`, `POST /burmese/generate`, `GET /burmese/verse?ref=`. Redis db 3 cache (30-day TTL). Shares the same semaphore pattern as the Tedim router. Myanmar Unicode only — no Zawgyi. |
 | [api.py](workers/api.py) | Unified FastAPI app mounting Tedim, Burmese, `/tts/speak` MMS-TTS, and `/stt/transcribe` MMS-ASR routers plus `/health`. Typically run as two separate uvicorn instances: port 8001 (`aivc-tedim-api`) for Tedim/MMS requests, port 8002 (`aivc-burmese-api`) for Burmese. |
 | [mms_tts_api.py](workers/mms_tts_api.py) | Dedicated MMS speech app on port 8003. Mounts only `/tts/*` and `/stt/*` so PyTorch speech work can run separately from Ollama LLM inference. |
+| [nllb_api.py](workers/nllb_api.py) · [nllb_service.py](workers/nllb_service.py) | Dedicated NLLB-200 translation app on port 8004 (`POST /nllb/translate`). **Burmese prose is now produced by translating the already-good English segment** (`facebook/nllb-200-distilled-600M`, `eng_Latn`→`mya_Mymr`) rather than generating Myanmar directly with the Ollama `burmese-myanmar` model, which often emitted word-salad. `_complete()` in [llm_engine.py](workers/llm_engine.py) makes NLLB the **primary** Burmese path (English source via OpenRouter → NLLB translate), with the Ollama `burmese-myanmar` model and then the hardcoded fallback if NLLB is down or its output fails the `_is_my_plausible` guard. Output is normalized (`_clean_myanmar`) to strip NLLB's per-syllable spacing so edge-tts/MMS-TTS read it cleanly. Redis db 4 cache, 30-day TTL; single-inference semaphore. **Tedim is NOT routed through NLLB** — `tdt_Latn` tested as unusable (echoes English back), so Tedim stays on Ollama `tedim-zolai`. Set `NLLB_URL` empty to disable and keep Burmese on Ollama. |
 | [hymns_my.py](workers/hymns_my.py) | Loader for the 852-song `data/hymns_my.json` Burmese library; mood-based selection for `MyanmarHymnStrategy`. |
 | [hymns_td.py](workers/hymns_td.py) | Loader for `data/hymns_td.json` (bundled, 467 hymns); mood selection + YouTube-embed priority for `TedimHymnStrategy`. |
 | [strategies/sung_hymn_strategy.py](workers/strategies/sung_hymn_strategy.py) | Unified `hymn_sung` strategy for all languages. English: public-domain 78rpm vocal recording. Burmese/Tedim: locally-downloaded `.sung.mp3` under `hymns_my/` or `hymns_td/`; falls back to English audio with localized lyrics overlay. |
@@ -1016,15 +1017,16 @@ Those units are version-controlled as **system-level** units in
 | [`aivc-tedim-api.service`](.systemd/prod/aivc-tedim-api.service) | FastAPI Tedim LLM service (Uvicorn, port 8001) |
 | [`aivc-burmese-api.service`](.systemd/prod/aivc-burmese-api.service) | FastAPI Burmese LLM service (Uvicorn, port 8002) |
 | [`aivc-mms-tts.service`](.systemd/prod/aivc-mms-tts.service) | Dedicated MMS speech service: TTS + STT (Uvicorn, port 8003) |
+| [`aivc-nllb-api.service`](.systemd/prod/aivc-nllb-api.service) | NLLB-200 translation service — English → Burmese (Uvicorn, port 8004) |
 
 ```bash
 # on the droplet, once the units are copied to /etc/systemd/system:
-sudo systemctl enable --now aivc-queue aivc-scheduler aivc-workers aivc-bridge aivc-tedim-api aivc-burmese-api aivc-mms-tts
-sudo systemctl status  aivc-queue aivc-scheduler aivc-workers aivc-bridge aivc-tedim-api aivc-burmese-api aivc-mms-tts --no-pager
+sudo systemctl enable --now aivc-queue aivc-scheduler aivc-workers aivc-bridge aivc-tedim-api aivc-burmese-api aivc-mms-tts aivc-nllb-api
+sudo systemctl status  aivc-queue aivc-scheduler aivc-workers aivc-bridge aivc-tedim-api aivc-burmese-api aivc-mms-tts aivc-nllb-api --no-pager
 
 # After worker/backend code or prompt changes, restart the services that load code:
-sudo systemctl restart aivc-workers aivc-bridge aivc-queue aivc-tedim-api aivc-burmese-api aivc-mms-tts
-sudo systemctl status  aivc-workers aivc-bridge aivc-queue aivc-tedim-api aivc-burmese-api aivc-mms-tts --no-pager
+sudo systemctl restart aivc-workers aivc-bridge aivc-queue aivc-tedim-api aivc-burmese-api aivc-mms-tts aivc-nllb-api
+sudo systemctl status  aivc-workers aivc-bridge aivc-queue aivc-tedim-api aivc-burmese-api aivc-mms-tts aivc-nllb-api --no-pager
 
 # After changing OLLAMA_MODEL_TD in workers/.env:
 sudo systemctl restart aivc-tedim-api
@@ -1112,6 +1114,8 @@ This includes:
 | `OLLAMA_MODEL_TD` | Ollama model name for Tedim (default `tedim-zolai`). Change to a fine-tuned GGUF name without any code change. |
 | `OLLAMA_MODEL_MY` | Ollama model name for Burmese (default `burmese-myanmar`). |
 | `OLLAMA_URL` | Ollama REST endpoint (default `http://127.0.0.1:11434/api/generate`). |
+| `NLLB_URL` | Base URL of the local NLLB translation service for Burmese (default `http://127.0.0.1:8004`). Leave empty to disable NLLB and keep Burmese on the Ollama `burmese-myanmar` model. |
+| `NLLB_MODEL_ID` | NLLB model id or local path (default `facebook/nllb-200-distilled-600M`; the box uses an offline copy at `workers/local`). |
 | `MMS_SPEECH_URL` / `MMS_TTS_URL` | Local MMS speech base URL used for Myanmar/Tedim narration and Voice Studio transcript checks (default `http://127.0.0.1:8003`). |
 | `MMS_TTS_MODEL_TD` / `MMS_TTS_MODEL_MY` | Native VITS checkpoints for Tedim/Burmese narration (defaults `facebook/mms-tts-ctd` / `facebook/mms-tts-mya`). |
 | `MMS_TTS_SEED` | Pinned VITS seed for reproducible narration (default `42`). |

@@ -42,3 +42,7 @@ vendor/
 .DS_Store
 
 workers/tools/.hymn-cache/
+
+# Local NLLB-200 model weights (2.3 GB) — fetched at deploy, never committed
+workers/local/
+workers/nllb-200-distilled-600M/

@@ -252,6 +252,44 @@ def _local_llm_url(language: str) -> tuple[str, str] | None:
     return None
 
 
+# NLLB-200 language codes. Burmese works well; Tedim (tdt_Latn) tested poorly and
+# is intentionally NOT routed here (stays on Ollama tedim-zolai).
+_NLLB_TGT = {"my": "mya_Mymr"}
+
+
+def _translate_via_nllb(text: str, language: str) -> str:
+    """Translate English prose into the target language with the local NLLB
+    service (workers/nllb_api.py on NLLB_URL). Raises on any failure so the
+    caller can fall back to the Ollama model."""
+    base = (os.getenv("NLLB_URL") or "").rstrip("/")
+    tgt = _NLLB_TGT.get(language)
+    if not base or not tgt:
+        raise RuntimeError(f"NLLB not configured for language {language!r}")
+    resp = requests.post(
+        f"{base}/nllb/translate",
+        json={"text": text, "src_lang": "eng_Latn", "tgt_lang": tgt},
+        timeout=LOCAL_LLM_TIMEOUT,
+    )
+    resp.raise_for_status()
+    return (resp.json().get("translation") or "").strip()
+
+
+def _gen_english_source(system: str, user: str, max_tokens: int, language: str) -> str:
+    """Produce the English version of a segment so NLLB can translate it.
+
+    The caller's system prompt is an English instruction with a language-law line
+    prepended by _language_instruction(); we strip that line and pin English so the
+    cloud chat model writes plain English for the translator."""
+    lang_inst = _language_instruction(language)
+    system_en = system.replace(lang_inst, "").strip()
+    system_en = "Write your entire response in clear, natural English. " + system_en
+    api_key = _OPENROUTER_API_KEY
+    base_url = _OPENROUTER_BASE_URL.rstrip("/")
+    return _call_chat_api(
+        api_key, base_url, _OPENROUTER_MODEL, system_en, user, max_tokens, "OpenRouter(en-src)"
+    )
+
+
 def _should_use_local_llm(system: str, language: str) -> bool:
     # The intake plan must stay on the chat model because it is a strict JSON
     # contract. Local low-resource generators are used for prose segments only.
@@ -361,6 +399,20 @@ def _complete(system: str, user: str, max_tokens: int = 1500, language: str = "e
     # prose and fall through to RunPod/OpenRouter only if the local model fails.
     # (The strict-JSON intake plan is excluded by _should_use_local_llm and still
     # runs on the cloud chat model below.)
+    # Burmese prose PRIMARY path: generate the segment in English, then translate
+    # with the local NLLB service — far more fluent than the Ollama burmese-myanmar
+    # model. On any failure (NLLB down, or output fails the Myanmar plausibility
+    # guard) fall through to the Ollama model, then to the cloud/hardcoded fallback.
+    if language == "my" and _should_use_local_llm(system, language) and os.getenv("NLLB_URL"):
+        try:
+            english = _gen_english_source(system, user, max_tokens, language)
+            translated = _translate_via_nllb(english, language)
+            if _is_my_plausible(translated, min_myanmar_chars=10):
+                return translated
+            print("[llm] NLLB Burmese output failed plausibility guard, trying Ollama", flush=True)
+        except Exception as exc:
+            print(f"[llm] NLLB Burmese path failed ({exc}), trying Ollama", flush=True)
+
     if _should_use_local_llm(system, language) and _local_llm_url(language):
         try:
             text = _complete_local(system, user, max_tokens, language)

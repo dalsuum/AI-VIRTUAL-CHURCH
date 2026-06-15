@@ -13,6 +13,7 @@
     "chordsheetjs": "^15.4.0",
     "cropperjs": "^1.6.2",
     "html2pdf.js": "^0.14.0",
+    "pptxgenjs": "^4.0.1",
     "vue": "^3.5.13"
   },
   "devDependencies": {

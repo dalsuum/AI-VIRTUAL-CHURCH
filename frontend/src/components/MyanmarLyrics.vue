@@ -173,6 +173,48 @@ async function exportPdf() {
     pdfBusy.value = false;
   }
 }
+
+// Worship-ready PowerPoint: a title slide + one slide per verse/section, large
+// centred white text on a dark projection background. Chord markers are stripped
+// so the congregation sees clean lyrics.
+const pptxBusy = ref(false);
+
+async function exportPptx() {
+  const song = activeSong.value;
+  if (!song) return;
+  pptxBusy.value = true;
+  try {
+    const { default: PptxGenJS } = await import("pptxgenjs");
+    const pptx = new PptxGenJS();
+    pptx.layout = "LAYOUT_WIDE";            // 13.33 × 7.5 in (16:9)
+
+    const BG = "0F172A", FG = "FFFFFF", ACC = "93C5FD";
+    const FONT = "Padauk";                  // Myanmar-capable; PowerPoint falls back if absent
+    const stripChords = (s) => s.replace(/\[[^\]]*\]/g, "").replace(/[^\S\n]+\n/g, "\n").trim();
+
+    // Title slide.
+    const title = pptx.addSlide();
+    title.background = { color: BG };
+    title.addText(song.title, { x: 0.5, y: 2.6, w: 12.33, h: 1.6, align: "center", color: FG, bold: true, fontSize: 44, fontFace: FONT });
+    title.addText(SOURCE_LABELS[song.source] || "", { x: 0.5, y: 4.3, w: 12.33, h: 0.8, align: "center", color: ACC, fontSize: 24, fontFace: FONT });
+
+    // One slide per verse/section.
+    for (const sec of parsedLyrics.value) {
+      const body = stripChords(sec.text);
+      if (!body) continue;
+      const slide = pptx.addSlide();
+      slide.background = { color: BG };
+      if (sec.type) {
+        slide.addText(sec.type.toUpperCase(), { x: 0.5, y: 0.3, w: 12.33, h: 0.6, align: "center", color: ACC, bold: true, fontSize: 18, fontFace: FONT });
+      }
+      slide.addText(body, { x: 0.6, y: 0.9, w: 12.13, h: 5.9, align: "center", valign: "middle", color: FG, bold: true, fontSize: 32, fontFace: FONT, lineSpacingMultiple: 1.2 });
+    }
+
+    await pptx.writeFile({ fileName: `${song.title}.pptx` });
+  } finally {
+    pptxBusy.value = false;
+  }
+}
 </script>
 
 <template>
@@ -254,6 +296,9 @@ async function exportPdf() {
         <button class="tool-btn" @click="exportTxt">Export .TXT</button>
         <button class="tool-btn primary" :disabled="pdfBusy" @click="exportPdf">
           {{ pdfBusy ? "Generating…" : "Download PDF" }}
+        </button>
+        <button class="tool-btn primary" :disabled="pptxBusy" @click="exportPptx">
+          {{ pptxBusy ? "Generating…" : "Download PPTX" }}
         </button>
       </div>
 

@@ -634,8 +634,9 @@ and the worshipper still gets every segment as text.
   for non-English services; scripture, opening prayer, and benediction are prioritized,
   and the longer message audio is deferred so it cannot block the last prayer.
 - **Avatar** — avatar.py renders a D-ID talking-head of the
-  spoken segments (submit → poll → store → URL). Requires `D_ID_API_KEY` +
-  `D_ID_SOURCE_URL_FEMALE` + `D_ID_SOURCE_URL_MALE`. Can be toggled without touching env vars via
+  spoken segments (submit → poll → store → URL). Requires `DID_API_KEY` +
+  `DID_SOURCE_URL_FEMALE` + `DID_SOURCE_URL_MALE` (optional `DID_VOICE_ID_FEMALE` /
+  `DID_VOICE_ID_MALE` / `DID_VOICE_PROVIDER`). Can be toggled without touching env vars via
   the `avatar_enabled` admin setting. **Implemented** in the current build.
 
 **Presenter gender pairing.** Each worshipper has a `presenter_gender` preference
@@ -781,7 +782,7 @@ The console is at `/#admin`. Access is role-based:
   `countdown_banners`; banners are English-only; verse cards are mood-matched from bundled translations),
   `text_highlight_enabled` (word-by-word highlight on/off in the player), `music_reuse`
   (the Suno pool toggle), `storage_backend` (`local` vs `s3` for generated audio),
-  `avatar_enabled` (toggle HeyGen avatar rendering on/off without touching env vars),
+  `avatar_enabled` (toggle D-ID avatar rendering on/off without touching env vars),
   **`runpod_enabled`** (enable RunPod Serverless GPU for premium music generation; stored in Redis `ai:runpod_enabled` for zero-restart hot-swap),
   **`orchestration_mode`** (`pipeline` = hard-coded Celery fan-out / `agent` = LLM agent
   with tool use — see [AI agent orchestration](#ai-agent-orchestration)), and
@@ -1135,7 +1136,7 @@ This includes:
 | `YOUTUBE_API_KEY` | YouTube Data API search (only if `music_source=youtube`). |
 | `TTS_API_KEY` / `TTS_BASE_URL` / `TTS_MODEL` / `TTS_VOICE` / `TTS_FORMAT` | Narration (`openai` voice). Absent ⇒ that mode off (browser speech still works). |
 | `KOKORO_API_KEY` / `KOKORO_BASE_URL` / `KOKORO_MODEL` / `KOKORO_VOICE` / `KOKORO_FORMAT` | Narration (`kokoro` voice — hexgrad/kokoro-82m via OpenRouter). Defaults to the `OPENROUTER_*` LLM credentials. |
-| `D_ID_API_KEY` / `D_ID_SOURCE_URL_FEMALE` / `D_ID_SOURCE_URL_MALE` | Avatar. All three keys required to enable. Fallback source URLs are provided if absent. |
+| `DID_API_KEY` / `DID_SOURCE_URL_FEMALE` / `DID_SOURCE_URL_MALE` / `DID_VOICE_ID_FEMALE` / `DID_VOICE_ID_MALE` / `DID_VOICE_PROVIDER` | Avatar (D-ID Talks API). Only `DID_API_KEY` is required to enable; source URLs, voice IDs (default `en-US-JennyNeural` / `en-US-GuyNeural`), and provider (default `microsoft`) fall back to defaults if absent. The key is the dashboard value in `base64(email):password` form and is sent verbatim as `Authorization: Basic <key>`. Legacy `D_ID_*` names are still read as a fallback. |
 | `LOCAL_MEDIA_DIR` / `LOCAL_MEDIA_URL` | **Set ⇒ local storage** (write into Laravel's `storage/app/public`, serve over HTTP). Unset ⇒ S3. |
 | `S3_ENDPOINT` / `S3_ACCESS_KEY` / `S3_SECRET_KEY` / `S3_BUCKET` / `S3_REGION` | S3-compatible object storage (prod). |
 | `BIBLE_DATA_FILE` | Override the bundled BSB with another same-schema translation. |
@@ -1283,7 +1284,7 @@ before any state-changing request to bootstrap CSRF protection.
   `agent_orchestrator` covering formatting, language guards, and agent loop robustness — **DONE**
 
 **Known gaps / next steps:** real WebSocket push (Reverb/Echo wiring is stubbed; polling
-works today), HeyGen avatar beyond stub, a production-grade crisis classifier extended to
+works today), a production-grade crisis classifier extended to
 Burmese and Tedim keywords, rights for a non-public-domain Bible translation, fine-tuned
 Tedim GGUF (current `tedim-zolai` uses `llama3.2:1b` as base — quality improves
 significantly with a Tedim-corpus fine-tune on a larger model), a Vue bilingual segment

@@ -9,11 +9,57 @@ chooses a reference; full verse text is resolved separately via a licensed Bible
 
 from __future__ import annotations
 
+import contextvars
 import json
 import os
+import random
 import re
+import time
+from pathlib import Path
 
 import requests
+
+session_prompt_tokens: contextvars.ContextVar[int] = contextvars.ContextVar("session_prompt_tokens", default=0)
+session_completion_tokens: contextvars.ContextVar[int] = contextvars.ContextVar("session_completion_tokens", default=0)
+
+# ---------------------------------------------------------------------------
+# Burmese prayer corpus — loaded once at startup from prayers_my.json
+# ---------------------------------------------------------------------------
+_PRAYERS_MY_PATH = Path(__file__).parent / "data" / "prayers_my.json"
+
+def _load_prayers_my() -> dict[str, list[str]]:
+    """Return a dict of category_key → [prayer, ...] from the corpus file.
+
+    Falls back to an empty dict if the file is missing so the service still runs."""
+    try:
+        data = json.loads(_PRAYERS_MY_PATH.read_text(encoding="utf-8"))
+        return {
+            key: cat["prayers"]
+            for key, cat in data.get("categories", {}).items()
+        }
+    except Exception:
+        return {}
+
+_PRAYERS_MY: dict[str, list[str]] = _load_prayers_my()
+
+# All 100 prayers as a flat pool for random fallback selection.
+_ALL_PRAYERS_MY_FLAT: list[str] = [p for prayers in _PRAYERS_MY.values() for p in prayers]
+
+# Mood → category priority (first match wins, falls back to full pool).
+_MOOD_TO_PRAYER_CATEGORY: list[tuple[set[str], list[str]]] = [
+    ({"grief", "sad", "loss", "sorrow", "pain", "hurt", "broken"},
+     ["confession", "protection", "holy_spirit"]),
+    ({"anxious", "worry", "fear", "stress", "overwhelmed", "uncertain"},
+     ["protection", "holy_spirit", "general"]),
+    ({"grateful", "thankful", "blessed", "joyful", "happy", "praise"},
+     ["thanksgiving", "adoration", "transition"]),
+    ({"seeking", "guidance", "confused", "lost", "direction"},
+     ["word_of_god", "holy_spirit", "general"]),
+    ({"lonely", "isolated", "disconnected"},
+     ["unity", "protection", "general"]),
+    ({"celebrat", "special", "anniversary", "christmas", "easter", "festival"},
+     ["special_occasions", "adoration", "thanksgiving"]),
+]
 
 
 _TEDIM_CORRECTIONS = [
@@ -38,6 +84,15 @@ _TEDIM_CORRECTIONS_COMPILED = [
 def _fix_tedim_vocab(text: str) -> str:
     for pattern, replacement in _TEDIM_CORRECTIONS_COMPILED:
         text = pattern.sub(replacement, text)
+    # The local Tedim GPU model often omits spaces after commas and periods.
+    # e.g. "khainak in,hak" → "khainak in, hak"; "hi,Napa" → "hi, Napa"
+    text = re.sub(r'([,;])([A-Za-z])', r'\1 \2', text)
+    # Fix missing space after sentence-final 'hi.' or 'hen.' before next sentence.
+    text = re.sub(r'(\.)([A-Z])', r'\1 \2', text)
+    # Fix camelCase merges: common Tedim particles (in/leh/ah/na/ka) stuck to next word.
+    # e.g. "inKhua" → "in Khua"; "naTopa" → "na Topa"
+    # \b before particle + uppercase directly after (no space boundary between word chars)
+    text = re.sub(r'\b(in|leh|ah|na|ka|nang|an|pa|te|la|ma|kha)([A-Z])', r'\1 \2', text)
     return text
 
 
@@ -108,11 +163,44 @@ def _ensure_exact_name(text: str, user_name: str | None) -> str:
 # We talk to OpenRouter's OpenAI-compatible Chat Completions endpoint. Any provider
 # that speaks that format (OpenRouter, OpenAI, local vLLM, …) works by changing the
 # base URL + key + model, with no code change.
-API_KEY = os.environ["OPENROUTER_API_KEY"]
-BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
-MODEL = os.getenv("LLM_MODEL", "meta-llama/llama-3.3-70b-instruct:free")
+_OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
+_OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+_OPENROUTER_MODEL = os.getenv("LLM_MODEL", "meta-llama/llama-3.3-70b-instruct:free")
 LOCAL_LLM_TIMEOUT = int(os.getenv("LOCAL_LLM_TIMEOUT", "45"))
 
+_RUNPOD_CACHE = {"value": False, "time": 0.0}
+
+def _is_runpod_enabled(language: str = "en") -> bool:
+    now = time.time()
+    if now - _RUNPOD_CACHE["time"] < 5.0:
+        return _RUNPOD_CACHE["value"]
+
+    try:
+        import redis as _redis
+        client = _redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"))
+        raw = client.get("ai:runpod_enabled")
+        if isinstance(raw, bytes):
+            raw = raw.decode()
+        val = raw in ("1", "true", "True")
+    except Exception:
+        val = False
+
+    _RUNPOD_CACHE["value"] = val
+    _RUNPOD_CACHE["time"] = now
+    return val
+
+def _get_api_config(language: str = "en") -> tuple[str, str, str]:
+    if _is_runpod_enabled(language):
+        return (
+            os.getenv("RUNPOD_API_KEY", "empty"),
+            os.getenv("RUNPOD_BASE_URL", "").rstrip("/"),
+            os.getenv("RUNPOD_LLM_MODEL", "meta-llama/Meta-Llama-3-8B-Instruct")
+        )
+    return (
+        _OPENROUTER_API_KEY,
+        _OPENROUTER_BASE_URL.rstrip("/"),
+        _OPENROUTER_MODEL
+    )
 
 def _model_for(language: str = "en") -> str:
     """Allow stronger models for low-resource service languages.
@@ -122,10 +210,14 @@ def _model_for(language: str = "en") -> str:
     English service model. Placeholder/example values are ignored so a copied
     .env cannot break generation with an invalid OpenRouter model id.
     """
+    _, _, default_model = _get_api_config(language)
+    if _is_runpod_enabled(language):
+        return default_model
+
     override = (os.getenv(f"LLM_MODEL_{language.upper()}") or "").strip()
     if override and not override.startswith(("your-", "change-me", "example")):
         return override
-    return MODEL
+    return default_model
 
 
 def _local_llm_url(language: str) -> tuple[str, str] | None:
@@ -155,24 +247,63 @@ def _complete_local(system: str, user: str, max_tokens: int, language: str) -> s
         timeout=LOCAL_LLM_TIMEOUT,
     )
     resp.raise_for_status()
+    print(f"[llm] Local Ollama ({language}) generation complete", flush=True)
     return (resp.json().get("text") or "").strip()
 
 
-def _complete(system: str, user: str, max_tokens: int = 1500, language: str = "en") -> str:
-    if _should_use_local_llm(system, language):
-        text = _complete_local(system, user, max_tokens, language)
-        if language == "td":
-            text = _fix_tedim_vocab(text)
-        return text
+def _call_runpod_api(api_key: str, base_url: str, model_name: str, system: str, user: str, max_tokens: int) -> str:
+    """Call RunPod serverless vLLM via /runsync.
 
+    RunPod queue-based endpoints don't support the /openai/v1 proxy path.
+    Requests go to /runsync wrapped in {"input": {...}} and the response
+    comes back as {"output": [{"choices": [{"tokens": [...]}], "usage": {...}}]}."""
     resp = requests.post(
-        f"{BASE_URL}/chat/completions",
+        f"{base_url}/runsync",
+        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        json={"input": {
+            "model": model_name,
+            "max_tokens": max_tokens,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+        }},
+        timeout=120,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+
+    output = data.get("output") or []
+    if not output:
+        print(f"[llm] RunPod empty output: {data}", flush=True)
+        return ""
+
+    # Usage is in the first chunk; keys are "input"/"output" (not prompt_/completion_tokens)
+    usage = (output[0] if isinstance(output, list) else {}).get("usage", {})
+    if usage:
+        p_tok = usage.get("input", 0)
+        c_tok = usage.get("output", 0)
+        print(f"[llm] RunPod used {p_tok} prompt + {c_tok} completion tokens (model: {model_name})", flush=True)
+        session_prompt_tokens.set(session_prompt_tokens.get() + p_tok)
+        session_completion_tokens.set(session_completion_tokens.get() + c_tok)
+
+    # Concatenate all token chunks across all output entries
+    parts: list[str] = []
+    for chunk in (output if isinstance(output, list) else [output]):
+        for choice in chunk.get("choices", []):
+            parts.extend(choice.get("tokens") or [])
+    return "".join(parts).strip()
+
+
+def _call_chat_api(api_key: str, base_url: str, model_name: str, system: str, user: str, max_tokens: int, provider_name: str) -> str:
+    resp = requests.post(
+        f"{base_url}/chat/completions",
         headers={
-            "Authorization": f"Bearer {API_KEY}",
+            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         },
         json={
-            "model": _model_for(language),
+            "model": model_name,
             "max_tokens": max_tokens,
             "messages": [
                 {"role": "system", "content": system},
@@ -182,7 +313,55 @@ def _complete(system: str, user: str, max_tokens: int = 1500, language: str = "e
         timeout=120,
     )
     resp.raise_for_status()
-    text = (resp.json()["choices"][0]["message"]["content"] or "").strip()
+    data = resp.json()
+    
+    usage = data.get("usage", {})
+    if usage:
+        p_tok = usage.get("prompt_tokens", 0)
+        c_tok = usage.get("completion_tokens", 0)
+        m_used = data.get("model", model_name)
+        print(f"[llm] {provider_name} used {p_tok} prompt + {c_tok} completion tokens (model: {m_used})", flush=True)
+        session_prompt_tokens.set(session_prompt_tokens.get() + p_tok)
+        session_completion_tokens.set(session_completion_tokens.get() + c_tok)
+
+    choices = data.get("choices", [])
+    if not choices:
+        print(f"[llm] {provider_name} returned empty choices array: {data}", flush=True)
+        return ""
+        
+    return (choices[0]["message"].get("content", "") or "").strip()
+
+
+def _complete(system: str, user: str, max_tokens: int = 1500, language: str = "en") -> str:
+    # RunPod GPU mode routes ALL languages through the cloud endpoint,
+    # bypassing local Ollama even for my/td. Falls through on failure.
+    if _is_runpod_enabled(language):
+        api_key, base_url, model_name = _get_api_config(language)
+        try:
+            text = _call_runpod_api(api_key, base_url, model_name, system, user, max_tokens)
+            if language == "td":
+                text = _fix_tedim_vocab(text)
+            return text
+        except Exception as exc:
+            print(f"[llm] RunPod failed ({exc}), falling back to local/OpenRouter", flush=True)
+
+    # Local Ollama for Burmese and Tedim when RunPod is disabled (or failed).
+    if _should_use_local_llm(system, language):
+        text = _complete_local(system, user, max_tokens, language)
+        if language == "td":
+            text = _fix_tedim_vocab(text)
+        return text
+
+    # OpenRouter
+    api_key = _OPENROUTER_API_KEY
+    base_url = _OPENROUTER_BASE_URL.rstrip("/")
+    override = (os.getenv(f"LLM_MODEL_{language.upper()}") or "").strip()
+    if override and not override.startswith(("your-", "change-me", "example")):
+        model_name = override
+    else:
+        model_name = _OPENROUTER_MODEL
+
+    text = _call_chat_api(api_key, base_url, model_name, system, user, max_tokens, "OpenRouter")
     if language == "td":
         text = _fix_tedim_vocab(text)
     return text
@@ -222,6 +401,51 @@ def _freshness_directive(user_history: dict | None) -> str:
     return " ".join(parts)
 
 
+# Biblical images and structural approaches for prayer variety.
+# Each service draw picks one of each at random so every opening prayer
+# and benediction feels genuinely different even for the same mood/language.
+_PRAYER_IMAGES = [
+    "the Good Shepherd who leaves the ninety-nine (Psalm 23 / Luke 15)",
+    "living water that never runs dry (John 4)",
+    "light breaking through darkness (John 1 / Isaiah 9)",
+    "the Rock and fortress in the storm (Psalm 18 / 46)",
+    "bread of life that truly satisfies (John 6)",
+    "vine and branches — abiding in Christ (John 15)",
+    "refuge and shelter under God's wings (Psalm 91)",
+    "the Comforter, Spirit of truth, who intercedes (John 14 / Romans 8)",
+    "the Lamb who takes away the world's grief (John 1:29)",
+    "the Father who runs to meet the returning child (Luke 15)",
+    "Emmanuel — God with us in every valley (Matthew 1 / Isaiah 7)",
+    "the One who makes all things new (Revelation 21 / Isaiah 43)",
+]
+
+_PRAYER_STRUCTURES = [
+    "Open with gratitude for God's presence, move into petition, close with surrender.",
+    "Acknowledge the listener's struggle honestly, then pivot to God's faithful nearness.",
+    "Begin with a declaration of who God is, weave the chosen image through the prayer, close in trust.",
+    "Start in lament — honest and unadorned — journey through trust, arrive at hope.",
+    "Open with a short echo of the chosen image, let it thread through each line of the prayer.",
+    "Begin in God's faithfulness shown in past seasons; apply that same faithfulness to right now.",
+    "Start with silence before God — a breath, a pause — then move into adoration and petition.",
+    "Open mid-prayer, as if the listener has already been speaking to God; make it feel intimate.",
+]
+
+
+def _prayer_variety_directive() -> str:
+    """Return a one-sentence prompt injection that varies every prayer/benediction.
+
+    Picks a random biblical image and a random structural approach so the LLM
+    cannot default to the same phrasing across services."""
+    image = random.choice(_PRAYER_IMAGES)
+    structure = random.choice(_PRAYER_STRUCTURES)
+    return (
+        f"For this prayer, draw on the image of {image}. "
+        f"Structure: {structure} "
+        "Do NOT recycle generic phrases like 'may Your peace guard our hearts' verbatim — "
+        "find a fresh, specific expression of that truth."
+    )
+
+
 def _keyword_anchor(prayer_text: str | None) -> str:
     """Surface the user's own feeling-words so the LLM grounds content in them.
 
@@ -255,23 +479,105 @@ def _fallback_welcome(user_name: str | None, mood: str, language: str) -> str:
     return f"Welcome back{', ' + user_name if user_name else ''}. May Christ meet you with peace and hope today."
 
 
+_FALLBACK_OPENING_PRAYERS_MY = [
+    (
+        "ကရုဏာတော်ရှင် ဘုရားသခင်၊ ယနေ့ ကိုယ်တော်ထံသို့ နီးကပ်စွာ ချဉ်းကပ်ပါသည်။ "
+        "ဝမ်းနည်းခြင်း၊ ပင်ပန်းခြင်း၊ မတည်ငြိမ်ခြင်းများရှိနေပါက ကိုယ်တော်၏ ငြိမ်သက်ခြင်းဖြင့် ဖုံးလွှမ်းပေးပါ။ "
+        "ကျွန်ုပ်တို့၏နှလုံးကို နားထောင်တတ်သော နှလုံးဖြစ်စေပြီး၊ သမ္မာတရား၏ အလင်းကို မြင်နိုင်စေပါ။ "
+        "ယခု ဝတ်ပြုချိန်တွင် စကားလုံးတိုင်း၊ ဆုတောင်းခြင်းတိုင်း၊ သီချင်းတိုင်းသည် မျှော်လင့်ခြင်းနှင့် ယုံကြည်ခြင်းကို ပြန်လည်ထူထောင်စေပါ။ "
+        "ယေရှုခရစ်တော်၏ နာမတော်၌ ဆုတောင်းပါသည်။ အာမင်။"
+    ),
+    (
+        "ချစ်ခြင်းမေတ္တာ ပြည့်ဝသော ဘုရားသခင်၊ ဤနေ့တွင် ကိုယ်တော်ရှေ့တော်သို့ ရောက်လာပါသည်။ "
+        "ကျွန်ုပ်တို့၏ ကြောင်းစကားများ၊ မြောင်ကျများ၊ ပင်ပမ်းနွမ်းနယ်မှုများကို ကိုယ်တော် သိတော်မူပါသည်။ "
+        "ဤဝတ်ပြုချိန်တွင် ကိုယ်တော်၏ ချစ်ခြင်းမေတ္တာသည် ကျွန်ုပ်တို့၏ နှလုံးကို နွေးထွေးစေပါစေ။ "
+        "ဝိညာဉ်တော်ရှင်ဖြင့် ကျွန်ုပ်တို့ကို ဦးဆောင်တော်မူပြီး၊ ဤနေ့ ကောင်းသောအရာများကို သိမြင်နိုင်ပါစေ။ "
+        "ယေရှုခရစ်တော်၏ နာမတော်၌ ဆုတောင်းပါသည်။ အာမင်။"
+    ),
+    (
+        "အိုဘုရားသခင်၊ ကိုယ်တော်သည် ကျောက်ဆောင် မြဲမြံသောပြဒါးဖြစ်တော်မူပါသည်။ "
+        "ကျွန်ုပ်တို့ ဝမ်းမသာ၍ ကြောက်ရွ့ံနေသောအခါ ကိုယ်တော်ထံသို့ ဆုတောင်းပါသည်။ "
+        "ဤဝတ်ပြုချိန်တွင် ကိုယ်တော်၏ မြဲမြံသော မေတ္တာတော်ကို မှီဝဲနိုင်ပါစေ။ "
+        "ကျွန်ုပ်တို့ကို တိတ်ဆိတ်ငြိမ်သက်ဖြင့် ကိုယ်တော်၏ အသံတော်ကို ကြားနိုင်ပါစေ။ "
+        "ကျွန်ုပ်တို့၏ ဆုကောင်းချီးဒါယကာ ယေရှုခရစ်တော်အားဖြင့် ဆုတောင်းပါသည်။ အာမင်။"
+    ),
+]
+
+_FALLBACK_OPENING_PRAYERS_TD = [
+    (
+        "Aw Topa Pasian, tuni in ka lungtang hong khol in na kiangah ka hong pai hi. "
+        "Lungkhamna leh dahna om leh, na lungdamna leh na nopna in hong tuam in. "
+        "Hih biakna hun sungah na Thu Siangtho in lam hong lak hen. "
+        "Zeisu Krist min in ka thungen hi. Amen."
+    ),
+    (
+        "Aw Pasian, na itna in ka lungtang hong khen hi. "
+        "Ka ngaihna leh ka lungkhamna zong na theih hi. "
+        "Tuni hih biakna sungah na Kha Siangtho in hong om in, na Thu in hong lam lak hen. "
+        "Zeisu Krist lungsim in hong kiim sak in. Amen."
+    ),
+    (
+        "Topa, na hih khun na kiangah ka hong pai hi. "
+        "Ka zong a khat in bangmah hong theih kei hi, ahihhang na in hong thahat sak thei hi. "
+        "Hih hun sungah na itna leh na nopna in hong tuam in, na Thu in hong siangtho sak hen. "
+        "Zeisu Krist min in ka thungen hi. Amen."
+    ),
+]
+
+_FALLBACK_OPENING_PRAYERS_EN = [
+    "Lord, meet us with mercy and peace as this service begins. Amen.",
+    "Gracious God, we come before You carrying all that weighs on our hearts. In this time of worship, speak Your truth and grant us rest. In Jesus' name, Amen.",
+    "Father, You are our rock and our refuge. As we gather now, quiet our anxious thoughts and fill us with the hope that only You can give. Amen.",
+]
+
+
+def _burmese_prayer_for_mood(mood: str) -> str:
+    """Pick a Burmese opening prayer from the 100-prayer corpus that fits the mood.
+
+    Falls back to the hard-coded pool if the corpus file was not loaded."""
+    if not _ALL_PRAYERS_MY_FLAT:
+        return random.choice(_FALLBACK_OPENING_PRAYERS_MY)
+    mood_lower = (mood or "").lower()
+    for keywords, categories in _MOOD_TO_PRAYER_CATEGORY:
+        if any(kw in mood_lower for kw in keywords):
+            pool: list[str] = []
+            for cat in categories:
+                pool.extend(_PRAYERS_MY.get(cat, []))
+            if pool:
+                return random.choice(pool)
+    return random.choice(_ALL_PRAYERS_MY_FLAT)
+
+
+def _burmese_prayer_examples(mood: str, n: int = 2) -> str:
+    """Return n example prayers for the Burmese LLM system prompt.
+
+    Injecting real-corpus examples anchors the model in the correct Myanmar
+    church register without letting it repeat them verbatim."""
+    if not _ALL_PRAYERS_MY_FLAT:
+        return ""
+    mood_lower = (mood or "").lower()
+    pool: list[str] = []
+    for keywords, categories in _MOOD_TO_PRAYER_CATEGORY:
+        if any(kw in mood_lower for kw in keywords):
+            for cat in categories:
+                pool.extend(_PRAYERS_MY.get(cat, []))
+            break
+    if not pool:
+        pool = _ALL_PRAYERS_MY_FLAT
+    samples = random.sample(pool, min(n, len(pool)))
+    joined = " / ".join(f'"{s}"' for s in samples)
+    return (
+        "BURMESE REGISTER EXAMPLES — real Myanmar church opening prayers for tonal reference "
+        f"(do NOT copy verbatim, write a fresh prayer inspired by this register): {joined}."
+    )
+
+
 def _fallback_opening_prayer(user_name: str | None, mood: str, language: str) -> str:
     if language == "my":
-        return (
-            "ကရုဏာတော်ရှင် ဘုရားသခင်၊ ယနေ့ ကိုယ်တော်ထံသို့ နီးကပ်စွာ ချဉ်းကပ်ပါသည်။ "
-            "ဝမ်းနည်းခြင်း၊ ပင်ပန်းခြင်း၊ မတည်ငြိမ်ခြင်းများရှိနေပါက ကိုယ်တော်၏ ငြိမ်သက်ခြင်းဖြင့် ဖုံးလွှမ်းပေးပါ။ "
-            "ကျွန်ုပ်တို့၏နှလုံးကို နားထောင်တတ်သော နှလုံးဖြစ်စေပြီး၊ သမ္မာတရား၏ အလင်းကို မြင်နိုင်စေပါ။ "
-            "ယခု ဝတ်ပြုချိန်တွင် စကားလုံးတိုင်း၊ ဆုတောင်းခြင်းတိုင်း၊ သီချင်းတိုင်းသည် မျှော်လင့်ခြင်းနှင့် ယုံကြည်ခြင်းကို ပြန်လည်ထူထောင်စေပါ။ "
-            "ယေရှုခရစ်တော်၏ နာမတော်၌ ဆုတောင်းပါသည်။ အာမင်။"
-        )
+        return _burmese_prayer_for_mood(mood)
     if language == "td":
-        return (
-            "Aw Topa Pasian, tuni in ka lungtang hong khol in na kiangah ka hong pai hi. "
-            "Lungkhamna leh dahna om leh, na lungdamna leh na nopna in hong tuam in. "
-            "Hih biakna hun sungah na Thu Siangtho in lam hong lak hen. "
-            "Zeisu Krist min in ka thungen hi. Amen."
-        )
-    return "Lord, meet us with mercy and peace as this service begins. Amen."
+        return random.choice(_FALLBACK_OPENING_PRAYERS_TD)
+    return random.choice(_FALLBACK_OPENING_PRAYERS_EN)
 
 
 def _fallback_sermon(mood: str, scripture_ref: str, language: str) -> str:
@@ -304,19 +610,54 @@ def _fallback_sermon(mood: str, scripture_ref: str, language: str) -> str:
     return "God is near to the brokenhearted, and Christ gives hope for the next step."
 
 
+_FALLBACK_BENEDICTIONS_MY = [
+    (
+        "ထာဝရဘုရား၏ ငြိမ်သက်ခြင်းသည် သင့်နှလုံးကို စောင့်ရှောက်ပါစေ။ "
+        "ခရစ်တော်၏ မေတ္တာသည် သင့်ကို ချီးမြှောက်ပြီး၊ သန့်ရှင်းသောဝိညာဉ်တော်သည် သင်၏ နောက်ခြေလှမ်းကို လမ်းပြပါစေ။ "
+        "ဝမ်းနည်းခြင်းအလယ်၌ပင် မျှော်လင့်ခြင်းကို တွေ့နိုင်ပါစေ။ အာမင်။"
+    ),
+    (
+        "ဘုရားသခင်၏ ကရုဏာတော်သည် ဤနေ့တွင် သင့်နှင့်အတူ ရှိပါစေ။ "
+        "ခရစ်တော်၏ ချစ်ခြင်းမေတ္တာသည် ခရီးလမ်းတစ်လျှောက်တွင် သင့်ကို ကျောထောက်ပေးပါစေ။ "
+        "ဝိညာဉ်တော်ရှင်သည် သင်၏ စိတ်နှလုံးကို ငြိမ်သက်ဖြေသာဘောင်မြောင်းတော်မူပါစေ။ အာမင်။"
+    ),
+    (
+        "ကောင်းချီးပေးတော်မူသော ဘုရားသခင်သည် သင့်ကို ဆောင်ယူသွားတော်မူပါစေ။ "
+        "ကိုယ်တော်၏ မျက်နှာတော်သည် သင့်အပေါ် ထွန်းပပါစေ၊ ကိုယ်တော်သည် သင့်ကို ကောင်းချီးပေးတော်မူပါစေ။ "
+        "ကိုယ်တော်၏ ငြိမ်သက်ခြင်းသည် ယနေ့နှင့် ထိုနောက်ရက်မှာလည်း သင်နှင့်တကွ ရှိပါစေ။ အာမင်။"
+    ),
+]
+
+_FALLBACK_BENEDICTIONS_TD = [
+    (
+        "Topa Pasian nopna in na lungtang kem hen. "
+        "Zeisu Krist itna in hong thahat sak hen, Kha Siangtho in na lam hong makaih hen. Amen."
+    ),
+    (
+        "Topa in na hong kaih in, na vaihawm hen. "
+        "Zeisu Krist lungdamna in na tung hong pai hen. "
+        "Kha Siangtho in na lam hong sak in, na teng kem hen. Amen."
+    ),
+    (
+        "Pasian in na kong cem hen. "
+        "Na lungtang a dah leh a gim hun sungah zong Topa in na kiangah nai hi. "
+        "Zeisu sungah lam-etna leh nopna ngen in pai hen. Amen."
+    ),
+]
+
+_FALLBACK_BENEDICTIONS_EN = [
+    "May the peace of Christ guard your heart and guide your next step. Amen.",
+    "Go now in the grace of God the Father, the love of Christ the Son, and the fellowship of the Holy Spirit. Amen.",
+    "May the Lord bless you and keep you; may His face shine upon you and give you peace, today and always. Amen.",
+]
+
+
 def _fallback_benediction(user_name: str | None, mood: str, language: str) -> str:
     if language == "my":
-        return (
-            "ထာဝရဘုရား၏ ငြိမ်သက်ခြင်းသည် သင့်နှလုံးကို စောင့်ရှောက်ပါစေ။ "
-            "ခရစ်တော်၏ မေတ္တာသည် သင့်ကို ချီးမြှောက်ပြီး၊ သန့်ရှင်းသောဝိညာဉ်တော်သည် သင်၏ နောက်ခြေလှမ်းကို လမ်းပြပါစေ။ "
-            "ဝမ်းနည်းခြင်းအလယ်၌ပင် မျှော်လင့်ခြင်းကို တွေ့နိုင်ပါစေ။ အာမင်။"
-        )
+        return random.choice(_FALLBACK_BENEDICTIONS_MY)
     if language == "td":
-        return (
-            "Topa Pasian nopna in na lungtang kem hen. "
-            "Zeisu Krist itna in hong thahat sak hen, Kha Siangtho in na lam hong makaih hen. Amen."
-        )
-    return "May the peace of Christ guard your heart and guide your next step. Amen."
+        return random.choice(_FALLBACK_BENEDICTIONS_TD)
+    return random.choice(_FALLBACK_BENEDICTIONS_EN)
 
 
 def _language_instruction(language: str) -> str:
@@ -623,61 +964,95 @@ def build_intake_plan(*, user_name: str | None, mood: str, prayer_text: str | No
         "You are the Liturgical Context Engine for a personalized worship service. "
         "Stay within mainstream historical Christian theology: grace, hope, redemption, "
         "community. Avoid politics and fringe doctrine. Output ONLY valid JSON, no prose, "
-        "no markdown fences. music_lyrics is REQUIRED for every language and must be "
-        "singable worship lyrics, not a description."
+        "no markdown fences."
     )
+    if music_source in ("suno", "musicgen"):
+        system += (
+            " music_lyrics is REQUIRED for every language and must be "
+            "singable worship lyrics, not a description."
+        )
+    
+    system += (
+        " CRITICAL: If the user provides a prayer_text, you MUST extract their specific "
+        "core keywords and include them directly in any requested query fields "
+        "so the search retrieves highly relevant videos."
+    )
+    
     freshness = _freshness_directive(user_history)
     if freshness:
         system = f"{system} {freshness}"
+        
     if language == "my":
-        # The scripture reference is part of the worker contract (bible_api parses
-        # English references and serves the Judson 1835 Burmese text), so it stays
-        # English; the music prompt and search queries face Burmese providers/users.
         system += (
             " This service is conducted in the Burmese (Myanmar) language. Keep "
-            "scripture_ref in ENGLISH format (e.g. 'Psalm 23:1-4'), but write "
-            "music_prompt and music_lyrics for a Burmese-language worship song in Myanmar "
-            "Unicode. For preaching_query, generate a YouTube search string for a Myanmar "
-            "Christian SERMON or PREACHING VIDEO — write it in Myanmar Unicode and include "
-            "terms like 'တရားဟောချက်' (sermon), 'နုတ်ကပတ်တော်' (Word of God), or "
-            "'သွန်သင်ချက်' (teaching) together with 'ခရစ်ယာန်' (Christian) and optionally "
-            "English words 'pastor', 'sunday', or 'rev' which Myanmar church channels use. "
-            "Example: 'ခရစ်ယာန် တရားဟောချက် နုတ်ကပတ်တော် pastor sunday'. "
-            "music_query should target Burmese Christian worship songs in Myanmar Unicode."
+            "scripture_ref in ENGLISH format (e.g. 'Psalm 23:1-4')."
         )
+        if music_source in ("suno", "musicgen"):
+            system += " Write music_prompt and music_lyrics for a Burmese-language worship song in Myanmar Unicode."
+        if music_source == "youtube":
+            system += (
+                " For preaching_query, generate a YouTube search string for a Myanmar "
+                "Christian SERMON or PREACHING VIDEO — write it in Myanmar Unicode and include "
+                "terms like 'တရားဟောချက်' (sermon), 'နုတ်ကပတ်တော်' (Word of God), or "
+                "'သွန်သင်ချက်' (teaching) together with 'ခရစ်ယာန်' (Christian) and optionally "
+                "English words 'pastor', 'sunday', or 'rev' which Myanmar church channels use. "
+                "Example: 'ခရစ်ယာန် တရားဟောချက် နုတ်ကပတ်တော် pastor sunday'."
+            )
+        if music_source in ("youtube", "hymn_youtube"):
+            system += " music_query should target Burmese Christian worship songs in Myanmar Unicode."
+            
     elif language == "td":
         system += (
             " This service is conducted in the Tedim Chin (Zolai / Zomi pau) language. Keep "
-            "scripture_ref in ENGLISH format (e.g. 'Psalm 23:1-4'). "
-            "music_lyrics will be supplied separately — set it to an empty string. "
-            "Write music_prompt as a short English style description for AI music generation "
-            "(e.g. 'Zomi/Tedim Christian worship, congregational choir, acoustic band'). "
-            "For preaching_query, generate a YouTube search string for a Zomi or Tedim Chin "
-            "Christian SERMON or PREACHING VIDEO — include words like 'sermon', 'preaching', "
-            "'pastor', or 'sunday service' together with 'Zomi' or 'Tedim' so the result is "
-            "an actual preaching video, not a worship song or kids' video. "
-            "Example: 'Zomi Tedim pastor sunday sermon preaching'. "
-            "music_query should similarly target Zomi or Tedim worship songs."
+            "scripture_ref in ENGLISH format (e.g. 'Psalm 23:1-4')."
         )
+        if music_source in ("suno", "musicgen"):
+            system += (
+                " music_lyrics will be supplied separately — set it to an empty string. "
+                "Write music_prompt as a short English style description for AI music generation "
+                "(e.g. 'Zomi/Tedim Christian worship, congregational choir, acoustic band')."
+            )
+        if music_source == "youtube":
+            system += (
+                " For preaching_query, generate a YouTube search string for a Zomi or Tedim Chin "
+                "Christian SERMON or PREACHING VIDEO — include words like 'sermon', 'preaching', "
+                "'pastor', or 'sunday service' together with 'Zomi' or 'Tedim' so the result is "
+                "an actual preaching video, not a worship song or kids' video. "
+                "Example: 'Zomi Tedim pastor sunday sermon preaching'."
+            )
+        if music_source in ("youtube", "hymn_youtube"):
+            system += " music_query should similarly target Zomi or Tedim worship songs."
+
+    schema = {
+        "scripture_ref": "string, e.g. 'Psalm 23:1-4'",
+    }
+    
+    if music_source in ("suno", "musicgen"):
+        schema["music_prompt"] = "string, a short style prompt for AI worship-music generation"
+        schema["music_lyrics"] = "string, original singable worship lyrics in the service language, {} and a chorus{}".format(
+            "1 short verse" if music_source == "musicgen" else "2 short verses",
+            "" if music_source == "musicgen" else ", using [Verse 1] / [Chorus] / [Verse 2] structural tags on their own lines",
+        )
+        
+    if music_source in ("youtube", "hymn_youtube"):
+        schema["music_query"] = "string, a short YouTube search query for a worship song. MUST include 1-2 specific thematic keywords from the user's prayer_text if provided."
+        
+    if music_source == "youtube":
+        schema["preaching_query"] = "string, a YouTube search query for a Christian sermon/preaching video — include 'Christian' plus terms like 'pastor', 'sunday', 'sermon', 'preaching', or 'gospel message', AND 1-2 specific keywords from the user's prayer_text so the result directly addresses their situation."
+
     user = json.dumps({
         "user_name": user_name or "",
         "mood": mood,
         "prayer_text": prayer_text or "",
-        "schema": {
-            "scripture_ref": "string, e.g. 'Psalm 23:1-4'",
-            "music_prompt": "string, a short style prompt for AI worship-music generation",
-            "music_lyrics": "string, original singable worship lyrics in the service language, {} and a chorus{}".format(
-                "1 short verse" if music_source == "musicgen" else "2 short verses",
-                "" if music_source == "musicgen" else ", using [Verse 1] / [Chorus] / [Verse 2] structural tags on their own lines",
-            ),
-            "music_query": "string, a short YouTube search query for a worship song",
-            "preaching_query": "string, a YouTube search query for a Christian sermon/preaching video — include 'Christian' plus terms like 'pastor', 'sunday', 'sermon', 'preaching', or 'gospel message' so the result is an actual preaching video",
-        },
+        "schema": schema,
     })
     try:
         raw = _complete(system, user, max_tokens=900, language=language).strip()
-        raw = raw.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-        plan = json.loads(raw)
+        match = re.search(r"\{.*\}", raw, re.DOTALL)
+        if match:
+            plan = json.loads(match.group(0))
+        else:
+            plan = json.loads(raw.removeprefix("```json").removeprefix("```").removesuffix("```").strip())
     except Exception as exc:
         print(f"[llm] intake plan fallback for {language}: {exc}", flush=True)
         plan = {}
@@ -744,6 +1119,11 @@ def generate_opening_prayer(*, user_name: str | None, mood: str, prayer_text: st
         "opening prayer (120-180 words) that gently acknowledges the person's situation "
         "without exposing sensitive detail bluntly. Spoken cadence, no headings."
     )
+    system = f"{system} {_prayer_variety_directive()}"
+    if language == "my":
+        examples = _burmese_prayer_examples(mood, n=2)
+        if examples:
+            system = f"{system} {examples}"
     freshness = _freshness_directive(user_history)
     if freshness:
         system = f"{system} {freshness}"
@@ -811,6 +1191,7 @@ def generate_benediction(*, user_name: str | None, mood: str, language: str = "e
         "Write a short closing benediction (50-90 words) for spoken delivery. Personal, "
         "hopeful, sends the listener out with peace. No headings."
     )
+    system = f"{system} {_prayer_variety_directive()}"
     freshness = _freshness_directive(user_history)
     if freshness:
         system = f"{system} {freshness}"
@@ -874,7 +1255,7 @@ def generate_music_lyrics(*, mood: str, language: str) -> str:
         )
 
     try:
-        raw = _complete_local(system, user, max_tokens=400, language=language)
+        raw = _complete(system, user, max_tokens=400, language=language)
         if language == "td":
             raw = _fix_tedim_vocab(raw)
         text = _strip_formatting(raw)

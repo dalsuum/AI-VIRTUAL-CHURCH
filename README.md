@@ -40,6 +40,7 @@ Redis queue so neither has to know the other's serializer.
 - [API reference](#api-reference)
 - [Project status](#project-status)
 - [Acknowledgements — free AI services](#acknowledgements--free-ai-services)
+  - [YouTube Content Creators](#youtube-content-creators)
 
 ---
 
@@ -461,6 +462,7 @@ reference so the Ollama model produces more natural Zolai sentences:
 - **Negation**: verb + `lo hi` (e.g., `om lo hi` = there is not; `mangngilh lo hi` = does not forget).
 - **Mizo→Tedim post-corrections** in `_TEDIM_CORRECTIONS` cover the most common drift words
   (`kohhran→biakinn`, `koici→biakinn`, `tawngtaina→thungetna`, `pathian→Pasian`, `lalpa→Topa`, `lalpan→Topa in`, `isua→Zeisu`, and several others).
+- **Punctuation normalisation** in `_fix_tedim_vocab`: the local GPU model frequently omits spaces after commas/semicolons and merges Tedim grammatical particles (`in`, `leh`, `na`, `ka`, etc.) directly into the following capitalised word (e.g., `inKhua` → `in Khua`; `hi,Napa` → `hi, Napa`). Three regex passes fix these before the text reaches the narrator or the player.
 
 **Concurrency:** a single `asyncio.Semaphore(1)` gate in each router ensures only one Ollama inference runs at a time — important on the shared ARM/OCI box where Gunicorn, Redis, MySQL, and Celery compete for the same CPUs.
 
@@ -1222,3 +1224,35 @@ following providers make it possible to run a full AI worship pipeline at zero A
 > project. The inclusion of Tedim (Zolai) and Burmese voices — languages spoken by a
 > relatively small number of people — makes it possible for this project to serve
 > Chin and Myanmar-speaking worshippers in their own language and voice.
+
+### YouTube Content Creators
+
+When the `youtube` music source is selected, worship tracks and sermons are surfaced via
+the **YouTube Data API v3** and played through the **official YouTube embedded player** —
+no audio is downloaded, re-hosted, or stripped of ads.
+
+**Creators are credited and compensated exactly as they would be on YouTube.com:**
+
+| What happens | Why it matters to creators |
+|---|---|
+| Videos play inside the official `<iframe>` embed | YouTube's ad system runs normally — pre-roll/mid-roll ads still display |
+| Only `videoEmbeddable: true` videos are selected | We only ever surface content the creator has explicitly allowed to be embedded |
+| Every play is counted by YouTube | Watch-time, view counts, and YouTube Premium revenue shares accrue to the channel as usual |
+| Channel name is shown in the player | Worshippers can click through to subscribe or explore the creator's full library |
+
+The system searches specifically for Christian worship channels and artists. Among those
+whose content regularly appears in English, Myanmar, and Tedim/Zolai services:
+
+**English** — Hillsong, Planetshakers, Elevation Worship, Bethel Music, Maverick City
+Music, Don Moen, Chris Tomlin, Phil Wickham, and many independent worship leaders.
+
+**Myanmar (မြန်မာ)** — Grace Full Gospel, Thang Taung, Sangpi, David Lah 100% Jesus,
+Kaung Kaung, Susanna Min, Khual Pi, and Myanmar-language church channels.
+
+**Tedim / Zolai (ဇိုမိ)** — Zomi Worship Collective, Phillip Ruth, We Worship,
+FEMC Worship, ZACC Worship, Khai Pi, Cin Bawi, and Zomi community church channels.
+
+If you are a creator whose video has been embedded here and you would prefer it not be
+used, you can disable embedding on your YouTube video settings — the system filters on
+`videoEmbeddable: true`, so your video will automatically be excluded from all future
+searches.

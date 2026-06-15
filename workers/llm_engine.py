@@ -1294,78 +1294,66 @@ def _library_lyrics_for_mood(mood: str, language: str) -> str | None:
 
 
 def generate_music_lyrics(*, mood: str, language: str) -> str:
-    """Generate worship song lyrics via the local language-specific LLM.
+    """Source worship song lyrics for an AI-composed (Suno) service.
 
-    For Tedim and Burmese the local Ollama model produces text in the correct
-    script and grammar. If the local service is unreachable, busy, or its output
-    fails the language guard, falls back to mood-keyed curated Tedim/Burmese lyrics.
-    For English (and any other language) this just returns the fallback directly —
-    callers use plan['music_lyrics'] from OpenRouter for those.
+    Order: a mood-matched library song (human-checked, always correct) first;
+    then language-specific composition; then mood-keyed curated fallback lyrics.
+
+    Burmese is library-or-curated ONLY: the local llama3.2:3b-based model cannot
+    write real Myanmar (it emits word-salad), so calling it would only waste time
+    before the guard rejected it. Tedim still composes via its local Ollama model.
+    English/other return the curated fallback (callers use plan['music_lyrics']).
     """
     if language not in ("td", "my"):
         return _fallback_music_lyrics(mood, language)
 
     # 1. Prefer an existing worship song from the library whose mood/keywords match.
     #    Reusing a curated, human-checked song guarantees correct vocabulary and
-    #    phrasing — only fall through to LLM composition when nothing matches.
+    #    phrasing — only fall through to composition when nothing matches.
     if library := _library_lyrics_for_mood(mood, language):
         return library
 
-    if language == "td":
-        system = (
-            "You are a Tedim Chin (Zolai) Christian worship song composer. "
-            "Write worship song lyrics ONLY in the Tedim/Zolai language. "
-            "GRAMMAR — SOV word order: the verb always comes at the END of each line. "
-            "Every declarative line MUST end with 'hi'; prayer/blessing lines MUST end with 'hen'. "
-            "Subject marker 'in' follows the subject (e.g., 'Pasian in' = God [as subject]). "
-            "Pronouns: ka (I/my), nang (you/your), amah (he/she), eite (we). "
-            "Required Tedim words: Pasian (God — NOT Pathian), Topa (Lord — NOT Lalpa), "
-            "Zeisu Krist (Jesus Christ — NOT Isua), Kha Siangtho (Holy Spirit), "
-            "lungdamna (grace), lungtang (heart), nuntakna (life), zangtal (salvation), "
-            "hong (come/arrive), sungah (in/within), kilemna (praise). "
-            "Do NOT use English, Mizo, Falam, or Haka words. "
-            "Output ONLY the tagged lyric sections — no explanations."
-        )
-        user = (
-            f"Write a complete Tedim worship song for someone feeling {mood}.\n"
-            "Do NOT write just one sentence. You MUST provide full lyrics for all three sections below:\n\n"
-            "[Verse 1]\n"
-            "<write 4 lines of Tedim lyrics here>\n\n"
-            "[Chorus]\n"
-            "<write 4 lines of Tedim lyrics here>\n\n"
-            "[Verse 2]\n"
-            "<write 4 lines of Tedim lyrics here>"
-        )
-    else:  # my
-        system = (
-            "You are a Myanmar (Burmese) Christian worship song composer. "
-            "Write worship song lyrics ONLY in Myanmar Burmese using Myanmar Unicode script. "
-            "Use: ဘုရားသခင် (God), ကိုယ်တော် (Lord), ယေရှုခရစ်တော် (Jesus Christ). "
-            "Do NOT use English words or Zawgyi encoding. "
-            "Output ONLY the tagged lyric sections — no explanations."
-        )
-        user = (
-            f"Write a complete Burmese worship song for someone feeling {mood}.\n"
-            "Do NOT write just one sentence. You MUST provide full lyrics for all three sections below:\n\n"
-            "[Verse 1]\n"
-            "<write 4 lines of Burmese lyrics here>\n\n"
-            "[Chorus]\n"
-            "<write 4 lines of Burmese lyrics here>\n\n"
-            "[Verse 2]\n"
-            "<write 4 lines of Burmese lyrics here>"
-        )
+    # 2. Burmese: skip the unreliable local model entirely — go straight to the
+    #    curated fallback, which is genuine, correct Myanmar worship lyrics.
+    if language == "my":
+        return _fallback_music_lyrics(mood, language)
+
+    # 3. Tedim: compose via the local Zolai Ollama model (it produces usable
+    #    Tedim, unlike the Burmese model). Guarded + falls back on any failure.
+    system = (
+        "You are a Tedim Chin (Zolai) Christian worship song composer. "
+        "Write worship song lyrics ONLY in the Tedim/Zolai language. "
+        "GRAMMAR — SOV word order: the verb always comes at the END of each line. "
+        "Every declarative line MUST end with 'hi'; prayer/blessing lines MUST end with 'hen'. "
+        "Subject marker 'in' follows the subject (e.g., 'Pasian in' = God [as subject]). "
+        "Pronouns: ka (I/my), nang (you/your), amah (he/she), eite (we). "
+        "Required Tedim words: Pasian (God — NOT Pathian), Topa (Lord — NOT Lalpa), "
+        "Zeisu Krist (Jesus Christ — NOT Isua), Kha Siangtho (Holy Spirit), "
+        "lungdamna (grace), lungtang (heart), nuntakna (life), zangtal (salvation), "
+        "hong (come/arrive), sungah (in/within), kilemna (praise). "
+        "Do NOT use English, Mizo, Falam, or Haka words. "
+        "Output ONLY the tagged lyric sections — no explanations."
+    )
+    user = (
+        f"Write a complete Tedim worship song for someone feeling {mood}.\n"
+        "Do NOT write just one sentence. You MUST provide full lyrics for all three sections below:\n\n"
+        "[Verse 1]\n"
+        "<write 4 lines of Tedim lyrics here>\n\n"
+        "[Chorus]\n"
+        "<write 4 lines of Tedim lyrics here>\n\n"
+        "[Verse 2]\n"
+        "<write 4 lines of Tedim lyrics here>"
+    )
 
     try:
         # A 3-section song is short; a tight token budget lets the small local
         # Ollama box finish well inside LOCAL_LLM_TIMEOUT instead of timing out.
-        raw = _complete(system, user, max_tokens=700, language=language)
-        if language == "td":
-            raw = _fix_tedim_vocab(raw)
+        raw = _fix_tedim_vocab(_complete(system, user, max_tokens=700, language=language))
         text = _strip_formatting(raw)
         if _lyrics_match_language(text, language):
             return text
-        print(f"[llm] local {language} lyrics failed language guard, using fallback", flush=True)
+        print("[llm] local td lyrics failed language guard, using fallback", flush=True)
     except Exception as exc:
-        print(f"[llm] local {language} lyrics unavailable ({exc}), using fallback", flush=True)
+        print(f"[llm] local td lyrics unavailable ({exc}), using fallback", flush=True)
 
     return _fallback_music_lyrics(mood, language)

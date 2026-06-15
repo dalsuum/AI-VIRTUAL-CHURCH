@@ -46,7 +46,7 @@ class Setting extends Model
     public const STORAGE_BACKENDS = ['local', 's3'];
 
     /** Every music source the app can offer; admins enable a subset (music_sources). */
-    public const MUSIC_SOURCES = ['hymn_sung', 'hymn', 'hymn_youtube', 'suno', 'youtube', 'musicgen'];
+    public const MUSIC_SOURCES = ['hymn_sung', 'hymn', 'hymn_youtube', 'suno', 'youtube', 'musicgen', 'local_ai'];
 
     /** The moods a worshipper can pick from out of the box, before any admin edits. */
     public const DEFAULT_MOODS = ['Grateful', 'Anxious', 'Grieving', 'Joyful', 'Seeking', 'Hopeful'];

@@ -133,6 +133,8 @@ const SOURCE_MY = {
   hymn:         { title: "ဓမ္မသီချင်း", desc: "မြန်မာဓမ္မသီချင်း — စာသားနှင့်အတူ လိုက်ဆိုနိုင်သည်" },
   hymn_youtube: { title: "ဓမ္မသီချင်း (YouTube)", desc: "သင့်ခံစားချက်နှင့် ကိုက်ညီသော ဓမ္မသီချင်း" },
   suno:         { title: "AI ရေးစပ်တေးဂီတ", desc: "သင့်အတွက် အသစ်ဖန်တီးထားသော ဝတ်ပြုတေးဂီတ" },
+  musicgen:     { title: "AI ရေးစပ်တေးဂီတ (Local)", desc: "ဆာဗာပေါ်တွင် ဖန်တီးထားသော ဝတ်ပြုတေးဂီတ" },
+  local_ai:     { title: "AI ရေးစပ်တေးဂီတ (Local AI)", desc: "Local AI ဖြင့် ဖန်တီးထားသော ဝတ်ပြုတေးဂီတ" },
   youtube:      { title: "ခေတ်သစ်ဝတ်ပြုတေးဂီတ (YouTube)", desc: "ရှိပြီးသား ဝတ်ပြုတေးဂီတနှင့် တရားဒေသနာ" },
 };
 const SOURCE_TD = {
@@ -140,6 +142,8 @@ const SOURCE_TD = {
   hymn:         { title: "ZBC Labu la", desc: "Labu la — a kammal te tawh sak khawm thei" },
   hymn_youtube: { title: "Labu la (YouTube)", desc: "Na lungsim tawh kituak labu la" },
   suno:         { title: "AI phuah lasa", desc: "Nangma ading a kiphuah biakna lasa thak" },
+  musicgen:     { title: "AI phuah lasa (Local)", desc: "Server tungah a kiphuah biakna lasa" },
+  local_ai:     { title: "AI phuah lasa (Local AI)", desc: "Local AI in a kiphuah biakna lasa" },
   youtube:      { title: "Tulai biakna lasa (YouTube)", desc: "Om sa biakna lasa leh thugenna" },
 };
 const sourceLabel = (s_) =>
@@ -155,6 +159,7 @@ const MUSIC_SOURCES = [
   { value: "hymn_youtube", title: "Sung Hymn (YouTube)", desc: "A traditional hymn sung by a choir, matched to your mood" },
   { value: "suno", title: "AI-composed (Suno)", desc: "Original worship, generated for you" },
   { value: "musicgen", title: "AI-composed (Local)", desc: "Worship music created on-server — no account needed" },
+  { value: "local_ai", title: "AI-composed (Local AI)", desc: "Worship music generated locally by a singing AI model" },
   { value: "youtube", title: "Modern Worship (YouTube)", desc: "An existing worship track and sermon" },
 ];
 

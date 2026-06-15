@@ -31,10 +31,10 @@ def main() -> None:
             queue_name = queue.decode() if isinstance(queue, bytes) else str(queue)
             if queue_name == "ai:narration-repair":
                 repair_missing_narration.delay(job)
-                print(f"dispatched narration repair for session {job.get('session_id')}")
+                print(f"dispatched narration repair for session {job.get('session_token', job.get('session_id'))}")
             else:
                 orchestrate.delay(job)
-                print(f"dispatched session {job.get('session_id')}")
+                print(f"dispatched session {job.get('session_token', job.get('session_id'))}")
         except Exception as exc:  # noqa: BLE001
             print(f"failed to dispatch job: {exc}")
 

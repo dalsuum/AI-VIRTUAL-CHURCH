@@ -23,7 +23,7 @@ class VoiceboxController extends Controller
     /** GET /admin/voicebox/health — proxies Voicebox GET /health */
     public function health(): JsonResponse
     {
-        PermissionService::require(request()->user(), 'dashboard.view');
+        PermissionService::require(request()->user(), 'system.view');
 
         try {
             $ch = $this->curl(self::BASE . '/health');
@@ -45,7 +45,7 @@ class VoiceboxController extends Controller
     /** GET /admin/voicebox/profiles — proxies Voicebox GET /profiles */
     public function profiles(): JsonResponse
     {
-        PermissionService::require(request()->user(), 'dashboard.view');
+        PermissionService::require(request()->user(), 'system.view');
 
         try {
             $ch = $this->curl(self::BASE . '/profiles');
@@ -82,7 +82,7 @@ class VoiceboxController extends Controller
     /** GET /admin/voicebox/queue — proxies Voicebox GET /tasks/active */
     public function queue(): JsonResponse
     {
-        PermissionService::require(request()->user(), 'dashboard.view');
+        PermissionService::require(request()->user(), 'system.view');
 
         try {
             $ch = $this->curl(self::BASE . '/tasks/active');

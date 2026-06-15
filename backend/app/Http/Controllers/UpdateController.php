@@ -39,7 +39,7 @@ class UpdateController extends Controller
     /** Return the cached snapshot, or a no-data sentinel if the cache is absent. */
     public function status(): JsonResponse
     {
-        PermissionService::require(request()->user(), 'dashboard.view');
+        PermissionService::require(request()->user(), 'system.view');
 
         if (!file_exists(self::CACHE_FILE)) {
             return response()->json(['status' => 'no_data', 'checking' => false]);
@@ -52,7 +52,7 @@ class UpdateController extends Controller
     /** Queue a fresh check without git pull. */
     public function check(): JsonResponse
     {
-        PermissionService::require(request()->user(), 'dashboard.view');
+        PermissionService::require(request()->user(), 'system.view');
         $this->markChecking();
         RunUpdateCheck::dispatch(false);
         return response()->json(['ok' => true, 'checking' => true]);
@@ -61,7 +61,7 @@ class UpdateController extends Controller
     /** Queue a git pull followed by a fresh check. */
     public function gitPull(): JsonResponse
     {
-        PermissionService::require(request()->user(), 'dashboard.view');
+        PermissionService::require(request()->user(), 'system.view');
         $this->markChecking();
         RunUpdateCheck::dispatch(true);
         return response()->json(['ok' => true, 'checking' => true]);
@@ -70,7 +70,7 @@ class UpdateController extends Controller
     /** Queue a pip upgrade for a single whitelisted package. */
     public function install(Request $request): JsonResponse
     {
-        PermissionService::require(request()->user(), 'dashboard.view');
+        PermissionService::require(request()->user(), 'system.view');
 
         $package = $request->string('package')->toString();
         if (!in_array($package, self::ALLOWED_PACKAGES, true)) {
@@ -85,7 +85,7 @@ class UpdateController extends Controller
     /** Queue a sudo systemctl restart for a whitelisted service. */
     public function restartService(Request $request): JsonResponse
     {
-        PermissionService::require(request()->user(), 'dashboard.view');
+        PermissionService::require(request()->user(), 'system.view');
 
         $service = $request->string('service')->toString();
         if (!in_array($service, self::ALLOWED_SERVICES, true)) {

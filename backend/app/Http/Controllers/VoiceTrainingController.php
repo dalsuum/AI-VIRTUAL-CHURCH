@@ -16,7 +16,7 @@ class VoiceTrainingController extends Controller
 
     public function status(): JsonResponse
     {
-        PermissionService::require(request()->user(), 'dashboard.view');
+        PermissionService::require(request()->user(), 'voice_training.view');
 
         $load = $this->currentLoad();
         $serverFree = $this->serverFree($load);
@@ -48,7 +48,7 @@ class VoiceTrainingController extends Controller
 
     public function start(Request $request): JsonResponse
     {
-        PermissionService::require($request->user(), 'dashboard.view');
+        PermissionService::require($request->user(), 'voice_training.view');
         abort_unless($request->user()?->isAdmin(), 403);
 
         $data = $request->validate([

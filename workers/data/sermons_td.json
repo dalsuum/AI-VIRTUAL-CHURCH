@@ -1,0 +1,634 @@
+{
+  "version": 1,
+  "note": "100 Tedim (Zolai) sermon/message topics in 4 thematic phases. Used as a pool for service generation and LLM prompt seeding.",
+  "phases": {
+    "phase1": {
+      "label": "Upna leh Kha Lam Nuntakna",
+      "label_en": "Faith and Spiritual Life",
+      "range": "1–25",
+      "sermons": [
+        {
+          "id": 1,
+          "title": "Pasian upna dik",
+          "title_en": "True Faith in God",
+          "summary": "Upna kiti pen a kimu nailo thute phawkna leh muanna ahi hi."
+        },
+        {
+          "id": 2,
+          "title": "Kilemna taktak",
+          "title_en": "True Peace",
+          "summary": "Leitunga kilemna hi lo, lungsim sunga Pasian hong piak kilemna thu."
+        },
+        {
+          "id": 3,
+          "title": "Thu ngetna thahatna",
+          "title_en": "The Power of Prayer",
+          "summary": "Minute 5 sung thu ngetna in ni thazong khat a hei zo hi."
+        },
+        {
+          "id": 4,
+          "title": "Lungdam kohna nuntakna",
+          "title_en": "A Life of Gratitude",
+          "summary": "Bangbang piang zong zingsang thalawhna ah lungdam koh ding."
+        },
+        {
+          "id": 5,
+          "title": "Kha limlimna",
+          "title_en": "Spiritual Refreshing",
+          "summary": "Lungsim thakhat-a a omna pen Kha Siangtho mapanna ahi hi."
+        },
+        {
+          "id": 6,
+          "title": "Laisang Siangtho simna",
+          "title_en": "Reading the Holy Scripture",
+          "summary": "Ni tampi an ngawlh zong Pasian kammal tawh nuntak ding."
+        },
+        {
+          "id": 7,
+          "title": "Kha lam gahte",
+          "title_en": "Spiritual Hindrances",
+          "summary": "I lungsim sungah lungduatna, migitna, leh thumanna a gah maw?"
+        },
+        {
+          "id": 8,
+          "title": "Topa phtatna ding hun",
+          "title_en": "Time to Praise the Lord",
+          "summary": "Na haksatna lianpi lakah zong Topa phat in."
+        },
+        {
+          "id": 9,
+          "title": "Hehpihna lian",
+          "title_en": "Great Mercy",
+          "summary": "I tualniamna lakah Pasian hehpihna in hong lenkip hi."
+        },
+        {
+          "id": 10,
+          "title": "A thupi masa tading",
+          "title_en": "Seek First the Kingdom",
+          "summary": "Pasian gam leh a dikna zong masa in, adang khempeuh kibeap ding hi."
+        },
+        {
+          "id": 11,
+          "title": "Gualzawhna taktak",
+          "title_en": "True Success",
+          "summary": "Kidona pan hi lo, lungsim zo tana gualzawhna thu."
+        },
+        {
+          "id": 12,
+          "title": "Hehpih siamna",
+          "title_en": "The Skill of Compassion",
+          "summary": "Midangte lakah ngaihdamna piak siamna pen Khristian nuntakna hi."
+        },
+        {
+          "id": 13,
+          "title": "Kha Siangtho makaihna",
+          "title_en": "Led by the Holy Spirit",
+          "summary": "I kalsuan khempeuh ah Amah zui ding."
+        },
+        {
+          "id": 14,
+          "title": "Lametnahom nuntakna",
+          "title_en": "A Life of Hope",
+          "summary": "Jesu sungah mailam ading lametnahom a tangwn kik ding."
+        },
+        {
+          "id": 15,
+          "title": "Thumanna thupi zia",
+          "title_en": "The Importance of Faithfulness",
+          "summary": "Thuman tading kalsuanna in tawpna ah gualzawhna piak ding."
+        },
+        {
+          "id": 16,
+          "title": "Pasian ngak zongna",
+          "title_en": "Waiting on God",
+          "summary": "Pasian hun ngak zawhna in nuntakna tampi lungmuang sak hi."
+        },
+        {
+          "id": 17,
+          "title": "Kha lam hiamte",
+          "title_en": "Spiritual Warfare",
+          "summary": "Upna phaw, thuman taikhawh tawh satan dou ding."
+        },
+        {
+          "id": 18,
+          "title": "A thukzaw nuntakna",
+          "title_en": "The Deeper Life",
+          "summary": "Letmat nuntakna lakah pan Kha lam thu thukpi zon ding."
+        },
+        {
+          "id": 19,
+          "title": "Topa itna thu",
+          "title_en": "The Love of the Lord",
+          "summary": "Mi khempeuh hong nusia zong Khrist itna in hong nusia ngei lo hi."
+        },
+        {
+          "id": 20,
+          "title": "Lungsim hiamna",
+          "title_en": "Guarding the Heart",
+          "summary": "Lungsim bup tawh Topa muang in, na pilna zang ken."
+        },
+        {
+          "id": 21,
+          "title": "Siangthona lam pi",
+          "title_en": "The Path of Holiness",
+          "summary": "Khrist tawh kinaihna pen siangthona lampi ah kalsuanna hi."
+        },
+        {
+          "id": 22,
+          "title": "Nong nuntakna thak",
+          "title_en": "The New Life",
+          "summary": "Nuai a nuntakna lui khempeuh a mangta, nuntakna thak a piang ahi hi."
+        },
+        {
+          "id": 23,
+          "title": "Pasian kamciamte",
+          "title_en": "The Promises of God",
+          "summary": "Pasian pen khial ngeilo ahih manin A kamciam a tangtung ding hi."
+        },
+        {
+          "id": 24,
+          "title": "Thului dik zuihna",
+          "title_en": "Following Godly Counsel",
+          "summary": "Pasian dotna tawh kalsuan tading thuzuihna."
+        },
+        {
+          "id": 25,
+          "title": "Tawntung nuntakna",
+          "title_en": "Eternal Life",
+          "summary": "Leitunga i nuntakna pen tate bang ahi hi, tawntung nuntakna thupi zaw hi."
+        }
+      ]
+    },
+    "phase2": {
+      "label": "Innkuan leh Kipawlna",
+      "label_en": "Family and Community",
+      "range": "26–50",
+      "sermons": [
+        {
+          "id": 26,
+          "title": "Innkuan kilemna",
+          "title_en": "Family Peace",
+          "summary": "Innkuan sungah Khrist itna tawh kilemna a om masat ding thupi hi."
+        },
+        {
+          "id": 27,
+          "title": "Nu leh pa zahtakna",
+          "title_en": "Honouring Parents",
+          "summary": "Thukham masa ahi zahtakna in nuntakna hong sawt sak ding hi."
+        },
+        {
+          "id": 28,
+          "title": "Tate tawn ding lampi",
+          "title_en": "Training Children",
+          "summary": "Tate pen Pasian a pahtat siam dinga makaih ding ahi hi."
+        },
+        {
+          "id": 29,
+          "title": "Nupa kal itna",
+          "title_en": "Husband and Wife Love",
+          "summary": "Nupa kal pen Khrist leh Pawlpi kizopna banga a thuk ding hi."
+        },
+        {
+          "id": 30,
+          "title": "Sanggam kigawmna",
+          "title_en": "Family Gathering",
+          "summary": "Sanggamte kigawm khawmna pen Topa deihna thupi khat hi."
+        },
+        {
+          "id": 31,
+          "title": "Innteek siamna",
+          "title_en": "Wise Household Management",
+          "summary": "Zin le tate ngaihsut siamna in thupha tampi hong tun hi."
+        },
+        {
+          "id": 32,
+          "title": "Hehpih takin thugen siamna",
+          "title_en": "Speaking with Compassion",
+          "summary": "I kammal zong tate leh tualniamte ading thapiakna hiding."
+        },
+        {
+          "id": 33,
+          "title": "Pawlpi sung nuntakna",
+          "title_en": "Life within the Church",
+          "summary": "Pawlpi pen Pumpi khat bang ahih manin khat le khat kigawm ding."
+        },
+        {
+          "id": 34,
+          "title": "Inndongta hihna",
+          "title_en": "Being a Good Neighbour",
+          "summary": "Midangte haksatna lakah kithuahpih siamna."
+        },
+        {
+          "id": 35,
+          "title": "Khangnotek leh Upna",
+          "title_en": "Youth and Faith",
+          "summary": "Khangnotek in upna zung khauh tak a thak ding thupi zia."
+        },
+        {
+          "id": 36,
+          "title": "Lawmpha zopna",
+          "title_en": "Choosing Friends Wisely",
+          "summary": "Lawmpha in pha lam ah hong luan pui a, lawm siat in nuntakna siat sak hi."
+        },
+        {
+          "id": 37,
+          "title": "Tengkhawm phatna",
+          "title_en": "Working Together for Growth",
+          "summary": "Pawlpi leh khua sung khantawn ding tengkhawmna."
+        },
+        {
+          "id": 38,
+          "title": "Mi khempeuh zahtakna",
+          "title_en": "Respecting All People",
+          "summary": "Mi neu mi lian hi in, mi khempeuh zahtak siamna."
+        },
+        {
+          "id": 39,
+          "title": "Sum leh Paai zannung",
+          "title_en": "Stewardship of Resources",
+          "summary": "Pasian piak nuntakna ah sum leh paai dik takin zanning ding."
+        },
+        {
+          "id": 40,
+          "title": "Angtang nuntakna phelna",
+          "title_en": "Avoiding a Proud Life",
+          "summary": "Angtangna in siatna lampi hi a, nuntakna niamna in thupi hi."
+        },
+        {
+          "id": 41,
+          "title": "Thunget khawmna thahatna",
+          "title_en": "The Power of Praying Together",
+          "summary": "Innkuan thunget khawmna in upna khang sak hi."
+        },
+        {
+          "id": 42,
+          "title": "Kilemna zat zia",
+          "title_en": "How to Make Peace",
+          "summary": "Thutuak lohnate lakah kilemna lampi zon siamna."
+        },
+        {
+          "id": 43,
+          "title": "Ngaihdamna a mau zia",
+          "title_en": "The Value of Forgiveness",
+          "summary": "Midang ngaihdamna piakna in na lungsim suakta sak hi."
+        },
+        {
+          "id": 44,
+          "title": "Gam tat zia siangtho",
+          "title_en": "Holy Living as Witness",
+          "summary": "Khristian khat hihna tawh mipi lakah gamtat zia siangtho ding."
+        },
+        {
+          "id": 45,
+          "title": "Khualzin mite huhna",
+          "title_en": "Helping the Stranger",
+          "summary": "Haksatna tuak khualzin mite panpihna thu."
+        },
+        {
+          "id": 46,
+          "title": "Nasepna leh upna",
+          "title_en": "Work and Faith",
+          "summary": "I nasepna khempeuh zong Pasian minthang nading hiding hi."
+        },
+        {
+          "id": 47,
+          "title": "Pilna zon zia dik",
+          "title_en": "True Wisdom",
+          "summary": "Leitung pilna bek hi lo, Pasian a kihtaakna pen pilna bulpi hi."
+        },
+        {
+          "id": 48,
+          "title": "Kipumkhatna",
+          "title_en": "Unity",
+          "summary": "Khua leh tui khantawn nading kipumkhatna thupi zia."
+        },
+        {
+          "id": 49,
+          "title": "Nuntakna i lhiam zia",
+          "title_en": "Sharing Life",
+          "summary": "Leitung nuntakna pen tomno ahih manin midang thupha hiding."
+        },
+        {
+          "id": 50,
+          "title": "Nu leh pa mawhpuakna",
+          "title_en": "Parental Responsibility",
+          "summary": "Pasian piak naupangte tading nu leh pa in Kha lam makai hih ding."
+        }
+      ]
+    },
+    "phase3": {
+      "label": "Lungsim Zun ding leh Hangsanna",
+      "label_en": "Inner Strength and Perseverance",
+      "range": "51–75",
+      "sermons": [
+        {
+          "id": 51,
+          "title": "Hangsanna taktak",
+          "title_en": "True Perseverance",
+          "summary": "Kihtaakna om hangin Pasian muang tana kalsuan zawhna."
+        },
+        {
+          "id": 52,
+          "title": "Lung-ngaihna phitna",
+          "title_en": "Releasing Worry",
+          "summary": "Na lung-ngaihna khempeuh Topa tungah khing in."
+        },
+        {
+          "id": 53,
+          "title": "Lungkim siamna",
+          "title_en": "Being Content",
+          "summary": "Na neih sunsun tawh lungkim siamna pen hauhna lianpi hi."
+        },
+        {
+          "id": 54,
+          "title": "Sia leh Pha khen siamna",
+          "title_en": "Discerning Good from Evil",
+          "summary": "Kha Siangtho huhna tawh sia leh pha khen siamna."
+        },
+        {
+          "id": 55,
+          "title": "Tualniam nuntakna",
+          "title_en": "A Humble Life",
+          "summary": "Khrist in Ama nuntakna tualniam sak a, eite zong zui ding hi pi."
+        },
+        {
+          "id": 56,
+          "title": "Kha lam banna",
+          "title_en": "Spiritual Growth",
+          "summary": "Ni simin Kha lam ah khangto ding leh ban ding thupi hi."
+        },
+        {
+          "id": 57,
+          "title": "Lungduatna a zung",
+          "title_en": "The Root of Love",
+          "summary": "Lungduat zawhna in thupi tampi hong pian sak hi."
+        },
+        {
+          "id": 58,
+          "title": "Kidawm siamna",
+          "title_en": "Managing Anger",
+          "summary": "Lungsim heh hun lakah kam gina hetlo gendekna pan kidawm ding."
+        },
+        {
+          "id": 59,
+          "title": "Nuntak thak kalsuanna",
+          "title_en": "Walking in New Life",
+          "summary": "Kha lam thakhat-a omna leh nuntakna thak zat zia."
+        },
+        {
+          "id": 60,
+          "title": "Nopna taktak zon zia",
+          "title_en": "Seeking True Joy",
+          "summary": "Nopna pen vaang leh sum lakah om lo, Khrist sung bekah om hi."
+        },
+        {
+          "id": 61,
+          "title": "Kalsuan thakna",
+          "title_en": "Starting Again",
+          "summary": "Khialhna pan nung kik a, Pasian lam manman kalsuan kikna."
+        },
+        {
+          "id": 62,
+          "title": "Pasian nasep thupi",
+          "title_en": "Every Task Matters to God",
+          "summary": "Neu hi lian hi, Pasian ading nasep khempeuh a lian veve ahi hi."
+        },
+        {
+          "id": 63,
+          "title": "Upna lakah kizolna",
+          "title_en": "Tested Through Faith",
+          "summary": "Upna phawk nading kitolhna thu."
+        },
+        {
+          "id": 64,
+          "title": "Leitung thute phitna",
+          "title_en": "Releasing Worldly Things",
+          "summary": "Leitung hauhna leh minthangna pen thupit khumna pan a maang ding hi."
+        },
+        {
+          "id": 65,
+          "title": "Lung-neuna lakah thapiakna",
+          "title_en": "Strength in Weakness",
+          "summary": "Na zongthawn hun lakah Pasian kammal tawh thazong in."
+        },
+        {
+          "id": 66,
+          "title": "Kha lam gimnampha",
+          "title_en": "Spiritual Fruit",
+          "summary": "I nuntakna pan Khrist gimnampha a pusuak ding hi."
+        },
+        {
+          "id": 67,
+          "title": "Cihtehtna leh Kalsuanna",
+          "title_en": "Endurance and Progress",
+          "summary": "Khristian nuntakna pen tai kidemna bang hi a, zom ding hi."
+        },
+        {
+          "id": 68,
+          "title": "Pasian ma ah hihna",
+          "title_en": "Who We Are Before God",
+          "summary": "Midangte muhna hi lo, Pasian ma ah i hihna taktak thupi zaw hi."
+        },
+        {
+          "id": 69,
+          "title": "Zuau thute taih phelna",
+          "title_en": "Rejecting Lies",
+          "summary": "Thu tak tawh nuntakna in zautatna khempeuh nial ta hi."
+        },
+        {
+          "id": 70,
+          "title": "Cidamna leh upna",
+          "title_en": "Healing and Faith",
+          "summary": "Pumpi cidamna leh Kha cidamna a kizopna thute."
+        },
+        {
+          "id": 71,
+          "title": "Khasiatna pan tatkhiatna",
+          "title_en": "Rescued from Trouble",
+          "summary": "Lungkia mawk ken, Topa in na aw hong za hi."
+        },
+        {
+          "id": 72,
+          "title": "A thupi zaw nasep",
+          "title_en": "The Greater Work",
+          "summary": "Lungsim zun nading ni simin hun thupi piak ding."
+        },
+        {
+          "id": 73,
+          "title": "Pasian kihtaakna",
+          "title_en": "The Fear of God",
+          "summary": "Pasian kihtaakna in siatna pan hong kem ding hi."
+        },
+        {
+          "id": 74,
+          "title": "Khuamial lakah Khuavak",
+          "title_en": "Light in the Darkness",
+          "summary": "Hih mialna leitunga khuavak banga i tan ding thupi hi."
+        },
+        {
+          "id": 75,
+          "title": "Topa tawh khualzin khawmna",
+          "title_en": "Walking with the Lord",
+          "summary": "Nuntakna pen Pasian tawh khualzin khawmna hi."
+        }
+      ]
+    },
+    "phase4": {
+      "label": "Thupha, Gualzawhna leh Mailam",
+      "label_en": "Blessing, Victory, and the Future",
+      "range": "76–100",
+      "sermons": [
+        {
+          "id": 76,
+          "title": "Thupha diktak",
+          "title_en": "True Blessing",
+          "summary": "Thupha kiti pen hauhna bek hi lo, lungsim bup suahtakna hi."
+        },
+        {
+          "id": 77,
+          "title": "Vantung gam thupi zia",
+          "title_en": "The Importance of Heaven",
+          "summary": "Hih leitung nusia-a i tun ding vantung gam ngaihsutna."
+        },
+        {
+          "id": 78,
+          "title": "Jesu hong pai kik nading",
+          "title_en": "The Return of Jesus",
+          "summary": "Amah hong pai kik ding hi, gige mawk loin kiging sa-in om ding."
+        },
+        {
+          "id": 79,
+          "title": "Nuntakna khantawnna",
+          "title_en": "Life Transformation",
+          "summary": "Jesu sungah nuntak khantawnna om hi."
+        },
+        {
+          "id": 80,
+          "title": "Lungsim kihongsa",
+          "title_en": "An Open Heart",
+          "summary": "Pasian thu ngai ding leh lak ding lungsim kihong neih ding."
+        },
+        {
+          "id": 81,
+          "title": "Siatna dou zawhna",
+          "title_en": "Overcoming Evil",
+          "summary": "Siatna pen phatna tawh zo zaw in."
+        },
+        {
+          "id": 82,
+          "title": "Kamciam thuman Pasian",
+          "title_en": "God Who Keeps His Promise",
+          "summary": "Pasian in I nuntakna ah thuman takin mapang hi."
+        },
+        {
+          "id": 83,
+          "title": "Thumaan tading gualzawhna",
+          "title_en": "Standing Firm in Truth",
+          "summary": "Mi khempeuh in hong nial zong thuman lam ah ding in."
+        },
+        {
+          "id": 84,
+          "title": "Nuntakna phatna",
+          "title_en": "A Life of Praise",
+          "summary": "I nuntakna ni sim in Pasian phatna pawi bang hita hen."
+        },
+        {
+          "id": 85,
+          "title": "Satan dona lampi",
+          "title_en": "How to Resist Satan",
+          "summary": "Upna leh thungetna tawh satan zolna khempeuh zawh ding."
+        },
+        {
+          "id": 86,
+          "title": "Thuciangpi zuihna",
+          "title_en": "Following the Great Commission",
+          "summary": "Khrist piak thuciam lianpi tate bawl nasepna."
+        },
+        {
+          "id": 87,
+          "title": "Khrist-a Kipumkhatna",
+          "title_en": "One Body in Christ",
+          "summary": "Khrist sungah pum khat i hihna phawk ding."
+        },
+        {
+          "id": 88,
+          "title": "Mawh ngaihdamna thupha",
+          "title_en": "The Blessing of Forgiveness",
+          "summary": "Mawh phelna pan a piang suakta nuntakna."
+        },
+        {
+          "id": 89,
+          "title": "Nuntakna luikhuk",
+          "title_en": "The Source of Life",
+          "summary": "Pasian pan a pusuak nuntakna tui nung tawn ding."
+        },
+        {
+          "id": 90,
+          "title": "Khristian tangkona",
+          "title_en": "Christian Witness",
+          "summary": "I gamtatna tawh tate leh mite tungah Jesu tangko ding."
+        },
+        {
+          "id": 91,
+          "title": "Lung-neu mawk lohna",
+          "title_en": "Do Not Lose Heart",
+          "summary": "Topa sungah na nasepna a thawn hi ngei lo hi."
+        },
+        {
+          "id": 92,
+          "title": "Pasian itna lian",
+          "title_en": "The Great Love of God",
+          "summary": "Mi hingte itna khempeuh sang a lian zaw Pasian itna."
+        },
+        {
+          "id": 93,
+          "title": "Upna lakah taizawhna",
+          "title_en": "Victory Through Faith",
+          "summary": "Thazong lakah zong upna galkap bang taizawh ding."
+        },
+        {
+          "id": 94,
+          "title": "Lungsim siatna khempeuh phelna",
+          "title_en": "Healing Every Wound of the Heart",
+          "summary": "Huatna, hazaatna lungsim pan suahtak nading."
+        },
+        {
+          "id": 95,
+          "title": "Topa lungdamna",
+          "title_en": "Joy in the Lord",
+          "summary": "Topa sung lungdamna pen i thahatna ahi hi."
+        },
+        {
+          "id": 96,
+          "title": "Nuntakna lampi man",
+          "title_en": "The One True Way",
+          "summary": "Leitung lampi tampi lakah Khrist bek lampi taktak hi."
+        },
+        {
+          "id": 97,
+          "title": "Pasian ading mipi",
+          "title_en": "A People for God",
+          "summary": "Eite pen Ama a hidinga it takin a gual mipi i hi hi."
+        },
+        {
+          "id": 98,
+          "title": "Khuavak hihna",
+          "title_en": "Being Light",
+          "summary": "Mialna lakah khuavak banga i tan ding thupi zia."
+        },
+        {
+          "id": 99,
+          "title": "A tawpna gualzawhna",
+          "title_en": "The Final Victory",
+          "summary": "Leitung haksatna khempeuh zawh ciang Khrist tawh luangkhawm ding."
+        },
+        {
+          "id": 100,
+          "title": "Tawntung Khrist sungah",
+          "title_en": "Forever in Christ",
+          "summary": "I nuntakna bul leh a tawpna pen Khrist bek ahi hi. Amin."
+        }
+      ]
+    }
+  }
+}

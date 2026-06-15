@@ -293,6 +293,8 @@ class ServiceController extends Controller
             'narration_mode' => $narrationMode,
             'narration_enabled' => $narrationEnabled,
             'text_highlight_enabled' => Setting::get('text_highlight_enabled', '1') === '1',
+            'ad_slot_enabled' => Setting::get('ad_slot_enabled', '0') === '1',
+            'ad_slot_html'    => Setting::get('ad_slot_html', '') ?: '',
             'language'    => $language,
             'mood'         => $session->intake?->mood,
         ]);

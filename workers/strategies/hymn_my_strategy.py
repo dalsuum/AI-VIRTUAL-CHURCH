@@ -1,24 +1,13 @@
 """Myanmar hymn strategy — a Burmese hymn, sung, with the words on screen.
 
-The Burmese library (dalsuum/myanmar-hymns) is lyrics-only: there are no
-public-domain recordings or MIDI renders to pre-seed the way seed_hymns.py does
-for the English hymnal. So this strategy composes the singing at service time:
+NOTE: The active router (strategies/__init__.py) routes `hymn_sung` and `hymn`
+through the unified SungHymnStrategy / InstrumentalHymnStrategy instead.
+This class is kept for reference and legacy compatibility only.
 
-  1. hymns_my.select() picks a mood-appropriate hymn (852 songs, never fails);
-  2. the hymn's ACTUAL Burmese verses are submitted to Suno (KIE gateway) in
-     customMode, so the generated vocals sing the real hymn text — not an AI
-     paraphrase — in a traditional congregational style;
-  3. the verses also ride along in `lyrics` for on-screen display, exactly like
-     the English hymn sources, so the worshipper can sing along.
-
-Generated tracks are cached under hymns_my/<slug>.mp3 in the same storage backend
-as everything else: the first worshipper to receive a given hymn pays the Suno
-credit, every later service that selects it plays the stored file free — the
-Burmese analog of the pre-seeded English library, just filled lazily.
-
-Requires SUNO_API_KEY (same credential as SunoStrategy). If Suno fails or no key
-is set and no cached render exists, fetch() raises and generate_music skips the
-music segment gracefully, matching every other strategy's degradation path.
+Resolution order (updated to prefer locally-downloaded files):
+  1. hymns_my/<slug>.sung.mp3  — locally downloaded sung recording (preferred)
+  2. hymns_my/<slug>.mp3       — cached Suno render from a previous generation
+  3. Suno API                  — generate on-the-fly and cache (fallback only)
 """
 
 from __future__ import annotations
@@ -42,20 +31,29 @@ _STYLE = os.getenv(
 
 
 class MyanmarHymnStrategy(MusicStrategy):
-    """Mood-matched Burmese hymn: cached render if we have one, else sing it via Suno."""
+    """Mood-matched Burmese hymn: local file preferred, cached Suno render as fallback."""
 
     def fetch(self, *, mood: str, prompt: str, query: str) -> MusicResult:
         hymn = select(mood=mood, prompt=prompt, query=query)
         slug, title, lyrics = hymn["slug"], hymn["title"], hymn["lyrics"]
-        key = CACHE_KEY.format(slug=slug)
 
+        # 1. Locally-downloaded sung recording (preferred — no API cost).
+        sung_key = f"hymns_my/{slug}.sung.mp3"
+        if storage.exists(sung_key):
+            return MusicResult(
+                asset_type="audio",
+                storage_key=sung_key,
+                provider_ref=slug,
+                title=title,
+                lyrics=lyrics,
+            )
+
+        # 2. Cached Suno render from a previous generation / fall through to generate.
+        key = CACHE_KEY.format(slug=slug)
         if not storage.exists(key):
             audio = sing(title=title, lyrics=lyrics, style=_STYLE)
             storage.upload_bytes(key, audio, "audio/mpeg")
 
-        # RAW object key, like the other audio strategies; generate_music presigns it.
-        # Never pooled by mood (the cache above already reuses by hymn, which keeps
-        # variety — pooling by mood would pin one hymn per mood).
         return MusicResult(
             asset_type="audio",
             storage_key=key,

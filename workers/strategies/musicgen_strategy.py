@@ -11,7 +11,8 @@ Generation time on 4 vCPU: ~3–5 min.
 Env vars (all optional):
   MUSICGEN_MODEL      HuggingFace model id (default: facebook/musicgen-small)
   MUSICGEN_MAX_TOKENS Tokens to generate; 50 tokens ≈ 1 second (default: 750 → ~15 s)
-  MUSICGEN_LOCK_TTL   Redis lock TTL in seconds (default: 1200 → 20 min)
+  MUSICGEN_DEVICE     auto | cpu | cuda | cuda:N  (default: auto — picks CUDA if available)
+  MUSICGEN_LOCK_TTL   Redis lock TTL in seconds (default: 1800 → 30 min)
   REDIS_URL           Redis broker URL (default: redis://localhost:6379/0)
 """
 
@@ -31,10 +32,26 @@ from . import MusicResult, MusicStrategy
 
 _MODEL = os.getenv("MUSICGEN_MODEL", "facebook/musicgen-small")
 _MAX_TOKENS = int(os.getenv("MUSICGEN_MAX_TOKENS", "750"))
+# MUSICGEN_DEVICE: "auto" (detect GPU), "cpu", "cuda", or "cuda:N"
+_DEVICE = os.getenv("MUSICGEN_DEVICE", "auto")
 # Redis lock TTL — must be longer than the worst-case generation time.
+# GPU reduces generation time significantly (minutes → seconds for small model).
 _LOCK_TTL = int(os.getenv("MUSICGEN_LOCK_TTL", "1800"))
 _REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 _LOCK_KEY = "musicgen:lock"
+
+
+def _resolve_device() -> str:
+    """Return the best available device, respecting MUSICGEN_DEVICE env var."""
+    if _DEVICE != "auto":
+        return _DEVICE
+    try:
+        import torch
+        if torch.cuda.is_available():
+            return "cuda"
+    except ImportError:
+        pass
+    return "cpu"
 
 
 def _redis_lock():
@@ -82,7 +99,7 @@ class MusicGenStrategy(MusicStrategy):
             raise RuntimeError("[musicgen] could not acquire generation lock within 15 min")
 
         try:
-            result = self._generate(text)
+            result = self._generate(text, prompt)
         except Exception:
             _release_lock(client)
             raise
@@ -91,16 +108,25 @@ class MusicGenStrategy(MusicStrategy):
 
         return result
 
-    def _generate(self, text: str) -> MusicResult:
+    def _generate(self, text: str, full_prompt: str) -> MusicResult:
         from transformers import pipeline as hf_pipeline
 
-        print(f"[musicgen] loading {_MODEL!r}…", flush=True)
+        marker = "\n\nLyrics:\n"
+        lyrics = full_prompt.split(marker, 1)[1].strip() if marker in full_prompt else None
+
+        device = _resolve_device()
+
+        # float16 halves VRAM usage and speeds up inference on CUDA; CPU needs float32.
+        pipeline_kwargs: dict = {"model": _MODEL, "device": device}
+        try:
+            import torch
+            pipeline_kwargs["torch_dtype"] = torch.float16 if "cuda" in device else torch.float32
+        except ImportError:
+            pass
+
+        print(f"[musicgen] loading {_MODEL!r} on {device}…", flush=True)
         t0 = time.time()
-        pipeline = hf_pipeline(
-            "text-to-audio",
-            model=_MODEL,
-            device="cpu",
-        )
+        pipeline = hf_pipeline("text-to-audio", **pipeline_kwargs)
         print(f"[musicgen] model ready in {time.time() - t0:.1f}s", flush=True)
 
         try:
@@ -135,7 +161,7 @@ class MusicGenStrategy(MusicStrategy):
             storage_key=key,
             provider_ref=f"musicgen:{int(time.time())}",
             title=f"AI Worship ({text.split(',')[0].strip().title()})",
-            lyrics=None,
+            lyrics=lyrics,
         )
 
     def _build_prompt(self, mood: str, prompt: str) -> str:

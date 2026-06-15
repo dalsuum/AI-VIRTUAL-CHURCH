@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import time
 
@@ -49,8 +50,11 @@ _MODEL_GEMINI  = os.getenv("AGENT_LLM_MODEL_GEMINI",  "google/gemini-2.5-flash")
 _MODEL_CHATGPT = os.getenv("AGENT_LLM_MODEL_CHATGPT", "openai/gpt-4o")
 
 
-def _get_agent_model() -> str:
-    """Read agent provider from Redis (set by admin toggle) and return the model ID."""
+def _get_agent_model(language: str = "en") -> str:
+    """Read agent provider from Redis (set by admin toggle) and return the OpenRouter model ID.
+
+    RunPod routing is handled separately in _call_llm(); this always returns a valid
+    OpenRouter model so the fallback path never fails with an unknown model ID."""
     try:
         import redis as _redis
         client   = _redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"))
@@ -66,6 +70,15 @@ def _get_agent_model() -> str:
 
 MAX_TURNS = 24   # hard cap — prevents runaway loops if the agent misbehaves
 
+
+def _post_asset(token: str, **fields) -> None:
+    payload = {"session_token": token, **fields}
+    requests.post(
+        _LARAVEL_WEBHOOK,
+        json=payload,
+        headers={"X-Worker-Secret": _WORKER_SECRET},
+        timeout=30,
+    ).raise_for_status()
 
 # ---------------------------------------------------------------------------
 # Public entry point
@@ -115,11 +128,25 @@ def run_agent(job: dict) -> None:
         {"role": "user", "content": "Please generate the text segments for this worship service."}
     ]
 
-    model = _get_agent_model()
+    model = _get_agent_model(language)
     print(f"[agent] starting session {token[:8]}… model={model} scripture={plan.get('scripture_ref')}", flush=True)
 
+    total_prompt_tokens = 0
+    total_completion_tokens = 0
+
     for turn in range(MAX_TURNS):
-        response = _call_llm(system, messages, tools, model)
+        try:
+            response = _call_llm(system, messages, tools, model, language)
+        except Exception as exc:
+            print(f"[agent] LLM call failed: {exc}", flush=True)
+            # If the agent loop crashes, the worshipper is stranded. 
+            # We break to let the worker finish, though the service may be incomplete.
+            break
+        
+        usage = response.get("usage", {})
+        total_prompt_tokens += usage.get("prompt_tokens", 0)
+        total_completion_tokens += usage.get("completion_tokens", 0)
+
         choice   = response["choices"][0]
         msg      = choice["message"]
         messages.append(msg)
@@ -137,9 +164,19 @@ def run_agent(job: dict) -> None:
         for tc in tool_calls:
             name   = tc["function"]["name"]
             try:
-                args = json.loads(tc["function"].get("arguments") or "{}")
+                raw_args = tc["function"].get("arguments") or "{}"
+                # Handle cases where models might wrap JSON in markdown or include trailing commas
+                raw_args = raw_args.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+                args = json.loads(raw_args)
             except json.JSONDecodeError:
-                args = {}
+                match = re.search(r"\{.*\}", raw_args, re.DOTALL)
+                if match:
+                    try:
+                        args = json.loads(match.group(0))
+                    except json.JSONDecodeError:
+                        args = {}
+                else:
+                    args = {}
 
             handler = handlers.get(name)
             if handler is None:
@@ -147,6 +184,8 @@ def run_agent(job: dict) -> None:
             else:
                 try:
                     result = handler(**args)
+                except TypeError as exc:
+                    result = {"error": f"Invalid arguments for {name}: {exc}"}
                 except Exception as exc:  # noqa: BLE001
                     result = {"error": str(exc)}
                     print(f"[agent] tool {name} raised: {exc}", flush=True)
@@ -166,7 +205,18 @@ def run_agent(job: dict) -> None:
             print(f"[agent] service complete at turn {turn}", flush=True)
             break
     else:
+        # If we timed out, try to force-finish so the frontend doesn't spin forever
+        try:
+            handlers["finish_service"]()
+        except: pass
         print(f"[agent] hit MAX_TURNS={MAX_TURNS} for {token[:8]}…", flush=True)
+
+    print(f"[agent] session {token[:8]} ended. Total tokens used: prompt={total_prompt_tokens}, completion={total_completion_tokens}", flush=True)
+    
+    try:
+        _post_asset(token, segment="telemetry_agent", asset_type="telemetry", prompt_tokens=total_prompt_tokens, completion_tokens=total_completion_tokens)
+    except Exception as exc:
+        print(f"[agent] failed to post token telemetry: {exc}", flush=True)
 
 
 # ---------------------------------------------------------------------------
@@ -203,17 +253,17 @@ Your job: generate the TEXT segments for one worshipper's personal service.
 ## Your task — generate these 4 segments IN THIS ORDER:
 
 1. Call resolve_scripture("{scripture_ref}") → post result as 'scripture'.
-2. Call generate_opening_prayer → review_content → post as 'opening_prayer'.
+2. Call generate_opening_prayer → post as 'opening_prayer'.
    POST THIS AS FAST AS POSSIBLE — it opens the doors for the worshipper.
-3. {sermon_note} → review_content → post as 'sermon'.
-4. Call generate_benediction → review_content → post as 'benediction'.
+3. {sermon_note} → post as 'sermon'.
+4. Call generate_benediction → post as 'benediction'.
 5. Call finish_service.
 
 ## Rules
-- After every generate_* call, ALWAYS call review_content before posting.
-- If review fails: regenerate once with a different angle. If still failing: post a short neutral fallback.
+- The `post_text_segment` tool has a built-in safety review. If it rejects the content, you should regenerate it with a different angle. If it still fails, post a short, neutral, safe fallback text.
 - Never include the worshipper's name in generated text.
 - Post each segment immediately — do not wait to batch them.
+- CRITICAL: If the user provides a prayer, extract their specific core keywords and include them in the `query` argument when calling find_sermon_video.
 - Do not call dispatch_music, generate_welcome, or build_plan — those are already done.
 """
 
@@ -222,34 +272,50 @@ Your job: generate the TEXT segments for one worshipper's personal service.
 # LLM call
 # ---------------------------------------------------------------------------
 
-def _call_llm(system: str, messages: list[dict], tools: list[dict], model: str) -> dict:
+def _call_llm(system: str, messages: list[dict], tools: list[dict], model: str, language: str = "en") -> dict:
     full_messages = [{"role": "system", "content": system}] + messages
-    resp = requests.post(
-        f"{_OPENROUTER_URL}/chat/completions",
-        headers={
-            "Authorization": f"Bearer {_OPENROUTER_KEY}",
-            "Content-Type":  "application/json",
-        },
-        json={
-            "model":       model,
-            "messages":    full_messages,
-            "tools":       tools,
-            "tool_choice": "auto",
-            "max_tokens":  4096,
-        },
-        timeout=120,
-    )
-    if not resp.ok:
-        try:
-            err = resp.json().get("error", resp.json())
-        except ValueError:
-            err = (resp.text or "")[:1000]
-        print(
-            f"[agent] OpenRouter request failed status={resp.status_code} model={model} body={json.dumps(err, ensure_ascii=False)[:1000]}",
-            flush=True,
-        )
-    resp.raise_for_status()
-    return resp.json()
+
+    def _attempt(base_url: str, api_key: str, resolved_model: str, provider: str) -> dict:
+        max_attempts = 3
+        for attempt in range(1, max_attempts + 1):
+            try:
+                resp = requests.post(
+                    f"{base_url}/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type":  "application/json",
+                    },
+                    json={
+                        "model":       resolved_model,
+                        "messages":    full_messages,
+                        "tools":       tools,
+                        "tool_choice": "auto",
+                        "max_tokens":  4096,
+                    },
+                    timeout=120,
+                )
+                if not resp.ok:
+                    try:
+                        err = resp.json().get("error", resp.json())
+                    except ValueError:
+                        err = (resp.text or "")[:1000]
+                    print(
+                        f"[agent] {provider} request failed status={resp.status_code} model={resolved_model} body={json.dumps(err, ensure_ascii=False)[:1000]}",
+                        flush=True,
+                    )
+                resp.raise_for_status()
+                return resp.json()
+            except requests.exceptions.RequestException as exc:
+                status_code = getattr(exc.response, "status_code", None)
+                if attempt < max_attempts and (status_code in (429, 500, 502, 503, 504) or isinstance(exc, (requests.exceptions.ConnectionError, requests.exceptions.Timeout))):
+                    time.sleep(2 ** attempt)
+                    continue
+                raise
+
+    # Agent orchestration always uses OpenRouter — tool calling requires structured
+    # function-call support that RunPod's streaming token format does not provide.
+    # RunPod GPU is used for prose generation only (llm_engine._complete).
+    return _attempt(_OPENROUTER_URL, _OPENROUTER_KEY, model, "OpenRouter")
 
 
 # ---------------------------------------------------------------------------
@@ -295,24 +361,27 @@ def _build_tools(job: dict, plan: dict) -> tuple[list[dict], dict[str, callable]
         default = "en-US-GuyNeural" if g == "male" else "en-US-AriaNeural"
         return os.getenv(f"EDGE_TTS_VOICE_{suffix}") or os.getenv("EDGE_TTS_VOICE", default)
 
-    def _post_asset(**fields) -> None:
-        payload = {"session_token": token, **fields}
-        requests.post(
-            _LARAVEL_WEBHOOK,
-            json=payload,
-            headers={"X-Worker-Secret": _WORKER_SECRET},
-            timeout=30,
-        ).raise_for_status()
-
     # ---- handlers --------------------------------------------------------
 
-    def h_resolve_scripture(scripture_ref: str) -> dict:
+    def h_resolve_scripture(scripture_ref: str = "") -> dict:
+        scripture_ref = scripture_ref or ""
+        effective_ref = scripture_ref.strip() if scripture_ref.strip() else plan.get("scripture_ref", "")
+        if effective_ref != scripture_ref:
+            print(f"[agent] resolve_scripture missing/empty ref. Falling back to plan: {effective_ref!r}", flush=True)
+
         try:
-            text    = bible_api.resolve(scripture_ref, lang=language)
-            heading = (bible_api.book_title(scripture_ref, lang=language) or scripture_ref) if language != "en" else scripture_ref
+            text = bible_api.resolve(effective_ref, lang=language)
+            if not text and effective_ref != plan.get("scripture_ref", ""):
+                fallback_ref = plan.get("scripture_ref", "")
+                print(f"[agent] resolve_scripture invalid ref {effective_ref!r}. Falling back to plan: {fallback_ref!r}", flush=True)
+                effective_ref = fallback_ref
+                text = bible_api.resolve(effective_ref, lang=language)
+
+            heading = (bible_api.book_title(effective_ref, lang=language) or effective_ref) if language != "en" else effective_ref
             return {"heading": heading, "text": text, "full": f"{heading}\n\n{text}"}
         except Exception as exc:  # noqa: BLE001
-            return {"heading": scripture_ref, "text": "", "full": scripture_ref, "error": str(exc)}
+            print(f"[agent] resolve_scripture error for {effective_ref!r}: {exc}", flush=True)
+            return {"heading": effective_ref, "text": "", "full": effective_ref, "error": str(exc)}
 
     def h_generate_opening_prayer() -> dict:
         text = llm_engine.generate_opening_prayer(
@@ -348,16 +417,30 @@ def _build_tools(job: dict, plan: dict) -> tuple[list[dict], dict[str, callable]
         return {"text": text}
 
     def h_find_sermon_video(query: str = "") -> dict:
+        query = query or ""
         past  = (job.get("user_history") or {}).get("past_video_ids", [])
-        video = _find_sermon_video(mood=mood, query=query, language=language, excluded_ids=past)
+        
+        effective_query = query.strip() if query.strip() else plan.get("preaching_query", "")
+        if effective_query != query:
+            print(f"[agent] find_sermon_video missing/empty query. Falling back to plan: {effective_query!r}", flush=True)
+            
+        video = _find_sermon_video(mood=mood, query=effective_query, language=language, excluded_ids=past)
         return {"video_id": video["video_id"], "title": video["title"]}
 
-    def h_review_content(text: str) -> dict:
-        ok, reason = classifier.review(text)
-        return {"ok": ok, "reason": reason or ""}
+    def h_post_text_segment(segment: str = "", text: str = "") -> dict:
+        segment = segment or ""
+        text = text or ""
+        if not segment:
+            return {"error": "segment name is required"}
+        if not text:
+            return {"error": "text content is required"}
 
-    def h_post_text_segment(segment: str, text: str) -> dict:
-        _post_asset(segment=segment, asset_type="text", text_payload=text)
+        # Security: Enforce review before posting. Do not trust the agent to call review_content.
+        ok, reason = classifier.review(text)
+        if not ok:
+            return {"error": f"Content rejected by safety classifier: {reason}"}
+            
+        _post_asset(token, segment=segment, asset_type="text", text_payload=text)
 
         narrated = {"opening_prayer", "scripture", "sermon", "benediction"}
         if want_audio and segment in narrated:
@@ -384,8 +467,10 @@ def _build_tools(job: dict, plan: dict) -> tuple[list[dict], dict[str, callable]
 
         return {"ok": True, "segment": segment}
 
-    def h_post_youtube_sermon(video_id: str, title: str) -> dict:
-        _post_asset(segment="sermon", asset_type="youtube",
+    def h_post_youtube_sermon(video_id: str = "", title: str = "") -> dict:
+        video_id = video_id or ""
+        title = title or ""
+        _post_asset(token, segment="sermon", asset_type="youtube",
                     provider_ref=video_id, text_payload=title)
         return {"ok": True}
 
@@ -399,7 +484,6 @@ def _build_tools(job: dict, plan: dict) -> tuple[list[dict], dict[str, callable]
         "generate_sermon":         h_generate_sermon,
         "generate_benediction":    h_generate_benediction,
         "find_sermon_video":       h_find_sermon_video,
-        "review_content":          h_review_content,
         "post_text_segment":       h_post_text_segment,
         "post_youtube_sermon":     h_post_youtube_sermon,
         "finish_service":          h_finish_service,
@@ -419,11 +503,8 @@ def _build_tools(job: dict, plan: dict) -> tuple[list[dict], dict[str, callable]
             "Generate the closing benediction text.",
             {}),
         _fn("find_sermon_video",
-            "Find a YouTube sermon video matching the mood (youtube music_source only).",
-            {"query": _p("string", False, "Optional search hint")}),
-        _fn("review_content",
-            "Safety-check generated text before posting. Call after every generate_* call.",
-            {"text": _p("string", True, "The generated text to check")}),
+            "Find a YouTube sermon video matching the mood (youtube music_source only). MUST include specific thematic keywords from the user's prayer if provided.",
+            {"query": _p("string", True, "A YouTube search query including 'Christian sermon' AND 1-2 specific keywords from the worshipper's prayer.")}),
         _fn("post_text_segment",
             "Deliver a text segment to the frontend (also triggers narration and avatar).",
             {

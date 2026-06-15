@@ -497,6 +497,13 @@ watch(stages, (list) => {
       </template>
     </div>
 
+    <!-- Ad slot: only shown when the admin has enabled it and pasted HTML. -->
+    <div
+      v-if="service.ad_slot_enabled && service.ad_slot_html"
+      class="ad-slot"
+      v-html="service.ad_slot_html"
+    ></div>
+
     <nav class="controls">
       <button class="nav prev" :disabled="atStart" @click="prev">‹ Previous</button>
       <span class="pos">{{ index + 1 }} / {{ stages.length }}</span>
@@ -571,6 +578,20 @@ watch(stages, (list) => {
 .stage-text p:last-child { margin-bottom: 0; }
 .stage-text span { border-radius: 3px; transition: background 0.15s; }
 .stage-text span.highlight { background: rgba(99, 179, 237, 0.35); }
+
+.ad-slot {
+  width: 100%;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  text-align: center;
+}
+.ad-slot :deep(ins),
+.ad-slot :deep(iframe),
+.ad-slot :deep(img) {
+  max-width: 100%;
+  height: auto;
+}
 
 .controls {
   position: sticky;

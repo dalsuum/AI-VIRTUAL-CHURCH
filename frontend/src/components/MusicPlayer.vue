@@ -84,8 +84,9 @@ onMounted(async () => {
   await loadYouTubeApi();
   if (!ytEl.value) return; // unmounted while the API loaded
   ytPlayer = new window.YT.Player(ytEl.value, {
+    host: 'https://www.youtube.com',
     videoId: props.asset.provider_ref,
-    playerVars: { autoplay: 1, rel: 0, playsinline: 1 },
+    playerVars: { autoplay: 1, rel: 0, playsinline: 1, enablejsapi: 1, origin: window.location.origin },
     events: {
       onStateChange: (e) => {
         if (e.data === window.YT.PlayerState.ENDED) emit("ended");
@@ -96,7 +97,11 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   if (ytPlayer) {
-    ytPlayer.destroy();
+    try {
+      ytPlayer.destroy();
+    } catch (err) {
+      // ignore destroy errors if iframe is already detached
+    }
     ytPlayer = null;
   }
 });

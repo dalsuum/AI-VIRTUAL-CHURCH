@@ -89,52 +89,51 @@ Route::middleware('auth:sanctum')->group(function () {
 
         Route::get('/donors', [AdminController::class, 'donors']);
         Route::get('/prayer-requests', [AdminController::class, 'prayerRequests']);
-    });
 
-    // Admin-only routes — full admin role required for sensitive management.
-    Route::prefix('admin')->middleware('admin')->group(function () {
-        Route::get('/users', [AdminController::class, 'users']);
-        Route::patch('/users/{user}/admin', [AdminController::class, 'setAdmin']);
-        Route::patch('/users/{user}/block', [AdminController::class, 'blockUser']);
-        Route::patch('/users/{user}/presenter-gender', [AdminController::class, 'updatePresenterGender']);
-        Route::delete('/users/{user}', [AdminController::class, 'deleteUser']);
-
-        // Global service settings (e.g. narration voice mode).
-        Route::get('/settings', [AdminController::class, 'settings']);
-        Route::patch('/settings', [AdminController::class, 'updateSettings']);
-
-        // CSV report export: donations | users | testimonies
-        Route::get('/export/{type}', [AdminController::class, 'export']);
-
-        // Suno song pool manual CRUD (music_tracks)
+        // Configurable-permission reads — each method checks its own permission.
+        Route::get('/users',        [AdminController::class, 'users']);
+        Route::get('/settings',     [AdminController::class, 'settings']);
         Route::get('/music-tracks', [AdminController::class, 'musicTracks']);
-        Route::post('/music-tracks', [AdminController::class, 'createMusicTrack']);
-        Route::patch('/music-tracks/{musicTrack}', [AdminController::class, 'updateMusicTrack']);
-        Route::delete('/music-tracks/{musicTrack}', [AdminController::class, 'deleteMusicTrack']);
-
-        // Role management, user creation, password resets
-        Route::post('/users',                      [AdminController::class, 'createUser']);
-        Route::patch('/users/{user}/role',         [AdminController::class, 'assignRole']);
-        Route::post('/users/{user}/force-reset',   [AdminController::class, 'forcePasswordReset']);
-
-        // Role-based permission matrix management
-        Route::get('/permissions',   [AdminController::class, 'getPermissions']);
-        Route::patch('/permissions', [AdminController::class, 'updatePermissions']);
-
-        // Live system monitor — package versions, service health, git state, installs.
-        Route::get('/updates/status',           [UpdateController::class, 'status']);
-        Route::post('/updates/check',           [UpdateController::class, 'check']);
-        Route::post('/updates/git-pull',        [UpdateController::class, 'gitPull']);
-        Route::post('/updates/install',         [UpdateController::class, 'install']);
-        Route::post('/updates/restart-service', [UpdateController::class, 'restartService']);
-
-        // Voicebox TTS container monitor — proxies health/profiles/queue from localhost:17493.
-        Route::get('/voicebox/health',   [VoiceboxController::class, 'health']);
-        Route::get('/voicebox/profiles', [VoiceboxController::class, 'profiles']);
-        Route::get('/voicebox/queue',    [VoiceboxController::class, 'queue']);
-
-        // Voice Studio fine-tune monitor and manual launch controls.
+        Route::get('/permissions',  [AdminController::class, 'getPermissions']);
+        Route::get('/grammar-review',  [AdminController::class, 'grammarReview']);
+        Route::post('/grammar-review', [AdminController::class, 'grammarReviewSave']);
         Route::get('/voice-training/status', [VoiceTrainingController::class, 'status']);
         Route::post('/voice-training/start', [VoiceTrainingController::class, 'start']);
+        Route::get('/updates/status',        [UpdateController::class, 'status']);
+        Route::get('/voicebox/health',       [VoiceboxController::class, 'health']);
+        Route::get('/voicebox/profiles',     [VoiceboxController::class, 'profiles']);
+        Route::get('/voicebox/queue',        [VoiceboxController::class, 'queue']);
+    });
+
+    // Admin-only routes — full admin role required for sensitive writes.
+    Route::prefix('admin')->middleware('admin')->group(function () {
+        // User mutations
+        Route::post('/users',                          [AdminController::class, 'createUser']);
+        Route::patch('/users/{user}/role',             [AdminController::class, 'assignRole']);
+        Route::patch('/users/{user}/admin',            [AdminController::class, 'setAdmin']);
+        Route::patch('/users/{user}/block',            [AdminController::class, 'blockUser']);
+        Route::patch('/users/{user}/presenter-gender', [AdminController::class, 'updatePresenterGender']);
+        Route::post('/users/{user}/force-reset',       [AdminController::class, 'forcePasswordReset']);
+        Route::delete('/users/{user}',                 [AdminController::class, 'deleteUser']);
+
+        // Settings write
+        Route::patch('/settings', [AdminController::class, 'updateSettings']);
+
+        // CSV export
+        Route::get('/export/{type}', [AdminController::class, 'export']);
+
+        // Music pool writes
+        Route::post('/music-tracks',                   [AdminController::class, 'createMusicTrack']);
+        Route::patch('/music-tracks/{musicTrack}',     [AdminController::class, 'updateMusicTrack']);
+        Route::delete('/music-tracks/{musicTrack}',    [AdminController::class, 'deleteMusicTrack']);
+
+        // Permissions write
+        Route::patch('/permissions', [AdminController::class, 'updatePermissions']);
+
+        // System actions (destructive — git pull, package installs, service restarts)
+        // Route::post('/updates/check',           [UpdateController::class, 'check']);
+        // Route::post('/updates/git-pull',        [UpdateController::class, 'gitPull']);
+        // Route::post('/updates/install',         [UpdateController::class, 'install']);
+        // Route::post('/updates/restart-service', [UpdateController::class, 'restartService']);
     });
 });

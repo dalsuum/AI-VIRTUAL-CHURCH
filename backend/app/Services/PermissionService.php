@@ -27,6 +27,13 @@ class PermissionService
         'prayer_requests.view',
         'donors.view',
         'voice_studio.view',
+        'users.view',
+        'settings.view',
+        'music_pool.view',
+        'voice_training.view',
+        'permissions.view',
+        'language_review.view',
+        'system.view',
     ];
 
     /** Only these roles appear in the permissions matrix. Admin is always full access. */

@@ -104,6 +104,69 @@ def _mms_lang(language: str) -> str | None:
     return {"my": "burmese", "td": "tedim"}.get(language)
 
 
+def _spell_tedim(n: int) -> str:
+    if n == 0:
+        return "nul"
+    d = ["", "khat", "nih", "thum", "li", "nga", "guk", "sagih", "giat", "kua"]
+    if n < 10:
+        return d[n]
+    if n < 100:
+        tens, ones = divmod(n, 10)
+        res = "sawm" if tens == 1 else "sawm " + d[tens]
+        if ones > 0:
+            res += " le " + d[ones]
+        return res
+    if n < 1000:
+        hundreds, rem = divmod(n, 100)
+        res = "za " + d[hundreds]
+        if rem > 0:
+            res += " le " + _spell_tedim(rem)
+        return res
+    return " ".join((d[int(x)] or "nul") for x in str(n))
+
+
+def _spell_burmese(n: int) -> str:
+    if n == 0:
+        return "သုည"
+    d = ["", "တစ်", "နှစ်", "သုံး", "လေး", "ငါး", "ခြောက်", "ခုနစ်", "ရှစ်", "ကိုး"]
+    if n < 10:
+        return d[n]
+    if n < 100:
+        tens, ones = divmod(n, 10)
+        res = "ဆယ်" if tens == 1 else d[tens] + "ဆယ်"
+        if ones > 0:
+            res = res.replace("ဆယ်", "ဆယ့်") + d[ones]
+        return res
+    if n < 1000:
+        hundreds, rem = divmod(n, 100)
+        res = d[hundreds] + "ရာ"
+        if rem > 0:
+            res = res.replace("ရာ", "ရာ့") + _spell_burmese(rem)
+        return res
+    return "".join((d[int(x)] or "သုည") for x in str(n))
+
+
+def _normalize_mms_text(text: str, language: str) -> str:
+    """Convert digits to spoken words so MMS-TTS can pronounce them.
+
+    Handles Arabic numerals (0-9), Burmese digits (၀-၉), and verse separators
+    (colon or Burmese visarga း) so that e.g. "ယောဟန် ၃း၁၆" becomes
+    "ယောဟန် သုံး ဆယ့်ခြောက်" rather than silence."""
+    my_digits = "၀၁၂၃၄၅၆၇၈၉"
+    for i, digit in enumerate(my_digits):
+        text = text.replace(digit, str(i))
+    # Split verse-style separators (3:16 or ၃း၁၆) into two independent numbers.
+    text = re.sub(r'(?<=\d)[:း](?=\d)', ' ', text)
+
+    def _repl(match: re.Match) -> str:
+        val = int(match.group(0))
+        word = _spell_burmese(val) if language == "my" else _spell_tedim(val)
+        return f" {word} "
+
+    text = re.sub(r'\d+', _repl, text)
+    return re.sub(r'\s+', ' ', text).strip()
+
+
 def _chunks(text: str) -> list[str]:
     """Split `text` into <= _MAX_CHARS pieces, preferring sentence boundaries."""
     if len(text) <= _MAX_CHARS:
@@ -253,6 +316,8 @@ def narrate(
     if mode == "mms_tts":
         if not _mms_lang(language):
             raise RuntimeError(f"mms_tts does not support language {language!r}")
+        # Normalize numbers to text before passing to the acoustic model
+        clean = _normalize_mms_text(clean, language)
         audio = _speak_mms(clean, language)
         fmt = "wav"
     elif mode == "edge_tts":
@@ -275,6 +340,7 @@ def narrate(
             # through an English model that cannot produce those scripts.
             if not _mms_lang(language):
                 raise RuntimeError(f"mms_tts does not support language {language!r}")
+            clean = _normalize_mms_text(clean, language)
             audio = _speak_mms(clean, language)
         else:
             audio = b"".join(

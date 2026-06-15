@@ -34,6 +34,8 @@ from __future__ import annotations
 
 import os
 import re
+import random
+import time
 
 import requests
 
@@ -78,6 +80,11 @@ _LANG_CONFIG: dict[str, dict] = {
             "Seeking": ["guidance", "wisdom", "seeking", "draw me close"],
             "Hopeful": ["hope", "faith", "future", "promise"],
         },
+        # Target modern worship artists — sampled randomly per request for variety.
+        "preferred_artists": [
+            "Hillsong", "Planetshakers", "Elevation Worship", "Bethel Music",
+            "Maverick City Music", "Don Moen", "Chris Tomlin", "Phil Wickham",
+        ],
     },
     "my": {
         # ██ Myanmar (Burmese) ██
@@ -111,6 +118,11 @@ _LANG_CONFIG: dict[str, dict] = {
             "Seeking": ["လမ်းပြ", "ပညာ"],
             "Hopeful": ["မျှော်လင့်ခြင်း", "ယုံကြည်ခြင်း"],
         },
+        # Target Burmese modern worship artists — sampled randomly per request for variety.
+        "preferred_artists": [
+            "Grace Full Gospel", "Thang Taung", "Sangpi",
+            "David Lah 100% Jesus", "Kaung Kaung", "Susanna Min", "Khual Pi",
+        ],
     },
     "td": {
         # ██ Tedim / Zolai (Zomi Chin) ██
@@ -151,6 +163,11 @@ _LANG_CONFIG: dict[str, dict] = {
             "Seeking": ["makaihna", "pilna"],
             "Hopeful": ["lam-etna", "ginna"],
         },
+        # Target Zomi/Tedim modern worship artists — sampled randomly per request for variety.
+        "preferred_artists": [
+            "Thang Taung", "Zomi Worship Collective", "Phillip Ruth",
+            "We Worship", "FEMC Worship", "ZACC Worship", "Khai Pi", "Cin Bawi",
+        ],
     },
 }
 
@@ -164,22 +181,36 @@ def _search_youtube(query: str, **params) -> list[dict]:
     """
     if not is_enabled():
         raise RuntimeError("YouTube API key is not configured.")
-    resp = requests.get(
-        YOUTUBE_API_URL,
-        params={
-            "key": YOUTUBE_API_KEY,
-            "q": query,
-            "part": "snippet",
-            "type": "video",
-            "maxResults": 20,
-            "safeSearch": "strict",
-            "videoEmbeddable": "true",
-            **params,
-        },
-        timeout=30,
-    )
-    resp.raise_for_status()
-    return resp.json().get("items", [])
+    
+    max_retries = 3
+    for attempt in range(1, max_retries + 1):
+        try:
+            resp = requests.get(
+                YOUTUBE_API_URL,
+                params={
+                    "key": YOUTUBE_API_KEY,
+                    "q": query,
+                    "part": "snippet",
+                    "type": "video",
+                    "maxResults": 20,
+                    "safeSearch": "strict",
+                    "videoEmbeddable": "true",
+                    **params,
+                },
+                timeout=30,
+            )
+            resp.raise_for_status()
+            return resp.json().get("items", [])
+        except requests.RequestException as exc:
+            if attempt == max_retries:
+                raise
+            # Do not retry on client errors that are likely permanent, except 429 Too Many Requests
+            if isinstance(exc, requests.HTTPError) and exc.response is not None:
+                if 400 <= exc.response.status_code < 500 and exc.response.status_code != 429:
+                    raise
+            sleep_time = 2 ** (attempt - 1)
+            print(f"[youtube] API fetch failed: {exc} — retrying in {sleep_time}s...", flush=True)
+            time.sleep(sleep_time)
 
 
 def search_video(query: str, category_id: str | None = None, english_only: bool = False) -> dict:
@@ -250,18 +281,34 @@ class YouTubeStrategy(MusicStrategy):
     def fetch(self, *, mood: str, prompt: str, query: str) -> MusicResult:
         lang_conf = _LANG_CONFIG.get(self.language, _LANG_CONFIG["en"])
 
+        anchor = lang_conf.get("query_anchor", "christian")
+        preferred_artists = lang_conf.get("preferred_artists", [])
+
         queries = [
             query,
-            f"{lang_conf['query_anchor']} worship song {mood}",
+            f"{query} worship" if query else "",
+            f"{anchor} worship song {query}" if query else "",
+            f"{anchor} worship song {mood}",
         ]
+        # Add a randomly chosen artist-anchored query for mood-matched variety.
+        # Inserted at the front so it's tried first; a second artist goes at the end
+        # as a final fallback, ensuring different users get different songs.
+        if preferred_artists:
+            artist_a = random.choice(preferred_artists)
+            artist_b = random.choice(preferred_artists)
+            queries.insert(0, f"{artist_a} {mood.lower()} worship")
+            queries.append(f"{artist_b} worship song")
+
+        queries = list(dict.fromkeys(q for q in queries if q))
 
         music_require: list[str] = lang_conf.get("music_title_require_any", [])
         music_reject: list[str] = lang_conf.get("music_title_reject_any", [])
         channel_reject: list[str] = lang_conf.get("channel_reject_any", [])
         mood_keywords: list[str] = lang_conf.get("music_mood_keywords", {}).get(mood, [])
+        query_terms = set(re.findall(r'\w+', query.lower())) if query else set()
 
         best_video = None
-        best_score = -1
+        candidates = []
 
         for q in queries:
             if not q:
@@ -272,7 +319,7 @@ class YouTubeStrategy(MusicStrategy):
                 print(f"[youtube-music] search failed for {q!r}: {exc}", flush=True)
                 continue
 
-            for item in results:
+            for idx, item in enumerate(results):
                 snippet = item.get("snippet", {})
                 title = (snippet.get("title") or "").lower()
                 channel = (snippet.get("channelTitle") or "").lower()
@@ -289,15 +336,27 @@ class YouTubeStrategy(MusicStrategy):
                     continue
 
                 # Score by mood relevance; title matches outweigh description.
-                score = sum(2 if kw in title else (1 if kw in desc else 0)
+                score = sum(3 if kw in title else (1 if kw in desc else 0)
                             for kw in mood_keywords)
 
-                if score > best_score:
-                    best_score = score
-                    best_video = item
+                # Boost if user's specific query keywords match
+                for term in query_terms:
+                    if len(term) > 3:
+                        score += 5 if term in title else (2 if term in desc else 0)
+                
+                # YouTube relevance bonus (earlier results preferred on tie)
+                score += (20 - idx) * 0.1
 
-            # Stop after first query that yields a mood-matched result.
-            if best_video and best_score > 0:
+                candidates.append((score, item))
+
+            # Stop after first query that yields a matched result.
+            if candidates:
+                # Sort by score so we only pick from the best mood matches.
+                # Randomizing among the top 5 prevents repeating the same song
+                # for different users who select the same mood.
+                candidates.sort(key=lambda x: x[0], reverse=True)
+                top_candidates = candidates[:5]
+                best_video = random.choice(top_candidates)[1]
                 break
 
         if not best_video:
@@ -331,6 +390,7 @@ def find_sermon_video(
         mood_terms = lang_conf.get("music_mood_keywords", {}).get(mood, [])
         queries = [
             query if _has_myanmar(query) else "",
+            f"{query} တရားဟောချက်" if _has_myanmar(query) else "",
             *[f"{anchor} {term} တရားဟောချက်" for term in mood_terms[:2]],
             f"{anchor} တရားဟောချက်",
             f"{anchor} တရားဟော",
@@ -342,6 +402,7 @@ def find_sermon_video(
         # before falling back to English sermon terms.
         queries = [
             query if _has_tedim_identity(query) else "",
+            f"{query} thugenna" if _has_tedim_identity(query) else "",
             f"{anchor} thugenna",          # zomi christian thugenna
             f"zomi thugenna {mood}",
             f"zomi thu gen",
@@ -352,6 +413,7 @@ def find_sermon_video(
     else:
         queries = [
             query,
+            f"{query} sermon" if query else "",
             f"{anchor} sermon {mood}",
             f"{anchor} preaching {mood}",
             f"{anchor} message of hope",
@@ -366,6 +428,9 @@ def find_sermon_video(
     if language == "my":
         search_params = {"relevanceLanguage": "my", "regionCode": "MM"}
 
+    mood_keywords: list[str] = lang_conf.get("music_mood_keywords", {}).get(mood, [])
+    query_terms = set(re.findall(r'\w+', query.lower())) if query else set()
+
     for q in queries:
         if not q:
             continue
@@ -375,7 +440,9 @@ def find_sermon_video(
             print(f"[sermon] query {q!r} failed: {exc}", flush=True)
             continue
 
-        for item in results:
+        candidates = []
+
+        for idx, item in enumerate(results):
             video_id = item.get("id", {}).get("videoId")
             if not video_id or video_id in excluded:
                 continue
@@ -383,6 +450,7 @@ def find_sermon_video(
             snippet = item.get("snippet", {})
             title = (snippet.get("title") or "").lower()
             channel = (snippet.get("channelTitle") or "").lower()
+            desc = (snippet.get("description") or "").lower()
 
             # Burmese-mode sermons must show Myanmar script in the title.
             # Channel/description text is too weak: an English sermon from a
@@ -407,6 +475,21 @@ def find_sermon_video(
             if any(kw in channel for kw in channel_reject):
                 continue
 
-            return {"video_id": video_id, "title": snippet["title"]}
+            score = sum(3 if kw in title else (1 if kw in desc else 0) for kw in mood_keywords)
+            
+            for term in query_terms:
+                if len(term) > 3:
+                    score += 5 if term in title else (2 if term in desc else 0)
+            
+            score += (20 - idx) * 0.1
+
+            candidates.append((score, item))
+        
+        if candidates:
+            # Randomize among the top 5 highly-scored sermons to add variety 
+            # across different users with the same mood.
+            candidates.sort(key=lambda x: x[0], reverse=True)
+            best_video = random.choice(candidates[:5])[1]
+            return {"video_id": best_video["id"]["videoId"], "title": best_video["snippet"]["title"]}
 
     raise RuntimeError(f"No suitable YouTube sermon found for mood {mood!r} in language {language!r}")

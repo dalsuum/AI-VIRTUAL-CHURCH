@@ -231,6 +231,7 @@ class AdminController extends Controller
      */
     public function users(): JsonResponse
     {
+        PermissionService::require(request()->user(), 'users.view');
         $users = User::withCount('sessions')
             ->withMax('sessions', 'created_at')
             ->latest()
@@ -344,7 +345,11 @@ class AdminController extends Controller
      */
     public function musicTracks(Request $request): JsonResponse
     {
-        $q = MusicTrack::query()->where('source', 'suno')->orderByDesc('id');
+        PermissionService::require($request->user(), 'music_pool.view');
+        $q = MusicTrack::query()
+            ->where(function ($query) {
+                $query->whereIn('source', ['suno', 'musicgen', 'local_ai'])->orWhere('provider_ref', 'like', 'musicgen:%');
+            })->orderByDesc('id');
 
         $mood = trim((string) $request->query('mood', ''));
         if ($mood !== '') {
@@ -386,7 +391,7 @@ class AdminController extends Controller
             'storage_key'  => ['required', 'string', 'max:500'],
             'title'        => ['nullable', 'string', 'max:255'],
             'lyrics'       => ['nullable', 'string'],
-            'source'       => ['nullable', 'string', 'in:suno'],
+            'source'       => ['nullable', 'string', 'in:suno,musicgen,local_ai'],
         ]);
 
         $track = MusicTrack::create([
@@ -396,7 +401,7 @@ class AdminController extends Controller
             'storage_key'  => trim($data['storage_key']),
             'title'        => isset($data['title']) ? trim((string) $data['title']) : null,
             'lyrics'       => $data['lyrics'] ?? null,
-            'source'       => 'suno',
+            'source'       => $data['source'] ?? (str_starts_with(trim($data['provider_ref']), 'musicgen:') ? 'musicgen' : 'suno'),
         ]);
 
         return response()->json(['ok' => true, 'track' => $track], 201);
@@ -411,7 +416,7 @@ class AdminController extends Controller
             'storage_key'  => ['sometimes', 'string', 'max:500'],
             'title'        => ['nullable', 'string', 'max:255'],
             'lyrics'       => ['nullable', 'string'],
-            'source'       => ['sometimes', 'string', 'in:suno'],
+            'source'       => ['sometimes', 'string', 'in:suno,musicgen'],
         ]);
 
         if (array_key_exists('mood', $data)) {
@@ -433,7 +438,7 @@ class AdminController extends Controller
             $musicTrack->lyrics = $data['lyrics'];
         }
         if (array_key_exists('source', $data)) {
-            $musicTrack->source = 'suno';
+            $musicTrack->source = $data['source'];
         }
 
         $musicTrack->save();
@@ -535,6 +540,7 @@ class AdminController extends Controller
      */
     public function settings(): JsonResponse
     {
+        PermissionService::require(request()->user(), 'settings.view');
         return response()->json($this->settingsPayload());
     }
 
@@ -594,6 +600,11 @@ class AdminController extends Controller
             'orchestration_mode' => ['sometimes', 'string', 'in:pipeline,agent'],
             // Which LLM powers the AI agent (only used when orchestration_mode = 'agent').
             'agent_provider'     => ['sometimes', 'string', 'in:claude,gemini,chatgpt'],
+            // Premium GPU via RunPod Serverless
+            'runpod_enabled'     => ['sometimes', 'boolean'],
+            // Ad slot — raw HTML/embed pasted by the admin (Google Ads, custom banner, etc.)
+            'ad_slot_enabled' => ['sometimes', 'boolean'],
+            'ad_slot_html'    => ['sometimes', 'nullable', 'string', 'max:8000'],
         ]);
 
         foreach (['narration_mode_en', 'narration_mode_my', 'narration_mode_td'] as $key) {
@@ -679,6 +690,17 @@ class AdminController extends Controller
             Setting::set('agent_provider', $provider);
             Redis::set('ai:agent_provider', $provider);
         }
+        if (array_key_exists('runpod_enabled', $data)) {
+            $runpod = $data['runpod_enabled'] ? '1' : '0';
+            Setting::set('runpod_enabled', $runpod);
+            Redis::set('ai:runpod_enabled', $runpod);
+        }
+        if (array_key_exists('ad_slot_enabled', $data)) {
+            Setting::set('ad_slot_enabled', $data['ad_slot_enabled'] ? '1' : '0');
+        }
+        if (array_key_exists('ad_slot_html', $data)) {
+            Setting::set('ad_slot_html', $data['ad_slot_html'] ?? '');
+        }
 
         return response()->json(['ok' => true] + $this->settingsPayload());
     }
@@ -696,6 +718,7 @@ class AdminController extends Controller
             'storage_backend'    => Setting::get('storage_backend', 'local'),
             'avatar_enabled'     => Setting::get('avatar_enabled', '1') === '1',
             'text_highlight_enabled' => Setting::get('text_highlight_enabled', '1') === '1',
+            'runpod_enabled'     => Setting::get('runpod_enabled', '0') === '1',
             // Per-language narration: all on by default.
             // Myanmar/Tedim: edge_tts = Microsoft cloud; mms_tts = local MMS-TTS.
             'narration_en'       => Setting::narrationEnabled('en'),
@@ -715,6 +738,8 @@ class AdminController extends Controller
             'content_filter_keywords'   => Setting::filterKeywords(),
             'orchestration_mode'        => Setting::get('orchestration_mode', 'pipeline'),
             'agent_provider'            => Setting::get('agent_provider', 'claude'),
+            'ad_slot_enabled'           => Setting::get('ad_slot_enabled', '0') === '1',
+            'ad_slot_html'              => Setting::get('ad_slot_html', ''),
         ];
     }
 
@@ -814,6 +839,7 @@ class AdminController extends Controller
     /** Return the current permissions matrix for all configurable roles. */
     public function getPermissions(): JsonResponse
     {
+        PermissionService::require(request()->user(), 'permissions.view');
         return response()->json([
             'permissions' => PermissionService::all(),
             'available'   => PermissionService::PERMISSIONS,
@@ -835,6 +861,163 @@ class AdminController extends Controller
         PermissionService::save($data['permissions']);
 
         return response()->json(['ok' => true, 'permissions' => PermissionService::all()]);
+    }
+
+    /** List sentences from the language data files for grammar review. */
+    public function grammarReview(Request $request): JsonResponse
+    {
+        PermissionService::require($request->user(), 'language_review.view');
+        $lang    = in_array($request->query('lang'), ['td', 'my']) ? $request->query('lang') : 'td';
+        $type    = $request->query('type', 'hymn_titles');
+        $status  = in_array($request->query('status'), ['all', 'pending', 'approved', 'corrected'])
+                   ? $request->query('status') : 'all';
+        $page    = max(1, (int) $request->query('page', 1));
+        $perPage = 20;
+
+        $reviewFile = base_path('../workers/data/grammar_review.json');
+        $reviews    = [];
+        if (file_exists($reviewFile)) {
+            $reviews = json_decode(file_get_contents($reviewFile), true) ?? [];
+        }
+
+        $sentences = $this->extractGrammarSentences($lang, $type);
+
+        $sentences = array_map(function ($s) use ($reviews) {
+            $r             = $reviews[$s['key']] ?? null;
+            $s['status']   = $r ? ($r['correction'] ? 'corrected' : 'approved') : 'pending';
+            $s['correction'] = $r['correction'] ?? null;
+            return $s;
+        }, $sentences);
+
+        if ($status !== 'all') {
+            $sentences = array_values(array_filter($sentences, fn($s) => $s['status'] === $status));
+        }
+
+        $total     = count($sentences);
+        $sentences = array_slice($sentences, ($page - 1) * $perPage, $perPage);
+
+        return response()->json([
+            'sentences' => $sentences,
+            'total'     => $total,
+            'page'      => $page,
+            'per_page'  => $perPage,
+        ]);
+    }
+
+    /** Save an approval or correction for a sentence. */
+    public function grammarReviewSave(Request $request): JsonResponse
+    {
+        PermissionService::require($request->user(), 'language_review.view');
+        $data = $request->validate([
+            'key'        => ['required', 'string', 'max:300'],
+            'action'     => ['required', 'string', 'in:approve,correct,reset'],
+            'correction' => ['nullable', 'string', 'max:10000'],
+        ]);
+
+        $reviewFile = base_path('../workers/data/grammar_review.json');
+        $reviews    = [];
+        if (file_exists($reviewFile)) {
+            $reviews = json_decode(file_get_contents($reviewFile), true) ?? [];
+        }
+
+        if ($data['action'] === 'reset') {
+            unset($reviews[$data['key']]);
+        } elseif ($data['action'] === 'approve') {
+            $reviews[$data['key']] = [
+                'approved'   => true,
+                'correction' => null,
+                'updated_at' => now()->toIso8601String(),
+            ];
+        } else {
+            $text = trim($data['correction'] ?? '');
+            if ($text === '') {
+                return response()->json(['error' => 'Correction text is required.'], 422);
+            }
+            $reviews[$data['key']] = [
+                'approved'   => false,
+                'correction' => $text,
+                'updated_at' => now()->toIso8601String(),
+            ];
+        }
+
+        file_put_contents(
+            $reviewFile,
+            json_encode($reviews, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+        );
+
+        return response()->json(['ok' => true]);
+    }
+
+    private function extractGrammarSentences(string $lang, string $type): array
+    {
+        $dir       = base_path('../workers/data');
+        $sentences = [];
+
+        if ($lang === 'my' && $type === 'prayers') {
+            $data = json_decode(file_get_contents("$dir/prayers_my.json"), true);
+            foreach ($data['categories'] as $catKey => $cat) {
+                foreach ($cat['prayers'] as $i => $prayer) {
+                    $sentences[] = [
+                        'key'      => "my_prayer_{$catKey}_{$i}",
+                        'lang'     => 'my',
+                        'type'     => 'prayer',
+                        'category' => $cat['label_en'] ?? $catKey,
+                        'text'     => $prayer,
+                        'text_en'  => null,
+                        'extra'    => null,
+                    ];
+                }
+            }
+        } elseif ($lang === 'td' && $type === 'sermons') {
+            $data = json_decode(file_get_contents("$dir/sermons_td.json"), true);
+            foreach ($data['phases'] as $phaseKey => $phase) {
+                foreach (($phase['sermons'] ?? []) as $sermon) {
+                    $sentences[] = [
+                        'key'      => "td_sermon_{$sermon['id']}",
+                        'lang'     => 'td',
+                        'type'     => 'sermon',
+                        'category' => $phase['label_en'] ?? $phaseKey,
+                        'text'     => $sermon['title'],
+                        'text_en'  => $sermon['title_en'] ?? null,
+                        'extra'    => $sermon['summary'] ?? null,
+                    ];
+                }
+            }
+        } elseif ($type === 'hymn_titles') {
+            $file = $lang === 'td' ? 'hymns_td.json' : 'hymns_my.json';
+            $data = json_decode(file_get_contents("$dir/$file"), true);
+            foreach ($data['hymns'] as $hymn) {
+                $slug        = $hymn['slug'] ?? ($hymn['number'] ?? '');
+                $sentences[] = [
+                    'key'      => "{$lang}_hymn_title_{$slug}",
+                    'lang'     => $lang,
+                    'type'     => 'hymn_title',
+                    'category' => 'Hymn Title',
+                    'text'     => $hymn['title'],
+                    'text_en'  => $hymn['title_en'] ?? null,
+                    'extra'    => null,
+                ];
+            }
+        } elseif ($type === 'hymn_lyrics') {
+            $file = $lang === 'td' ? 'hymns_td.json' : 'hymns_my.json';
+            $data = json_decode(file_get_contents("$dir/$file"), true);
+            foreach ($data['hymns'] as $hymn) {
+                $lyrics = trim($hymn['lyrics'] ?? '');
+                if (! $lyrics) continue;
+                $slug        = $hymn['slug'] ?? ($hymn['number'] ?? '');
+                $sentences[] = [
+                    'key'      => "{$lang}_hymn_lyrics_{$slug}",
+                    'lang'     => $lang,
+                    'type'     => 'hymn_lyrics',
+                    'category' => $hymn['title'],
+                    'text'     => $lyrics,
+                    'text_en'  => $hymn['title_en'] ?? null,
+                    'extra'    => null,
+                ];
+            }
+        }
+
+        return $sentences;
     }
 
     /**

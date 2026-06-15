@@ -139,7 +139,7 @@ class DispatchServiceJob implements ShouldQueue
      */
     private function resolveReuseTrack(ServiceSession $session, $intake): ?array
     {
-        if ($session->music_source !== 'suno' || Setting::get('music_reuse', '1') !== '1') {
+        if (! in_array($session->music_source, ['suno', 'musicgen'], true) || Setting::get('music_reuse', '1') !== '1') {
             return null;
         }
 
@@ -154,13 +154,20 @@ class DispatchServiceJob implements ShouldQueue
             return null;
         }
 
-        $tracks = MusicTrack::where('mood', $intake->mood)
+        $query = MusicTrack::where('mood', $intake->mood)
             ->where('language', $language)
             ->whereNotNull('lyrics')
-            ->where('lyrics', '!=', '')
-            ->inRandomOrder()
-            ->limit(20)
-            ->get();
+            ->where('lyrics', '!=', '');
+
+        // Prevent cross-pollination between Suno (3-min vocal) and MusicGen 
+        // (30-sec instrumental) by filtering on the known provider_ref prefix.
+        if ($session->music_source === 'musicgen') {
+            $query->where('provider_ref', 'like', 'musicgen:%');
+        } else {
+            $query->where('provider_ref', 'not like', 'musicgen:%');
+        }
+
+        $tracks = $query->inRandomOrder()->limit(20)->get();
 
         $track = $tracks->first(fn (MusicTrack $track) => $this->lyricsMatchLanguage($track->lyrics, $language));
 

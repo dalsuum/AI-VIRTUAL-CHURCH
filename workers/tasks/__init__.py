@@ -152,6 +152,9 @@ def orchestrate(job: dict) -> None:
 
 def _orchestrate_pipeline(job: dict) -> None:
     """Original hard-coded pipeline — runs when mode == 'pipeline'."""
+    llm_engine.session_prompt_tokens.set(0)
+    llm_engine.session_completion_tokens.set(0)
+
     token = job["session_token"]
 
     # 1. Derive the spine of the service from the user's own input.
@@ -161,6 +164,11 @@ def _orchestrate_pipeline(job: dict) -> None:
         music_source=job.get("music_source"),
         user_history=job.get("user_history"),
     )
+
+    p_tok = llm_engine.session_prompt_tokens.get()
+    c_tok = llm_engine.session_completion_tokens.get()
+    if p_tok > 0 or c_tok > 0:
+        _post_asset(token, "telemetry_plan", asset_type="telemetry", prompt_tokens=p_tok, completion_tokens=c_tok)
 
     # 1b. Registered worshippers get a short, mood-aware "welcome back" greeting up
     # front so the countdown screen has something personal to show while the heavier
@@ -192,6 +200,9 @@ def generate_welcome(job: dict) -> None:
 
 @app.task(name="tasks.generate_text_segments")
 def generate_text_segments(job: dict, plan: dict) -> None:
+    llm_engine.session_prompt_tokens.set(0)
+    llm_engine.session_completion_tokens.set(0)
+
     token, name, mood = job["session_token"], job["user_name"], job["mood"]
     ref = plan["scripture_ref"]
     language = job.get("language", "en")  # 'en' | 'my' | 'td' — the whole service's language
@@ -296,6 +307,11 @@ def generate_text_segments(job: dict, plan: dict) -> None:
         prayer_text=prayer_text, user_history=user_history)
     _process_spoken_segment("benediction", ben_text)
 
+    p_tok = llm_engine.session_prompt_tokens.get()
+    c_tok = llm_engine.session_completion_tokens.get()
+    if p_tok > 0 or c_tok > 0:
+        _post_asset(token, "telemetry_segments", asset_type="telemetry", prompt_tokens=p_tok, completion_tokens=c_tok)
+
 
 @app.task(name="tasks.repair_missing_narration")
 def repair_missing_narration(job: dict) -> None:
@@ -319,6 +335,9 @@ def repair_missing_narration(job: dict) -> None:
     stagger = _narration_stagger(mode, language)
     queued = 0
     for item in job.get("segments", []):
+        if not item or not isinstance(item, dict):
+            continue
+
         segment = item.get("segment")
         text = (item.get("text") or "").strip()
         if segment not in NARRATED_SEGMENTS or not text:
@@ -365,7 +384,7 @@ def generate_music(job: dict, plan: dict) -> None:
         # Music depends on external providers (YouTube/Suno + S3 upload). If their
         # keys are missing or the call fails, skip music rather than crash the task.
         music_prompt = plan.get("music_prompt", "")
-        if job["music_source"] == "suno":
+        if job["music_source"] in ("suno", "musicgen"):
             language = job.get("language", "en")
             if language in ("td", "my"):
                 # For non-English services, delegate lyric generation to the local
@@ -420,7 +439,7 @@ def generate_music(job: dict, plan: dict) -> None:
         if result is None:
             language = job.get("language", "en")
             if language == "td":
-                fallback_notice = "La sa ding ngah thei nailo hi. Thu leh thungetna tawh kizom in i pai ding uh."
+                fallback_notice = "La sa ding ngah thei nailo hi. Thu leh thungetna tawh kizom in i pan ding hi."
             elif language == "my":
                 fallback_notice = "ယခုအချိန်တွင် သီချင်းဖွင့်မရသေးပါ။ ကျမ်းစာနှင့် ဆုတောင်းဖြင့် ဆက်လက်ဝတ်ပြုပါမည်။"
             else:
@@ -438,7 +457,7 @@ def generate_music(job: dict, plan: dict) -> None:
         if result.asset_type == "audio" and result.storage_key:
             raw_key = result.storage_key
             result.storage_key = storage.presign(raw_key, expires=6 * 3600)
-            if job["music_source"] == "suno":
+            if job["music_source"] in ("suno", "musicgen"):
                 _post_music_track(
                     mood=job["mood"], language=job.get("language", "en"), provider_ref=result.provider_ref,
                     storage_key=raw_key, title=result.title, lyrics=result.lyrics,

@@ -1,15 +1,15 @@
 """
 Music-source strategy.
 
-A service can be scored four ways depending on the user's `music_source`:
+A service can be scored depending on the user's `music_source`:
 
-  - HymnStrategy        -> serves a pre-rendered public-domain hymn from a local
-                           library (no AI, no credit, no provider call). The default.
-  - HymnYouTubeStrategy -> selects a mood-appropriate hymn from the local catalog,
-                           then finds and embeds it from the HymnSite YouTube channel.
-  - SunoStrategy        -> generates original worship music from a text prompt (AI).
-  - YouTubeStrategy     -> searches YouTube for an existing modern worship track and
-                           returns an embeddable video id (no generation, no file storage).
+  hymn_sung      → SungHymnStrategy      local vintage/vocal MP3 (en/my/td), lyrics on screen
+  hymn           → InstrumentalHymnStrategy  local MIDI render (en/my/td), lyrics on screen
+  hymn_youtube   → HymnYouTubeStrategy   mood-matched hymn found on YouTube (en/my/td)
+  suno           → SunoStrategy          AI-generated music via Suno API
+  musicgen       → MusicGenStrategy      AI-generated music via local MusicGen (CPU-default)
+  local_ai       → LocalAiStrategy       GPU-preferred MusicGen; same model, CUDA when available
+  youtube        → YouTubeStrategy       modern worship track searched on YouTube (en/my/td)
 
 All return a normalized `MusicResult` so the orchestrator and the Laravel webhook
 treat them identically. Add a new source by implementing `MusicStrategy`.
@@ -51,31 +51,28 @@ class MusicStrategy(ABC):
 def get_strategy(music_source: str, language: str = "en") -> MusicStrategy:
     """Factory: resolve the user's preference string to a concrete strategy.
 
-    `language` is the service language ('en' | 'my' | 'td'). Tedim routes all
-    hymn-flavoured sources *including* 'youtube' to TedimHymnStrategy (hundreds
-    of embedded hymns, no live API search needed). Burmese routes only explicit
-    hymn sources (hymn/hymn_sung/hymn_youtube) to MyanmarHymnStrategy (Suno);
-    'youtube' falls through to YouTubeStrategy for a fast live search instead."""
-    from .hymn_my_strategy import MyanmarHymnStrategy
-    from .hymn_strategy import HymnStrategy
-    from .tedim_hymn_strategy import TedimHymnStrategy
+    `language` is the service language ('en' | 'my' | 'td'). Every source now
+    routes through a unified language-aware strategy — no per-language overrides.
+    """
     from .hymn_youtube_strategy import HymnYouTubeStrategy
+    from .instrumental_hymn_strategy import InstrumentalHymnStrategy
+    from .sung_hymn_strategy import SungHymnStrategy
     from .suno_strategy import SunoStrategy
     from .youtube_strategy import YouTubeStrategy
 
-    if language == "my" and music_source in ("hymn_sung", "hymn", "hymn_youtube"):
-        return MyanmarHymnStrategy()  # mood-matched Burmese hymn, sung, lyrics on screen
-    if language == "td" and music_source in ("hymn_sung", "hymn", "hymn_youtube", "youtube"):
-        return TedimHymnStrategy()  # Tedim hymn: YouTube embed or cached render
     if music_source == "suno":
         return SunoStrategy()
+    if music_source == "local_ai":
+        from .local_ai_strategy import LocalAiStrategy
+        return LocalAiStrategy()
     if music_source == "musicgen":
         from .musicgen_strategy import MusicGenStrategy
         return MusicGenStrategy()
     if music_source == "youtube":
         return YouTubeStrategy(language=language)
     if music_source == "hymn_youtube":
-        return HymnYouTubeStrategy()  # mood-matched hymn from HymnSite YouTube channel
+        return HymnYouTubeStrategy(language=language)
     if music_source == "hymn":
-        return HymnStrategy(sung=False)  # instrumental render + on-screen lyrics
-    return HymnStrategy(sung=True)  # default `hymn_sung`: public-domain sung recording
+        return InstrumentalHymnStrategy(language=language)
+    # Default covers "hymn_sung" and any unrecognised value
+    return SungHymnStrategy(language=language)

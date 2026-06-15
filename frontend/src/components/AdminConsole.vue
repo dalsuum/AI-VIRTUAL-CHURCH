@@ -23,26 +23,30 @@ function can(permission) {
 }
 const isAdminUser = computed(() => currentUser.value?.role === "admin");
 
-// First tab the current user is allowed to see — determines landing tab after login.
+// Single source of truth for all admin tabs.
+// Adding a new tab: add ONE entry here — nav button, permission, and data load are all derived from it.
+// name: route key  |  label: nav text  |  can: () => bool  |  load: fn called on tab open (null = nothing to fetch)
+const TABS = [
+  { name: "dashboard",      label: "Dashboard",       can: () => can("dashboard.view"),       load: () => { if (can("dashboard.view")) api.adminDashboard().then(r => { stats.value = r; }).catch(() => {}); } },
+  { name: "services",       label: "Services",         can: () => can("services.view"),        load: loadServices },
+  { name: "donors",         label: "Donors",           can: () => can("donors.view"),          load: loadDonors },
+  { name: "testimonies",    label: "Testimonies",      can: () => can("testimonies.view"),     load: loadTestimonies },
+  { name: "users",          label: "Users",            can: () => can("users.view"),           load: loadUsers },
+  { name: "prayer",         label: "Prayer Requests",  can: () => can("prayer_requests.view"), load: loadPrayerRequests },
+  { name: "settings",       label: "Settings",         can: () => can("settings.view"),        load: loadSettings },
+  { name: "music-pool",     label: "AI Music Pool",    can: () => can("music_pool.view"),      load: loadMusicTracks },
+  { name: "voice-studio",   label: "Voice Studio",     can: () => can("voice_studio.view"),    load: null },
+  { name: "voice-training", label: "Voice Training",   can: () => can("voice_training.view"),  load: () => { loadVoiceTrainingStatus(); scheduleVoiceTrainingPoll(); } },
+  { name: "permissions",    label: "Permissions",      can: () => can("permissions.view"),     load: loadPermissions },
+  { name: "grammar-review", label: "Language Review",  can: () => can("language_review.view"), load: () => { grData.value = null; loadGrammarReview(); } },
+  { name: "system",         label: "System",           can: () => can("system.view"),          load: () => { loadUpdateStatus(); scheduleUpdatePoll(); loadVoiceboxStatus(); scheduleVoiceboxPoll(); } },
+];
+
 function firstAllowedTab() {
-  const candidates = [
-    { name: "dashboard",   check: () => can("dashboard.view") },
-    { name: "services",    check: () => can("services.view") },
-    { name: "donors",      check: () => can("donors.view") },
-    { name: "testimonies", check: () => can("testimonies.view") },
-    { name: "users",       check: () => isAdminUser.value },
-    { name: "prayer",      check: () => can("prayer_requests.view") },
-    { name: "settings",    check: () => isAdminUser.value },
-    { name: "music-pool",  check: () => isAdminUser.value },
-    { name: "voice-studio",check: () => can("voice_studio.view") },
-    { name: "voice-training", check: () => isAdminUser.value },
-    { name: "permissions", check: () => isAdminUser.value },
-    { name: "system",      check: () => isAdminUser.value },
-  ];
-  return (candidates.find((c) => c.check()) ?? candidates[0]).name;
+  return (TABS.find(t => t.can()) ?? TABS[0]).name;
 }
 
-const tab = ref("dashboard"); // dashboard | services | donors | testimonies | users | prayer | settings | music-pool | voice-studio | voice-training | permissions
+const tab = ref("dashboard");
 const stats = ref(null);
 const services = ref([]);
 const donors = ref([]);
@@ -51,6 +55,8 @@ const users = ref([]);
 const prayerRequests = ref([]);
 const settings        = ref(null);
 const savingSettings  = ref(false);
+// Settings writes are admin-only; non-admins can view but not change.
+const settingsReadOnly = computed(() => !isAdminUser.value);
 const notice          = ref("");
 const permissionsData = ref(null); // { permissions, available, roles }
 const musicTracks = ref([]);
@@ -207,20 +213,7 @@ async function enter() {
     }
     currentUser.value = user;
     authed.value      = true;
-
-    // Load dashboard stats in the background if accessible.
-    if (can("dashboard.view")) {
-      api.adminDashboard().then((res) => { stats.value = res; }).catch(() => {});
-    }
-
-    const startTab = firstAllowedTab();
-    tab.value = startTab;
-    if (startTab === "voice-training" && isAdminUser.value) {
-      loadVoiceTrainingStatus();
-      scheduleVoiceTrainingPoll();
-    }
-    // Load data for the start tab (if it's not dashboard — dashboard loads above).
-    if (startTab !== "dashboard") show(startTab);
+    show(firstAllowedTab());
   } catch (e) {
     loginError.value = e?.data?.message || "Could not authenticate.";
     authed.value = false;
@@ -266,31 +259,19 @@ async function loadMusicTracks() {
     const res = await api.adminMusicTracks(musicPoolFilters.value);
     musicTracks.value = res.tracks || [];
   } catch (e) {
-    notice.value = e?.data?.message || "Could not load Suno pool.";
+    notice.value = e?.data?.message || "Could not load AI music pool.";
   } finally {
     musicPoolBusy.value = false;
   }
 }
 
 function show(name) {
-  if (name !== "system") { clearInterval(updateTimer); clearInterval(vbTimer); }
-  if (name !== "voice-training") clearInterval(voiceTrainingTimer);
+  if (name !== "system")         { clearInterval(updateTimer); clearInterval(vbTimer); }
+  if (name !== "voice-training") { clearInterval(voiceTrainingTimer); }
   tab.value    = name;
   notice.value = "";
-  if (name === "services")    loadServices();
-  if (name === "donors")      loadDonors();
-  if (name === "testimonies") loadTestimonies();
-  if (name === "users")       loadUsers();
-  if (name === "prayer")      loadPrayerRequests();
-  if (name === "settings")    loadSettings();
-  if (name === "music-pool")  loadMusicTracks();
-  if (name === "voice-training") { loadVoiceTrainingStatus(); scheduleVoiceTrainingPoll(); }
-  if (name === "permissions") loadPermissions();
-  if (name === "system")      { loadUpdateStatus(); scheduleUpdatePoll(); loadVoiceboxStatus(); scheduleVoiceboxPoll(); }
-  // Dashboard stats loaded on demand if not yet fetched.
-  if (name === "dashboard" && can("dashboard.view")) {
-    api.adminDashboard().then((res) => { stats.value = res; }).catch(() => {});
-  }
+  const t = TABS.find(t => t.name === name);
+  if (t?.load) t.load();
 }
 
 // Optimistically apply one setting, persist it, and roll back the local value if the
@@ -328,6 +309,7 @@ const setAvatarEnabled = (on) => saveSetting("avatar_enabled", on, "Avatar rende
 const setOrchestrationMode = (mode) => saveSetting("orchestration_mode", mode, "Orchestration mode updated.");
 const setAgentProvider = (provider) => saveSetting("agent_provider", provider, "Agent provider updated.");
 const setTextHighlightEnabled = (on) => saveSetting("text_highlight_enabled", on, "Text highlighting updated.");
+const setRunpodEnabled = (on) => saveSetting("runpod_enabled", on ? "1" : "0", "Premium GPU usage updated.");
 const setStorageBackend = (backend) => saveSetting("storage_backend", backend, "Storage backend updated.");
 const setScheduling = (on) => saveSetting("scheduling_enabled", on, "Scheduling updated.");
 const setDefaultMusicSource = (src) => saveSetting("default_music_source", src, "Default music source updated.");
@@ -472,7 +454,7 @@ function editMusicTrack(track) {
     storage_key: track.storage_key || "",
     title: track.title || "",
     lyrics: track.lyrics || "",
-    source: "suno",
+    source: track.source || "suno",
   };
 }
 
@@ -484,7 +466,7 @@ async function saveMusicTrack() {
     storage_key: musicTrackForm.value.storage_key.trim(),
     title: musicTrackForm.value.title.trim() || null,
     lyrics: musicTrackForm.value.lyrics.trim() || null,
-    source: "suno",
+    source: musicTrackForm.value.source,
   };
   if (!payload.mood || !payload.provider_ref || !payload.storage_key) {
     notice.value = "Mood, provider ref, and storage key are required.";
@@ -495,30 +477,30 @@ async function saveMusicTrack() {
   try {
     if (musicTrackEditingId.value) {
       await api.adminUpdateMusicTrack(musicTrackEditingId.value, payload);
-      notice.value = "Suno pool track updated.";
+      notice.value = "AI music pool track updated.";
     } else {
       await api.adminCreateMusicTrack(payload);
-      notice.value = "Suno pool track added.";
+      notice.value = "AI music pool track added.";
     }
     resetMusicTrackForm();
     await loadMusicTracks();
   } catch (e) {
-    notice.value = e?.data?.message || "Could not save Suno pool track.";
+    notice.value = e?.data?.message || "Could not save AI music pool track.";
   } finally {
     musicPoolBusy.value = false;
   }
 }
 
 async function removeMusicTrack(track) {
-  if (!confirm(`Delete Suno pool row #${track.id}?`)) return;
+  if (!confirm(`Delete AI music pool row #${track.id}?`)) return;
   musicPoolBusy.value = true;
   try {
     await api.adminDeleteMusicTrack(track.id);
-    notice.value = "Suno pool track deleted.";
+    notice.value = "AI music pool track deleted.";
     if (musicTrackEditingId.value === track.id) resetMusicTrackForm();
     await loadMusicTracks();
   } catch (e) {
-    notice.value = e?.data?.message || "Could not delete Suno pool track.";
+    notice.value = e?.data?.message || "Could not delete AI music pool track.";
   } finally {
     musicPoolBusy.value = false;
   }
@@ -906,6 +888,101 @@ async function restartSvc(svcName) {
   }
 }
 
+// ─── Language Grammar Review ───────────────────────────────────────────────────
+
+const grLang       = ref('td');
+const grType       = ref('hymn_titles');
+const grStatus     = ref('all');
+const grPage       = ref(1);
+const grData       = ref(null);
+const grBusy       = ref(false);
+const grError      = ref('');
+const grEditing    = ref(null);
+const grCorrection = ref('');
+
+const grTypeOptions = {
+  td: [
+    { value: 'hymn_titles', label: 'Hymn Titles' },
+    { value: 'hymn_lyrics', label: 'Hymn Lyrics' },
+    { value: 'sermons',     label: 'Sermon Topics' },
+  ],
+  my: [
+    { value: 'hymn_titles', label: 'Hymn Titles' },
+    { value: 'hymn_lyrics', label: 'Hymn Lyrics' },
+    { value: 'prayers',     label: 'Prayers' },
+  ],
+};
+
+async function loadGrammarReview() {
+  grBusy.value  = true;
+  grError.value = '';
+  try {
+    grData.value = await api.adminGrammarReview({
+      lang: grLang.value, type: grType.value, status: grStatus.value, page: grPage.value,
+    });
+  } catch (e) {
+    grError.value = e?.data?.message || 'Could not load sentences.';
+  } finally {
+    grBusy.value = false;
+  }
+}
+
+async function grApprove(key) {
+  grBusy.value = true;
+  try {
+    await api.adminGrammarReviewSave({ key, action: 'approve' });
+    await loadGrammarReview();
+  } catch (e) {
+    grError.value = e?.data?.message || 'Could not save.';
+  } finally {
+    grBusy.value = false;
+  }
+}
+
+async function grSaveCorrection(key) {
+  if (!grCorrection.value.trim()) return;
+  grBusy.value = true;
+  try {
+    await api.adminGrammarReviewSave({ key, action: 'correct', correction: grCorrection.value });
+    grEditing.value    = null;
+    grCorrection.value = '';
+    await loadGrammarReview();
+  } catch (e) {
+    grError.value = e?.data?.message || 'Could not save.';
+  } finally {
+    grBusy.value = false;
+  }
+}
+
+async function grReset(key) {
+  grBusy.value = true;
+  try {
+    await api.adminGrammarReviewSave({ key, action: 'reset' });
+    await loadGrammarReview();
+  } catch (e) {
+    grError.value = e?.data?.message || 'Could not reset.';
+  } finally {
+    grBusy.value = false;
+  }
+}
+
+function grToggleEdit(key, existing) {
+  if (grEditing.value === key) {
+    grEditing.value    = null;
+    grCorrection.value = '';
+  } else {
+    grEditing.value    = key;
+    grCorrection.value = existing || '';
+  }
+}
+
+function grChangeLang(lang) {
+  grLang.value = lang;
+  grType.value = grTypeOptions[lang][0].value;
+  grPage.value = 1;
+  loadGrammarReview();
+}
+
 // If a token is already stored (e.g. a returning admin), try to enter directly.
 onMounted(() => { if (api.hasToken()) enter(); });
 onUnmounted(() => {
@@ -935,18 +1012,9 @@ onUnmounted(() => {
 
     <template v-else>
       <nav class="tabs">
-        <button v-if="can('dashboard.view')"        :class="{ active: tab === 'dashboard' }"   @click="show('dashboard')">Dashboard</button>
-        <button v-if="can('services.view')"         :class="{ active: tab === 'services' }"    @click="show('services')">Services</button>
-        <button v-if="can('donors.view')"           :class="{ active: tab === 'donors' }"      @click="show('donors')">Donors</button>
-        <button v-if="can('testimonies.view')"      :class="{ active: tab === 'testimonies' }" @click="show('testimonies')">Testimonies</button>
-        <button v-if="isAdminUser"                  :class="{ active: tab === 'users' }"       @click="show('users')">Users</button>
-        <button v-if="can('prayer_requests.view')"  :class="{ active: tab === 'prayer' }"      @click="show('prayer')">Prayer Requests</button>
-        <button v-if="isAdminUser"                  :class="{ active: tab === 'settings' }"    @click="show('settings')">Settings</button>
-        <button v-if="isAdminUser"                  :class="{ active: tab === 'music-pool' }"  @click="show('music-pool')">Suno Pool</button>
-        <button v-if="can('voice_studio.view')"     :class="{ active: tab === 'voice-studio'}" @click="show('voice-studio')">Voice Studio</button>
-        <button v-if="isAdminUser"                  :class="{ active: tab === 'voice-training'}" @click="show('voice-training')">Voice Training</button>
-        <button v-if="isAdminUser"                  :class="{ active: tab === 'permissions' }" @click="show('permissions')">Permissions</button>
-        <button v-if="isAdminUser"                  :class="{ active: tab === 'system' }"      @click="show('system')">System</button>
+        <template v-for="t in TABS" :key="t.name">
+          <button v-if="t.can()" :class="{ active: tab === t.name }" @click="show(t.name)">{{ t.label }}</button>
+        </template>
         <span v-if="currentUser" class="staff-role-badge" :class="'role-' + currentUser.role">
           {{ currentUser.role }}
         </span>
@@ -1118,13 +1186,13 @@ onUnmounted(() => {
         <div class="table-head">
           <h2>Users &amp; visitors</h2>
           <div style="display:flex;gap:.5rem;">
-            <button class="chip primary-chip" @click="openCreateUser">+ Add User</button>
-            <button class="chip" @click="exportReport('users')">Export CSV</button>
+            <button v-if="isAdminUser" class="chip primary-chip" @click="openCreateUser">+ Add User</button>
+            <button v-if="isAdminUser" class="chip" @click="exportReport('users')">Export CSV</button>
           </div>
         </div>
 
         <!-- Create user form -->
-        <div v-if="showCreateUser" class="create-user-panel">
+        <div v-if="isAdminUser && showCreateUser" class="create-user-panel">
           <h3 class="cu-title">Add New User</h3>
 
           <!-- First-login link (shown after successful create without password) -->
@@ -1198,7 +1266,7 @@ onUnmounted(() => {
               <td><small>{{ u.email || "—" }}</small></td>
               <td>
                 <select
-                  v-if="!u.is_guest"
+                  v-if="isAdminUser && !u.is_guest"
                   class="role-select"
                   :value="u.role"
                   @change="assignRole(u, $event.target.value)"
@@ -1208,7 +1276,7 @@ onUnmounted(() => {
                   <option value="moderator">Moderator</option>
                   <option value="admin">Admin</option>
                 </select>
-                <span v-else class="tag">guest</span>
+                <span v-else class="tag">{{ u.is_guest ? 'guest' : u.role }}</span>
               </td>
               <td>
                 <span v-if="u.last_mood" class="badge pending">{{ u.last_mood }}</span>
@@ -1217,9 +1285,9 @@ onUnmounted(() => {
               <td>{{ u.visits }}</td>
               <td><small>{{ fmtDate(u.last_seen) }}</small></td>
               <td class="actions">
-                <button v-if="!u.is_guest" class="link" @click="forceReset(u)">Reset pw</button>
-                <button class="link" @click="toggleBlock(u)">{{ u.is_blocked ? "Unblock" : "Block" }}</button>
-                <button class="link danger" @click="deleteUser(u)">Delete</button>
+                <button v-if="isAdminUser && !u.is_guest" class="link" @click="forceReset(u)">Reset pw</button>
+                <button v-if="isAdminUser" class="link" @click="toggleBlock(u)">{{ u.is_blocked ? "Unblock" : "Block" }}</button>
+                <button v-if="isAdminUser" class="link danger" @click="deleteUser(u)">Delete</button>
               </td>
             </tr>
           </tbody>
@@ -1250,10 +1318,10 @@ onUnmounted(() => {
         </table>
       </div>
 
-      <!-- Suno Pool -->
+      <!-- AI Music Pool -->
       <div v-else-if="tab === 'music-pool'" class="table-wrap">
         <div class="table-head">
-          <h2>Suno Song Pool (music_tracks)</h2>
+          <h2>AI Music Pool (music_tracks)</h2>
           <button class="chip" :disabled="musicPoolBusy" @click="loadMusicTracks">Refresh</button>
         </div>
 
@@ -1266,7 +1334,7 @@ onUnmounted(() => {
           <button class="chip" :disabled="musicPoolBusy" @click="applyMusicPoolFilters">Apply</button>
         </div>
 
-        <div class="pool-editor">
+        <div v-if="isAdminUser" class="pool-editor">
           <h3>{{ musicTrackEditingId ? `Edit Track #${musicTrackEditingId}` : 'Add Track' }}</h3>
           <div class="pool-grid">
             <input v-model="musicTrackForm.mood" class="pool-input" placeholder="Mood (required)" />
@@ -1274,6 +1342,10 @@ onUnmounted(() => {
               <option value="en">English</option>
               <option value="my">Myanmar</option>
               <option value="td">Tedim</option>
+            </select>
+            <select v-model="musicTrackForm.source" class="pool-input">
+              <option value="suno">Suno (Vocal)</option>
+              <option value="musicgen">MusicGen (Inst)</option>
             </select>
             <input v-model="musicTrackForm.provider_ref" class="pool-input" placeholder="Provider ref / Suno task id (required)" />
             <input v-model="musicTrackForm.storage_key" class="pool-input" placeholder="Storage key (required)" />
@@ -1287,10 +1359,11 @@ onUnmounted(() => {
         </div>
 
         <table class="grid">
-          <thead><tr><th>#</th><th>Mood</th><th>Lang</th><th>Title</th><th>Provider Ref</th><th>Storage Key</th><th>Lyrics</th><th>Created</th><th></th></tr></thead>
+          <thead><tr><th>#</th><th>Source</th><th>Mood</th><th>Lang</th><th>Title</th><th>Provider Ref</th><th>Storage Key</th><th>Lyrics</th><th>Created</th><th></th></tr></thead>
           <tbody>
             <tr v-for="t in musicTracks" :key="t.id">
               <td>{{ t.id }}</td>
+              <td><span class="badge" :class="t.source === 'musicgen' ? 'custom-mood' : 'music-source'">{{ t.source || 'suno' }}</span></td>
               <td><span class="badge pending">{{ t.mood }}</span></td>
               <td>{{ t.language }}</td>
               <td>{{ t.title || '—' }}</td>
@@ -1299,17 +1372,18 @@ onUnmounted(() => {
               <td class="content">{{ t.lyrics || '—' }}</td>
               <td><small>{{ fmtDate(t.created_at) }}</small></td>
               <td class="actions">
-                <button class="link" @click="editMusicTrack(t)">Edit</button>
-                <button class="link danger" @click="removeMusicTrack(t)">Delete</button>
+                <button v-if="isAdminUser" class="link" @click="editMusicTrack(t)">Edit</button>
+                <button v-if="isAdminUser" class="link danger" @click="removeMusicTrack(t)">Delete</button>
               </td>
             </tr>
-            <tr v-if="!musicTracks.length"><td colspan="9" class="empty">No Suno pool tracks found.</td></tr>
+            <tr v-if="!musicTracks.length"><td colspan="10" class="empty">No AI music pool tracks found.</td></tr>
           </tbody>
         </table>
       </div>
 
       <!-- Settings -->
       <section v-else-if="tab === 'settings'" class="settings">
+        <p v-if="!isAdminUser" class="notice">View only — contact an admin to change settings.</p>
         <div class="setting-block">
           <h2>Moods</h2>
           <p class="setting-desc">
@@ -1323,7 +1397,7 @@ onUnmounted(() => {
               <button
                 type="button"
                 class="chip-x"
-                :disabled="savingSettings || settings.moods.length <= 1"
+                :disabled="savingSettings || settingsReadOnly || settings.moods.length <= 1"
                 aria-label="Remove mood"
                 @click="removeMood(m)"
               >×</button>
@@ -1335,14 +1409,44 @@ onUnmounted(() => {
               type="text"
               class="mood-input"
               placeholder="Add a mood (e.g. Lonely)"
-              :disabled="savingSettings"
+              :disabled="savingSettings || settingsReadOnly"
               @keyup.enter="addMood"
             />
-            <button type="button" class="primary add-btn" :disabled="savingSettings || !newMood.trim()" @click="addMood">
+            <button type="button" class="primary add-btn" :disabled="savingSettings || settingsReadOnly || !newMood.trim()" @click="addMood">
               Add
             </button>
           </div>
           <p v-else class="setting-desc">Loading…</p>
+      </div>
+
+      <div class="setting-block">
+        <h2>Premium GPU (RunPod)</h2>
+        <p class="setting-desc">
+          Route AI text generation to your dedicated RunPod GPU endpoint instead of the standard tier. Requires <code>RUNPOD_BASE_URL</code>, <code>RUNPOD_API_KEY</code>, and <code>RUNPOD_LLM_MODEL</code> in <code>workers/.env</code>.
+        </p>
+        <div v-if="settings" class="choice-row">
+          <button
+            type="button"
+            class="choice"
+            :class="{ active: settings.runpod_enabled === '1' || settings.runpod_enabled === true }"
+            :disabled="savingSettings || settingsReadOnly"
+            @click="setRunpodEnabled(true)"
+          >
+            <strong>Enabled</strong>
+            <span>Use premium RunPod GPU.</span>
+          </button>
+          <button
+            type="button"
+            class="choice"
+            :class="{ active: settings.runpod_enabled !== '1' && settings.runpod_enabled !== true }"
+            :disabled="savingSettings || settingsReadOnly"
+            @click="setRunpodEnabled(false)"
+          >
+            <strong>Disabled</strong>
+            <span>Use standard OpenRouter tier.</span>
+          </button>
+        </div>
+        <p v-else class="setting-desc">Loading…</p>
         </div>
 
         <div class="setting-block">
@@ -1358,7 +1462,7 @@ onUnmounted(() => {
               type="button"
               class="choice"
               :class="{ active: settings.music_sources.includes(s.value) }"
-              :disabled="savingSettings"
+              :disabled="savingSettings || settingsReadOnly"
               @click="toggleMusicSource(s.value)"
             >
               <strong>{{ s.label }} <span class="state">{{ settings.music_sources.includes(s.value) ? "On" : "Off" }}</span></strong>
@@ -1374,7 +1478,7 @@ onUnmounted(() => {
                 type="button"
                 class="choice"
                 :class="{ active: settings.default_music_source === s.value }"
-                :disabled="savingSettings"
+                :disabled="savingSettings || settingsReadOnly"
                 @click="setDefaultMusicSource(s.value)"
               >
                 <strong>{{ s.label }}</strong>
@@ -1396,7 +1500,7 @@ onUnmounted(() => {
               type="button"
               class="choice"
               :class="{ active: settings.scheduling_enabled === true }"
-              :disabled="savingSettings"
+              :disabled="savingSettings || settingsReadOnly"
               @click="setScheduling(true)"
             >
               <strong>Allow scheduling</strong>
@@ -1406,7 +1510,7 @@ onUnmounted(() => {
               type="button"
               class="choice"
               :class="{ active: settings.scheduling_enabled === false }"
-              :disabled="savingSettings"
+              :disabled="savingSettings || settingsReadOnly"
               @click="setScheduling(false)"
             >
               <strong>Begin now only</strong>
@@ -1428,7 +1532,7 @@ onUnmounted(() => {
                 type="button"
                 class="choice"
                 :class="{ active: settings.countdown_content_enabled === true }"
-                :disabled="savingSettings"
+                :disabled="savingSettings || settingsReadOnly"
                 @click="setCountdownEnabled(true)"
               >
                 <strong>Show cards</strong>
@@ -1438,7 +1542,7 @@ onUnmounted(() => {
                 type="button"
                 class="choice"
                 :class="{ active: settings.countdown_content_enabled === false }"
-                :disabled="savingSettings"
+                :disabled="savingSettings || settingsReadOnly"
                 @click="setCountdownEnabled(false)"
               >
                 <strong>Hide cards</strong>
@@ -1454,7 +1558,7 @@ onUnmounted(() => {
                 type="button"
                 class="choice"
                 :class="{ active: settings.countdown_content_source === source.value }"
-                :disabled="savingSettings || settings.countdown_content_enabled === false"
+                :disabled="savingSettings || settingsReadOnly || settings.countdown_content_enabled === false"
                 @click="setCountdownSource(source.value)"
               >
                 <strong>{{ source.label }}</strong>
@@ -1470,7 +1574,7 @@ onUnmounted(() => {
                   class="banner-text"
                   maxlength="300"
                   rows="2"
-                  :disabled="savingSettings"
+                  :disabled="savingSettings || settingsReadOnly"
                   @change="updateCountdownBanner(i, 'text', $event.target.value)"
                 ></textarea>
                 <div class="banner-meta-row">
@@ -1479,13 +1583,13 @@ onUnmounted(() => {
                     class="banner-source"
                     maxlength="80"
                     placeholder="Source label, e.g. Psalm 46:10"
-                    :disabled="savingSettings"
+                    :disabled="savingSettings || settingsReadOnly"
                     @change="updateCountdownBanner(i, 'source', $event.target.value)"
                   />
                   <button
                     type="button"
                     class="chip danger-chip"
-                    :disabled="savingSettings || settings.countdown_banners.length <= 1"
+                    :disabled="savingSettings || settingsReadOnly || settings.countdown_banners.length <= 1"
                     @click="removeCountdownBanner(i)"
                   >Remove</button>
                 </div>
@@ -1498,7 +1602,7 @@ onUnmounted(() => {
                 maxlength="300"
                 rows="2"
                 placeholder="Add a short Christian encouragement or church announcement"
-                :disabled="savingSettings"
+                :disabled="savingSettings || settingsReadOnly"
               ></textarea>
               <div class="banner-meta-row">
                 <input
@@ -1506,13 +1610,13 @@ onUnmounted(() => {
                   class="banner-source"
                   maxlength="80"
                   placeholder="Optional source"
-                  :disabled="savingSettings"
+                  :disabled="savingSettings || settingsReadOnly"
                   @keyup.enter="addCountdownBanner"
                 />
                 <button
                   type="button"
                   class="primary add-btn"
-                  :disabled="savingSettings || !newCountdownBanner.text.trim()"
+                  :disabled="savingSettings || settingsReadOnly || !newCountdownBanner.text.trim()"
                   @click="addCountdownBanner"
                 >Add banner</button>
               </div>
@@ -1542,7 +1646,7 @@ onUnmounted(() => {
               <button
                 type="button"
                 class="chip-x"
-                :disabled="savingSettings"
+                :disabled="savingSettings || settingsReadOnly"
                 aria-label="Remove keyword"
                 @click="removeFilterKeyword(kw)"
               >×</button>
@@ -1554,13 +1658,13 @@ onUnmounted(() => {
               type="text"
               class="mood-input"
               placeholder="Add a keyword to reject (e.g. shaman)"
-              :disabled="savingSettings"
+              :disabled="savingSettings || settingsReadOnly"
               @keyup.enter="addFilterKeyword"
             />
             <button
               type="button"
               class="primary add-btn"
-              :disabled="savingSettings || !newFilterKeyword.trim()"
+              :disabled="savingSettings || settingsReadOnly || !newFilterKeyword.trim()"
               @click="addFilterKeyword"
             >Add</button>
           </div>
@@ -1581,7 +1685,7 @@ onUnmounted(() => {
               type="button"
               class="choice"
               :class="{ active: settings[lang.key] === true }"
-              :disabled="savingSettings"
+              :disabled="savingSettings || settingsReadOnly"
               @click="toggleServiceLanguage(lang.key)"
             >
               <strong>{{ lang.label }} <span class="state">{{ settings[lang.key] ? "On" : "Off" }}</span></strong>
@@ -1607,7 +1711,7 @@ onUnmounted(() => {
                 type="button"
                 class="choice"
                 :class="{ active: (settings.narration_mode_en || 'edge_tts') === m.value }"
-                :disabled="savingSettings"
+                :disabled="savingSettings || settingsReadOnly"
                 @click="setNarrationMode('en', m.value)"
               >
                 <strong>{{ m.label }}</strong>
@@ -1623,7 +1727,7 @@ onUnmounted(() => {
                   type="button"
                   class="choice"
                   :class="{ active: (settings.edge_tts_voice || 'en-US-AriaNeural') === v.value }"
-                  :disabled="savingSettings"
+                  :disabled="savingSettings || settingsReadOnly"
                   @click="setEdgeTtsVoice(v.value)"
                 >
                   <strong>{{ v.label }}</strong>
@@ -1640,7 +1744,7 @@ onUnmounted(() => {
                   type="button"
                   class="choice"
                   :class="{ active: (settings.voicebox_engine || 'qwen') === e.value }"
-                  :disabled="savingSettings"
+                  :disabled="savingSettings || settingsReadOnly"
                   @click="setVoiceboxEngine(e.value)"
                 >
                   <strong>{{ e.label }}</strong>
@@ -1662,7 +1766,7 @@ onUnmounted(() => {
                 type="button"
                 class="choice"
                 :class="{ active: (settings.narration_mode_my || 'mms_tts') === m.value }"
-                :disabled="savingSettings"
+                :disabled="savingSettings || settingsReadOnly"
                 @click="setNarrationMode('my', m.value)"
               >
                 <strong>{{ m.label }}</strong>
@@ -1679,7 +1783,7 @@ onUnmounted(() => {
                 type="button"
                 class="choice"
                 :class="{ active: (settings.narration_mode_td || 'mms_tts') === m.value }"
-                :disabled="savingSettings"
+                :disabled="savingSettings || settingsReadOnly"
                 @click="setNarrationMode('td', m.value)"
               >
                 <strong>{{ m.label }}</strong>
@@ -1702,7 +1806,7 @@ onUnmounted(() => {
               type="button"
               class="choice"
               :class="{ active: settings.music_reuse === true }"
-              :disabled="savingSettings"
+              :disabled="savingSettings || settingsReadOnly"
               @click="setMusicReuse(true)"
             >
               <strong>Reuse from pool</strong>
@@ -1712,7 +1816,7 @@ onUnmounted(() => {
               type="button"
               class="choice"
               :class="{ active: settings.music_reuse === false }"
-              :disabled="savingSettings"
+              :disabled="savingSettings || settingsReadOnly"
               @click="setMusicReuse(false)"
             >
               <strong>Always compose</strong>
@@ -1732,7 +1836,7 @@ onUnmounted(() => {
               type="button"
               class="choice"
               :class="{ active: settings.text_highlight_enabled === true }"
-              :disabled="savingSettings"
+              :disabled="savingSettings || settingsReadOnly"
               @click="setTextHighlightEnabled(true)"
             >
               <strong>Enabled</strong>
@@ -1742,7 +1846,7 @@ onUnmounted(() => {
               type="button"
               class="choice"
               :class="{ active: settings.text_highlight_enabled === false }"
-              :disabled="savingSettings"
+              :disabled="savingSettings || settingsReadOnly"
               @click="setTextHighlightEnabled(false)"
             >
               <strong>Disabled</strong>
@@ -1766,7 +1870,7 @@ onUnmounted(() => {
               type="button"
               class="choice"
               :class="{ active: (settings.orchestration_mode || 'pipeline') === 'pipeline' }"
-              :disabled="savingSettings"
+              :disabled="savingSettings || settingsReadOnly"
               @click="setOrchestrationMode('pipeline')"
             >
               <strong>Pipeline <span class="state">{{ (settings.orchestration_mode || 'pipeline') === 'pipeline' ? 'Active ✓' : '' }}</span></strong>
@@ -1776,7 +1880,7 @@ onUnmounted(() => {
               type="button"
               class="choice"
               :class="{ active: settings.orchestration_mode === 'agent' }"
-              :disabled="savingSettings"
+              :disabled="savingSettings || settingsReadOnly"
               @click="setOrchestrationMode('agent')"
             >
               <strong>AI Agent <span class="state">{{ settings.orchestration_mode === 'agent' ? 'Active ✓' : '' }}</span></strong>
@@ -1795,7 +1899,7 @@ onUnmounted(() => {
                 type="button"
                 class="choice"
                 :class="{ active: (settings.agent_provider || 'claude') === 'claude' }"
-                :disabled="savingSettings"
+                :disabled="savingSettings || settingsReadOnly"
                 @click="setAgentProvider('claude')"
               >
                 <strong>Claude <span class="state">{{ (settings.agent_provider || 'claude') === 'claude' ? 'Active ✓' : '' }}</span></strong>
@@ -1805,7 +1909,7 @@ onUnmounted(() => {
                 type="button"
                 class="choice"
                 :class="{ active: settings.agent_provider === 'gemini' }"
-                :disabled="savingSettings"
+                :disabled="savingSettings || settingsReadOnly"
                 @click="setAgentProvider('gemini')"
               >
                 <strong>Gemini <span class="state">{{ settings.agent_provider === 'gemini' ? 'Active ✓' : '' }}</span></strong>
@@ -1815,7 +1919,7 @@ onUnmounted(() => {
                 type="button"
                 class="choice"
                 :class="{ active: settings.agent_provider === 'chatgpt' }"
-                :disabled="savingSettings"
+                :disabled="savingSettings || settingsReadOnly"
                 @click="setAgentProvider('chatgpt')"
               >
                 <strong>ChatGPT <span class="state">{{ settings.agent_provider === 'chatgpt' ? 'Active ✓' : '' }}</span></strong>
@@ -1839,7 +1943,7 @@ onUnmounted(() => {
               type="button"
               class="choice"
               :class="{ active: settings.avatar_enabled === true }"
-              :disabled="savingSettings"
+              :disabled="savingSettings || settingsReadOnly"
               @click="setAvatarEnabled(true)"
             >
               <strong>Enabled</strong>
@@ -1849,7 +1953,7 @@ onUnmounted(() => {
               type="button"
               class="choice"
               :class="{ active: settings.avatar_enabled === false }"
-              :disabled="savingSettings"
+              :disabled="savingSettings || settingsReadOnly"
               @click="setAvatarEnabled(false)"
             >
               <strong>Disabled</strong>
@@ -1872,13 +1976,62 @@ onUnmounted(() => {
               type="button"
               class="choice"
               :class="{ active: settings.storage_backend === b.value }"
-              :disabled="savingSettings"
+              :disabled="savingSettings || settingsReadOnly"
               @click="setStorageBackend(b.value)"
             >
               <strong>{{ b.label }}</strong>
               <span>{{ b.hint }}</span>
             </button>
           </div>
+          <p v-else class="setting-desc">Loading…</p>
+        </div>
+
+        <div class="setting-block">
+          <h2>Ad Slot</h2>
+          <p class="setting-desc">
+            Show an advertisement in the service player, below each stage's content.
+            Paste a Google Ads embed code (<code>&lt;ins class="adsbygoogle"…&gt;</code>) or any
+            custom HTML banner. The slot is hidden from worshippers when disabled.
+          </p>
+          <template v-if="settings">
+            <div class="choice-row" style="margin-bottom:1rem">
+              <button
+                type="button"
+                class="choice"
+                :class="{ active: settings.ad_slot_enabled === true }"
+                :disabled="savingSettings || settingsReadOnly"
+                @click="saveSetting('ad_slot_enabled', true, 'Ad slot enabled.')"
+              >
+                <strong>Enabled</strong>
+                <span>Show the ad slot in the service player.</span>
+              </button>
+              <button
+                type="button"
+                class="choice"
+                :class="{ active: settings.ad_slot_enabled === false }"
+                :disabled="savingSettings || settingsReadOnly"
+                @click="saveSetting('ad_slot_enabled', false, 'Ad slot disabled.')"
+              >
+                <strong>Disabled</strong>
+                <span>Hide the ad slot (HTML is preserved).</span>
+              </button>
+            </div>
+            <textarea
+              v-model="settings.ad_slot_html"
+              class="pool-lyrics"
+              rows="6"
+              placeholder="Paste Google Ads embed code or custom HTML here…"
+              :disabled="savingSettings || settingsReadOnly"
+              style="font-family:monospace;font-size:0.8rem"
+            ></textarea>
+            <div style="margin-top:0.6rem">
+              <button
+                class="chip primary-chip"
+                :disabled="savingSettings || settingsReadOnly"
+                @click="saveSetting('ad_slot_html', settings.ad_slot_html, 'Ad slot HTML saved.')"
+              >Save ad code</button>
+            </div>
+          </template>
           <p v-else class="setting-desc">Loading…</p>
         </div>
 
@@ -1971,6 +2124,7 @@ onUnmounted(() => {
                     <td class="voice-train-reason">{{ row.reason }}</td>
                     <td>
                       <button
+                        v-if="isAdminUser"
                         class="chip"
                         :class="row.can_start && voiceTraining.load?.server_free ? 'primary-chip' : 'disabled-chip'"
                         :disabled="voiceTrainingBusy || !row.can_start || !voiceTraining.load?.server_free"
@@ -2005,7 +2159,7 @@ onUnmounted(() => {
             </p>
             <p v-else class="sys-meta">No data yet — run a check to populate this panel.</p>
           </div>
-          <div class="sys-header-actions">
+          <div v-if="isAdminUser" class="sys-header-actions">
             <button class="chip" :disabled="updateBusy || updateStatus?.checking" @click="triggerCheck">
               {{ updateStatus?.checking ? "Checking…" : "Refresh now" }}
             </button>
@@ -2035,7 +2189,7 @@ onUnmounted(() => {
               </div>
               <span class="svc-status" :class="svcBadgeClass(status)">{{ status }}</span>
               <button
-                v-if="['aivc-workers','aivc-workers-music','aivc-bridge','aivc-queue','aivc-scheduler','aivc-tedim-api','aivc-burmese-api','aivc-mms-tts'].includes(name)"
+                v-if="isAdminUser && ['aivc-workers','aivc-workers-music','aivc-bridge','aivc-queue','aivc-scheduler','aivc-tedim-api','aivc-burmese-api','aivc-mms-tts'].includes(name)"
                 class="chip svc-restart-btn"
                 :disabled="updateBusy"
                 @click="restartSvc(name)"
@@ -2160,7 +2314,7 @@ onUnmounted(() => {
               <span class="git-label">Last pull</span>
               <code class="git-val git-output">{{ updateStatus.git.pull_output }}</code>
             </div>
-            <button class="chip primary-chip git-pull-btn" :disabled="updateBusy" @click="triggerGitPull">
+            <button v-if="isAdminUser" class="chip primary-chip git-pull-btn" :disabled="updateBusy" @click="triggerGitPull">
               Pull latest from origin
             </button>
           </div>
@@ -2199,7 +2353,7 @@ onUnmounted(() => {
                   </td>
                   <td>
                     <button
-                      v-if="pkgHasUpdate(info)"
+                      v-if="isAdminUser && pkgHasUpdate(info)"
                       class="chip primary-chip pkg-upgrade-btn"
                       :disabled="updateBusy"
                       @click="installPackage(name)"
@@ -2213,6 +2367,95 @@ onUnmounted(() => {
         </div>
 
       </section>
+
+      <!-- Language Grammar Review -->
+      <section v-else-if="tab === 'grammar-review'" class="gr-section">
+        <div class="gr-header">
+          <h2 class="gr-title">Language Grammar Review</h2>
+          <p class="gr-desc">Review Tedim and Myanmar sentences used by the system. Approve correct text or supply a correction.</p>
+        </div>
+
+        <div class="gr-controls">
+          <div class="gr-control-group">
+            <span class="gr-label">Language</span>
+            <div class="gr-pills">
+              <button :class="['gr-pill', { active: grLang === 'td' }]" @click="grChangeLang('td')">Tedim (Zolai)</button>
+              <button :class="['gr-pill', { active: grLang === 'my' }]" @click="grChangeLang('my')">Myanmar</button>
+            </div>
+          </div>
+          <div class="gr-control-group">
+            <span class="gr-label">Type</span>
+            <div class="gr-pills">
+              <button
+                v-for="t in grTypeOptions[grLang]" :key="t.value"
+                :class="['gr-pill', { active: grType === t.value }]"
+                @click="grType = t.value; grPage = 1; loadGrammarReview()"
+              >{{ t.label }}</button>
+            </div>
+          </div>
+          <div class="gr-control-group">
+            <span class="gr-label">Show</span>
+            <div class="gr-pills">
+              <button v-for="s in ['all','pending','approved','corrected']" :key="s"
+                :class="['gr-pill', { active: grStatus === s }]"
+                @click="grStatus = s; grPage = 1; loadGrammarReview()"
+              >{{ s.charAt(0).toUpperCase() + s.slice(1) }}</button>
+            </div>
+          </div>
+        </div>
+
+        <p v-if="grError" class="error">{{ grError }}</p>
+        <p v-if="grBusy && !grData" class="gr-loading">Loading…</p>
+
+        <template v-if="grData">
+          <p class="gr-stats">
+            {{ grData.total }} sentence{{ grData.total !== 1 ? 's' : '' }}
+            · page {{ grData.page }} of {{ Math.ceil(grData.total / grData.per_page) || 1 }}
+          </p>
+
+          <div class="gr-list">
+            <div v-for="s in grData.sentences" :key="s.key" class="gr-item" :class="'gr-' + s.status">
+              <div class="gr-item-head">
+                <span class="gr-cat">{{ s.category }}</span>
+                <span class="badge" :class="s.status === 'approved' ? 'ready' : s.status === 'corrected' ? 'active' : 'pending'">
+                  {{ s.status }}
+                </span>
+              </div>
+              <div class="gr-text">{{ s.text }}</div>
+              <div v-if="s.text_en" class="gr-text-en">{{ s.text_en }}</div>
+              <div v-if="s.extra" class="gr-extra">{{ s.extra }}</div>
+              <div v-if="s.correction" class="gr-correction-display">
+                <span class="gr-correction-label">Correction:</span> {{ s.correction }}
+              </div>
+              <div class="gr-actions">
+                <button class="chip primary-chip" :disabled="grBusy" @click="grApprove(s.key)">✓ Approve</button>
+                <button class="chip" :disabled="grBusy" @click="grToggleEdit(s.key, s.correction)">
+                  {{ grEditing === s.key ? 'Cancel' : s.correction ? 'Edit correction' : 'Correct' }}
+                </button>
+                <button v-if="s.status !== 'pending'" class="chip danger-chip" :disabled="grBusy" @click="grReset(s.key)">Reset</button>
+              </div>
+              <div v-if="grEditing === s.key" class="gr-edit-row">
+                <textarea
+                  v-model="grCorrection"
+                  class="gr-correction-input"
+                  :rows="s.type === 'hymn_lyrics' ? 8 : 3"
+                  placeholder="Enter the correct text…"
+                  :disabled="grBusy"
+                ></textarea>
+                <button class="chip primary-chip" :disabled="grBusy || !grCorrection.trim()" @click="grSaveCorrection(s.key)">Save correction</button>
+              </div>
+            </div>
+            <p v-if="!grData.sentences.length" class="gr-empty">No sentences match this filter.</p>
+          </div>
+
+          <div v-if="grData.total > grData.per_page" class="gr-pagination">
+            <button class="chip" :disabled="grPage <= 1 || grBusy" @click="grPage--; loadGrammarReview()">← Prev</button>
+            <span class="gr-page-info">Page {{ grPage }} of {{ Math.ceil(grData.total / grData.per_page) }}</span>
+            <button class="chip" :disabled="grPage >= Math.ceil(grData.total / grData.per_page) || grBusy" @click="grPage++; loadGrammarReview()">Next →</button>
+          </div>
+        </template>
+      </section>
+
     </template>
   </main>
 </template>
@@ -2274,7 +2517,7 @@ onUnmounted(() => {
 .pool-filters { display: grid; grid-template-columns: 1fr 180px 1.3fr auto; gap: 0.6rem; margin: 0.9rem 0 1rem; }
 .pool-editor { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 0.85rem; margin-bottom: 1rem; }
 .pool-editor h3 { margin: 0 0 0.65rem; font-size: 0.95rem; }
-.pool-grid { display: grid; grid-template-columns: 1fr 180px 1.4fr 1.4fr 1fr; gap: 0.55rem; }
+.pool-grid { display: grid; grid-template-columns: 1fr 120px 140px 1.4fr 1.4fr 1fr; gap: 0.55rem; }
 .pool-input { width: 100%; padding: 0.45rem 0.6rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); font: inherit; }
 .pool-input:focus, .pool-lyrics:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-soft); }
 .pool-lyrics { width: 100%; margin-top: 0.55rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); padding: 0.55rem 0.6rem; font: inherit; resize: vertical; }
@@ -2395,6 +2638,39 @@ onUnmounted(() => {
 .mood-input { flex: 1; padding: 0.6rem 0.75rem; border: 1px solid var(--border); border-radius: var(--radius-sm); font: inherit; background: var(--surface); color: var(--text); }
 .mood-input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
 .add-btn { padding: 0.6rem 1.1rem; }
+
+/* ── Language Grammar Review ─────────────────────────────────────────────────── */
+.gr-section { display: flex; flex-direction: column; gap: 1rem; }
+.gr-title { font-size: 1.1rem; margin: 0 0 0.3rem; }
+.gr-desc { color: var(--text-muted); font-size: 0.88rem; margin: 0; line-height: 1.5; }
+.gr-controls { display: flex; flex-direction: column; gap: 0.75rem; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem 1.2rem; box-shadow: var(--shadow-sm); }
+.gr-control-group { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+.gr-label { font-size: 0.78rem; font-weight: 600; color: var(--text-muted); min-width: 76px; text-transform: uppercase; letter-spacing: 0.04em; }
+.gr-pills { display: flex; gap: 0.35rem; flex-wrap: wrap; }
+.gr-pill { padding: 0.32rem 0.8rem; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--text-muted); font: inherit; font-size: 0.82rem; cursor: pointer; }
+.gr-pill:hover { border-color: var(--border-strong); color: var(--text); }
+.gr-pill.active { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); font-weight: 500; }
+.gr-stats { color: var(--text-muted); font-size: 0.82rem; margin: 0; }
+.gr-loading { color: var(--text-muted); font-size: 0.88rem; }
+.gr-list { display: flex; flex-direction: column; gap: 0.65rem; }
+.gr-item { background: var(--surface); border: 1px solid var(--border); border-left-width: 3px; border-radius: var(--radius); padding: 0.9rem 1.1rem; box-shadow: var(--shadow-sm); display: flex; flex-direction: column; gap: 0.5rem; }
+.gr-item.gr-approved  { border-left-color: var(--success, #16a34a); }
+.gr-item.gr-corrected { border-left-color: var(--primary); }
+.gr-item.gr-pending   { border-left-color: var(--border); }
+.gr-item-head { display: flex; align-items: center; gap: 0.5rem; }
+.gr-cat { font-size: 0.75rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+.gr-text { font-size: 0.92rem; line-height: 1.65; white-space: pre-wrap; }
+.gr-text-en { font-size: 0.8rem; color: var(--text-muted); font-style: italic; }
+.gr-extra { font-size: 0.8rem; color: var(--text-muted); line-height: 1.5; }
+.gr-correction-display { font-size: 0.86rem; background: var(--primary-soft); color: var(--primary-hover); padding: 0.4rem 0.65rem; border-radius: var(--radius-sm); }
+.gr-correction-label { font-weight: 600; }
+.gr-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.gr-edit-row { display: flex; flex-direction: column; gap: 0.5rem; }
+.gr-correction-input { width: 100%; padding: 0.55rem 0.65rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font: inherit; font-size: 0.9rem; resize: vertical; line-height: 1.55; box-sizing: border-box; }
+.gr-correction-input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.gr-empty { color: var(--text-muted); font-size: 0.88rem; text-align: center; padding: 2rem 0; margin: 0; }
+.gr-pagination { display: flex; align-items: center; gap: 1rem; justify-content: center; padding-top: 0.25rem; }
+.gr-page-info { font-size: 0.86rem; color: var(--text-muted); }
 
 /* Share popover */
 .share-row td { background: var(--surface-2, var(--surface)); padding: 0.6rem 0.75rem !important; }

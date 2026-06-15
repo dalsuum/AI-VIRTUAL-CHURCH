@@ -68,6 +68,12 @@ def _chunks(script: str) -> list[str]:
         if buf and len(buf) + len(sentence) + 1 > limit:
             parts.append(buf.strip())
             buf = ""
+        while len(sentence) > limit:
+            if buf:
+                parts.append(buf.strip())
+                buf = ""
+            parts.append(sentence[:limit].strip())
+            sentence = sentence[limit:]
         buf = f"{buf} {sentence}".strip() if buf else sentence
     if buf:
         parts.append(buf.strip())

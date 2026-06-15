@@ -261,6 +261,17 @@ export const api = {
   adminVoiceTrainingStart: (payload = {}) =>
     request("/admin/voice-training/start", { method: "POST", body: payload }),
   adminExport,
+  adminGrammarReview: (params = {}) => {
+    const qs = new URLSearchParams();
+    if (params.lang)   qs.set('lang',   params.lang);
+    if (params.type)   qs.set('type',   params.type);
+    if (params.status) qs.set('status', params.status);
+    if (params.page)   qs.set('page',   String(params.page));
+    const q = qs.toString();
+    return request(`/admin/grammar-review${q ? `?${q}` : ''}`);
+  },
+  adminGrammarReviewSave: (payload) =>
+    request('/admin/grammar-review', { method: 'POST', body: payload }),
 
   // Voice Studio — available to all authenticated users (each user's data is isolated).
   voiceStatus:   () => request("/voice-studio/status"),

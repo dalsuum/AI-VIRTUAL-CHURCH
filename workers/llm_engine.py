@@ -96,6 +96,17 @@ def _fix_tedim_vocab(text: str) -> str:
     return text
 
 
+def _is_my_plausible(text: str, min_myanmar_chars: int = 60) -> bool:
+    """Return True if text has enough Myanmar Unicode characters to be real output.
+
+    The local burmese-myanmar Ollama model sometimes returns a very short or
+    garbled fragment instead of raising an exception. Counting Myanmar script
+    codepoints (U+1000–U+109F) is the cheapest signal: real prayers and sermons
+    contain hundreds of them; garbage fragments have fewer than ~60."""
+    count = sum(1 for ch in text if "က" <= ch <= "႟")
+    return count >= min_myanmar_chars
+
+
 def _strip_formatting(text: str) -> str:
     """Reduce model output to clean spoken prose.
 
@@ -1102,10 +1113,11 @@ def generate_welcome(*, user_name: str | None, mood: str, language: str = "en") 
     )
     user = f"{_addressing(user_name)}\nFeeling they chose today: {mood}"
     try:
-        return _ensure_exact_name(
-            _strip_formatting(_complete(system, user, max_tokens=180, language=language)),
-            user_name,
-        )
+        result = _strip_formatting(_complete(system, user, max_tokens=180, language=language))
+        if language == "my" and not _is_my_plausible(result, min_myanmar_chars=20):
+            print(f"[llm] Burmese welcome too short/garbled ({len(result)} chars), using fallback", flush=True)
+            return _ensure_exact_name(_fallback_welcome(user_name, mood, language), user_name)
+        return _ensure_exact_name(result, user_name)
     except Exception as exc:
         print(f"[llm] {language} welcome fallback: {exc}", flush=True)
         return _ensure_exact_name(_fallback_welcome(user_name, mood, language), user_name)
@@ -1134,10 +1146,11 @@ def generate_opening_prayer(*, user_name: str | None, mood: str, prayer_text: st
     if anchor := _keyword_anchor(prayer_text):
         user = f"{user}\n{anchor}"
     try:
-        return _ensure_exact_name(
-            _strip_formatting(_complete(system, user, max_tokens=500, language=language)),
-            user_name,
-        )
+        result = _strip_formatting(_complete(system, user, max_tokens=500, language=language))
+        if language == "my" and not _is_my_plausible(result):
+            print(f"[llm] Burmese opening prayer too short/garbled ({len(result)} chars), using corpus fallback", flush=True)
+            return _ensure_exact_name(_fallback_opening_prayer(user_name, mood, language), user_name)
+        return _ensure_exact_name(result, user_name)
     except Exception as exc:
         print(f"[llm] {language} opening prayer fallback: {exc}", flush=True)
         return _ensure_exact_name(_fallback_opening_prayer(user_name, mood, language), user_name)
@@ -1178,6 +1191,9 @@ def generate_sermon(*, user_name: str | None, mood: str, scripture_ref: str, tar
         max_tokens = 1500 if target_minutes <= 5 else 2500
     try:
         text = _strip_formatting(_complete(system, user, max_tokens=max_tokens, language=language))
+        if language == "my" and not _is_my_plausible(text, min_myanmar_chars=80):
+            print(f"[llm] Burmese sermon too short/garbled ({len(text)} chars), using corpus fallback", flush=True)
+            return _fallback_sermon(mood, scripture_ref, language)
     except Exception as exc:
         print(f"[llm] {language} sermon fallback: {exc}", flush=True)
         return _fallback_sermon(mood, scripture_ref, language)
@@ -1199,10 +1215,11 @@ def generate_benediction(*, user_name: str | None, mood: str, language: str = "e
     if anchor := _keyword_anchor(prayer_text):
         user = f"{user}\n{anchor}"
     try:
-        return _ensure_exact_name(
-            _strip_formatting(_complete(system, user, max_tokens=250, language=language)),
-            user_name,
-        )
+        result = _strip_formatting(_complete(system, user, max_tokens=250, language=language))
+        if language == "my" and not _is_my_plausible(result, min_myanmar_chars=30):
+            print(f"[llm] Burmese benediction too short/garbled ({len(result)} chars), using corpus fallback", flush=True)
+            return _ensure_exact_name(_fallback_benediction(user_name, mood, language), user_name)
+        return _ensure_exact_name(result, user_name)
     except Exception as exc:
         print(f"[llm] {language} benediction fallback: {exc}", flush=True)
         return _ensure_exact_name(_fallback_benediction(user_name, mood, language), user_name)

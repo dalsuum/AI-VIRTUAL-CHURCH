@@ -930,9 +930,23 @@ def _lyrics_match_language(lyrics: str, language: str) -> bool:
         return False
     lower = text.lower()
     if language == "my":
-        # Use the same logic as _is_my_plausible: count characters to ensure
-        # it's a full song, not a one-sentence fragment. A full song will have >200 chars.
-        return sum(1 for ch in text if "က" <= ch <= "႟") >= 200
+        # Must be a full song's worth of Myanmar script, not a one-line fragment.
+        if sum(1 for ch in text if "က" <= ch <= "႟") < 120:
+            return False
+        # A real Christian worship song uses at least one core worship term. The
+        # local llama3.2:3b-based model has almost no Burmese training and tends to
+        # emit word-salad (rare codepoints, no real words); requiring a known term
+        # rejects that garbage so only genuine Burmese lyrics reach Suno.
+        core_terms = ("ဘုရား", "ကိုယ်တော်", "ယေရှု", "ခရစ်", "သခင်", "ကျေးဇူး", "ချီးမွမ်း", "ဆုတောင်း")
+        if not any(term in text for term in core_terms):
+            return False
+        # Word-salad detector: garbage output repeats the same token endlessly, so
+        # the ratio of unique whitespace tokens to total tokens collapses. Genuine
+        # lyrics stay well above this floor.
+        tokens = text.split()
+        if len(tokens) >= 8 and len(set(tokens)) / len(tokens) < 0.45:
+            return False
+        return True
     if language == "td":
         # Reject common non-Tedim Chin worship terms that often indicate Mizo/Falam/Haka drift.
         forbidden_hits = sum(

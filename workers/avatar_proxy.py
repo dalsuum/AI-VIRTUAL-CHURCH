@@ -41,13 +41,18 @@ def health() -> dict:
     return {"ok": True, "configured": bool(RUNPOD_API_KEY and RUNPOD_AVATAR_BASE_URL)}
 
 
+# NOTE: deliberately a *sync* def. The body does blocking I/O (requests + time.sleep
+# while polling RunPod). As an `async def` those blocking calls freeze the event loop,
+# so concurrent segment renders (prayer/sermon/benediction all fire at once) serialize
+# and time out. A sync path operation runs in FastAPI's threadpool instead, giving real
+# concurrency and never stalling the loop.
 @app.post("/generate")
-async def generate(image: UploadFile = File(...), audio: UploadFile = File(...)) -> Response:
+def generate(image: UploadFile = File(...), audio: UploadFile = File(...)) -> Response:
     if not (RUNPOD_API_KEY and RUNPOD_AVATAR_BASE_URL):
         raise HTTPException(503, "RunPod avatar endpoint is not configured")
 
-    image_b64 = base64.b64encode(await image.read()).decode("ascii")
-    audio_b64 = base64.b64encode(await audio.read()).decode("ascii")
+    image_b64 = base64.b64encode(image.file.read()).decode("ascii")
+    audio_b64 = base64.b64encode(audio.file.read()).decode("ascii")
     payload = {"input": {"image_b64": image_b64, "audio_b64": audio_b64}}
 
     # Async submit + poll: cold starts can take a while, and a synchronous /runsync

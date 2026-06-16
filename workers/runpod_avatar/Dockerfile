@@ -1,16 +1,19 @@
 # RunPod serverless worker: SadTalker audio-driven talking-head avatar.
 #
-# SadTalker pins old torch/numpy, so we build on a CUDA 11.8 + torch 2.0.1 base
-# that matches its tested setup. The repo and its ~2 GB of checkpoints are baked
-# into the image so cold starts don't re-download them on every GPU spin-up.
-FROM pytorch/pytorch:2.0.1-cuda11.8-cudnn8-runtime
+# SadTalker pins old torch/numpy, so we build on a CUDA 11.7 + torch 2.0.1 base
+# that matches its tested setup. (Docker Hub removed the cuda11.8 variant of this
+# tag; 11.7 is the available torch-2.0.1 build and works the same for SadTalker.)
+# The repo and its ~2 GB of checkpoints are baked into the image so cold starts
+# don't re-download them on every GPU spin-up.
+FROM pytorch/pytorch:2.0.1-cuda11.7-cudnn8-runtime
 
 ENV DEBIAN_FRONTEND=noninteractive \
     SADTALKER_DIR=/app/SadTalker
 
-# System deps: ffmpeg for muxing audio+video, git to clone SadTalker, libs for OpenCV.
+# System deps: ffmpeg for muxing audio+video, git to clone SadTalker,
+# wget for SadTalker's download_models.sh, libs for OpenCV.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        git ffmpeg libgl1 libglib2.0-0 \
+        git wget ffmpeg libgl1 libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

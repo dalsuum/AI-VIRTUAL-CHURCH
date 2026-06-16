@@ -62,8 +62,11 @@ def handler(job):
             "--result_dir", out_dir,
             "--checkpoint_dir", CHECKPOINT_DIR,
             "--preprocess", preprocess,
-            "--cpu" if not _cuda() else "--bfloat16",
         ]
+        # SadTalker runs on CUDA by default; --cpu is the only device flag it accepts
+        # (there is no --bfloat16). Only force CPU when no GPU is present.
+        if not _cuda():
+            cmd.append("--cpu")
         if still:
             cmd.append("--still")
 

@@ -478,28 +478,32 @@ watch(stages, (list) => {
           />
 
           <template v-else>
-            <video
-              v-if="current.video"
-              ref="mediaEl"
-              class="avatar"
-              :src="currentVideoSrc"
-              controls
-              playsinline
-              @ended="onMediaEnded"
-              @error="onMediaError"
-              @timeupdate="onMediaTimeUpdate"
-            ></video>
-            <audio
-              v-else-if="current.audio"
-              ref="mediaEl"
-              class="narration"
-              :src="current.audio"
-              controls
-              @ended="onMediaEnded"
-              @error="onMediaError"
-              @timeupdate="onMediaTimeUpdate"
-            ></audio>
-            <p v-if="mediaNote && (current.audio || current.video)" class="media-note">{{ mediaNote }}</p>
+            <!-- Avatar/narration player stays pinned at the top while a long prayer
+                 or message scrolls beneath it, so the presenter never scrolls away. -->
+            <div v-if="current.video || current.audio" class="stage-media">
+              <video
+                v-if="current.video"
+                ref="mediaEl"
+                class="avatar"
+                :src="currentVideoSrc"
+                controls
+                playsinline
+                @ended="onMediaEnded"
+                @error="onMediaError"
+                @timeupdate="onMediaTimeUpdate"
+              ></video>
+              <audio
+                v-else
+                ref="mediaEl"
+                class="narration"
+                :src="current.audio"
+                controls
+                @ended="onMediaEnded"
+                @error="onMediaError"
+                @timeupdate="onMediaTimeUpdate"
+              ></audio>
+              <p v-if="mediaNote" class="media-note">{{ mediaNote }}</p>
+            </div>
             <button
               v-else-if="usesBrowserSpeech"
               class="read-aloud"
@@ -613,9 +617,29 @@ watch(stages, (list) => {
 .stage-title { font-size: 1.4rem; margin: 0 0 0.9rem; letter-spacing: -0.02em; }
 .stage-hint { color: var(--text-muted); font-size: 0.9rem; margin: 0.75rem 0 0; }
 
-.avatar { width: 100%; border-radius: var(--radius-sm); margin-bottom: 0.9rem; background: #000; }
-.narration { width: 100%; margin-bottom: 0.9rem; }
-.media-note { color: var(--text-muted); font-size: 0.85rem; margin: 0 0 0.9rem; }
+/* Pin the presenter while a long segment scrolls. The backdrop + blur keep the
+   scrolling text from showing through the rounded corners and bottom gap. */
+.stage-media {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  margin-bottom: 0.9rem;
+  padding: 0.5rem 0 0.75rem;
+  background: var(--surface-2, var(--surface, #14141a));
+  backdrop-filter: blur(8px);
+  /* Soft fade so the text appears to slide under the player rather than collide. */
+  box-shadow: 0 12px 16px -8px var(--surface-2, rgba(0, 0, 0, 0.55));
+}
+.avatar {
+  width: 100%;
+  max-height: 42vh;          /* keep the pinned video from eating the screen on tall portraits */
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+  background: #000;
+  display: block;
+}
+.narration { width: 100%; display: block; }
+.media-note { color: var(--text-muted); font-size: 0.85rem; margin: 0.5rem 0 0; }
 .read-aloud {
   align-self: flex-start;
   margin-bottom: 0.9rem;

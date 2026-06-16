@@ -19,6 +19,8 @@ Env:
 """
 import base64
 import os
+import subprocess
+import tempfile
 import time
 
 import requests
@@ -34,6 +36,37 @@ app = FastAPI(title="AI Church avatar proxy")
 
 def _headers() -> dict:
     return {"Authorization": f"Bearer {RUNPOD_API_KEY}", "Content-Type": "application/json"}
+
+
+def _to_web_h264(mp4_bytes: bytes) -> bytes:
+    """Transcode the engine's MP4 to browser-playable H.264/AAC.
+
+    Wav2Lip (and SadTalker) emit MPEG-4 Part 2 video, which HTML5 <video> can't
+    decode — the player shows a black screen with working audio. Re-encode to
+    H.264 + yuv420p + faststart so it plays everywhere. Best-effort: if ffmpeg
+    isn't available or fails, return the original bytes unchanged."""
+    src = dst = None
+    try:
+        fd, src = tempfile.mkstemp(suffix=".in.mp4"); os.close(fd)
+        fd, dst = tempfile.mkstemp(suffix=".out.mp4"); os.close(fd)
+        with open(src, "wb") as f:
+            f.write(mp4_bytes)
+        proc = subprocess.run(
+            ["ffmpeg", "-y", "-loglevel", "error", "-i", src,
+             "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+             "-c:a", "aac", "-movflags", "+faststart", dst],
+            capture_output=True, text=True, timeout=240,
+        )
+        if proc.returncode == 0 and os.path.getsize(dst) > 0:
+            with open(dst, "rb") as f:
+                return f.read()
+    except Exception:  # noqa: BLE001 — never let transcoding break the response
+        pass
+    finally:
+        for p in (src, dst):
+            if p and os.path.exists(p):
+                os.remove(p)
+    return mp4_bytes
 
 
 @app.get("/health")
@@ -87,7 +120,8 @@ def generate(image: UploadFile = File(...), audio: UploadFile = File(...)) -> Re
             video_b64 = output.get("video_b64")
             if not video_b64:
                 raise HTTPException(502, "RunPod completed without a video payload")
-            return Response(content=base64.b64decode(video_b64), media_type="video/mp4")
+            mp4 = _to_web_h264(base64.b64decode(video_b64))
+            return Response(content=mp4, media_type="video/mp4")
         if status in ("FAILED", "CANCELLED", "TIMED_OUT"):
             raise HTTPException(502, f"RunPod job {status}: {data}")
         # IN_QUEUE / IN_PROGRESS -> keep polling

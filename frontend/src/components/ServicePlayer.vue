@@ -324,13 +324,30 @@ function onMediaError(ev) {
   mediaNote.value = `${describeMediaError(ev.target)} (${ev.target?.currentSrc || "no source"})`;
 }
 
+// Hard-stop the media element that's about to be replaced. Pausing it BEFORE the
+// DOM swaps <audio> for <video> is essential: a detached media element keeps
+// playing in the background, so without this the old narration audio echoes
+// under the avatar video (which carries the same narration in its own track).
+function stopMediaEl() {
+  const el = mediaEl.value;
+  if (!el) return;
+  try { el.pause(); } catch { /* element may already be gone */ }
+}
+
 // Try to start the current stage's media. Runs after the DOM settles so we grab
 // the freshly-mounted element (the stage subtree is keyed and remounts per stage).
-async function playCurrentMedia() {
+// `seekTo` lets a late-arriving avatar video resume from where the narration audio
+// had reached, so the speech isn't heard a second time on handoff.
+async function playCurrentMedia(seekTo = 0) {
   mediaNote.value = "";
   await nextTick();
   const el = mediaEl.value;
   if (!el) return;
+  if (seekTo > 0) {
+    const applySeek = () => { try { el.currentTime = seekTo; } catch { /* unseekable */ } };
+    if (el.readyState >= 1) applySeek();
+    else el.addEventListener("loadedmetadata", applySeek, { once: true });
+  }
   try {
     await el.play();
   } catch (err) {
@@ -358,6 +375,7 @@ watch(
       highlightedWordIndex.value = -1;
       videoPartIndex.value = 0;
       stopNarration();
+      stopMediaEl();           // silence the previous segment's media before it unmounts
       if (video || audio) playCurrentMedia();
       else if (usesBrowserSpeech.value) narrate(current.value.text);
     } else {
@@ -366,7 +384,15 @@ watch(
       const newAudio = audio && !prev.audio;
       if (newVideo || newAudio) {
         stopNarration();
-        playCurrentMedia();
+        // Avatar video just replaced the narration audio: hand off seamlessly by
+        // resuming the video where the audio was, so the line isn't spoken twice.
+        // Only for a single-part video (multi-part splits don't share one timeline).
+        const singlePart = !current.value?.videoParts || current.value.videoParts.length <= 1;
+        const handoffAt = newVideo && singlePart && mediaEl.value && !mediaEl.value.paused
+          ? mediaEl.value.currentTime
+          : 0;
+        stopMediaEl();         // pause the now-stale audio before the DOM swaps in the video
+        playCurrentMedia(handoffAt);
       }
     }
   },

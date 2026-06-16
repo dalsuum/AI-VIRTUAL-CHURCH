@@ -104,6 +104,11 @@ onBeforeUnmount(() => {
     }
     ytPlayer = null;
   }
+  // A detached <audio> keeps playing in the background, so the worship song would
+  // echo under the next stage (prayer/sermon). Pause it explicitly on unmount.
+  if (audioEl.value) {
+    try { audioEl.value.pause(); } catch (err) { /* already gone */ }
+  }
 });
 </script>
 

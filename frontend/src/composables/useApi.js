@@ -225,6 +225,8 @@ export const api = {
   adminServices: () => request("/admin/services"),
   adminRetryService: (id) => request(`/admin/services/${id}/retry`, { method: "POST" }),
   adminDeleteService: (id) => request(`/admin/services/${id}`, { method: "DELETE" }),
+  adminBulkDeleteServices: (service_ids) =>
+    request("/admin/services/bulk-delete", { method: "POST", body: { service_ids } }),
   adminTestimonies: () => request("/admin/testimonies"),
   adminApproveTestimony: (id) =>
     request(`/admin/testimonies/${id}/approve`, { method: "PATCH" }),
@@ -237,6 +239,8 @@ export const api = {
     request(`/admin/users/${id}/block`, { method: "PATCH", body: { is_blocked } }),
   adminDeleteUser: (id) =>
     request(`/admin/users/${id}`, { method: "DELETE" }),
+  adminBulkDeleteUsers: (user_ids) =>
+    request("/admin/users/bulk-delete", { method: "POST", body: { user_ids } }),
   adminCreateUser: (payload) =>
     request("/admin/users", { method: "POST", body: payload }),
   adminAssignRole: (id, role) =>

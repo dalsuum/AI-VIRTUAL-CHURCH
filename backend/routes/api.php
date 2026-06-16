@@ -138,6 +138,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/users/{user}/force-reset',       [AdminController::class, 'forcePasswordReset']);
         Route::delete('/users/{user}',                 [AdminController::class, 'deleteUser']);
 
+        // Bulk Deletes
+        Route::post('/services/bulk-delete', [AdminController::class, 'bulkDeleteServices']);
+        Route::post('/users/bulk-delete',    [AdminController::class, 'bulkDeleteUsers']);
+
         // Settings write
         Route::patch('/settings', [AdminController::class, 'updateSettings']);
 

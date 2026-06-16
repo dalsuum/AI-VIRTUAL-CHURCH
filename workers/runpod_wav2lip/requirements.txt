@@ -1,0 +1,4 @@
+# Wav2Lip's own deps are pinned to a known-good combo in the Dockerfile (librosa
+# 0.9.1 + numpy 1.23.5 avoids the librosa>=0.10 positional-arg break in audio.py).
+# This file only adds the RunPod SDK on top.
+runpod>=1.6.0

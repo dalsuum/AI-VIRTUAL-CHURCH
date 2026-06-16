@@ -159,7 +159,7 @@ A single Celery app with one Redis broker and **named queues that mirror the wor
 | `ai:orchestrate` | `orchestrate` | Session startup only (~20 s: build plan, fan out). Dedicated 2-worker pool (`aivc-workers-orchestrate.service`) so new requests are never blocked behind long content-generation tasks. |
 | `ai:sermon` | `generate_text_segments`, `generate_welcome` | LLM plan + direct target-language prayer / sermon / benediction + welcome greeting. Legacy `localize_segment_*` tasks remain importable but are not dispatched for new services. |
 | `ai:music` | `generate_music` | Hymn, Suno, or YouTube, resolved per session |
-| `ai:avatar` | `render_avatar` | D-ID talking-head video |
+| `ai:avatar` | `render_avatar` | RunPod talking-head video. Runs in its **own** dedicated 2-worker pool (`aivc-workers-avatar.service`), isolated from sermon/narration — so a RunPod outage that makes `render_avatar` retry-loop can only back up `ai:avatar`, never starve narration. |
 | `ai:narration` | `narrate`, `narrate_tedim`, `narrate_burmese` | text-to-speech of the spoken segments (English Edge/OpenAI/Kokoro; Myanmar/Tedim via local MMS-TTS). The **opening prayer takes the first TTS slot** (slot 0); scripture and later segments are staggered behind it (up to 60 s apart for CPU MMS-TTS) so the preparing screen — which gates on opening-prayer audio — opens as fast as possible. |
 
 | Module | Responsibility |
@@ -1017,7 +1017,8 @@ Those units are version-controlled as **system-level** units in
 |------|---------|
 | [`aivc-queue.service`](.systemd/prod/aivc-queue.service) | Laravel `queue:work` (runs `DispatchServiceJob` plus queued Laravel jobs/mail) |
 | [`aivc-scheduler.service`](.systemd/prod/aivc-scheduler.service) | Laravel `schedule:work` (releases due services + reminder mail) |
-| [`aivc-workers.service`](.systemd/prod/aivc-workers.service) | Celery workers (sermon · music · avatar · narration) |
+| [`aivc-workers.service`](.systemd/prod/aivc-workers.service) | Celery workers (sermon · narration) |
+| [`aivc-workers-avatar.service`](.systemd/prod/aivc-workers-avatar.service) | Celery avatar worker (`ai:avatar`), isolated so RunPod outages can't starve narration |
 | [`aivc-bridge.service`](.systemd/prod/aivc-bridge.service) | bridge consumer (`ai:intake` → Celery) |
 | [`aivc-tedim-api.service`](.systemd/prod/aivc-tedim-api.service) | FastAPI Tedim LLM service (Uvicorn, port 8001) |
 | [`aivc-burmese-api.service`](.systemd/prod/aivc-burmese-api.service) | FastAPI Burmese LLM service (Uvicorn, port 8002) |
@@ -1027,8 +1028,8 @@ Those units are version-controlled as **system-level** units in
 
 ```bash
 # on the droplet, once the units are copied to /etc/systemd/system:
-sudo systemctl enable --now aivc-queue aivc-scheduler aivc-workers aivc-bridge aivc-tedim-api aivc-burmese-api aivc-mms-tts aivc-nllb-api
-sudo systemctl status  aivc-queue aivc-scheduler aivc-workers aivc-bridge aivc-tedim-api aivc-burmese-api aivc-mms-tts aivc-nllb-api --no-pager
+sudo systemctl enable --now aivc-queue aivc-scheduler aivc-workers aivc-workers-avatar aivc-bridge aivc-tedim-api aivc-burmese-api aivc-mms-tts aivc-nllb-api
+sudo systemctl status  aivc-queue aivc-scheduler aivc-workers aivc-workers-avatar aivc-bridge aivc-tedim-api aivc-burmese-api aivc-mms-tts aivc-nllb-api --no-pager
 
 # After worker/backend code or prompt changes, restart the services that load code:
 sudo systemctl restart aivc-workers aivc-bridge aivc-queue aivc-tedim-api aivc-burmese-api aivc-mms-tts aivc-nllb-api

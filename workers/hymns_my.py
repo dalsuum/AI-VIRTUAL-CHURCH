@@ -31,7 +31,7 @@ def all_hymns() -> list[dict]:
     return _library()
 
 
-def select(*, mood: str, prompt: str = "", query: str = "", prefer_source: str | None = "hymnal") -> dict:
+def select(*, mood: str, prompt: str = "", query: str = "", prefer_source: str | None = "hymnal", eligible: set[str] | None = None) -> dict:
     """Pick a mood-appropriate Burmese hymn.
 
     Match the lowercase mood/prompt words against each hymn's English mood tags;
@@ -39,10 +39,18 @@ def select(*, mood: str, prompt: str = "", query: str = "", prefer_source: str |
     this never raises. `prefer_source` biases the pick toward the classic hymnal
     ("hymnal") over modern songs when both match — closing hymns should feel like
     a hymnal, not a praise set; pass None to weight them equally.
+
+    `eligible` (optional) restricts the pool to slugs known to be seeded locally,
+    so callers serving audio never pick a hymn whose MP3 was never downloaded. If
+    none of the eligible slugs survive the mood filter we still fall back to the
+    full eligible pool rather than raising.
     """
+    library = [h for h in _library() if eligible is None or h["slug"] in eligible]
+    if not library:
+        library = _library()  # nothing eligible — fall back so we never raise
     hay = f"{mood} {prompt} {query}".lower()
-    matched = [h for h in _library() if any(tag != "default" and tag in hay for tag in h["moods"])]
-    pool = matched or _library()
+    matched = [h for h in library if any(tag != "default" and tag in hay for tag in h["moods"])]
+    pool = matched or library
     if prefer_source:
         preferred = [h for h in pool if h["source"] == prefer_source]
         if preferred:

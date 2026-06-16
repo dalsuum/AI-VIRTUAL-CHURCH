@@ -36,7 +36,18 @@ class InstrumentalHymnStrategy(MusicStrategy):
         # 1. Try language-specific local audio
         if self.language == "td":
             from hymns_td import select as select_td
-            hymn_local = select_td(mood=mood, prompt=prompt, query=query)
+            # Restrict the pick to slugs whose instrumental MP3 is actually seeded,
+            # so we stay in-language instead of silently falling through to English.
+            seeded = storage.list_keys("hymns_td/")
+            eligible_td = {
+                k[len("hymns_td/"):-len(".mp3")]
+                for k in seeded
+                if k.endswith(".mp3") and "/inst/" not in k
+            }
+            hymn_local = select_td(
+                mood=mood, prompt=prompt, query=query,
+                eligible=eligible_td or None,
+            )
             slug = hymn_local["slug"]
             title = hymn_local["title"] + (
                 f" ({hymn_local['title_en']})" if hymn_local.get("title_en") else ""
@@ -56,7 +67,18 @@ class InstrumentalHymnStrategy(MusicStrategy):
 
         elif self.language == "my":
             from hymns_my import select as select_my
-            hymn_local = select_my(mood=mood, prompt=prompt, query=query)
+            # Restrict the pick to slugs whose instrumental MP3 is actually seeded
+            # (the downloaded subset), mirroring the English `eligible=` logic.
+            seeded = storage.list_keys("hymns_my/")
+            eligible_my = {
+                k[len("hymns_my/"):-len(".mp3")]
+                for k in seeded
+                if k.endswith(".mp3") and not k.endswith(".sung.mp3")
+            }
+            hymn_local = select_my(
+                mood=mood, prompt=prompt, query=query,
+                eligible=eligible_my or None,
+            )
             slug = hymn_local["slug"]
             title = hymn_local["title"]
             lyrics = hymn_local["lyrics"]

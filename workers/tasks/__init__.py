@@ -427,6 +427,7 @@ def generate_music(job: dict, plan: dict) -> None:
             music_prompt = f"{music_prompt}\n\nLyrics:\n{music_lyrics}"
 
         result = None
+        used_local_fallback = False
         max_attempts = 3
         for attempt in range(1, max_attempts + 1):
             try:
@@ -444,6 +445,30 @@ def generate_music(job: dict, plan: dict) -> None:
                 )
                 if attempt < max_attempts:
                     time.sleep(2 if attempt == 1 else 6)
+
+        # Delivery guarantee: if the chosen source (Suno/YouTube/MusicGen/Local AI)
+        # exhausted its retries, fall back to a local hymn before giving up. The
+        # local hymn library is always present on disk, so this serves real worship
+        # instead of an apology in the overwhelming majority of failures. Only if
+        # even the local read fails do we degrade to the text notice below.
+        if result is None and job["music_source"] not in ("hymn_sung", "hymn"):
+            for fb_source in ("hymn_sung", "hymn"):
+                try:
+                    fb_strategy = get_strategy(fb_source, language=job.get("language", "en"))
+                    result = fb_strategy.fetch(
+                        mood=job["mood"],
+                        prompt="",
+                        query=plan.get("music_query", ""),
+                    )
+                    used_local_fallback = True
+                    print(
+                        f"[music] {job['music_source']} unavailable — "
+                        f"falling back to local {fb_source}",
+                        flush=True,
+                    )
+                    break
+                except Exception as exc:  # noqa: BLE001 — try the next local source
+                    print(f"[music] local {fb_source} fallback failed: {exc}", flush=True)
 
         if result is None:
             language = job.get("language", "en")
@@ -466,7 +491,10 @@ def generate_music(job: dict, plan: dict) -> None:
         if result.asset_type == "audio" and result.storage_key:
             raw_key = result.storage_key
             result.storage_key = storage.presign(raw_key, expires=6 * 3600)
-            if job["music_source"] in ("suno", "musicgen"):
+            # Never pool a local hymn we only reached via the fallback path — the
+            # reuse pool is for AI-composed tracks, and a hymn key there would be
+            # served to other Suno/MusicGen worshippers as if it were generated.
+            if not used_local_fallback and job["music_source"] in ("suno", "musicgen"):
                 _post_music_track(
                     mood=job["mood"], language=job.get("language", "en"), provider_ref=result.provider_ref,
                     storage_key=raw_key, title=result.title, lyrics=result.lyrics,

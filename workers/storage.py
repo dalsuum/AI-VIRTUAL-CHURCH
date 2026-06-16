@@ -98,6 +98,31 @@ def exists(key: str) -> bool:
         return False
 
 
+def list_keys(prefix: str) -> set[str]:
+    """Return the set of stored object keys under `prefix` in a single pass.
+
+    One directory scan (local) or one paginated ListObjects call (S3), so callers
+    that need to know *which of many* hymns are seeded don't fan out into hundreds
+    of per-key exists() probes. Returns an empty set on any error or empty prefix.
+    """
+    if _is_local():
+        base = os.path.join(_LOCAL_DIR, prefix)
+        if not os.path.isdir(base):
+            return set()
+        prefix = prefix.rstrip("/")
+        return {f"{prefix}/{name}" for name in os.listdir(base)
+                if os.path.isfile(os.path.join(base, name))}
+    try:
+        keys: set[str] = set()
+        paginator = _client().get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=os.environ["S3_BUCKET"], Prefix=prefix):
+            for obj in page.get("Contents", []):
+                keys.add(obj["Key"])
+        return keys
+    except Exception:  # noqa: BLE001 — any failure means "nothing known eligible"
+        return set()
+
+
 def read_text(key: str) -> str | None:
     """Return the stored object's contents as UTF-8 text, or None if absent. Used to
     pull a hymn's stored lyrics back at service time (the mirror of upload_bytes)."""

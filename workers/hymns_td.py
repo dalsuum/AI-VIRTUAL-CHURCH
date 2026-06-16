@@ -34,17 +34,25 @@ def all_hymns() -> list[dict]:
     return _library()
 
 
-def select(*, mood: str, prompt: str = "", query: str = "", prefer_youtube: bool = True) -> dict:
+def select(*, mood: str, prompt: str = "", query: str = "", prefer_youtube: bool = True, eligible: set[str] | None = None) -> dict:
     """Pick a mood-appropriate Tedim hymn.
 
     Match the lowercase mood/prompt words against each hymn's mood tags; fall
     back to the whole library when nothing matches, so this never raises.
     `prefer_youtube` biases the pick toward hymns that carry a YouTube embed —
     real Tedim voices at zero AI cost — when any matching hymn has one.
+
+    `eligible` (optional) restricts the pool to slugs known to be seeded locally,
+    so callers serving audio never pick a hymn whose MP3 was never downloaded. If
+    none of the eligible slugs survive the mood filter we still fall back to the
+    full eligible pool rather than raising.
     """
+    library = [h for h in _library() if eligible is None or h["slug"] in eligible]
+    if not library:
+        library = _library()  # nothing eligible — fall back so we never raise
     hay = f"{mood} {prompt} {query}".lower()
-    matched = [h for h in _library() if any(tag != "default" and tag in hay for tag in h["moods"])]
-    pool = matched or _library()
+    matched = [h for h in library if any(tag != "default" and tag in hay for tag in h["moods"])]
+    pool = matched or library
     if prefer_youtube:
         with_yt = [h for h in pool if h.get("youtube_id")]
         if with_yt:

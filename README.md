@@ -177,9 +177,7 @@ A single Celery app with one Redis broker and **named queues that mirror the wor
 | [hymns_my.py](workers/hymns_my.py) | Loader for the 852-song `data/hymns_my.json` Burmese library; mood-based selection for `MyanmarHymnStrategy`. |
 | [hymns_td.py](workers/hymns_td.py) | Loader for `data/hymns_td.json` (bundled, 467 hymns); mood selection + YouTube-embed priority for `TedimHymnStrategy`. |
 | [strategies/sung_hymn_strategy.py](workers/strategies/sung_hymn_strategy.py) | Unified `hymn_sung` strategy for all languages. English: public-domain 78rpm vocal recording. Burmese/Tedim: locally-downloaded `.sung.mp3` under `hymns_my/` or `hymns_td/`; falls back to English audio with localized lyrics overlay. |
-| [strategies/instrumental_hymn_strategy.py](workers/strategies/instrumental_hymn_strategy.py) | Unified `hymn` (instrumental) strategy for all languages. |
-| [strategies/hymn_my_strategy.py](workers/strategies/hymn_my_strategy.py) | Legacy Burmese hymn strategy (reference/compatibility only). New services go through `SungHymnStrategy`. Resolution order: `hymns_my/<slug>.sung.mp3` → cached Suno render → Suno API generation. |
-| [strategies/tedim_hymn_strategy.py](workers/strategies/tedim_hymn_strategy.py) | Legacy Tedim hymn strategy (reference/compatibility only). New services go through `SungHymnStrategy` or `HymnYouTubeStrategy`. |
+| [strategies/instrumental_hymn_strategy.py](workers/strategies/instrumental_hymn_strategy.py) | Unified `hymn` (instrumental) strategy for all languages. Burmese/Tedim selection is restricted to slugs whose MP3 is actually seeded (via `storage.list_keys`) so it stays in-language instead of silently falling through to English MIDI. |
 | [strategies/local_ai_strategy.py](workers/strategies/local_ai_strategy.py) | `local_ai` music source — GPU-preferred MusicGen (subclass of `MusicGenStrategy`). Auto-detects CUDA; falls back to CPU. |
 | [strategies/_suno_custom.py](workers/strategies/_suno_custom.py) | Shared helper that builds and calls Suno customMode with exact lyrics for a given language/style. **Lyric sanitization rules (must be kept up to date when the hymn data format changes):** (1) `ထပ်ဆိoရန်[။]` on its own line → `[Chorus]` — this is the classic Burmese hymnal "Repeat/Chorus" marker, not a lyric; (2) Burmese numeral verse prefixes `၁ lyric text` → `[Verse 1]\nlyric text`; standalone `၁` → `[Verse 1]`. Suno treats `[Verse N]`/`[Chorus]` as structural metatags and never sings them. Any new non-lyric patterns found in `hymns_my.json` must be added to `_MY_SECTION_TAGS` or the verse-number substitution in `sanitize_lyrics()` — never leave raw structural markers reaching the Suno prompt. |
 | [tools/seed_language_data.py](workers/tools/seed_language_data.py) | One-time seeder: downloads Judson 1835 (Myanmar) and Lai Siangtho 1932 (Tedim) Bibles, book index, and Myanmar hymns into `workers/data/`. |
@@ -264,7 +262,11 @@ segments compose.
    that scrubs any literal name (and repairs the leftover vocative punctuation) for the
    free models that slip one in anyway.
 3. **Music** (`generate_music`) — resolves the locked `music_source` to a strategy and
-   posts the result to **both** the `worship` and `closing_hymn` segments.
+   posts the result to **both** the `worship` and `closing_hymn` segments. **Delivery
+   guarantee:** after 3 failed attempts on a remote source (Suno/YouTube/MusicGen/Local AI),
+   it falls back to the always-present local hymn library (`hymn_sung` → `hymn`) before
+   degrading to the text "music unavailable" notice. A hymn reached via this fallback is
+   never added to the Suno/MusicGen reuse pool.
 
 The webhook is **idempotent per (session, segment)**: text arrives first, then a later
 narration pass fills `audio_key` and a later avatar pass flips `asset_type` to `video`

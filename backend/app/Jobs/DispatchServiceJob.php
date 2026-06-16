@@ -45,6 +45,9 @@ class DispatchServiceJob implements ShouldQueue
             // Mode encodes provider choice; this toggle suppresses server TTS entirely.
             'narration_enabled' => Setting::narrationEnabled($language),
             'avatar_enabled'  => Setting::get('avatar_enabled', '1') === '1',
+            // Self-hosted open-source avatar engine (lip-syncs to the narration audio).
+            // When on alongside avatar_enabled the worker prefers local over D-ID.
+            'local_avatar_enabled' => Setting::get('local_avatar_enabled', '0') === '1',
             'edge_tts_voice'  => Setting::get('edge_tts_voice', 'en-US-AriaNeural'),
             // Where generated audio is stored (local dir vs S3). null lets the worker
             // keep its own env default.

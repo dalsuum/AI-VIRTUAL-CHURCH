@@ -144,6 +144,22 @@ def read_text(key: str) -> str | None:
         return None
 
 
+def read_bytes(key: str) -> bytes | None:
+    """Return the stored object's raw bytes, or None if absent. Mirror of read_text
+    for binary assets (e.g. pulling narration audio back to drive a local avatar)."""
+    if _is_local():
+        path = os.path.join(_LOCAL_DIR, key)
+        if not os.path.exists(path):
+            return None
+        with open(path, "rb") as f:
+            return f.read()
+    try:
+        obj = _client().get_object(Bucket=os.environ["S3_BUCKET"], Key=key)
+        return obj["Body"].read()
+    except Exception:  # noqa: BLE001 — missing/unreadable -> no bytes
+        return None
+
+
 def presign(key: str, expires: int = 3600) -> str:
     if _is_local():
         # Already a real, directly-fetchable URL — local files don't expire.

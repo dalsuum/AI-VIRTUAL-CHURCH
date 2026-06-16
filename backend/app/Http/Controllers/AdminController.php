@@ -13,6 +13,7 @@ use App\Models\Testimony;
 use App\Models\User;
 use App\Services\PermissionService;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Str;
 use Illuminate\Http\JsonResponse;
@@ -147,6 +148,32 @@ class AdminController extends Controller
         $service->delete();
 
         return response()->json(['ok' => true]);
+    }
+
+    /** Delete many services (and their assets/intakes) atomically. */
+    public function bulkDeleteServices(Request $request): JsonResponse
+    {
+        PermissionService::require($request->user(), 'services.delete');
+
+        $data = $request->validate([
+            'service_ids'   => ['required', 'array', 'min:1'],
+            'service_ids.*' => ['integer'],
+        ]);
+
+        $deleted = 0;
+
+        DB::transaction(function () use ($data, &$deleted) {
+            $services = ServiceSession::whereIn('id', $data['service_ids'])->get();
+
+            foreach ($services as $service) {
+                $service->assets()->delete();
+                $service->intake()->delete();
+                $service->delete();
+                $deleted++;
+            }
+        });
+
+        return response()->json(['ok' => true, 'deleted' => $deleted]);
     }
 
     /** All testimonies (pending first) for moderation. */
@@ -574,7 +601,11 @@ class AdminController extends Controller
             // The music source pre-selected in the intake form.
             'default_music_source' => ['sometimes', 'string', 'in:' . implode(',', Setting::MUSIC_SOURCES)],
             // Toggle avatar video rendering on/off without touching env vars.
+            // avatar_enabled controls the D-ID (cloud) engine; local_avatar_enabled
+            // controls the self-hosted open-source engine. When both are on the local
+            // engine wins (resolved worker-side in avatar.select_engine).
             'avatar_enabled'      => ['sometimes', 'boolean'],
+            'local_avatar_enabled' => ['sometimes', 'boolean'],
             // Toggle karaoke-style word highlighting in the service player.
             'text_highlight_enabled' => ['sometimes', 'boolean'],
             // Per-language narration toggles. All languages default on.
@@ -647,6 +678,9 @@ class AdminController extends Controller
         }
         if (array_key_exists('avatar_enabled', $data)) {
             Setting::set('avatar_enabled', $data['avatar_enabled'] ? '1' : '0');
+        }
+        if (array_key_exists('local_avatar_enabled', $data)) {
+            Setting::set('local_avatar_enabled', $data['local_avatar_enabled'] ? '1' : '0');
         }
         if (array_key_exists('text_highlight_enabled', $data)) {
             Setting::set('text_highlight_enabled', $data['text_highlight_enabled'] ? '1' : '0');
@@ -727,6 +761,7 @@ class AdminController extends Controller
             'music_reuse'        => Setting::get('music_reuse', '1') === '1',
             'storage_backend'    => Setting::get('storage_backend', 'local'),
             'avatar_enabled'     => Setting::get('avatar_enabled', '1') === '1',
+            'local_avatar_enabled' => Setting::get('local_avatar_enabled', '0') === '1',
             'text_highlight_enabled' => Setting::get('text_highlight_enabled', '1') === '1',
             'runpod_enabled'     => Setting::get('runpod_enabled', '0') === '1',
             // Per-language narration: all on by default.
@@ -792,6 +827,41 @@ class AdminController extends Controller
         $user->delete();
 
         return response()->json(['ok' => true]);
+    }
+
+    /** Delete many users (and all their associated data) atomically. */
+    public function bulkDeleteUsers(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'user_ids'   => ['required', 'array', 'min:1'],
+            'user_ids.*' => ['integer'],
+        ]);
+
+        // An admin can never delete their own account in a bulk operation.
+        $ids = array_values(array_diff($data['user_ids'], [$request->user()->id]));
+
+        $deleted = 0;
+
+        DB::transaction(function () use ($ids, &$deleted) {
+            $users = User::whereIn('id', $ids)->get();
+
+            foreach ($users as $user) {
+                // Cascade each user's services and their assets/intakes manually,
+                // mirroring deleteService(), since the User model has no deleting event.
+                foreach ($user->sessions as $session) {
+                    $session->assets()->delete();
+                    $session->intake()->delete();
+                    $session->delete();
+                }
+
+                $user->ledgerEntries()->delete();
+                $user->tokens()->delete();
+                $user->delete();
+                $deleted++;
+            }
+        });
+
+        return response()->json(['ok' => true, 'deleted' => $deleted]);
     }
 
     /** Grant or revoke admin. Guards against an admin removing their own access. */

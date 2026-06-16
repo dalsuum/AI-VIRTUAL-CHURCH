@@ -238,6 +238,7 @@ function logout() {
 
 async function loadServices() {
   services.value = (await api.adminServices()).services || [];
+  selectedServiceIds.value = [];
 }
 async function loadDonors() {
   donors.value = (await api.adminDonors()).donors || [];
@@ -247,6 +248,7 @@ async function loadTestimonies() {
 }
 async function loadUsers() {
   users.value = (await api.adminUsers()).users || [];
+  selectedUserIds.value = [];
 }
 async function loadPrayerRequests() {
   prayerRequests.value = (await api.adminPrayerRequests()).prayer_requests || [];
@@ -309,7 +311,8 @@ function toggleServiceLanguage(key) {
   saveSetting(key, !settings.value[key], "Service language updated.");
 }
 const setMusicReuse = (on) => saveSetting("music_reuse", on, "Music reuse updated.");
-const setAvatarEnabled = (on) => saveSetting("avatar_enabled", on, "Avatar rendering updated.");
+const setAvatarEnabled = (on) => saveSetting("avatar_enabled", on, "D-ID avatar rendering updated.");
+const setLocalAvatarEnabled = (on) => saveSetting("local_avatar_enabled", on, "Local avatar rendering updated.");
 const setOrchestrationMode = (mode) => saveSetting("orchestration_mode", mode, "Orchestration mode updated.");
 const setAgentProvider = (provider) => saveSetting("agent_provider", provider, "Agent provider updated.");
 const setTextHighlightEnabled = (on) => saveSetting("text_highlight_enabled", on, "Text highlighting updated.");
@@ -534,6 +537,51 @@ async function deleteService(s) {
     loadServices();
   } catch (e) {
     notice.value = e?.data?.message || "Delete failed.";
+  }
+}
+
+// ── Bulk selection + delete (Services & Users tabs) ──────────────────────────
+const selectedServiceIds = ref([]);
+const selectedUserIds     = ref([]);
+const bulkDelete          = ref(null); // { type: 'services'|'users', count } or null
+
+const allServicesSelected = computed(() =>
+  services.value.length > 0 && selectedServiceIds.value.length === services.value.length);
+const allUsersSelected = computed(() =>
+  users.value.length > 0 && selectedUserIds.value.length === users.value.length);
+
+function toggleAllServices(checked) {
+  selectedServiceIds.value = checked ? services.value.map(s => s.id) : [];
+}
+function toggleAllUsers(checked) {
+  selectedUserIds.value = checked ? users.value.map(u => u.id) : [];
+}
+
+function askBulkDeleteServices() {
+  if (!selectedServiceIds.value.length) return;
+  bulkDelete.value = { type: "services", count: selectedServiceIds.value.length };
+}
+function askBulkDeleteUsers() {
+  if (!selectedUserIds.value.length) return;
+  bulkDelete.value = { type: "users", count: selectedUserIds.value.length };
+}
+
+async function confirmBulkDelete() {
+  const job = bulkDelete.value;
+  if (!job) return;
+  bulkDelete.value = null;
+  try {
+    if (job.type === "services") {
+      await api.adminBulkDeleteServices(selectedServiceIds.value);
+      notice.value = `${job.count} service(s) deleted.`;
+      loadServices();
+    } else {
+      await api.adminBulkDeleteUsers(selectedUserIds.value);
+      notice.value = `${job.count} user(s) deleted.`;
+      loadUsers();
+    }
+  } catch (e) {
+    notice.value = e?.data?.message || "Bulk delete failed.";
   }
 }
 
@@ -1028,6 +1076,22 @@ onUnmounted(() => {
 
       <p v-if="notice" class="notice">{{ notice }}</p>
 
+      <!-- Bulk-delete confirmation modal (shared by Services & Users tabs) -->
+      <div v-if="bulkDelete" class="reset-modal">
+        <p v-if="bulkDelete.type === 'services'">
+          Are you sure you want to delete the {{ bulkDelete.count }} selected services?
+          This action cannot be undone.
+        </p>
+        <p v-else>
+          Are you sure you want to delete the {{ bulkDelete.count }} selected users?
+          This will also delete all their associated data. This action cannot be undone.
+        </p>
+        <div style="display:flex;gap:.5rem;margin-top:.5rem;">
+          <button class="chip danger" @click="confirmBulkDelete">Delete</button>
+          <button class="chip" @click="bulkDelete = null">Cancel</button>
+        </div>
+      </div>
+
       <!-- Dashboard -->
       <section v-if="tab === 'dashboard' && stats" class="dash">
         <div class="cards">
@@ -1093,11 +1157,20 @@ onUnmounted(() => {
 
       <!-- Services -->
       <div v-else-if="tab === 'services'" class="table-wrap">
+        <div v-if="can('services.delete')" class="table-head">
+          <button class="chip danger" :disabled="!selectedServiceIds.length" @click="askBulkDeleteServices">
+            Delete Selected ({{ selectedServiceIds.length }})
+          </button>
+        </div>
         <table class="grid">
-          <thead><tr><th>#</th><th>User</th><th>Mood</th><th>Sermon topic</th><th>Music</th><th>Status</th><th>Segments</th><th></th></tr></thead>
+          <thead><tr>
+            <th><input type="checkbox" :checked="allServicesSelected" @change="toggleAllServices($event.target.checked)" /></th>
+            <th>#</th><th>User</th><th>Mood</th><th>Sermon topic</th><th>Music</th><th>Status</th><th>Segments</th><th></th>
+          </tr></thead>
           <tbody>
             <template v-for="s in services" :key="s.id">
               <tr>
+                <td><input type="checkbox" :value="s.id" v-model="selectedServiceIds" /></td>
                 <td>{{ s.id }}</td>
                 <td>{{ s.user?.name }}<br /><small>{{ s.user?.email }}</small></td>
                 <td>
@@ -1119,7 +1192,7 @@ onUnmounted(() => {
               </tr>
               <!-- Inline share popover — appears below the row when native share is unavailable -->
               <tr v-if="sharePopover && sharePopover.token === s.session_token" class="share-row">
-                <td colspan="8">
+                <td colspan="9">
                   <div class="share-popover">
                     <span class="share-link-text">{{ sharePopover.link }}</span>
                     <div class="share-btns">
@@ -1255,15 +1328,22 @@ onUnmounted(() => {
           </div>
         </div>
 
+        <div v-if="isAdminUser" class="table-head">
+          <button class="chip danger" :disabled="!selectedUserIds.length" @click="askBulkDeleteUsers">
+            Delete Selected ({{ selectedUserIds.length }})
+          </button>
+        </div>
         <table class="grid">
           <thead>
             <tr>
+              <th><input type="checkbox" :checked="allUsersSelected" @change="toggleAllUsers($event.target.checked)" /></th>
               <th>Name</th><th>Email</th><th>Role</th><th>Last mood</th>
               <th>Visits</th><th>Last seen</th><th>Actions</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="u in users" :key="u.id" :class="{ 'row-blocked': u.is_blocked }">
+              <td><input type="checkbox" :value="u.id" v-model="selectedUserIds" /></td>
               <td>
                 {{ u.name }}
                 <span v-if="u.is_guest" class="tag">visitor</span>
@@ -1943,11 +2023,11 @@ onUnmounted(() => {
         </div>
 
         <div class="setting-block">
-          <h2>Avatar videos</h2>
+          <h2>Avatar videos (D-ID)</h2>
           <p class="setting-desc">
-            Talking-head avatar videos (powered by D-ID) for the sermon, opening prayer,
-            and benediction. Disable when your D-ID subscription is inactive to fall back
-            to text and TTS narration without touching any config files.
+            Talking-head avatar videos (powered by the D-ID cloud API) for the sermon,
+            opening prayer, and benediction. Disable when your D-ID subscription is inactive
+            to fall back to text and TTS narration without touching any config files.
           </p>
           <div v-if="settings" class="choice-row">
             <button
@@ -1968,7 +2048,40 @@ onUnmounted(() => {
               @click="setAvatarEnabled(false)"
             >
               <strong>Disabled</strong>
-              <span>Skip avatar rendering — segments stay as text and audio only.</span>
+              <span>Skip D-ID avatar rendering — segments stay as text and audio only.</span>
+            </button>
+          </div>
+          <p v-else class="setting-desc">Loading…</p>
+        </div>
+
+        <div class="setting-block">
+          <h2>Avatar videos (local engine)</h2>
+          <p class="setting-desc">
+            Self-hosted open-source avatar engine (e.g. LivePortrait) that lip-syncs to the
+            generated narration audio — no cloud subscription needed. Requires
+            LOCAL_AVATAR_URL and base images configured on the worker. When enabled
+            alongside D-ID, the local engine takes priority.
+          </p>
+          <div v-if="settings" class="choice-row">
+            <button
+              type="button"
+              class="choice"
+              :class="{ active: settings.local_avatar_enabled === true }"
+              :disabled="savingSettings || settingsReadOnly"
+              @click="setLocalAvatarEnabled(true)"
+            >
+              <strong>Enabled</strong>
+              <span>Render talking-head videos via the local engine, lip-synced to TTS audio.</span>
+            </button>
+            <button
+              type="button"
+              class="choice"
+              :class="{ active: settings.local_avatar_enabled === false }"
+              :disabled="savingSettings || settingsReadOnly"
+              @click="setLocalAvatarEnabled(false)"
+            >
+              <strong>Disabled</strong>
+              <span>Skip local avatar rendering.</span>
             </button>
           </div>
           <p v-else class="setting-desc">Loading…</p>

@@ -108,7 +108,7 @@ contract between the two worlds is "a JSON object on a list," nothing more.
      (music queue), which run in parallel.
 7. **Generate + enrich.** Each spoken segment is generated, run through a
    post-generation **classifier** guardrail, and optionally enriched with a
-   **talking-head avatar video** (HeyGen) and/or **narration audio** (TTS).
+   **talking-head avatar video** (HeyGen or Local Open Source) and/or **narration audio** (TTS).
 8. **Deliver.** Every finished asset is `POST`ed back to Laravel's
    `/api/internal/asset-ready` webhook (shared-secret auth). Laravel upserts the
    `service_assets` row — each pass *enriches* the row (text, then audio, then video)
@@ -232,7 +232,7 @@ service one stage at a time.
 | `service_intakes` | The user's input + the plan | `mood`, `custom_mood` (free-text when the worshipper selects "other"), `prayer_text`, `scripture_ref`, `music_prompt`, `music_query` (1:1 with session) |
 | `service_assets` | Generated segments | `segment` enum (`welcome`/`worship`/`opening_prayer`/`scripture`/`sermon`/`testimony`/`offering`/`closing_hymn`/`benediction`), `asset_type` (`video`/`audio`/`text`/`url`/`youtube`), `storage_key`, `audio_key`, `provider_ref`, `text_payload` (already in the service language for new `my`/`td` sessions), legacy `tedim_text` / `burmese_text`, `lyrics` (hymn verses or AI-composed lyrics for on-screen display), `status` |
 | `music_tracks` | Language-and-mood-keyed reuse pool | `mood`, `language`, `provider_ref` (unique — dedupes), `storage_key`, `title`, `lyrics`, `source` (`suno`/`musicgen`/`local_ai`). Populated by the worker after each fresh AI generation; drawn from when a worshipper is new to a mood. |
-| `settings` | Global admin key/value | `key` (PK) / `value` (string). Holds `narration_mode`, per-language narration toggles (`narration_en`/`narration_my`/`narration_td`), `text_highlight_enabled`, language-tab toggles (`lang_en`/`lang_my`/`lang_td`), countdown-card controls (`countdown_content_enabled`, `countdown_content_source`, `countdown_banners`), `music_reuse`, `storage_backend`, `avatar_enabled`, `runpod_enabled`, plus admin-curated intake options: `moods`, `music_sources`, `default_music_source`, `scheduling_enabled`, and ad-slot controls (`ad_slot_enabled`, `ad_slot_html`). |
+| `settings` | Global admin key/value | `key` (PK) / `value` (string). Holds `narration_mode`, per-language narration toggles (`narration_en`/`narration_my`/`narration_td`), `text_highlight_enabled`, language-tab toggles (`lang_en`/`lang_my`/`lang_td`), countdown-card controls (`countdown_content_enabled`, `countdown_content_source`, `countdown_banners`), `music_reuse`, `storage_backend`, `avatar_enabled`, `local_avatar_enabled`, `runpod_enabled`, plus admin-curated intake options: `moods`, `music_sources`, `default_music_source`, `scheduling_enabled`, and ad-slot controls (`ad_slot_enabled`, `ad_slot_html`). |
 | `prayer_requests` | Raw intake log + token accounting | `raw_input`, `extracted_mood`, `tokens_used` |
 | `testimonies` | Shared testimonies | `content`, `source` (`user_submitted`/`ai_generated`), `approved` |
 | `financial_ledger` | Offerings | `amount`, `currency`, `transaction_hash` (idempotency), `allocation_type` (`operations`/`charity`/`missions`) |
@@ -646,11 +646,8 @@ and the worshipper still gets every segment as text.
   browser voice, because that skips or mangles their words. MMS-TTS narration is staggered
   for non-English services; scripture, opening prayer, and benediction are prioritized,
   and the longer message audio is deferred so it cannot block the last prayer.
-- **Avatar** — avatar.py renders a D-ID talking-head of the
-  spoken segments (submit → poll → store → URL). Requires `DID_API_KEY` +
-  `DID_SOURCE_URL_FEMALE` + `DID_SOURCE_URL_MALE` (optional `DID_VOICE_ID_FEMALE` /
-  `DID_VOICE_ID_MALE` / `DID_VOICE_PROVIDER`). Can be toggled without touching env vars via
-  the `avatar_enabled` admin setting. **Implemented** in the current build.
+- **Avatar** — avatar.py renders a talking-head of the
+  spoken segments. Supports **D-ID/HeyGen** (cloud, key-gated) or **LivePortrait/Wav2Lip** (local open-source container). Cloud requires provider API keys. Local requires `LOCAL_AVATAR_URL` + `LOCAL_AVATAR_IMAGE_FEMALE` + `LOCAL_AVATAR_IMAGE_MALE`, and lip-syncs to the segment's generated narration audio. Each engine has its own admin toggle (no env edits): `avatar_enabled` (D-ID) and `local_avatar_enabled` (local). When both are on and configured, the **local engine takes priority** (resolved worker-side in `avatar.select_engine()`).
 
 **Presenter gender pairing.** Each worshipper has a `presenter_gender` preference
 (`female`/`male`, default `female`) set in their profile and locked onto the session at
@@ -796,6 +793,7 @@ The console is at `/#admin`. Access is role-based:
   `text_highlight_enabled` (word-by-word highlight on/off in the player), `music_reuse`
   (the Suno pool toggle), `storage_backend` (`local` vs `s3` for generated audio),
   `avatar_enabled` (toggle D-ID avatar rendering on/off without touching env vars),
+  `local_avatar_enabled` (toggle the self-hosted open-source avatar engine; local wins over D-ID when both are on),
   **`runpod_enabled`** (enable RunPod Serverless GPU for premium music generation; stored in Redis `ai:runpod_enabled` for zero-restart hot-swap),
   **`orchestration_mode`** (`pipeline` = hard-coded Celery fan-out / `agent` = LLM agent
   with tool use — see [AI agent orchestration](#ai-agent-orchestration)), and
@@ -1155,6 +1153,7 @@ This includes:
 | `TTS_API_KEY` / `TTS_BASE_URL` / `TTS_MODEL` / `TTS_VOICE` / `TTS_FORMAT` | Narration (`openai` voice). Absent ⇒ that mode off (browser speech still works). |
 | `KOKORO_API_KEY` / `KOKORO_BASE_URL` / `KOKORO_MODEL` / `KOKORO_VOICE` / `KOKORO_FORMAT` | Narration (`kokoro` voice — hexgrad/kokoro-82m via OpenRouter). Defaults to the `OPENROUTER_*` LLM credentials. |
 | `DID_API_KEY` / `DID_SOURCE_URL_FEMALE` / `DID_SOURCE_URL_MALE` / `DID_VOICE_ID_FEMALE` / `DID_VOICE_ID_MALE` / `DID_VOICE_PROVIDER` | Avatar (D-ID Talks API). Only `DID_API_KEY` is required to enable; source URLs, voice IDs (default `en-US-JennyNeural` / `en-US-GuyNeural`), and provider (default `microsoft`) fall back to defaults if absent. The key is the dashboard value in `base64(email):password` form and is sent verbatim as `Authorization: Basic <key>`. Legacy `D_ID_*` names are still read as a fallback. |
+| `LOCAL_AVATAR_URL` / `LOCAL_AVATAR_IMAGE_FEMALE` / `LOCAL_AVATAR_IMAGE_MALE` | Free open-source local avatar generation. URL points to your local LivePortrait or Wav2Lip container (e.g., `http://127.0.0.1:8005/generate`). Images are base portraits for male/female presenters. |
 | `LOCAL_MEDIA_DIR` / `LOCAL_MEDIA_URL` | **Set ⇒ local storage** (write into Laravel's `storage/app/public`, serve over HTTP). Unset ⇒ S3. |
 | `S3_ENDPOINT` / `S3_ACCESS_KEY` / `S3_SECRET_KEY` / `S3_BUCKET` / `S3_REGION` | S3-compatible object storage (prod). |
 | `BIBLE_DATA_FILE` | Override the bundled BSB with another same-schema translation. |
@@ -1228,7 +1227,7 @@ before any state-changing request to bootstrap CSRF protection.
 | `GET` | `/admin/donors` | Donation rollups. |
 | `GET` | `/admin/prayer-requests` | Paginated log of prayer-request intakes. |
 | `GET` | `/admin/settings` | Read global settings (permission-checked: `settings.view`). |
-| `PATCH` | `/admin/settings` | (admin only) Update any of `narration_mode` / `narration_en` / `narration_my` / `narration_td` / `text_highlight_enabled` / `lang_en` / `lang_my` / `lang_td` / `countdown_content_enabled` / `countdown_content_source` / `countdown_banners` / `music_reuse` / `storage_backend` / `avatar_enabled` / `runpod_enabled` / `moods` / `music_sources` / `default_music_source` / `scheduling_enabled` / `ad_slot_enabled` / `ad_slot_html`. |
+| `PATCH` | `/admin/settings` | (admin only) Update any of `narration_mode` / `narration_en` / `narration_my` / `narration_td` / `text_highlight_enabled` / `lang_en` / `lang_my` / `lang_td` / `countdown_content_enabled` / `countdown_content_source` / `countdown_banners` / `music_reuse` / `storage_backend` / `avatar_enabled` / `local_avatar_enabled` / `runpod_enabled` / `moods` / `music_sources` / `default_music_source` / `scheduling_enabled` / `ad_slot_enabled` / `ad_slot_html`. |
 | `GET` | `/admin/music-tracks` | AI music pool (permission-checked: `music_pool.view`). Includes `suno`, `musicgen`, and `local_ai` sources. |
 | `POST` | `/admin/music-tracks` | (admin only) Add a track to the pool (`source`: `suno`/`musicgen`/`local_ai`). |
 | `PATCH` | `/admin/music-tracks/{id}` | (admin only) Update a pool track. |

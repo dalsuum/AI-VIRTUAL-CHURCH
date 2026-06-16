@@ -35,14 +35,19 @@ class InstrumentalHymnStrategy(MusicStrategy):
 
         # 1. Try language-specific local audio
         if self.language == "td":
+            from hymns_td import all_hymns
             from hymns_td import select as select_td
             # Restrict the pick to slugs whose instrumental MP3 is actually seeded,
             # so we stay in-language instead of silently falling through to English.
+            # Two naming schemes are honored: slug-keyed `hymns_td/{slug}.mp3` and
+            # the MIDI seeder's title-keyed `hymns_td/inst/{NORM}.mp3` (see
+            # tools/seed_tedim_midi.py) — both map back to the hymn's slug here.
             seeded = storage.list_keys("hymns_td/")
             eligible_td = {
-                k[len("hymns_td/"):-len(".mp3")]
-                for k in seeded
-                if k.endswith(".mp3") and "/inst/" not in k
+                h["slug"]
+                for h in all_hymns()
+                if f"hymns_td/{h['slug']}.mp3" in seeded
+                or f"hymns_td/inst/{_norm_title(h['title'])}.mp3" in seeded
             }
             hymn_local = select_td(
                 mood=mood, prompt=prompt, query=query,

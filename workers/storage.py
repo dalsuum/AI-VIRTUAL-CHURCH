@@ -109,9 +109,14 @@ def list_keys(prefix: str) -> set[str]:
         base = os.path.join(_LOCAL_DIR, prefix)
         if not os.path.isdir(base):
             return set()
-        prefix = prefix.rstrip("/")
-        return {f"{prefix}/{name}" for name in os.listdir(base)
-                if os.path.isfile(os.path.join(base, name))}
+        # Walk recursively so keys under subdirs (e.g. hymns_td/inst/*.mp3) are
+        # returned too — matching the S3 ListObjects prefix semantics below.
+        keys: set[str] = set()
+        for root, _dirs, files in os.walk(base):
+            rel_root = os.path.relpath(root, _LOCAL_DIR)
+            for name in files:
+                keys.add(os.path.join(rel_root, name).replace(os.sep, "/"))
+        return keys
     try:
         keys: set[str] = set()
         paginator = _client().get_paginator("list_objects_v2")

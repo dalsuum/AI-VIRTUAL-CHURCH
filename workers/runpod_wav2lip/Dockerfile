@@ -19,9 +19,10 @@ RUN git clone --depth 1 https://github.com/justinjohn0306/Wav2Lip.git
 WORKDIR /app/Wav2Lip
 # Known-good combo: librosa 0.9.1 + numpy 1.23.5 avoids the librosa>=0.10
 # positional-arg break in Wav2Lip's audio.py. opencv-headless (no GUI in a worker).
+# batch_face (RetinaFace) is what this fork's inference.py uses for face detection.
 RUN python3 -m pip install --no-cache-dir \
         numpy==1.23.5 librosa==0.9.1 numba opencv-python-headless tqdm \
-        runpod>=1.6.0
+        batch_face runpod>=1.6.0
 
 # Checkpoints baked in so cold starts don't re-download. Override the URLs at build
 # time (--build-arg) if these release assets ever move.
@@ -30,6 +31,10 @@ ARG S3FD_URL=https://github.com/justinjohn0306/Wav2Lip/releases/download/models/
 RUN mkdir -p checkpoints face_detection/detection/sfd \
     && wget -q -O checkpoints/wav2lip_gan.pth "$WAV2LIP_CKPT_URL" \
     && wget -q -O face_detection/detection/sfd/s3fd.pth "$S3FD_URL"
+
+# Pre-download RetinaFace weights so the first render doesn't depend on a runtime
+# fetch (build host has no GPU, so load on CPU just to trigger the cache).
+RUN python3 -c "from batch_face import RetinaFace; RetinaFace(gpu_id=-1)" || true
 
 COPY handler.py /app/Wav2Lip/handler.py
 

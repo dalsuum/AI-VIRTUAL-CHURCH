@@ -195,7 +195,7 @@ function stopNarration() {
 // Speak `pieces` from index `i` onward, one after the next. Only the final
 // piece finishing counts as a natural end (and advances the service) — the
 // same contract <audio>/<video> have via @ended.
-function speakSequence(pieces, i, charOffset = 0) {
+function speakSequence(pieces, i, wordOffset = 0) {
   if (i >= pieces.length) {
     activeUtterance = null;
     narrating.value = false;
@@ -210,21 +210,25 @@ function speakSequence(pieces, i, charOffset = 0) {
   const voice = browserVoice.value;
   if (voice) u.voice = voice;
 
+  const wordsInPiece = pieces[i].split(/\s+/).filter(Boolean).length;
+
   // Timeout fallback: Chrome sometimes never fires onend (15-second cutoff bug).
   // If the utterance hasn't finished within 30s per 200-char chunk, skip ahead.
   const chunkTimeout = setTimeout(() => {
     if (activeUtterance !== u) return;
-    speakSequence(pieces, i + 1, charOffset + pieces[i].length + 1);
+    speakSequence(pieces, i + 1, wordOffset + wordsInPiece);
   }, 30000);
 
   const advance = () => {
     clearTimeout(chunkTimeout);
-    speakSequence(pieces, i + 1, charOffset + pieces[i].length + 1);
+    speakSequence(pieces, i + 1, wordOffset + wordsInPiece);
   };
 
   u.onboundary = (e) => {
     if (!textHighlightEnabled.value || e.name !== 'word' || activeUtterance !== u) return;
-    highlightedWordIndex.value = charToWordIndex(charOffset + e.charIndex);
+    const pieceTextToCurrent = pieces[i].substring(0, e.charIndex);
+    const wordsInPieceSoFar = pieceTextToCurrent.split(/\s+/).filter(Boolean).length;
+    highlightedWordIndex.value = wordOffset + wordsInPieceSoFar;
   };
   u.onend = () => {
     if (activeUtterance !== u) { clearTimeout(chunkTimeout); return; }
@@ -234,7 +238,6 @@ function speakSequence(pieces, i, charOffset = 0) {
   // non-English scripts when no matching voice is installed.
   u.onerror = (e) => {
     if (activeUtterance !== u) { clearTimeout(chunkTimeout); return; }
-    if (e.error === "interrupted") return; // another utterance replaced us — ignore
     advance();
   };
   activeUtterance = u;
@@ -292,16 +295,6 @@ const paragraphs = computed(() => {
     words: para.split(/\s+/).filter(Boolean).map(word => ({ word, idx: idx++ })),
   }));
 });
-
-function charToWordIndex(charIndex) {
-  const pos = wordPositions.value;
-  let result = 0;
-  for (let i = 0; i < pos.length; i++) {
-    if (pos[i] <= charIndex) result = i;
-    else break;
-  }
-  return result;
-}
 
 function onMediaTimeUpdate() {
   if (!textHighlightEnabled.value) return;

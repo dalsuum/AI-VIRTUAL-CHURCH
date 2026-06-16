@@ -1371,3 +1371,23 @@ If you are a creator whose video has been embedded here and you would prefer it 
 used, you can disable embedding on your YouTube video settings — the system filters on
 `videoEmbeddable: true`, so your video will automatically be excluded from all future
 searches.
+
+### Hymn MIDI, lyrics & worship-song sources
+
+The instrumental hymn renders (`hymn`/`hymn_sung` sources) and on-screen lyrics are built
+**once per machine** by the seed scripts from the public-domain and freely published
+sources below — the files are then stored locally and served from there, never
+re-downloaded per service. We are grateful to each of these communities for keeping
+hymns and worship lyrics freely available, and we credit them here in full.
+
+| Source | What we use | Used by |
+|--------|-------------|---------|
+| **[Open Hymnal Project](http://openhymnal.org)** | Public-domain English hymn MIDI bundle (`OpenHymnal2014.06`) rendered to instrumental MP3, plus the matching public-domain verse lyrics | [seed_hymns.py](workers/seed_hymns.py) |
+| **[tedimhymn.com](https://tedimhymn.com/)** | *Tedim Hymn 7th Edition* MIDI tune library, rendered to instrumental MP3 as the last-resort fallback for Tedim/Zolai hymns | [tools/seed_tedim_midi.py](workers/tools/seed_tedim_midi.py) |
+| **[Nikon Ghong — Laibu Saal](https://nikonghong.com/laibu-saal/)** | Tedim/Zolai hymn lyrics and song texts | [data/hymns_td.json](workers/data/hymns_td.json) |
+| **[Myanmar Praise and Worship Songs](http://myanmarpraiseandworshipsongs.com/)** | Myanmar Christian worship lyrics and song texts | [tools/collect_myanmar_lyrics.py](workers/tools/collect_myanmar_lyrics.py) |
+
+All hymn audio is generated locally (MIDI → WAV via **fluidsynth** + the FluidR3 GM
+soundfont → MP3 via **ffmpeg**); no proprietary recordings are copied or re-hosted. If you
+maintain one of these collections and would prefer your material not be used, please reach
+out and it will be removed.

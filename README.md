@@ -1023,6 +1023,7 @@ Those units are version-controlled as **system-level** units in
 | [`aivc-burmese-api.service`](.systemd/prod/aivc-burmese-api.service) | FastAPI Burmese LLM service (Uvicorn, port 8002) |
 | [`aivc-mms-tts.service`](.systemd/prod/aivc-mms-tts.service) | Dedicated MMS speech service: TTS + STT (Uvicorn, port 8003) |
 | [`aivc-nllb-api.service`](.systemd/prod/aivc-nllb-api.service) | NLLB-200 translation service — English → Burmese (Uvicorn, port 8004) |
+| [`aivc-avatar-proxy.service`](.systemd/prod/aivc-avatar-proxy.service) | Avatar proxy — bridges the worker's multipart avatar call to the RunPod SadTalker endpoint (Uvicorn, port 8005) |
 
 ```bash
 # on the droplet, once the units are copied to /etc/systemd/system:
@@ -1153,7 +1154,8 @@ This includes:
 | `TTS_API_KEY` / `TTS_BASE_URL` / `TTS_MODEL` / `TTS_VOICE` / `TTS_FORMAT` | Narration (`openai` voice). Absent ⇒ that mode off (browser speech still works). |
 | `KOKORO_API_KEY` / `KOKORO_BASE_URL` / `KOKORO_MODEL` / `KOKORO_VOICE` / `KOKORO_FORMAT` | Narration (`kokoro` voice — hexgrad/kokoro-82m via OpenRouter). Defaults to the `OPENROUTER_*` LLM credentials. |
 | `DID_API_KEY` / `DID_SOURCE_URL_FEMALE` / `DID_SOURCE_URL_MALE` / `DID_VOICE_ID_FEMALE` / `DID_VOICE_ID_MALE` / `DID_VOICE_PROVIDER` | Avatar (D-ID Talks API). Only `DID_API_KEY` is required to enable; source URLs, voice IDs (default `en-US-JennyNeural` / `en-US-GuyNeural`), and provider (default `microsoft`) fall back to defaults if absent. The key is the dashboard value in `base64(email):password` form and is sent verbatim as `Authorization: Basic <key>`. Legacy `D_ID_*` names are still read as a fallback. |
-| `LOCAL_AVATAR_URL` / `LOCAL_AVATAR_IMAGE_FEMALE` / `LOCAL_AVATAR_IMAGE_MALE` | Free open-source local avatar generation. URL points to your local LivePortrait or Wav2Lip container (e.g., `http://127.0.0.1:8005/generate`). Images are base portraits for male/female presenters. |
+| `LOCAL_AVATAR_URL` / `LOCAL_AVATAR_IMAGE_FEMALE` / `LOCAL_AVATAR_IMAGE_MALE` | Free open-source local avatar generation. URL points to the avatar proxy (`http://127.0.0.1:8005/generate`), which bridges to a RunPod SadTalker endpoint (see [`workers/runpod_avatar`](workers/runpod_avatar/README.md)). Images are base portraits for male/female presenters, lip-synced to the segment's narration audio. |
+| `RUNPOD_AVATAR_BASE_URL` / `AVATAR_PROXY_PORT` | RunPod serverless talking-head endpoint (`https://api.runpod.ai/v2/<id>`) used by [`avatar_proxy.py`](workers/avatar_proxy.py), and the port the proxy listens on (default 8005). Shares `RUNPOD_API_KEY` with the LLM/NLLB endpoints. |
 | `LOCAL_MEDIA_DIR` / `LOCAL_MEDIA_URL` | **Set ⇒ local storage** (write into Laravel's `storage/app/public`, serve over HTTP). Unset ⇒ S3. |
 | `S3_ENDPOINT` / `S3_ACCESS_KEY` / `S3_SECRET_KEY` / `S3_BUCKET` / `S3_REGION` | S3-compatible object storage (prod). |
 | `BIBLE_DATA_FILE` | Override the bundled BSB with another same-schema translation. |

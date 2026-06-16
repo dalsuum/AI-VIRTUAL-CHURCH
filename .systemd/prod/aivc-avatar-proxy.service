@@ -1,0 +1,16 @@
+[Unit]
+Description=AI Church — avatar proxy (worker multipart <-> RunPod serverless JSON)
+# Bridges avatar.py's local-avatar contract to a RunPod talking-head endpoint.
+# CPU-only: it just base64-forwards requests, all GPU work happens on RunPod.
+After=redis-server.service
+
+[Service]
+User=simon
+WorkingDirectory=/opt/ai-church/workers
+# One uvicorn worker is plenty — each request is a blocking poll against RunPod.
+ExecStart=/usr/bin/env bash -lc 'set -a; . ./.env; set +a; exec .venv/bin/uvicorn avatar_proxy:app --host 127.0.0.1 --port ${AVATAR_PROXY_PORT:-8005} --workers 1'
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

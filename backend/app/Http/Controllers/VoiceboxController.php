@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Services\PermissionService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Http;
 
 /**
  * Proxy endpoints for the local Voicebox TTS container (http://127.0.0.1:17493).
@@ -26,17 +27,11 @@ class VoiceboxController extends Controller
         PermissionService::require(request()->user(), 'system.view');
 
         try {
-            $ch = $this->curl(self::BASE . '/health');
-            $body = curl_exec($ch);
-            $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            curl_close($ch);
-
-            if ($body === false || $code !== 200) {
-                return response()->json(['status' => 'unreachable']);
+            $response = Http::timeout(self::TIMEOUT)->get(self::BASE . '/health');
+            if ($response->successful()) {
+                return response()->json(['status' => 'ok'] + ($response->json() ?? []));
             }
-
-            $data = json_decode($body, true) ?? [];
-            return response()->json(['status' => 'ok'] + $data);
+            return response()->json(['status' => 'unreachable']);
         } catch (\Throwable) {
             return response()->json(['status' => 'unreachable']);
         }
@@ -48,21 +43,23 @@ class VoiceboxController extends Controller
         PermissionService::require(request()->user(), 'system.view');
 
         try {
-            $ch = $this->curl(self::BASE . '/profiles');
-            $body = curl_exec($ch);
-            $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            curl_close($ch);
-
-            if ($body === false || $code !== 200) {
+            $response = Http::timeout(self::TIMEOUT)->get(self::BASE . '/profiles');
+            if (!$response->successful()) {
                 return response()->json(['status' => 'unreachable', 'profiles' => []]);
             }
 
-            $profiles = json_decode($body, true) ?? [];
+            $profiles = $response->json() ?? [];
             // Voicebox's /profiles response does not include sample_count in the
             // current Docker image, so enrich each profile from /profiles/{id}/samples.
             $slim = array_map(function ($p) {
                 $id = $p['id'] ?? '';
-                $samples = $id ? $this->getJson(self::BASE . "/profiles/{$id}/samples") : [];
+                $samples = [];
+                if ($id) {
+                    try {
+                        $sampleResp = Http::timeout(self::TIMEOUT)->get(self::BASE . "/profiles/{$id}/samples");
+                        $samples = $sampleResp->successful() ? ($sampleResp->json() ?? []) : [];
+                    } catch (\Throwable) {}
+                }
 
                 return [
                     'id'           => $id,
@@ -85,52 +82,18 @@ class VoiceboxController extends Controller
         PermissionService::require(request()->user(), 'system.view');
 
         try {
-            $ch = $this->curl(self::BASE . '/tasks/active');
-            $body = curl_exec($ch);
-            $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            curl_close($ch);
-
-            if ($body === false || $code !== 200) {
-                return response()->json(['status' => 'unreachable']);
+            $response = Http::timeout(self::TIMEOUT)->get(self::BASE . '/tasks/active');
+            if ($response->successful()) {
+                $data = $response->json() ?? [];
+                return response()->json([
+                    'status'      => 'ok',
+                    'generations' => count($data['generations'] ?? []),
+                    'downloads'   => count($data['downloads'] ?? []),
+                ]);
             }
-
-            $data = json_decode($body, true) ?? [];
-            return response()->json([
-                'status'      => 'ok',
-                'generations' => count($data['generations'] ?? []),
-                'downloads'   => count($data['downloads'] ?? []),
-            ]);
+            return response()->json(['status' => 'unreachable']);
         } catch (\Throwable) {
             return response()->json(['status' => 'unreachable']);
         }
-    }
-
-    /** Build a cURL handle for a GET request with a short timeout. */
-    private function curl(string $url): \CurlHandle
-    {
-        $ch = curl_init($url);
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_CONNECTTIMEOUT => self::TIMEOUT,
-            CURLOPT_TIMEOUT        => self::TIMEOUT,
-            CURLOPT_HTTPGET        => true,
-        ]);
-        return $ch;
-    }
-
-    /** Fetch and decode JSON from Voicebox, returning [] on any local failure. */
-    private function getJson(string $url): array
-    {
-        $ch = $this->curl($url);
-        $body = curl_exec($ch);
-        $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-
-        if ($body === false || $code !== 200) {
-            return [];
-        }
-
-        $data = json_decode($body, true);
-        return is_array($data) ? $data : [];
     }
 }

@@ -9,10 +9,30 @@ Resolution order per language:
 
 from __future__ import annotations
 
+import functools
+import json
+import os
 import re
 
 import storage
 from . import MusicResult, MusicStrategy
+
+# Offline-built alignment of tedimhymn.com MIDI renders → hymn slugs, bridging the
+# orthographic divergence the exact title-norm join misses (see tools/align_td_midi.py).
+_TD_MAP_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "data", "td_midi_slug_map.json",
+)
+
+
+@functools.lru_cache(maxsize=1)
+def _td_slug_to_norm() -> dict[str, str]:
+    """Inverse of the static map: hymn slug → MIDI <NORM> title. Empty if unbuilt."""
+    try:
+        with open(_TD_MAP_PATH, encoding="utf-8") as fh:
+            return {slug: norm for norm, slug in json.load(fh).items()}
+    except (FileNotFoundError, ValueError):
+        return {}
 
 
 def _norm_title(name: str) -> str:
@@ -43,11 +63,22 @@ class InstrumentalHymnStrategy(MusicStrategy):
             # the MIDI seeder's title-keyed `hymns_td/inst/{NORM}.mp3` (see
             # tools/seed_tedim_midi.py) — both map back to the hymn's slug here.
             seeded = storage.list_keys("hymns_td/")
+            slug_to_norm = _td_slug_to_norm()
+
+            def _td_keys(slug: str, title: str) -> tuple[str, ...]:
+                """Candidate instrumental keys for a hymn, best first:
+                slug-keyed render, exact title-norm render, then the offline
+                fuzzy-aligned render (tools/align_td_midi.py)."""
+                keys = [f"hymns_td/{slug}.mp3", f"hymns_td/inst/{_norm_title(title)}.mp3"]
+                aligned = slug_to_norm.get(slug)
+                if aligned:
+                    keys.append(f"hymns_td/inst/{aligned}.mp3")
+                return tuple(keys)
+
             eligible_td = {
                 h["slug"]
                 for h in all_hymns()
-                if f"hymns_td/{h['slug']}.mp3" in seeded
-                or f"hymns_td/inst/{_norm_title(h['title'])}.mp3" in seeded
+                if any(k in seeded for k in _td_keys(h["slug"], h["title"]))
             }
             hymn_local = select_td(
                 mood=mood, prompt=prompt, query=query,
@@ -58,9 +89,7 @@ class InstrumentalHymnStrategy(MusicStrategy):
                 f" ({hymn_local['title_en']})" if hymn_local.get("title_en") else ""
             )
             lyrics = hymn_local["lyrics"]
-            norm = _norm_title(hymn_local["title"])
-            # Check both storage paths used by the Tedim seeders
-            for local_key in (f"hymns_td/{slug}.mp3", f"hymns_td/inst/{norm}.mp3"):
+            for local_key in _td_keys(slug, hymn_local["title"]):
                 if storage.exists(local_key):
                     return MusicResult(
                         asset_type="audio",

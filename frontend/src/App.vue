@@ -100,6 +100,23 @@ const narrationSettled = computed(() => {
     .filter((k) => NARRATED_SEGMENTS.has(k))
     .every((k) => auds[k]);
 });
+// Avatar videos attach after their text/audio, and the benediction (rendered last)
+// can land minutes after narration has settled. Without this the player stops polling
+// once audio is in and never picks up the late benediction video — it shows as
+// audio/text only. Keep polling (within the grace window) until every narrated segment
+// that has audio also has its video. Segments whose avatar render failed and fell back
+// to text never get a video, so this intentionally relies on the bounded grace window
+// rather than blocking forever.
+const avatarExpected = computed(() => Boolean(service.value?.avatar_enabled));
+const avatarSettled = computed(() => {
+  const s = service.value;
+  if (!s || !avatarExpected.value) return true;
+  const auds = s.audios || {};
+  const vids = s.videos || {};
+  return Object.keys(auds)
+    .filter((k) => NARRATED_SEGMENTS.has(k))
+    .every((k) => vids[k]);
+});
 const requiredOpeningMediaReady = computed(() => {
   if (!openingPrayerTextReady.value || !openingPrayerAudioReady.value) return false;
   return !musicExpected.value || musicLanded.value;
@@ -148,7 +165,7 @@ async function poll() {
     // and (server-voice) narration have landed — or the grace window runs out (counted
     // only after opening is allowed). narrationSettled covers the late-arriving server
     // mp3s (the sermon especially) that attach after their text in OpenAI/Kokoro mode.
-    const mediaSettled = textComposed.value && (!musicExpected.value || musicLanded.value) && narrationSettled.value;
+    const mediaSettled = textComposed.value && (!musicExpected.value || musicLanded.value) && narrationSettled.value && avatarSettled.value;
     if (mediaReady.value && pollTimer && (mediaSettled || ++mediaGracePolls >= MEDIA_GRACE_POLLS.value)) {
       clearInterval(pollTimer);
       pollTimer = null;

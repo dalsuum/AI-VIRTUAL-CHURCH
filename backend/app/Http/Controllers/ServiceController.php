@@ -302,6 +302,13 @@ class ServiceController extends Controller
             // 'openai'/'kokoro') or fall back to browser speech / silence.
             'narration_mode' => $narrationMode,
             'narration_enabled' => $narrationEnabled,
+            // Whether avatar (talking-head) videos are being produced for this service.
+            // The client uses this to keep polling for late-arriving avatar videos —
+            // the benediction renders last and would otherwise land after the player
+            // stops polling, leaving its segment without video. Mirrors how the worker
+            // decides to render (DispatchServiceJob): either engine being on means yes.
+            'avatar_enabled' => Setting::get('avatar_enabled', '1') === '1'
+                || Setting::get('local_avatar_enabled', '0') === '1',
             'text_highlight_enabled' => Setting::get('text_highlight_enabled', '1') === '1',
             'ad_slot_enabled' => Setting::get('ad_slot_enabled', '0') === '1',
             'ad_slot_html'    => Setting::get('ad_slot_html', '') ?: '',

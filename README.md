@@ -254,7 +254,12 @@ segments compose.
    worshipper still gets the *reference* rather than an aborted segment. Scripture is
    shown as written (gets narration, but **no avatar**).
 2. **Opening prayer / sermon / benediction** — each generated from name + mood
-   (+ prayer text / scripture ref), then run through `classifier.review()`. Blocked
+   (+ prayer text / scripture ref), then run through `classifier.review()`. **Burmese
+   (`my`) opening prayers are an exception: they are served directly from the curated
+   native corpus** (`workers/data/prayers_my.json`, 100+ real Myanmar church prayers,
+   mood-matched, recent-repeat-avoiding) instead of the English→NLLB translation path —
+   machine translation produced stilted, word-repeating Myanmar, so prayers bypass the
+   model/translator entirely, mirroring how Burmese song lyrics work. Blocked
    content is replaced with `"(content withheld pending review)"`. Surviving text is
    posted as the segment, and — if enabled — fanned out to `render_avatar` and `narrate`.
    The **sermon** is generated *without* a name: the prompt forbids addressing the

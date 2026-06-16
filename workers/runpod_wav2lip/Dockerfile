@@ -24,17 +24,15 @@ RUN python3 -m pip install --no-cache-dir \
         numpy==1.23.5 librosa==0.9.1 numba opencv-python-headless tqdm \
         batch_face runpod>=1.6.0
 
-# Checkpoints baked in so cold starts don't re-download. Override the URLs at build
-# time (--build-arg) if these release assets ever move.
+# Checkpoints baked in so cold starts don't re-download. This fork's inference.py
+# detects faces with RetinaFace and loads its weights from checkpoints/mobilenet.pth,
+# so both the Wav2Lip GAN model and the mobilenet detector are required there.
+# Override the URLs at build time (--build-arg) if these release assets ever move.
 ARG WAV2LIP_CKPT_URL=https://github.com/justinjohn0306/Wav2Lip/releases/download/models/wav2lip_gan.pth
-ARG S3FD_URL=https://github.com/justinjohn0306/Wav2Lip/releases/download/models/s3fd.pth
-RUN mkdir -p checkpoints face_detection/detection/sfd \
+ARG MOBILENET_URL=https://github.com/justinjohn0306/Wav2Lip/releases/download/models/mobilenet.pth
+RUN mkdir -p checkpoints \
     && wget -q -O checkpoints/wav2lip_gan.pth "$WAV2LIP_CKPT_URL" \
-    && wget -q -O face_detection/detection/sfd/s3fd.pth "$S3FD_URL"
-
-# Pre-download RetinaFace weights so the first render doesn't depend on a runtime
-# fetch (build host has no GPU, so load on CPU just to trigger the cache).
-RUN python3 -c "from batch_face import RetinaFace; RetinaFace(gpu_id=-1)" || true
+    && wget -q -O checkpoints/mobilenet.pth "$MOBILENET_URL"
 
 COPY handler.py /app/Wav2Lip/handler.py
 

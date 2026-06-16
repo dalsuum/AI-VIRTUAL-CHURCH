@@ -569,9 +569,15 @@ def render_avatar(self, session_token: str, segment: str, script: str, gender: s
     try:
         video_url = avatar.render(session_token, segment, script, gender=gender,
                                   audio_path=audio_path, engine=engine)
-    except Exception as exc:  # noqa: BLE001 — degrade gracefully to the text segment
+    except Exception as exc:  # noqa: BLE001 — transient RunPod blips (throttling, cold
+        # worker, gateway timeout) are common; retry a few times before giving up so a
+        # single failure doesn't permanently drop the segment's avatar.
         print(f"[avatar] render failed for {segment} ({session_token[:8]}…): {exc}", flush=True)
-        return
+        try:
+            raise self.retry(countdown=15, exc=exc)
+        except self.MaxRetriesExceededError:
+            print(f"[avatar] giving up on {segment} after retries; leaving as text", flush=True)
+            return
     finally:
         if audio_path and os.path.exists(audio_path):
             os.remove(audio_path)

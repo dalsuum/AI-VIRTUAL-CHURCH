@@ -241,12 +241,12 @@ def generate_text_segments(job: dict, plan: dict) -> None:
     # Myanmar/Tedim local MMS-TTS is CPU-heavy on the small server.
     _narrate_stagger = _narration_stagger(narration_mode, language)
     _narrate_slot = 0
-
-    if want_audio:
-        _sg = _seg_gender("scripture")
-        narrate.apply_async((token, "scripture", scripture_text or ref, narration_mode, _narrate_voice(_sg), _sg, language),
-                            countdown=_narrate_slot)
-        _narrate_slot += _narrate_stagger
+    # Scripture narration is queued *after* the opening prayer below. The frontend
+    # opens the doors the moment opening_prayer audio lands, so the prayer must take
+    # the first (slot 0) TTS slot — narrating scripture first would push the prayer a
+    # full stagger interval (up to 60 s for CPU MMS-TTS) behind, stranding worshippers
+    # on the preparing screen. Scripture still plays before the prayer in the service
+    # order; its audio simply attaches a slot later.
 
     # In YouTube mode the preaching message is an existing sermon video found on
     # YouTube (mood-based), not an AI-written sermon — this saves the LLM call plus
@@ -288,11 +288,20 @@ def generate_text_segments(job: dict, plan: dict) -> None:
             narrate.apply_async(args, countdown=_narrate_slot)
             _narrate_slot += _narrate_stagger
 
-    # Generate sequentially so frontend can open as soon as opening_prayer lands
+    # Generate sequentially so frontend can open as soon as opening_prayer lands.
+    # The prayer is narrated first (slot 0) so its audio — the door's gating asset —
+    # is rendered ahead of everything else.
     op_text = llm_engine.generate_opening_prayer(
         user_name=name, mood=mood, prayer_text=prayer_text, language=language,
         user_history=user_history)
     _process_spoken_segment("opening_prayer", op_text)
+
+    # Scripture audio comes next, now that the prayer has claimed the first TTS slot.
+    if want_audio:
+        _sg = _seg_gender("scripture")
+        narrate.apply_async((token, "scripture", scripture_text or ref, narration_mode, _narrate_voice(_sg), _sg, language),
+                            countdown=_narrate_slot)
+        _narrate_slot += _narrate_stagger
 
     if not youtube_mode:
         sermon_minutes = 5 if job.get("music_source") == "musicgen" else 8
@@ -492,7 +501,7 @@ def render_avatar(session_token: str, segment: str, script: str, gender: str = "
     _post_asset(session_token, segment, asset_type="video", storage_key=video_url)
 
 
-@app.task(name="tasks.narrate", bind=True, max_retries=4, default_retry_delay=30)
+@app.task(name="tasks.narrate", bind=True, max_retries=4, default_retry_delay=30, time_limit=900, soft_time_limit=840)
 def narrate(
     self,
     session_token: str,
@@ -507,25 +516,39 @@ def narrate(
     segment's audio narration. The text asset was already delivered, so any failure
     here just leaves the segment without audio — never block or crash the service."""
     import requests as _req
+    from celery.exceptions import SoftTimeLimitExceeded
+
     if not narrator.is_enabled(mode):
         return
     try:
         audio_url = narrator.narrate(
             session_token, segment, script, mode, voice=voice, gender=gender, language=language
         )
+    except SoftTimeLimitExceeded as exc:
+        print(f"[narrator] tts soft time limit exceeded for {segment}: {exc}", flush=True)
+        _post_asset(session_token, segment, audio_key="failed")
+        return
     except _req.exceptions.HTTPError as exc:
         if exc.response is not None and exc.response.status_code == 429:
-            # Back off and retry; countdown doubles each attempt (30 s, 60 s, 120 s, 240 s).
+            if self.request.retries >= self.max_retries:
+                print(f"[narrator] tts max retries exceeded for {segment} (429)", flush=True)
+                _post_asset(session_token, segment, audio_key="failed")
+                return
             raise self.retry(exc=exc, countdown=30 * (2 ** self.request.retries))
         print(f"[narrator] tts failed for {segment} ({session_token[:8]}…): {exc}", flush=True)
+        _post_asset(session_token, segment, audio_key="failed")
         return
     except (_req.exceptions.ReadTimeout, _req.exceptions.ConnectionError) as exc:
-        # OpenRouter sometimes hangs rather than returning 429 — treat like a rate-limit
-        # and retry with the same exponential backoff so we recover automatically.
+        if self.request.retries >= self.max_retries:
+            print(f"[narrator] tts max retries exceeded for {segment} (timeout)", flush=True)
+            _post_asset(session_token, segment, audio_key="failed")
+            return
         raise self.retry(exc=exc, countdown=30 * (2 ** self.request.retries))
     except Exception as exc:  # noqa: BLE001 — degrade gracefully to the silent segment
         print(f"[narrator] tts failed for {segment} ({session_token[:8]}…): {exc}", flush=True)
+        _post_asset(session_token, segment, audio_key="failed")
         return
+
     # Enrich the existing segment row with its narration; the webhook keeps the
     # segment's text (and any avatar video) intact and just fills in audio_key.
     _post_asset(session_token, segment, audio_key=audio_url)

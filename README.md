@@ -160,7 +160,7 @@ A single Celery app with one Redis broker and **named queues that mirror the wor
 | `ai:sermon` | `generate_text_segments`, `generate_welcome` | LLM plan + direct target-language prayer / sermon / benediction + welcome greeting. Legacy `localize_segment_*` tasks remain importable but are not dispatched for new services. |
 | `ai:music` | `generate_music` | Hymn, Suno, or YouTube, resolved per session |
 | `ai:avatar` | `render_avatar` | D-ID talking-head video |
-| `ai:narration` | `narrate`, `narrate_tedim`, `narrate_burmese` | text-to-speech of the spoken segments (English Edge/OpenAI/Kokoro; Myanmar/Tedim via local MMS-TTS) |
+| `ai:narration` | `narrate`, `narrate_tedim`, `narrate_burmese` | text-to-speech of the spoken segments (English Edge/OpenAI/Kokoro; Myanmar/Tedim via local MMS-TTS). The **opening prayer takes the first TTS slot** (slot 0); scripture and later segments are staggered behind it (up to 60 s apart for CPU MMS-TTS) so the preparing screen — which gates on opening-prayer audio — opens as fast as possible. |
 
 | Module | Responsibility |
 |--------|----------------|

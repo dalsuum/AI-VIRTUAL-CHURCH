@@ -29,6 +29,9 @@ class MusicResult:
     provider_ref: str | None = None  # YouTube video id, or Suno job id
     title: str | None = None
     lyrics: str | None = None  # hymn verses or generated Suno custom-mode lyrics
+    # Optional LRC line timings ([{time, line_index}]) paired with `lyrics`, for
+    # synced on-screen highlighting of static sung hymns. None for dynamic sources.
+    timings: list | None = None
 
 
 class MusicStrategy(ABC):

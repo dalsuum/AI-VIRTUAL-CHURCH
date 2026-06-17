@@ -34,6 +34,10 @@ class WebhookController extends Controller
             'text_payload'  => ['nullable', 'string'],
             // Public-domain hymn verses to show on screen (hymn music sources).
             'lyrics'        => ['nullable', 'string'],
+            // Optional LRC line timings ([{time, line_index}]) paired with `lyrics`.
+            'timings'           => ['nullable', 'array'],
+            'timings.*.time'       => ['required_with:timings', 'numeric'],
+            'timings.*.line_index' => ['required_with:timings', 'integer', 'min:0'],
         ]);
 
         $session = ServiceSession::where('session_token', $data['session_token'])->firstOrFail();
@@ -56,6 +60,7 @@ class WebhookController extends Controller
                 'provider_ref' => $data['provider_ref'] ?? $existing?->provider_ref,
                 'text_payload' => $data['text_payload'] ?? $existing?->text_payload,
                 'lyrics'       => $data['lyrics']       ?? $existing?->lyrics,
+                'timings'      => $data['timings']      ?? $existing?->timings,
                 'status'       => 'ready',
                 'ready_at'     => now(),
             ],

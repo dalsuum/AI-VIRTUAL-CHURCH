@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import sys
+import tempfile
 import time
 
 import requests
@@ -281,8 +282,12 @@ def generate_text_segments(job: dict, plan: dict) -> None:
         # Optionally enrich the segment with a talking-head video. Only the spoken
         # segments get an avatar; scripture is shown as written, not performed.
         seg_gender = _seg_gender(segment_name)
-        if job.get("avatar_enabled", True) and avatar.is_enabled():
-            render_avatar.delay(token, segment_name, text, seg_gender)
+        _avatar_engine = avatar.select_engine(
+            did_enabled=job.get("avatar_enabled", True),
+            local_enabled=job.get("local_avatar_enabled", False),
+        )
+        if _avatar_engine:
+            render_avatar.delay(token, segment_name, text, seg_gender, _avatar_engine)
         if want_audio:
             args = (token, segment_name, text, narration_mode, _narrate_voice(seg_gender), seg_gender, language)
             narrate.apply_async(args, countdown=_narrate_slot)
@@ -511,20 +516,76 @@ def generate_music(job: dict, plan: dict) -> None:
             # public-domain verses ride along in `lyrics` for on-screen display.
             text_payload=result.title,
             lyrics=result.lyrics,
+            # LRC line timings for synced on-screen lyrics (static sung hymns);
+            # None for dynamic sources, so the player keeps plain verses.
+            timings=result.timings,
         )
 
 
-@app.task(name="tasks.render_avatar")
-def render_avatar(session_token: str, segment: str, script: str, gender: str = "female") -> None:
+def _fetch_narration_audio(session_token: str, segment: str) -> str | None:
+    """Pull the narration audio for `segment` back out of storage and write it to a temp
+    file so the local avatar API can lip-sync to it. Returns the temp path, or None if the
+    narration hasn't landed in storage yet (it runs as a separate, parallel task)."""
+    matches = [
+        k for k in storage.list_keys(f"narration/{session_token}/")
+        if os.path.splitext(os.path.basename(k))[0] == segment
+    ]
+    if not matches:
+        return None
+    key = matches[0]
+    data = storage.read_bytes(key)
+    if not data:
+        return None
+    suffix = os.path.splitext(key)[1] or ".wav"
+    fd, path = tempfile.mkstemp(prefix=f"avatar_{segment}_", suffix=suffix)
+    with os.fdopen(fd, "wb") as f:
+        f.write(data)
+    return path
+
+
+@app.task(name="tasks.render_avatar", bind=True, max_retries=12, default_retry_delay=20)
+def render_avatar(self, session_token: str, segment: str, script: str, gender: str = "female",
+                  engine: str = "did") -> None:
     """Render `script` as a talking-head video and post it back as the segment's video
     asset. The text asset was already delivered, so any failure here just leaves the
-    segment as text — never block or crash the service."""
+    segment as text — never block or crash the service.
+
+    `engine` ("did" | "local") is resolved upstream from the admin toggles. The D-ID path
+    synthesizes speech itself from `script`; the local open-source path needs the narration
+    audio to lip-sync to, produced by the separate `narrate` task, so we fetch it from
+    storage and retry while it's pending."""
     if not avatar.is_enabled():
         return
+
+    audio_path = None
+    if engine == "local":
+        audio_path = _fetch_narration_audio(session_token, segment)
+        if audio_path is None:
+            # Narration not in storage yet — wait for the parallel narrate task to finish.
+            try:
+                raise self.retry(countdown=20)
+            except self.MaxRetriesExceededError:
+                print(f"[avatar] narration audio never landed for {segment} "
+                      f"({session_token[:8]}…); leaving as text", flush=True)
+                return
+
     try:
-        video_url = avatar.render(session_token, segment, script, gender=gender)
-    except Exception as exc:  # noqa: BLE001 — degrade gracefully to the text segment
+        video_url = avatar.render(session_token, segment, script, gender=gender,
+                                  audio_path=audio_path, engine=engine)
+    except Exception as exc:  # noqa: BLE001 — transient RunPod blips (throttling, cold
+        # worker, gateway timeout) are common; retry a few times before giving up so a
+        # single failure doesn't permanently drop the segment's avatar.
         print(f"[avatar] render failed for {segment} ({session_token[:8]}…): {exc}", flush=True)
+        try:
+            raise self.retry(countdown=15, exc=exc)
+        except self.MaxRetriesExceededError:
+            print(f"[avatar] giving up on {segment} after retries; leaving as text", flush=True)
+            return
+    finally:
+        if audio_path and os.path.exists(audio_path):
+            os.remove(audio_path)
+    if not video_url:
+        print(f"[avatar] render returned no URL for {segment} ({session_token[:8]}…); leaving as text", flush=True)
         return
     _post_asset(session_token, segment, asset_type="video", storage_key=video_url)
 

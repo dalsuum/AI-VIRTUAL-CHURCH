@@ -6,12 +6,58 @@
 // Emits `ended` when the track finishes so the service player can auto-advance to
 // the opening prayer. For stored audio this is the native <audio> ended event; for
 // YouTube we load the IFrame API and watch for the ENDED player state.
-import { nextTick, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 const props = defineProps({
-  asset: { type: Object, required: true }, // { asset_type, url?, provider_ref?, title?, lyrics? }
+  // { asset_type, url?, provider_ref?, title?, lyrics?, timings? }
+  asset: { type: Object, required: true },
 });
 const emit = defineEmits(["ended"]);
+
+// --- LRC line-synced lyrics (static sung hymns) ---------------------------
+// When the asset carries a `timings` array ([{time, line_index}], ascending by
+// time — authored by workers/tools/tap_lyrics.py) we highlight whole lyric
+// lines off real timestamps as the <audio> plays, driven by its native
+// `timeupdate` event (no polling). Without `timings` we keep the plain <pre>
+// verses below. See docs/lrc-static-sync-spike.md.
+const hasTimings = computed(() =>
+  Array.isArray(props.asset.timings) && props.asset.timings.length > 0);
+
+// Non-empty lyric lines, matching how tap_lyrics.py indexes line_index.
+const lyricLines = computed(() =>
+  (props.asset.lyrics || "").split(/\n/).map((l) => l.trim()).filter(Boolean));
+
+const activeLineIndex = ref(-1);
+const lineEls = ref([]);
+
+// Largest line_index whose timing.time <= t, via binary search; -1 before the
+// first cue. Pure + side-effect free so the logic is easy to reason about/test.
+function lineIndexAtTime(timings, t) {
+  let lo = 0, hi = timings.length - 1, ans = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (timings[mid].time <= t) { ans = mid; lo = mid + 1; }
+    else { hi = mid - 1; }
+  }
+  return ans === -1 ? -1 : timings[ans].line_index;
+}
+
+function onTimeUpdate(ev) {
+  if (!hasTimings.value) return;
+  activeLineIndex.value = lineIndexAtTime(props.asset.timings, ev.target.currentTime);
+}
+
+// Center the active line *within the scrollable lyrics box only*. We scroll the
+// box itself rather than el.scrollIntoView(), which would bubble up and also
+// scroll the whole page whenever the box isn't already centered in the viewport.
+watch(activeLineIndex, (i) => {
+  const el = lineEls.value[i];
+  const box = el?.parentElement; // the .lyrics.lrc container
+  if (!el || !box) return;
+  const delta = (el.getBoundingClientRect().top - box.getBoundingClientRect().top)
+              - (box.clientHeight - el.clientHeight) / 2;
+  box.scrollBy({ top: delta, behavior: "smooth" });
+});
 
 const ytEl = ref(null);
 let ytPlayer = null;
@@ -104,6 +150,11 @@ onBeforeUnmount(() => {
     }
     ytPlayer = null;
   }
+  // A detached <audio> keeps playing in the background, so the worship song would
+  // echo under the next stage (prayer/sermon). Pause it explicitly on unmount.
+  if (audioEl.value) {
+    try { audioEl.value.pause(); } catch (err) { /* already gone */ }
+  }
 });
 </script>
 
@@ -117,6 +168,7 @@ onBeforeUnmount(() => {
         autoplay
         @ended="emit('ended')"
         @error="onAudioError"
+        @timeupdate="onTimeUpdate"
       ></audio>
       <p v-if="audioNote" class="note">{{ audioNote }}</p>
     </template>
@@ -129,8 +181,19 @@ onBeforeUnmount(() => {
 
     <p v-if="asset.title" class="title">{{ asset.title }}</p>
 
+    <!-- LRC line-synced lyrics: real per-line timings drive a whole-line
+         highlight that scrolls into view as the hymn plays. Falls back to the
+         plain verses block when the asset has no `timings`. -->
+    <div v-if="hasTimings" class="lyrics lrc">
+      <p
+        v-for="(line, li) in lyricLines"
+        :key="li"
+        :ref="el => { if (el) lineEls[li] = el; }"
+        :class="{ 'lrc-active': li === activeLineIndex }"
+      >{{ line }}</p>
+    </div>
     <!-- Public-domain hymn verses, shown to read/sing along (hymn sources). -->
-    <pre v-if="asset.lyrics" class="lyrics">{{ asset.lyrics }}</pre>
+    <pre v-else-if="asset.lyrics" class="lyrics">{{ asset.lyrics }}</pre>
   </div>
 </template>
 
@@ -155,4 +218,8 @@ audio { width: 100%; }
   border-radius: var(--radius-sm);
   text-align: left;
 }
+/* LRC line-synced lyrics: dim inactive lines, lift the active one. */
+.lyrics.lrc p { margin: 0 0 0.4rem; transition: color 0.2s, opacity 0.2s; color: var(--text-muted); opacity: 0.55; }
+.lyrics.lrc p:last-child { margin-bottom: 0; }
+.lyrics.lrc p.lrc-active { color: var(--text); opacity: 1; font-weight: 600; }
 </style>

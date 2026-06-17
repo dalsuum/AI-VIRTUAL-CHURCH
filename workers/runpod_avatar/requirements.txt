@@ -1,0 +1,3 @@
+# RunPod SDK for the serverless handler. SadTalker's own dependencies are
+# installed from its repo's requirements.txt in the Dockerfile.
+runpod>=1.6.0

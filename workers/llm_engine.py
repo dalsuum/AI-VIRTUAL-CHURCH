@@ -731,21 +731,26 @@ _FALLBACK_OPENING_PRAYERS_EN = [
 ]
 
 
-def _burmese_prayer_for_mood(mood: str) -> str:
+def _burmese_prayer_for_mood(mood: str, user_history: dict | None = None) -> str:
     """Pick a Burmese opening prayer from the 100-prayer corpus that fits the mood.
 
-    Falls back to the hard-coded pool if the corpus file was not loaded."""
+    Skips prayers the worshipper recently heard (from user_history) so return
+    visits feel fresh. Falls back to the hard-coded pool if the corpus file was
+    not loaded."""
     if not _ALL_PRAYERS_MY_FLAT:
         return random.choice(_FALLBACK_OPENING_PRAYERS_MY)
+    recent = set((user_history or {}).get("past_opening_prayers") or [])
     mood_lower = (mood or "").lower()
+    pool: list[str] = []
     for keywords, categories in _MOOD_TO_PRAYER_CATEGORY:
         if any(kw in mood_lower for kw in keywords):
-            pool: list[str] = []
             for cat in categories:
                 pool.extend(_PRAYERS_MY.get(cat, []))
-            if pool:
-                return random.choice(pool)
-    return random.choice(_ALL_PRAYERS_MY_FLAT)
+            break
+    if not pool:
+        pool = _ALL_PRAYERS_MY_FLAT
+    fresh = [p for p in pool if p not in recent]
+    return random.choice(fresh or pool)
 
 
 def _burmese_prayer_examples(mood: str, n: int = 2) -> str:
@@ -1335,6 +1340,14 @@ def generate_welcome(*, user_name: str | None, mood: str, language: str = "en") 
 
 
 def generate_opening_prayer(*, user_name: str | None, mood: str, prayer_text: str | None, language: str = "en", user_history: dict | None = None) -> str:
+    # Burmese opening prayers are served from the curated native corpus, NOT
+    # machine-translated. NLLB renders English prayers into stilted, word-repeating
+    # Myanmar that reads as meaningless to native speakers, and the burmese-myanmar
+    # Ollama model emits word-salad. The mood-matched corpus of real Myanmar church
+    # prayers is the only path that produces natural, worship-register Burmese —
+    # mirroring how Burmese song lyrics already bypass the model entirely.
+    if language == "my":
+        return _ensure_exact_name(_burmese_prayer_for_mood(mood, user_history), user_name)
     lang_inst = _language_instruction(language) if language != "en" else ""
     system = (
         (f"{lang_inst} " if lang_inst else "") +

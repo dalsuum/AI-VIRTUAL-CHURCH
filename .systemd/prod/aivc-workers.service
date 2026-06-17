@@ -1,5 +1,5 @@
 [Unit]
-Description=AI Church — Celery workers (sermon/avatar/narration)
+Description=AI Church — Celery workers (sermon/narration)
 After=redis-server.service
 
 [Service]
@@ -10,7 +10,11 @@ WorkingDirectory=/opt/ai-church/workers
 # ai:music is intentionally excluded — handled by aivc-workers-music.service with
 # concurrency 1, so the MusicGen model only loads in a single process (~2 GB).
 # Running it here too caused all 4 workers to cache the model, exhausting RAM.
-ExecStart=/usr/bin/env bash -lc 'set -a; . ./.env; set +a; exec .venv/bin/celery -A tasks.celery_app worker -Q ai:sermon,ai:avatar,ai:narration -c 2'
+# ai:avatar is also excluded — handled by aivc-workers-avatar.service. It shared this
+# pool until 2026-06-16, when a RunPod outage made render_avatar retry-loop on both
+# slots and starve ai:narration ("voice narration stuck"). Isolating it confines any
+# avatar/RunPod failure to its own queue.
+ExecStart=/usr/bin/env bash -lc 'set -a; . ./.env; set +a; exec .venv/bin/celery -A tasks.celery_app worker -Q ai:sermon,ai:narration -c 2'
 Restart=always
 RestartSec=2
 

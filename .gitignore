@@ -46,3 +46,11 @@ workers/tools/.hymn-cache/
 # Local NLLB-200 model weights (2.3 GB) — fetched at deploy, never committed
 workers/local/
 workers/nllb-200-distilled-600M/
+
+# Local-only AI agent coordination (Gemini<->Claude channel + Claude Code hooks).
+# Kept on-disk for the dev workflow; never uploaded to GitHub.
+# Gemini writes to the repo-root claude.md/gemini.md inboxes.
+/claude.md
+/gemini.md
+.ai/
+.claude/settings.json

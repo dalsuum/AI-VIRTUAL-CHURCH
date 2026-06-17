@@ -465,12 +465,16 @@ def _build_tools(job: dict, plan: dict) -> tuple[list[dict], dict[str, callable]
             _narrate_slot += stagger_step
 
         avatared = {"opening_prayer", "sermon", "benediction"}
-        if job.get("avatar_enabled", True) and segment in avatared:
+        if segment in avatared:
             import avatar as _avatar
-            if _avatar.is_enabled():
+            _engine = _avatar.select_engine(
+                did_enabled=job.get("avatar_enabled", True),
+                local_enabled=job.get("local_avatar_enabled", False),
+            )
+            if _engine:
                 _celery_app.send_task(
                     "tasks.render_avatar",
-                    args=[token, segment, text, _seg_gender(segment)],
+                    args=[token, segment, text, _seg_gender(segment), _engine],
                 )
 
         return {"ok": True, "segment": segment}

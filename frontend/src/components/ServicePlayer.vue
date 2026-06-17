@@ -195,7 +195,7 @@ function stopNarration() {
 // Speak `pieces` from index `i` onward, one after the next. Only the final
 // piece finishing counts as a natural end (and advances the service) — the
 // same contract <audio>/<video> have via @ended.
-function speakSequence(pieces, i, charOffset = 0) {
+function speakSequence(pieces, i, wordOffset = 0) {
   if (i >= pieces.length) {
     activeUtterance = null;
     narrating.value = false;
@@ -210,21 +210,25 @@ function speakSequence(pieces, i, charOffset = 0) {
   const voice = browserVoice.value;
   if (voice) u.voice = voice;
 
+  const wordsInPiece = pieces[i].split(/\s+/).filter(Boolean).length;
+
   // Timeout fallback: Chrome sometimes never fires onend (15-second cutoff bug).
   // If the utterance hasn't finished within 30s per 200-char chunk, skip ahead.
   const chunkTimeout = setTimeout(() => {
     if (activeUtterance !== u) return;
-    speakSequence(pieces, i + 1, charOffset + pieces[i].length + 1);
+    speakSequence(pieces, i + 1, wordOffset + wordsInPiece);
   }, 30000);
 
   const advance = () => {
     clearTimeout(chunkTimeout);
-    speakSequence(pieces, i + 1, charOffset + pieces[i].length + 1);
+    speakSequence(pieces, i + 1, wordOffset + wordsInPiece);
   };
 
   u.onboundary = (e) => {
     if (!textHighlightEnabled.value || e.name !== 'word' || activeUtterance !== u) return;
-    highlightedWordIndex.value = charToWordIndex(charOffset + e.charIndex);
+    const pieceTextToCurrent = pieces[i].substring(0, e.charIndex);
+    const wordsInPieceSoFar = pieceTextToCurrent.split(/\s+/).filter(Boolean).length;
+    highlightedWordIndex.value = wordOffset + wordsInPieceSoFar;
   };
   u.onend = () => {
     if (activeUtterance !== u) { clearTimeout(chunkTimeout); return; }
@@ -234,7 +238,6 @@ function speakSequence(pieces, i, charOffset = 0) {
   // non-English scripts when no matching voice is installed.
   u.onerror = (e) => {
     if (activeUtterance !== u) { clearTimeout(chunkTimeout); return; }
-    if (e.error === "interrupted") return; // another utterance replaced us — ignore
     advance();
   };
   activeUtterance = u;
@@ -293,16 +296,6 @@ const paragraphs = computed(() => {
   }));
 });
 
-function charToWordIndex(charIndex) {
-  const pos = wordPositions.value;
-  let result = 0;
-  for (let i = 0; i < pos.length; i++) {
-    if (pos[i] <= charIndex) result = i;
-    else break;
-  }
-  return result;
-}
-
 function onMediaTimeUpdate() {
   if (!textHighlightEnabled.value) return;
   const el = mediaEl.value;
@@ -331,13 +324,30 @@ function onMediaError(ev) {
   mediaNote.value = `${describeMediaError(ev.target)} (${ev.target?.currentSrc || "no source"})`;
 }
 
+// Hard-stop the media element that's about to be replaced. Pausing it BEFORE the
+// DOM swaps <audio> for <video> is essential: a detached media element keeps
+// playing in the background, so without this the old narration audio echoes
+// under the avatar video (which carries the same narration in its own track).
+function stopMediaEl() {
+  const el = mediaEl.value;
+  if (!el) return;
+  try { el.pause(); } catch { /* element may already be gone */ }
+}
+
 // Try to start the current stage's media. Runs after the DOM settles so we grab
 // the freshly-mounted element (the stage subtree is keyed and remounts per stage).
-async function playCurrentMedia() {
+// `seekTo` lets a late-arriving avatar video resume from where the narration audio
+// had reached, so the speech isn't heard a second time on handoff.
+async function playCurrentMedia(seekTo = 0) {
   mediaNote.value = "";
   await nextTick();
   const el = mediaEl.value;
   if (!el) return;
+  if (seekTo > 0) {
+    const applySeek = () => { try { el.currentTime = seekTo; } catch { /* unseekable */ } };
+    if (el.readyState >= 1) applySeek();
+    else el.addEventListener("loadedmetadata", applySeek, { once: true });
+  }
   try {
     await el.play();
   } catch (err) {
@@ -365,6 +375,7 @@ watch(
       highlightedWordIndex.value = -1;
       videoPartIndex.value = 0;
       stopNarration();
+      stopMediaEl();           // silence the previous segment's media before it unmounts
       if (video || audio) playCurrentMedia();
       else if (usesBrowserSpeech.value) narrate(current.value.text);
     } else {
@@ -373,7 +384,15 @@ watch(
       const newAudio = audio && !prev.audio;
       if (newVideo || newAudio) {
         stopNarration();
-        playCurrentMedia();
+        // Avatar video just replaced the narration audio: hand off seamlessly by
+        // resuming the video where the audio was, so the line isn't spoken twice.
+        // Only for a single-part video (multi-part splits don't share one timeline).
+        const singlePart = !current.value?.videoParts || current.value.videoParts.length <= 1;
+        const handoffAt = newVideo && singlePart && mediaEl.value && !mediaEl.value.paused
+          ? mediaEl.value.currentTime
+          : 0;
+        stopMediaEl();         // pause the now-stale audio before the DOM swaps in the video
+        playCurrentMedia(handoffAt);
       }
     }
   },
@@ -485,28 +504,32 @@ watch(stages, (list) => {
           />
 
           <template v-else>
-            <video
-              v-if="current.video"
-              ref="mediaEl"
-              class="avatar"
-              :src="currentVideoSrc"
-              controls
-              playsinline
-              @ended="onMediaEnded"
-              @error="onMediaError"
-              @timeupdate="onMediaTimeUpdate"
-            ></video>
-            <audio
-              v-else-if="current.audio"
-              ref="mediaEl"
-              class="narration"
-              :src="current.audio"
-              controls
-              @ended="onMediaEnded"
-              @error="onMediaError"
-              @timeupdate="onMediaTimeUpdate"
-            ></audio>
-            <p v-if="mediaNote && (current.audio || current.video)" class="media-note">{{ mediaNote }}</p>
+            <!-- Avatar/narration player stays pinned at the top while a long prayer
+                 or message scrolls beneath it, so the presenter never scrolls away. -->
+            <div v-if="current.video || current.audio" class="stage-media">
+              <video
+                v-if="current.video"
+                ref="mediaEl"
+                class="avatar"
+                :src="currentVideoSrc"
+                controls
+                playsinline
+                @ended="onMediaEnded"
+                @error="onMediaError"
+                @timeupdate="onMediaTimeUpdate"
+              ></video>
+              <audio
+                v-else
+                ref="mediaEl"
+                class="narration"
+                :src="current.audio"
+                controls
+                @ended="onMediaEnded"
+                @error="onMediaError"
+                @timeupdate="onMediaTimeUpdate"
+              ></audio>
+              <p v-if="mediaNote" class="media-note">{{ mediaNote }}</p>
+            </div>
             <button
               v-else-if="usesBrowserSpeech"
               class="read-aloud"
@@ -620,9 +643,29 @@ watch(stages, (list) => {
 .stage-title { font-size: 1.4rem; margin: 0 0 0.9rem; letter-spacing: -0.02em; }
 .stage-hint { color: var(--text-muted); font-size: 0.9rem; margin: 0.75rem 0 0; }
 
-.avatar { width: 100%; border-radius: var(--radius-sm); margin-bottom: 0.9rem; background: #000; }
-.narration { width: 100%; margin-bottom: 0.9rem; }
-.media-note { color: var(--text-muted); font-size: 0.85rem; margin: 0 0 0.9rem; }
+/* Pin the presenter while a long segment scrolls. The backdrop + blur keep the
+   scrolling text from showing through the rounded corners and bottom gap. */
+.stage-media {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  margin-bottom: 0.9rem;
+  padding: 0.5rem 0 0.75rem;
+  background: var(--surface-2, var(--surface, #14141a));
+  backdrop-filter: blur(8px);
+  /* Soft fade so the text appears to slide under the player rather than collide. */
+  box-shadow: 0 12px 16px -8px var(--surface-2, rgba(0, 0, 0, 0.55));
+}
+.avatar {
+  width: 100%;
+  max-height: 42vh;          /* keep the pinned video from eating the screen on tall portraits */
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+  background: #000;
+  display: block;
+}
+.narration { width: 100%; display: block; }
+.media-note { color: var(--text-muted); font-size: 0.85rem; margin: 0.5rem 0 0; }
 .read-aloud {
   align-self: flex-start;
   margin-bottom: 0.9rem;

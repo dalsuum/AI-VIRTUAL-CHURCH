@@ -11,8 +11,10 @@ use App\Models\ServiceSession;
 use App\Models\Setting;
 use App\Models\Testimony;
 use App\Models\User;
+use App\Http\Requests\UpdateSettingsRequest;
 use App\Services\PermissionService;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Str;
 use Illuminate\Http\JsonResponse;
@@ -147,6 +149,32 @@ class AdminController extends Controller
         $service->delete();
 
         return response()->json(['ok' => true]);
+    }
+
+    /** Delete many services (and their assets/intakes) atomically. */
+    public function bulkDeleteServices(Request $request): JsonResponse
+    {
+        PermissionService::require($request->user(), 'services.delete');
+
+        $data = $request->validate([
+            'service_ids'   => ['required', 'array', 'min:1'],
+            'service_ids.*' => ['integer'],
+        ]);
+
+        $deleted = 0;
+
+        DB::transaction(function () use ($data, &$deleted) {
+            $services = ServiceSession::whereIn('id', $data['service_ids'])->get();
+
+            foreach ($services as $service) {
+                $service->assets()->delete();
+                $service->intake()->delete();
+                $service->delete();
+                $deleted++;
+            }
+        });
+
+        return response()->json(['ok' => true, 'deleted' => $deleted]);
     }
 
     /** All testimonies (pending first) for moderation. */
@@ -544,72 +572,9 @@ class AdminController extends Controller
         return response()->json($this->settingsPayload());
     }
 
-    public function updateSettings(Request $request): JsonResponse
+    public function updateSettings(UpdateSettingsRequest $request): JsonResponse
     {
-        $data = $request->validate([
-            // Per-language narration voice. English supports all providers; Myanmar and
-            // Tedim support edge_tts (Microsoft cloud, free) or mms_tts (local MMS, free).
-            'narration_mode_en'  => ['sometimes', 'string', 'in:' . implode(',', Setting::NARRATION_MODES)],
-            'narration_mode_my'  => ['sometimes', 'string', 'in:edge_tts,mms_tts,off'],
-            'narration_mode_td'  => ['sometimes', 'string', 'in:edge_tts,mms_tts,off'],
-            // When on, a worshipper new to a mood is served a random song already
-            // composed for it instead of generating (and paying for) a fresh one.
-            'music_reuse'     => ['sometimes', 'boolean'],
-            // Where the worker stores generated audio: local disk or S3.
-            'storage_backend' => ['sometimes', 'string', 'in:' . implode(',', Setting::STORAGE_BACKENDS)],
-            // The moods offered in the intake form. Free text — a new mood flows
-            // through the whole pipeline (LLM tone, music prompt, hymn matching).
-            'moods'           => ['sometimes', 'array', 'min:1'],
-            'moods.*'         => ['string', 'max:100'],
-            // Which music sources worshippers may choose; a non-empty subset.
-            'music_sources'   => ['sometimes', 'array', 'min:1'],
-            'music_sources.*' => ['string', 'in:' . implode(',', Setting::MUSIC_SOURCES)],
-            // Edge TTS voice (used when narration_mode = 'edge_tts').
-            'edge_tts_voice'  => ['sometimes', 'string', 'in:' . implode(',', Setting::EDGE_TTS_VOICES)],
-            // Voicebox TTS model (used when narration_mode = 'voicebox').
-            // Current Docker image exposes Qwen model sizes through POST /generate.
-            'voicebox_engine' => ['sometimes', 'string', 'in:qwen,qwen_1_7b'],
-            // Whether the "schedule it" option appears in the intake form.
-            'scheduling_enabled' => ['sometimes', 'boolean'],
-            // The music source pre-selected in the intake form.
-            'default_music_source' => ['sometimes', 'string', 'in:' . implode(',', Setting::MUSIC_SOURCES)],
-            // Toggle avatar video rendering on/off without touching env vars.
-            'avatar_enabled'      => ['sometimes', 'boolean'],
-            // Toggle karaoke-style word highlighting in the service player.
-            'text_highlight_enabled' => ['sometimes', 'boolean'],
-            // Per-language narration toggles. All languages default on.
-            // Myanmar and Tedim can use native local MMS-TTS through mms_tts mode.
-            'narration_en'        => ['sometimes', 'boolean'],
-            'narration_my'        => ['sometimes', 'boolean'],
-            'narration_td'        => ['sometimes', 'boolean'],
-            // Which service languages appear as tabs in the intake form.
-            'lang_en'             => ['sometimes', 'boolean'],
-            'lang_my'             => ['sometimes', 'boolean'],
-            'lang_td'             => ['sometimes', 'boolean'],
-            // Cards shown during the preparation countdown.
-            'countdown_content_enabled' => ['sometimes', 'boolean'],
-            'countdown_content_source'  => ['sometimes', 'string', 'in:banners,testimonies,online,both,all,off'],
-            'countdown_banners'         => ['sometimes', 'array', 'max:12'],
-            'countdown_banners.*.text'  => ['required_with:countdown_banners', 'string', 'max:300'],
-            'countdown_banners.*.source'=> ['nullable', 'string', 'max:80'],
-            // Keywords rejected from YouTube results to enforce Christian-only content.
-            'content_filter_keywords'   => ['sometimes', 'array'],
-            'content_filter_keywords.*' => ['string', 'max:100'],
-            // Orchestration mode: 'pipeline' = hard-coded Python flow (default);
-            // 'agent' = AI agent that reasons about segment order and retries.
-            'orchestration_mode' => ['sometimes', 'string', 'in:pipeline,agent'],
-            // Which LLM powers the AI agent (only used when orchestration_mode = 'agent').
-            'agent_provider'     => ['sometimes', 'string', 'in:claude,gemini,chatgpt'],
-            // Premium GPU via RunPod Serverless
-            'runpod_enabled'     => ['sometimes', 'boolean'],
-            // Ad slot — raw HTML/embed pasted by the admin (Google Ads, custom banner, etc.)
-            'ad_slot_enabled' => ['sometimes', 'boolean'],
-            'ad_slot_html'    => ['sometimes', 'nullable', 'string', 'max:8000'],
-            // AI chord detection for the song editor. Off = manual ChordPro only.
-            // The model id/endpoint can be set here or fall back to env (AI_CHORD_MODEL).
-            'ai_chords_enabled' => ['sometimes', 'boolean'],
-            'ai_chords_model'   => ['sometimes', 'nullable', 'string', 'max:255'],
-        ]);
+        $data = $request->validated();
 
         foreach (['narration_mode_en', 'narration_mode_my', 'narration_mode_td'] as $key) {
             if (array_key_exists($key, $data)) {
@@ -647,6 +612,9 @@ class AdminController extends Controller
         }
         if (array_key_exists('avatar_enabled', $data)) {
             Setting::set('avatar_enabled', $data['avatar_enabled'] ? '1' : '0');
+        }
+        if (array_key_exists('local_avatar_enabled', $data)) {
+            Setting::set('local_avatar_enabled', $data['local_avatar_enabled'] ? '1' : '0');
         }
         if (array_key_exists('text_highlight_enabled', $data)) {
             Setting::set('text_highlight_enabled', $data['text_highlight_enabled'] ? '1' : '0');
@@ -727,6 +695,7 @@ class AdminController extends Controller
             'music_reuse'        => Setting::get('music_reuse', '1') === '1',
             'storage_backend'    => Setting::get('storage_backend', 'local'),
             'avatar_enabled'     => Setting::get('avatar_enabled', '1') === '1',
+            'local_avatar_enabled' => Setting::get('local_avatar_enabled', '0') === '1',
             'text_highlight_enabled' => Setting::get('text_highlight_enabled', '1') === '1',
             'runpod_enabled'     => Setting::get('runpod_enabled', '0') === '1',
             // Per-language narration: all on by default.
@@ -792,6 +761,41 @@ class AdminController extends Controller
         $user->delete();
 
         return response()->json(['ok' => true]);
+    }
+
+    /** Delete many users (and all their associated data) atomically. */
+    public function bulkDeleteUsers(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'user_ids'   => ['required', 'array', 'min:1'],
+            'user_ids.*' => ['integer'],
+        ]);
+
+        // An admin can never delete their own account in a bulk operation.
+        $ids = array_values(array_diff($data['user_ids'], [$request->user()->id]));
+
+        $deleted = 0;
+
+        DB::transaction(function () use ($ids, &$deleted) {
+            $users = User::whereIn('id', $ids)->get();
+
+            foreach ($users as $user) {
+                // Cascade each user's services and their assets/intakes manually,
+                // mirroring deleteService(), since the User model has no deleting event.
+                foreach ($user->sessions as $session) {
+                    $session->assets()->delete();
+                    $session->intake()->delete();
+                    $session->delete();
+                }
+
+                $user->ledgerEntries()->delete();
+                $user->tokens()->delete();
+                $user->delete();
+                $deleted++;
+            }
+        });
+
+        return response()->json(['ok' => true, 'deleted' => $deleted]);
     }
 
     /** Grant or revoke admin. Guards against an admin removing their own access. */

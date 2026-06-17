@@ -1,0 +1,18 @@
+[Unit]
+Description=AI Church — Celery avatar worker (RunPod talking-head; isolated from narration/sermon)
+After=redis-server.service aivc-workers.service
+
+[Service]
+User=simon
+Group=www-data
+WorkingDirectory=/opt/ai-church/workers
+# Avatar is I/O-bound (polls the avatar proxy / RunPod) with no local model, so it gets
+# its own process. Kept OFF aivc-workers.service so render_avatar retry storms during a
+# RunPod outage can only back up ai:avatar — never starve ai:narration or ai:sermon,
+# which share a 2-slot pool. (This is what caused narration to "stick" on 2026-06-16.)
+ExecStart=/usr/bin/env bash -lc 'set -a; . ./.env; set +a; exec .venv/bin/celery -A tasks.celery_app worker -Q ai:avatar -c 2 -n avatar@%%h'
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

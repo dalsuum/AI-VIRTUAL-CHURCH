@@ -108,7 +108,7 @@ contract between the two worlds is "a JSON object on a list," nothing more.
      (music queue), which run in parallel.
 7. **Generate + enrich.** Each spoken segment is generated, run through a
    post-generation **classifier** guardrail, and optionally enriched with a
-   **talking-head avatar video** (HeyGen) and/or **narration audio** (TTS).
+   **talking-head avatar video** (HeyGen or Local Open Source) and/or **narration audio** (TTS).
 8. **Deliver.** Every finished asset is `POST`ed back to Laravel's
    `/api/internal/asset-ready` webhook (shared-secret auth). Laravel upserts the
    `service_assets` row — each pass *enriches* the row (text, then audio, then video)
@@ -159,7 +159,7 @@ A single Celery app with one Redis broker and **named queues that mirror the wor
 | `ai:orchestrate` | `orchestrate` | Session startup only (~20 s: build plan, fan out). Dedicated 2-worker pool (`aivc-workers-orchestrate.service`) so new requests are never blocked behind long content-generation tasks. |
 | `ai:sermon` | `generate_text_segments`, `generate_welcome` | LLM plan + direct target-language prayer / sermon / benediction + welcome greeting. Legacy `localize_segment_*` tasks remain importable but are not dispatched for new services. |
 | `ai:music` | `generate_music` | Hymn, Suno, or YouTube, resolved per session |
-| `ai:avatar` | `render_avatar` | D-ID talking-head video |
+| `ai:avatar` | `render_avatar` | RunPod talking-head video. Runs in its **own** dedicated 2-worker pool (`aivc-workers-avatar.service`), isolated from sermon/narration — so a RunPod outage that makes `render_avatar` retry-loop can only back up `ai:avatar`, never starve narration. |
 | `ai:narration` | `narrate`, `narrate_tedim`, `narrate_burmese` | text-to-speech of the spoken segments (English Edge/OpenAI/Kokoro; Myanmar/Tedim via local MMS-TTS). The **opening prayer takes the first TTS slot** (slot 0); scripture and later segments are staggered behind it (up to 60 s apart for CPU MMS-TTS) so the preparing screen — which gates on opening-prayer audio — opens as fast as possible. |
 
 | Module | Responsibility |
@@ -176,7 +176,7 @@ A single Celery app with one Redis broker and **named queues that mirror the wor
 | [nllb_api.py](workers/nllb_api.py) · [nllb_service.py](workers/nllb_service.py) · [hf_space_nllb/](workers/hf_space_nllb/) | **Burmese prose is produced by translating the already-good English segment** (`facebook/nllb-200-distilled-600M`, `eng_Latn`→`mya_Mymr`) rather than generating Myanmar directly with the Ollama `burmese-myanmar` model, which emitted word-salad. `_complete()` in [llm_engine.py](workers/llm_engine.py) tries translators in order: **(1) the NLLB ZeroGPU Space** (`NLLB_HF_SPACE`, off-box on HF's GPU — `hf_space_nllb/app.py`, called via `gradio_client`); **(2) the local NLLB service** (`nllb_api.py` on port 8004, `POST /nllb/translate`, lazy-loaded model, Redis db 4 cache, `_clean_myanmar` strips per-syllable spacing). If both fail it **raises** so the caller serves its safe curated/hardcoded Burmese fallback — the Ollama `burmese-myanmar` model is deliberately NOT in the chain. The local service is a light standby (model loads only if the Space is unreachable), keeping the 2.3 GB model off the CPU box. **Tedim is NOT routed through NLLB** — `tdt_Latn` tested as unusable (echoes English back), so Tedim stays on Ollama `tedim-zolai`. Note: HF's *free serverless* tier no longer hosts NLLB (`Model not supported by provider hf-inference`), which is why a self-hosted ZeroGPU Space is used. |
 | [hymns_my.py](workers/hymns_my.py) | Loader for the 852-song `data/hymns_my.json` Burmese library; mood-based selection for `MyanmarHymnStrategy`. |
 | [hymns_td.py](workers/hymns_td.py) | Loader for `data/hymns_td.json` (bundled, 467 hymns); mood selection + YouTube-embed priority for `TedimHymnStrategy`. |
-| [strategies/sung_hymn_strategy.py](workers/strategies/sung_hymn_strategy.py) | Unified `hymn_sung` strategy for all languages. English: public-domain 78rpm vocal recording. Burmese/Tedim: locally-downloaded `.sung.mp3` under `hymns_my/` or `hymns_td/`; falls back to English audio with localized lyrics overlay. |
+| [strategies/sung_hymn_strategy.py](workers/strategies/sung_hymn_strategy.py) | Unified `hymn_sung` strategy for all languages. English: public-domain 78rpm vocal recording. Burmese/Tedim: locally-downloaded `.sung.mp3` under `hymns_my/` or `hymns_td/`; falls back to English audio with localized lyrics overlay. Carries optional LRC `timings` from the hymn library through `MusicResult` to the player — attached only when the on-screen lyrics match the audio (the English path, not the my/td→English fallback). |
 | [strategies/instrumental_hymn_strategy.py](workers/strategies/instrumental_hymn_strategy.py) | Unified `hymn` (instrumental) strategy for all languages. Burmese/Tedim selection is restricted to slugs whose MP3 is actually seeded (via `storage.list_keys`) so it stays in-language instead of silently falling through to English MIDI. |
 | [strategies/local_ai_strategy.py](workers/strategies/local_ai_strategy.py) | `local_ai` music source — GPU-preferred MusicGen (subclass of `MusicGenStrategy`). Auto-detects CUDA; falls back to CPU. |
 | [strategies/_suno_custom.py](workers/strategies/_suno_custom.py) | Shared helper that builds and calls Suno customMode with exact lyrics for a given language/style. **Lyric sanitization rules (must be kept up to date when the hymn data format changes):** (1) `ထပ်ဆိoရန်[။]` on its own line → `[Chorus]` — this is the classic Burmese hymnal "Repeat/Chorus" marker, not a lyric; (2) Burmese numeral verse prefixes `၁ lyric text` → `[Verse 1]\nlyric text`; standalone `၁` → `[Verse 1]`. Suno treats `[Verse N]`/`[Chorus]` as structural metatags and never sings them. Any new non-lyric patterns found in `hymns_my.json` must be added to `_MY_SECTION_TAGS` or the verse-number substitution in `sanitize_lyrics()` — never leave raw structural markers reaching the Suno prompt. |
@@ -186,6 +186,7 @@ A single Celery app with one Redis broker and **named queues that mirror the wor
 | [tools/import_myanmar_hymns.py](workers/tools/import_myanmar_hymns.py) | Regenerates `data/hymns_my.json` from the upstream dalsuum/myanmar-hymns source repo. |
 | [tools/build_tedim_dataset.py](workers/tools/build_tedim_dataset.py) | Builds a JSONL fine-tuning dataset (~56 600 examples, 31 MB) from the Lai Siangtho 1932 Bible, Tedim hymnal (467 hymns), and Zolai vocabulary/grammar guide. Outputs `data/tedim_finetune.jsonl` (90 % train) and `data/tedim_finetune_val.jsonl` (10 % val) in standard chat-format for LoRA fine-tuning on Llama 3 / Mistral. |
 | [tools/collect_myanmar_lyrics.py](workers/tools/collect_myanmar_lyrics.py) | Collects Myanmar Christian worship lyrics from OpenLyrics XML sources and a Blogspot index. Enforces Myanmar Unicode, strips guitar chord lines, deduplicates, and writes the result to `data/myanmar_lyrics_collection.json`. Run once (or periodically) to grow the lyrics corpus for Suno and fine-tuning use. Requires `requests` + `beautifulsoup4`. |
+| [tools/tap_lyrics.py](workers/tools/tap_lyrics.py) | LRC "Tapper": plays a hymn's local sung MP3 via ffplay and captures one timestamp per lyric line on the spacebar (undo/restart/finish), then merges a `timings` array into the matching `hymns_td.json` / `hymns_my.json` object (1-space indent, literal unicode — minimal diff). td/my only (English hymns live in `hymns.py`, not JSON). Authors the line cues the player consumes for synced lyrics. |
 | [llm_engine.py](workers/llm_engine.py) | Intake plan via OpenRouter; spoken prose generated directly in English/Myanmar/Tedim. Myanmar/Tedim prose is routed to the local FastAPI/Ollama services when configured. **Safe hardcoded fallbacks apply to all languages** (English included) — if OpenRouter or the local model times out or returns unusable text at any segment (welcome, prayer, sermon, benediction), the fallback fires instead of leaving the service frozen. Strips markdown / stage directions to clean spoken prose. **Burmese output plausibility guard** (`_is_my_plausible`) counts Myanmar Unicode codepoints (U+1000–U+109F) in each generated segment; fragments below the per-segment minimum (20 for welcome, 60 for prayer, 30 for benediction, 80 for sermon) are treated as garbled model output and the safe fallback fires immediately rather than sending fragmentary text to the worshipper. **AI-composed song lyrics (`generate_music_lyrics`, Myanmar/Tedim)** are sourced library-first: `_library_lyrics_for_mood` searches the worship library (`song_library.py` → `GET /songs`) with the worshipper's mood and reuses the first matching, in-language curated song — guaranteeing correct vocabulary and phrasing. **Burmese** then goes straight to the curated fallback (the local llama3.2:3b-based model emits word-salad, not real Myanmar, so it is not called for lyrics); **Tedim** composes via its local Zolai Ollama model when no library song matches. Every path passes the hardened language guard before reaching Suno — for `my` the guard requires a core worship term (ဘုရား/ကိုယ်တော်/ယေရှု…) and rejects low unique-token ratios so model word-salad can never reach Suno. |
 | [bible_api.py](workers/bible_api.py) | Resolves a scripture *reference* to verse *text* from bundled public-domain translations: BSB (English), Judson 1835 (Myanmar), Lai Siangtho 1932 (Tedim). The model never writes scripture. |
 | [classifier.py](workers/classifier.py) | Post-generation deny-list guardrail (`review() → (ok, reason)`). |
@@ -215,11 +216,11 @@ service one stage at a time.
 | [IntakeForm.vue](frontend/src/components/IntakeForm.vue) | Mood picker (first question) + **language tab** (English / မြန်မာ / Zolai). For first-time visitors, name/email/prayer/music-source/scheduling are collapsed behind an "Add a prayer request or schedule" toggle so the main path is one-tap. Returning users always see the full form. Passes `language` and `mood` to the preparing screen so countdown verses load in the right Bible translation immediately. Moods, music sources, and scheduling toggle are all driven by `GET /config`. |
 | [PreparingView.vue](frontend/src/components/PreparingView.vue) | Countdown screen; accepts `language` and `mood` props from the intake event so mood-matched Scripture cards load in the correct Bible translation before the server poll returns. Card type is `'verse'` (labelled "Scripture"); label `'banner'` shows admin text; `'testimony'` shows a worshipper story. Opens immediately via `nextTick` when `mediaReady` arrives — no longer waits for the next 1-second tick. |
 | [ServicePlayer.vue](frontend/src/components/ServicePlayer.vue) | The full-screen, one-stage-at-a-time player. Auto-reads each segment (server video → server audio → browser Web Speech), auto-advances. |
-| [MusicPlayer.vue](frontend/src/components/MusicPlayer.vue) | Plays the worship track: stored audio, or an embedded YouTube `<iframe>`. |
+| [MusicPlayer.vue](frontend/src/components/MusicPlayer.vue) | Plays the worship track: stored audio, or an embedded YouTube `<iframe>`. **LRC synced lyrics:** when the `music_asset` carries a `timings` array, the hymn verses render line-by-line and the active line is highlighted + smooth-scrolled in time with the audio (binary-search on the native `timeupdate` event, no polling); without `timings` it shows the plain verse block. |
 | [OfferingForm.vue](frontend/src/components/OfferingForm.vue) | Stripe PaymentIntent confirmation. |
 | [TestimonyWall.vue](frontend/src/components/TestimonyWall.vue) | The approved testimony wall + submit-your-own. |
 | [AdminConsole.vue](frontend/src/components/AdminConsole.vue) | Permission-driven tab navigation (TABS registry — add one entry to wire a new tab's nav button, permission check, and data loader). Tabs: Dashboard, Services, Donors, Testimonies, Users, Prayer Requests, Settings, AI Music Pool, Voice Studio, Voice Training, Permissions, Language Review, System. Non-admin staff see only the tabs permitted by the Permissions matrix; settings are read-only for non-admins. |
-| [useApi.js](frontend/src/composables/useApi.js) / [useTheme.js](frontend/src/composables/useTheme.js) | API client + light/dark theme. |
+| [useApi.js](frontend/src/composables/useApi.js) / [useTheme.js](frontend/src/composables/useTheme.js) | API client + light/dark theme. Mutating requests auto-recover from a stale CSRF token: on a `419` the client refreshes the `XSRF-TOKEN` cookie and retries once, so admin writes (e.g. deleting an ad) don't fail after a session rotates in a long-open tab. |
 
 ---
 
@@ -230,9 +231,9 @@ service one stage at a time.
 | `users` | Worshippers (incl. guests) | `music_source` enum (`hymn_sung`/`hymn`/`suno`/`youtube`, default `hymn_sung`), `presenter_gender` enum (`female`/`male`, default `female` — controls avatar and TTS voice pairing), `name_provided` (false ⇒ display-only placeholder, kept out of the spoken service), `is_admin`, `is_blocked`, `timezone` |
 | `service_sessions` | One worship visit | `session_token` (64), `status` (`initializing`/`active`/`completed`/`abandoned`/`scheduled`), `music_source` (locked), `language` (`en`/`my`/`td`), `presenter_gender` (locked from user preference at start), `tedim_status` / `burmese_status` (legacy readiness markers kept for older UI/admin paths), `scheduled_at` |
 | `service_intakes` | The user's input + the plan | `mood`, `custom_mood` (free-text when the worshipper selects "other"), `prayer_text`, `scripture_ref`, `music_prompt`, `music_query` (1:1 with session) |
-| `service_assets` | Generated segments | `segment` enum (`welcome`/`worship`/`opening_prayer`/`scripture`/`sermon`/`testimony`/`offering`/`closing_hymn`/`benediction`), `asset_type` (`video`/`audio`/`text`/`url`/`youtube`), `storage_key`, `audio_key`, `provider_ref`, `text_payload` (already in the service language for new `my`/`td` sessions), legacy `tedim_text` / `burmese_text`, `lyrics` (hymn verses or AI-composed lyrics for on-screen display), `status` |
+| `service_assets` | Generated segments | `segment` enum (`welcome`/`worship`/`opening_prayer`/`scripture`/`sermon`/`testimony`/`offering`/`closing_hymn`/`benediction`), `asset_type` (`video`/`audio`/`text`/`url`/`youtube`), `storage_key`, `audio_key`, `provider_ref`, `text_payload` (already in the service language for new `my`/`td` sessions), legacy `tedim_text` / `burmese_text`, `lyrics` (hymn verses or AI-composed lyrics for on-screen display), `timings` (optional JSON LRC line cues `[{time, line_index}]` paired with `lyrics` for synced highlighting; null = plain verses), `status` |
 | `music_tracks` | Language-and-mood-keyed reuse pool | `mood`, `language`, `provider_ref` (unique — dedupes), `storage_key`, `title`, `lyrics`, `source` (`suno`/`musicgen`/`local_ai`). Populated by the worker after each fresh AI generation; drawn from when a worshipper is new to a mood. |
-| `settings` | Global admin key/value | `key` (PK) / `value` (string). Holds `narration_mode`, per-language narration toggles (`narration_en`/`narration_my`/`narration_td`), `text_highlight_enabled`, language-tab toggles (`lang_en`/`lang_my`/`lang_td`), countdown-card controls (`countdown_content_enabled`, `countdown_content_source`, `countdown_banners`), `music_reuse`, `storage_backend`, `avatar_enabled`, `runpod_enabled`, plus admin-curated intake options: `moods`, `music_sources`, `default_music_source`, `scheduling_enabled`, and ad-slot controls (`ad_slot_enabled`, `ad_slot_html`). |
+| `settings` | Global admin key/value | `key` (PK) / `value` (string). Holds `narration_mode`, per-language narration toggles (`narration_en`/`narration_my`/`narration_td`), `text_highlight_enabled`, language-tab toggles (`lang_en`/`lang_my`/`lang_td`), countdown-card controls (`countdown_content_enabled`, `countdown_content_source`, `countdown_banners`), `music_reuse`, `storage_backend`, `avatar_enabled`, `local_avatar_enabled`, `runpod_enabled`, plus admin-curated intake options: `moods`, `music_sources`, `default_music_source`, `scheduling_enabled`, and ad-slot controls (`ad_slot_enabled`, `ad_slot_html`). |
 | `prayer_requests` | Raw intake log + token accounting | `raw_input`, `extracted_mood`, `tokens_used` |
 | `testimonies` | Shared testimonies | `content`, `source` (`user_submitted`/`ai_generated`), `approved` |
 | `financial_ledger` | Offerings | `amount`, `currency`, `transaction_hash` (idempotency), `allocation_type` (`operations`/`charity`/`missions`) |
@@ -254,7 +255,12 @@ segments compose.
    worshipper still gets the *reference* rather than an aborted segment. Scripture is
    shown as written (gets narration, but **no avatar**).
 2. **Opening prayer / sermon / benediction** — each generated from name + mood
-   (+ prayer text / scripture ref), then run through `classifier.review()`. Blocked
+   (+ prayer text / scripture ref), then run through `classifier.review()`. **Burmese
+   (`my`) opening prayers are an exception: they are served directly from the curated
+   native corpus** (`workers/data/prayers_my.json`, 100+ real Myanmar church prayers,
+   mood-matched, recent-repeat-avoiding) instead of the English→NLLB translation path —
+   machine translation produced stilted, word-repeating Myanmar, so prayers bypass the
+   model/translator entirely, mirroring how Burmese song lyrics work. Blocked
    content is replaced with `"(content withheld pending review)"`. Surviving text is
    posted as the segment, and — if enabled — fanned out to `render_avatar` and `narrate`.
    The **sermon** is generated *without* a name: the prompt forbids addressing the
@@ -641,11 +647,8 @@ and the worshipper still gets every segment as text.
   browser voice, because that skips or mangles their words. MMS-TTS narration is staggered
   for non-English services; scripture, opening prayer, and benediction are prioritized,
   and the longer message audio is deferred so it cannot block the last prayer.
-- **Avatar** — avatar.py renders a D-ID talking-head of the
-  spoken segments (submit → poll → store → URL). Requires `DID_API_KEY` +
-  `DID_SOURCE_URL_FEMALE` + `DID_SOURCE_URL_MALE` (optional `DID_VOICE_ID_FEMALE` /
-  `DID_VOICE_ID_MALE` / `DID_VOICE_PROVIDER`). Can be toggled without touching env vars via
-  the `avatar_enabled` admin setting. **Implemented** in the current build.
+- **Avatar** — avatar.py renders a talking-head of the
+  spoken segments. Supports **D-ID/HeyGen** (cloud, key-gated) or **LivePortrait/Wav2Lip** (local open-source container). Cloud requires provider API keys. Local requires `LOCAL_AVATAR_URL` + `LOCAL_AVATAR_IMAGE_FEMALE` + `LOCAL_AVATAR_IMAGE_MALE`, and lip-syncs to the segment's generated narration audio. Each engine has its own admin toggle (no env edits): `avatar_enabled` (D-ID) and `local_avatar_enabled` (local). When both are on and configured, the **local engine takes priority** (resolved worker-side in `avatar.select_engine()`).
 
 **Presenter gender pairing.** Each worshipper has a `presenter_gender` preference
 (`female`/`male`, default `female`) set in their profile and locked onto the session at
@@ -791,6 +794,7 @@ The console is at `/#admin`. Access is role-based:
   `text_highlight_enabled` (word-by-word highlight on/off in the player), `music_reuse`
   (the Suno pool toggle), `storage_backend` (`local` vs `s3` for generated audio),
   `avatar_enabled` (toggle D-ID avatar rendering on/off without touching env vars),
+  `local_avatar_enabled` (toggle the self-hosted open-source avatar engine; local wins over D-ID when both are on),
   **`runpod_enabled`** (enable RunPod Serverless GPU for premium music generation; stored in Redis `ai:runpod_enabled` for zero-restart hot-swap),
   **`orchestration_mode`** (`pipeline` = hard-coded Celery fan-out / `agent` = LLM agent
   with tool use — see [AI agent orchestration](#ai-agent-orchestration)), and
@@ -1014,17 +1018,19 @@ Those units are version-controlled as **system-level** units in
 |------|---------|
 | [`aivc-queue.service`](.systemd/prod/aivc-queue.service) | Laravel `queue:work` (runs `DispatchServiceJob` plus queued Laravel jobs/mail) |
 | [`aivc-scheduler.service`](.systemd/prod/aivc-scheduler.service) | Laravel `schedule:work` (releases due services + reminder mail) |
-| [`aivc-workers.service`](.systemd/prod/aivc-workers.service) | Celery workers (sermon · music · avatar · narration) |
+| [`aivc-workers.service`](.systemd/prod/aivc-workers.service) | Celery workers (sermon · narration) |
+| [`aivc-workers-avatar.service`](.systemd/prod/aivc-workers-avatar.service) | Celery avatar worker (`ai:avatar`), isolated so RunPod outages can't starve narration |
 | [`aivc-bridge.service`](.systemd/prod/aivc-bridge.service) | bridge consumer (`ai:intake` → Celery) |
 | [`aivc-tedim-api.service`](.systemd/prod/aivc-tedim-api.service) | FastAPI Tedim LLM service (Uvicorn, port 8001) |
 | [`aivc-burmese-api.service`](.systemd/prod/aivc-burmese-api.service) | FastAPI Burmese LLM service (Uvicorn, port 8002) |
 | [`aivc-mms-tts.service`](.systemd/prod/aivc-mms-tts.service) | Dedicated MMS speech service: TTS + STT (Uvicorn, port 8003) |
 | [`aivc-nllb-api.service`](.systemd/prod/aivc-nllb-api.service) | NLLB-200 translation service — English → Burmese (Uvicorn, port 8004) |
+| [`aivc-avatar-proxy.service`](.systemd/prod/aivc-avatar-proxy.service) | Avatar proxy — bridges the worker's multipart avatar call to the RunPod SadTalker endpoint (Uvicorn, port 8005) |
 
 ```bash
 # on the droplet, once the units are copied to /etc/systemd/system:
-sudo systemctl enable --now aivc-queue aivc-scheduler aivc-workers aivc-bridge aivc-tedim-api aivc-burmese-api aivc-mms-tts aivc-nllb-api
-sudo systemctl status  aivc-queue aivc-scheduler aivc-workers aivc-bridge aivc-tedim-api aivc-burmese-api aivc-mms-tts aivc-nllb-api --no-pager
+sudo systemctl enable --now aivc-queue aivc-scheduler aivc-workers aivc-workers-avatar aivc-bridge aivc-tedim-api aivc-burmese-api aivc-mms-tts aivc-nllb-api
+sudo systemctl status  aivc-queue aivc-scheduler aivc-workers aivc-workers-avatar aivc-bridge aivc-tedim-api aivc-burmese-api aivc-mms-tts aivc-nllb-api --no-pager
 
 # After worker/backend code or prompt changes, restart the services that load code:
 sudo systemctl restart aivc-workers aivc-bridge aivc-queue aivc-tedim-api aivc-burmese-api aivc-mms-tts aivc-nllb-api
@@ -1150,6 +1156,8 @@ This includes:
 | `TTS_API_KEY` / `TTS_BASE_URL` / `TTS_MODEL` / `TTS_VOICE` / `TTS_FORMAT` | Narration (`openai` voice). Absent ⇒ that mode off (browser speech still works). |
 | `KOKORO_API_KEY` / `KOKORO_BASE_URL` / `KOKORO_MODEL` / `KOKORO_VOICE` / `KOKORO_FORMAT` | Narration (`kokoro` voice — hexgrad/kokoro-82m via OpenRouter). Defaults to the `OPENROUTER_*` LLM credentials. |
 | `DID_API_KEY` / `DID_SOURCE_URL_FEMALE` / `DID_SOURCE_URL_MALE` / `DID_VOICE_ID_FEMALE` / `DID_VOICE_ID_MALE` / `DID_VOICE_PROVIDER` | Avatar (D-ID Talks API). Only `DID_API_KEY` is required to enable; source URLs, voice IDs (default `en-US-JennyNeural` / `en-US-GuyNeural`), and provider (default `microsoft`) fall back to defaults if absent. The key is the dashboard value in `base64(email):password` form and is sent verbatim as `Authorization: Basic <key>`. Legacy `D_ID_*` names are still read as a fallback. |
+| `LOCAL_AVATAR_URL` / `LOCAL_AVATAR_IMAGE_FEMALE` / `LOCAL_AVATAR_IMAGE_MALE` | Free open-source local avatar generation. URL points to the avatar proxy (`http://127.0.0.1:8005/generate`), which bridges to a RunPod SadTalker endpoint (see [`workers/runpod_avatar`](workers/runpod_avatar/README.md)). Images are base portraits for male/female presenters, lip-synced to the segment's narration audio. |
+| `RUNPOD_AVATAR_BASE_URL` / `AVATAR_PROXY_PORT` | RunPod serverless talking-head endpoint (`https://api.runpod.ai/v2/<id>`) used by [`avatar_proxy.py`](workers/avatar_proxy.py), and the port the proxy listens on (default 8005). Shares `RUNPOD_API_KEY` with the LLM/NLLB endpoints. |
 | `LOCAL_MEDIA_DIR` / `LOCAL_MEDIA_URL` | **Set ⇒ local storage** (write into Laravel's `storage/app/public`, serve over HTTP). Unset ⇒ S3. |
 | `S3_ENDPOINT` / `S3_ACCESS_KEY` / `S3_SECRET_KEY` / `S3_BUCKET` / `S3_REGION` | S3-compatible object storage (prod). |
 | `BIBLE_DATA_FILE` | Override the bundled BSB with another same-schema translation. |
@@ -1223,7 +1231,7 @@ before any state-changing request to bootstrap CSRF protection.
 | `GET` | `/admin/donors` | Donation rollups. |
 | `GET` | `/admin/prayer-requests` | Paginated log of prayer-request intakes. |
 | `GET` | `/admin/settings` | Read global settings (permission-checked: `settings.view`). |
-| `PATCH` | `/admin/settings` | (admin only) Update any of `narration_mode` / `narration_en` / `narration_my` / `narration_td` / `text_highlight_enabled` / `lang_en` / `lang_my` / `lang_td` / `countdown_content_enabled` / `countdown_content_source` / `countdown_banners` / `music_reuse` / `storage_backend` / `avatar_enabled` / `runpod_enabled` / `moods` / `music_sources` / `default_music_source` / `scheduling_enabled` / `ad_slot_enabled` / `ad_slot_html`. |
+| `PATCH` | `/admin/settings` | (admin only) Update any of `narration_mode` / `narration_en` / `narration_my` / `narration_td` / `text_highlight_enabled` / `lang_en` / `lang_my` / `lang_td` / `countdown_content_enabled` / `countdown_content_source` / `countdown_banners` / `music_reuse` / `storage_backend` / `avatar_enabled` / `local_avatar_enabled` / `runpod_enabled` / `moods` / `music_sources` / `default_music_source` / `scheduling_enabled` / `ad_slot_enabled` / `ad_slot_html`. |
 | `GET` | `/admin/music-tracks` | AI music pool (permission-checked: `music_pool.view`). Includes `suno`, `musicgen`, and `local_ai` sources. |
 | `POST` | `/admin/music-tracks` | (admin only) Add a track to the pool (`source`: `suno`/`musicgen`/`local_ai`). |
 | `PATCH` | `/admin/music-tracks/{id}` | (admin only) Update a pool track. |
@@ -1365,3 +1373,23 @@ If you are a creator whose video has been embedded here and you would prefer it 
 used, you can disable embedding on your YouTube video settings — the system filters on
 `videoEmbeddable: true`, so your video will automatically be excluded from all future
 searches.
+
+### Hymn MIDI, lyrics & worship-song sources
+
+The instrumental hymn renders (`hymn`/`hymn_sung` sources) and on-screen lyrics are built
+**once per machine** by the seed scripts from the public-domain and freely published
+sources below — the files are then stored locally and served from there, never
+re-downloaded per service. We are grateful to each of these communities for keeping
+hymns and worship lyrics freely available, and we credit them here in full.
+
+| Source | What we use | Used by |
+|--------|-------------|---------|
+| **[Open Hymnal Project](http://openhymnal.org)** | Public-domain English hymn MIDI bundle (`OpenHymnal2014.06`) rendered to instrumental MP3, plus the matching public-domain verse lyrics | [seed_hymns.py](workers/seed_hymns.py) |
+| **[tedimhymn.com](https://tedimhymn.com/)** | *Tedim Hymn 7th Edition* MIDI tune library, rendered to instrumental MP3 as the last-resort fallback for Tedim/Zolai hymns | [tools/seed_tedim_midi.py](workers/tools/seed_tedim_midi.py) |
+| **[Nikon Ghong — Laibu Saal](https://nikonghong.com/laibu-saal/)** | Tedim/Zolai hymn lyrics and song texts | [data/hymns_td.json](workers/data/hymns_td.json) |
+| **[Myanmar Praise and Worship Songs](http://myanmarpraiseandworshipsongs.com/)** | Myanmar Christian worship lyrics and song texts | [tools/collect_myanmar_lyrics.py](workers/tools/collect_myanmar_lyrics.py) |
+
+All hymn audio is generated locally (MIDI → WAV via **fluidsynth** + the FluidR3 GM
+soundfont → MP3 via **ffmpeg**); no proprietary recordings are copied or re-hosted. If you
+maintain one of these collections and would prefer your material not be used, please reach
+out and it will be removed.

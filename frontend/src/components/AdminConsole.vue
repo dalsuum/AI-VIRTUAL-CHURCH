@@ -987,7 +987,7 @@ async function grApprove(key) {
     await api.adminGrammarReviewSave({ key, action: 'approve' });
     await loadGrammarReview();
   } catch (e) {
-    grError.value = e?.data?.message || 'Could not save.';
+    grError.value = e?.data?.error || e?.data?.message || 'Could not save.';
   } finally {
     grBusy.value = false;
   }
@@ -1002,7 +1002,7 @@ async function grSaveCorrection(key) {
     grCorrection.value = '';
     await loadGrammarReview();
   } catch (e) {
-    grError.value = e?.data?.message || 'Could not save.';
+    grError.value = e?.data?.error || e?.data?.message || 'Could not save.';
   } finally {
     grBusy.value = false;
   }
@@ -1014,7 +1014,7 @@ async function grReset(key) {
     await api.adminGrammarReviewSave({ key, action: 'reset' });
     await loadGrammarReview();
   } catch (e) {
-    grError.value = e?.data?.message || 'Could not reset.';
+    grError.value = e?.data?.error || e?.data?.message || 'Could not reset.';
   } finally {
     grBusy.value = false;
   }

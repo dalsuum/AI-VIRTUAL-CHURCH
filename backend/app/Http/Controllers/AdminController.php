@@ -15,6 +15,7 @@ use App\Http\Requests\UpdateSettingsRequest;
 use App\Services\PermissionService;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Str;
 use Illuminate\Http\JsonResponse;
@@ -956,10 +957,18 @@ class AdminController extends Controller
             ];
         }
 
-        file_put_contents(
+        $written = @file_put_contents(
             $reviewFile,
             json_encode($reviews, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
         );
+
+        if ($written === false) {
+            Log::error('grammar-review: unable to write review file', ['file' => $reviewFile]);
+
+            return response()->json([
+                'error' => 'Could not save the review. The server cannot write to its data directory — please contact an administrator.',
+            ], 500);
+        }
 
         return response()->json(['ok' => true]);
     }

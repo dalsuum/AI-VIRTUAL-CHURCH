@@ -1237,7 +1237,7 @@ before any state-changing request to bootstrap CSRF protection.
 | `PATCH` | `/admin/music-tracks/{id}` | (admin only) Update a pool track. |
 | `DELETE` | `/admin/music-tracks/{id}` | (admin only) Delete a pool track. |
 | `GET` | `/admin/grammar-review` | Language grammar review — list sentences from Tedim/Burmese data files (permission-checked: `language_review.view`). Query params: `lang` (`td`/`my`), `type` (`hymn_titles`/`hymn_lyrics`/`sermons`/`prayers`), `status` (`all`/`pending`/`approved`/`corrected`), `page`. |
-| `POST` | `/admin/grammar-review` | Save an approval or correction for a sentence (`action`: `approve`/`correct`/`reset`; `key`; `correction` text). Persisted in `workers/data/grammar_review.json`. |
+| `POST` | `/admin/grammar-review` | Save an approval or correction for a sentence (`action`: `approve`/`correct`/`reset`; `key`; `correction` text). Persisted in `workers/data/grammar_review.json` (runtime-written, gitignored). The web user (`www-data`) must have write access to `workers/data/`; otherwise the endpoint returns a `500` with a clear "cannot write to data directory" message instead of saving silently. |
 | `GET` | `/admin/permissions` | Role permission matrix (permission-checked: `permissions.view`). |
 | `PATCH` | `/admin/permissions` | (admin only) Update the permission matrix. |
 | `GET` | `/admin/export/{type}` | (admin only) CSV: `donations` \| `users` \| `testimonies`. |

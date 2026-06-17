@@ -24,6 +24,7 @@ workers/data/books_en.json
 workers/data/burmese_church_vocab.json
 workers/data/eng_myan_dict.db
 workers/data/*.jsonl
+workers/data/grammar_review.json
 # hymns_td.json is committed directly — not ignored
 
 # Laravel storage symlink (regenerated via `php artisan storage:link`)

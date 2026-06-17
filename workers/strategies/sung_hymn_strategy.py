@@ -49,6 +49,7 @@ class SungHymnStrategy(MusicStrategy):
                     provider_ref=f"sung_td_{slug}",
                     title=title,
                     lyrics=lyrics,
+                    timings=hymn_local.get("timings"),
                 )
 
         elif self.language == "my":
@@ -65,6 +66,7 @@ class SungHymnStrategy(MusicStrategy):
                     provider_ref=f"sung_my_{slug}",
                     title=title,
                     lyrics=lyrics,
+                    timings=hymn_local.get("timings"),
                 )
 
         # 2. English public-domain recording (primary for 'en'; fallback for 'my'/'td')
@@ -76,9 +78,14 @@ class SungHymnStrategy(MusicStrategy):
         slug_en = hymn_en["slug"]
         key = f"hymns/{slug_en}.sung.mp3"
 
+        # Timings only apply when the on-screen lyrics line up with this audio —
+        # i.e. the English path. On the my/td→English fallback the verses are in
+        # the local language while the audio is English, so no synced timings.
+        timings = None
         if self.language == "en":
             title = hymn_en["title"]
             lyrics = hymn_en.get("lyrics", "")
+            timings = hymn_en.get("timings")
             rec = hymn_en.get("recording", {})
             if rec:
                 title = f"{title} · {rec.get('performer', 'Unknown')} ({rec.get('year', '')})"
@@ -89,4 +96,5 @@ class SungHymnStrategy(MusicStrategy):
             provider_ref=f"sung_{self.language}_{slug_en}",
             title=title,
             lyrics=lyrics,
+            timings=timings,
         )

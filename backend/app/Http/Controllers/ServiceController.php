@@ -230,6 +230,7 @@ class ServiceController extends Controller
             'url'          => $worship->storage_key,     // stored-audio key (presign later)
             'title'        => $worship->text_payload,    // track caption
             'lyrics'       => $worship->lyrics,          // public-domain hymn verses (hymn sources)
+            'timings'      => $worship->timings,         // optional LRC line timings paired with lyrics
         ] : null;
 
         // Spoken/text segments, keyed by segment name for the client to render.

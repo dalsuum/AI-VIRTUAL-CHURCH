@@ -516,6 +516,9 @@ def generate_music(job: dict, plan: dict) -> None:
             # public-domain verses ride along in `lyrics` for on-screen display.
             text_payload=result.title,
             lyrics=result.lyrics,
+            # LRC line timings for synced on-screen lyrics (static sung hymns);
+            # None for dynamic sources, so the player keeps plain verses.
+            timings=result.timings,
         )
 
 

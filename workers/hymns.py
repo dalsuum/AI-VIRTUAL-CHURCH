@@ -29,6 +29,27 @@ HYMNS: list[dict] = [
         "slug": "it-is-well", "title": "It Is Well With My Soul", "author": "Horatio Spafford",
         "year": 1873, "scripture": "Psalm 46:1", "midi": "It_Is_Well_With_My_Soul-It_Is_Well-Ville_Du_Havre.mid",
         "moods": {"grieving", "anxious", "peace", "comfort", "loss"},
+        # LRC pilot fixture (public-domain verse 1 + refrain). The `timings`
+        # below are APPROXIMATE placeholders spread across the 78rpm recording's
+        # ~176s so the synced-lyrics path can be exercised end-to-end; re-author
+        # accurate cues with `python workers/tools/tap_lyrics.py` against the real
+        # audio when piloting for real.
+        "lyrics": (
+            "When peace like a river attendeth my way,\n"
+            "When sorrows like sea billows roll;\n"
+            "Whatever my lot, Thou hast taught me to say,\n"
+            "It is well, it is well with my soul.\n"
+            "It is well with my soul,\n"
+            "It is well, it is well with my soul."
+        ),
+        "timings": [
+            {"time": 6.0,   "line_index": 0},
+            {"time": 24.0,  "line_index": 1},
+            {"time": 42.0,  "line_index": 2},
+            {"time": 60.0,  "line_index": 3},
+            {"time": 82.0,  "line_index": 4},
+            {"time": 100.0, "line_index": 5},
+        ],
     },
     {
         "slug": "be-still-my-soul", "title": "Be Still, My Soul", "author": "Katharina von Schlegel",

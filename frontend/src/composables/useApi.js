@@ -60,7 +60,7 @@ async function refreshCsrf() {
   await fetch(`${APP_URL}/sanctum/csrf-cookie`, { credentials: "include" });
 }
 
-async function request(path, { method = "GET", body } = {}) {
+async function request(path, { method = "GET", body } = {}, _retried = false) {
   const mutating = method !== "GET" && method !== "HEAD";
   if (mutating) await ensureCsrf();
 
@@ -74,6 +74,15 @@ async function request(path, { method = "GET", body } = {}) {
     },
     body: body ? JSON.stringify(body) : undefined,
   });
+
+  // A 419 means the XSRF-TOKEN cookie we sent no longer matches the server
+  // session (e.g. the session rotated while a tab was left open, leaving a
+  // stale token behind). ensureCsrf() won't refresh it because a cookie still
+  // exists, so force a fresh token and retry the mutating request once.
+  if (res.status === 419 && mutating && !_retried) {
+    await refreshCsrf();
+    return request(path, { method, body }, true);
+  }
 
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw Object.assign(new Error(data.message || "Request failed"), { status: res.status, data });

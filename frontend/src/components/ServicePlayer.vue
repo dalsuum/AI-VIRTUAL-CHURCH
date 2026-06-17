@@ -296,11 +296,54 @@ const paragraphs = computed(() => {
   }));
 });
 
+// --- LRC line-synced highlighting (static sung hymns) --------------------
+// When a segment carries a `timings` array ([{time, line_index}], ascending by
+// time — authored by workers/tools/tap_lyrics.py) we highlight whole lines off
+// real timestamps instead of estimating word position proportionally. Anything
+// without `timings` keeps the proportional word path above. See
+// docs/lrc-static-sync-spike.md.
+const hasTimings = computed(() =>
+  Array.isArray(current.value?.timings) && current.value.timings.length > 0);
+
+// Non-empty lyric lines, matching how tap_lyrics.py indexes line_index.
+const lyricLines = computed(() => {
+  if (!current.value?.text) return [];
+  return current.value.text.split(/\n/).map(l => l.trim()).filter(Boolean);
+});
+
+const activeLineIndex = ref(-1);
+
+// Largest line_index whose timing.time <= t, via binary search; -1 before the
+// first cue. Pure + side-effect free so the logic is easy to reason about/test.
+function lineIndexAtTime(timings, t) {
+  let lo = 0, hi = timings.length - 1, ans = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (timings[mid].time <= t) { ans = mid; lo = mid + 1; }
+    else { hi = mid - 1; }
+  }
+  return ans === -1 ? -1 : timings[ans].line_index;
+}
+
+// Smooth-scroll the active line into view as it changes.
+const lineEls = ref([]);
+watch(activeLineIndex, (i) => {
+  const el = lineEls.value[i];
+  if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+});
+
 function onMediaTimeUpdate() {
   if (!textHighlightEnabled.value) return;
   const el = mediaEl.value;
+  if (!el) return;
+
+  if (hasTimings.value) {
+    activeLineIndex.value = lineIndexAtTime(current.value.timings, el.currentTime);
+    return;
+  }
+
   const total = wordPositions.value.length;
-  if (!el || !el.duration || !total) return;
+  if (!el.duration || !total) return;
   highlightedWordIndex.value = Math.min(
     Math.floor((el.currentTime / el.duration) * total),
     total - 1,
@@ -373,6 +416,8 @@ watch(
     const keyChanged = !prev || key !== prev.key;
     if (keyChanged) {
       highlightedWordIndex.value = -1;
+      activeLineIndex.value = -1;
+      lineEls.value = [];
       videoPartIndex.value = 0;
       stopNarration();
       stopMediaEl();           // silence the previous segment's media before it unmounts
@@ -538,7 +583,18 @@ watch(stages, (list) => {
             >
               {{ narrating ? "⏸ Stop reading" : "🔊 Read aloud" }}
             </button>
-            <div class="stage-text">
+            <!-- LRC line-synced lyrics: real per-line timings drive a whole-line
+                 highlight that scrolls into view. Falls back to the proportional
+                 word path below when the segment has no `timings`. -->
+            <div v-if="hasTimings" class="stage-text lrc">
+              <p
+                v-for="(line, li) in lyricLines"
+                :key="li"
+                :ref="el => { if (el) lineEls[li] = el; }"
+                :class="{ 'lrc-active': textHighlightEnabled && li === activeLineIndex }"
+              >{{ line }}</p>
+            </div>
+            <div v-else class="stage-text">
               <p v-for="(para, pi) in paragraphs" :key="pi">
                 <template v-for="({ word, idx }) in para.words" :key="idx">
                   <span :class="{ highlight: textHighlightEnabled && idx === highlightedWordIndex }">{{ word }}</span>{{ ' ' }}
@@ -684,6 +740,9 @@ watch(stages, (list) => {
 .stage-text p:last-child { margin-bottom: 0; }
 .stage-text span { border-radius: 3px; transition: background 0.15s; }
 .stage-text span.highlight { background: rgba(99, 179, 237, 0.35); }
+/* LRC line-synced lyrics: dim inactive lines, lift the active one. */
+.stage-text.lrc p { transition: color 0.2s, opacity 0.2s; color: var(--text-muted); opacity: 0.55; }
+.stage-text.lrc p.lrc-active { color: var(--text); opacity: 1; font-weight: 600; }
 
 .ad-slot {
   width: 100%;

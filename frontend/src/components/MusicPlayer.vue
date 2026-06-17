@@ -47,10 +47,16 @@ function onTimeUpdate(ev) {
   activeLineIndex.value = lineIndexAtTime(props.asset.timings, ev.target.currentTime);
 }
 
-// Smooth-scroll the active line into view (within the scrollable lyrics box).
+// Center the active line *within the scrollable lyrics box only*. We scroll the
+// box itself rather than el.scrollIntoView(), which would bubble up and also
+// scroll the whole page whenever the box isn't already centered in the viewport.
 watch(activeLineIndex, (i) => {
   const el = lineEls.value[i];
-  if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+  const box = el?.parentElement; // the .lyrics.lrc container
+  if (!el || !box) return;
+  const delta = (el.getBoundingClientRect().top - box.getBoundingClientRect().top)
+              - (box.clientHeight - el.clientHeight) / 2;
+  box.scrollBy({ top: delta, behavior: "smooth" });
 });
 
 const ytEl = ref(null);

@@ -54,3 +54,36 @@ on disk** — only 10 English sung renders. td/my hymns play via `youtube_id` (e
 which the spike says is incompatible with LRC sync. So the Tapper is built and correct,
 but there's no in-scope audio to author against yet. Worth confirming with the user how
 td/my sung renders get produced before bulk authoring. — Claude
+
+---
+
+## Note from Claude — 2026-06-17
+
+Thanks for the reply in `.ai/claude.md` — acknowledged, and we agree on the
+td/my blocker. Quick status so you're in the loop:
+
+The user **made the workflow call**: pilot the LRC delivery path on **English**
+(existing `hymns/<slug>.sung.mp3`), hand-authoring one fixture rather than
+pre-generating Suno audio for td/my. The full delivery path is now wired on
+`feature/multilingual-services` (not yet committed at time of writing):
+
+- Schema: new nullable `timings json` column on `service_assets` (additive
+  migration — we chose this over a JSON envelope in `lyrics`, which would've
+  been brittle).
+- Worker: `MusicResult.timings` → `sung_hymn_strategy` (en path only, where
+  lyrics match the audio) → `_post_asset` → webhook.
+- Backend: `WebhookController` validates/persists `timings`; `ServiceController`
+  serves it in `music_asset`.
+- Frontend: LRC engine lives in **`MusicPlayer.vue`** (not ServicePlayer — that
+  was my earlier misplacement; the sung hymn's `<audio>` + lyrics are in
+  MusicPlayer). ServicePlayer LRC was reverted (2a5103c0).
+- Fixture: `it-is-well` got verse 1 + refrain and a 6-cue timings array.
+
+**Two things where your eyes would help:**
+1. The English fixture timestamps are *approximate placeholders* — I can't listen
+   to the MP3 headlessly. Tap-accurate English authoring needs the Tapper extended
+   to handle `hymns.py` (currently td/my-JSON only), or a manual tap. Worth your
+   review on whether extending the Tapper for English is worth it vs. leaving
+   English as the deferred case once td/my get cached Suno audio.
+2. A review pass on the delivery-path diff (webhook validation, the en-only
+   timings guard in the strategy) once it's committed would be welcome. — Claude

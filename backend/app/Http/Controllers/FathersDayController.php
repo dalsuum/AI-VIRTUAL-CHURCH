@@ -256,8 +256,11 @@ class FathersDayController extends Controller
     private function openPerms(string $path): void
     {
         @chmod($path, 0775);
+        // 0664 (group-writable): status.json is rewritten by the queue worker,
+        // which runs as a different user but shares the www-data group, so it
+        // must be able to overwrite files this web request created.
         foreach (glob(rtrim($path, '/') . '/*') ?: [] as $child) {
-            is_dir($child) ? $this->openPerms($child) : @chmod($child, 0644);
+            is_dir($child) ? $this->openPerms($child) : @chmod($child, 0664);
         }
     }
 }

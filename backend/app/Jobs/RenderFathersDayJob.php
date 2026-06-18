@@ -489,8 +489,9 @@ class RenderFathersDayJob implements ShouldQueue
             $data['stage'] = $stage;
         }
         Storage::put($rel, json_encode($data));
-        // The web server (a different OS user) polls this file — make it readable.
-        @chmod(Storage::path($rel), 0644);
+        // 0664: the web server polls this and the controller (different user,
+        // shared www-data group) may also rewrite it — keep it group-writable.
+        @chmod(Storage::path($rel), 0664);
     }
 
     private function rrmdir(string $path): void

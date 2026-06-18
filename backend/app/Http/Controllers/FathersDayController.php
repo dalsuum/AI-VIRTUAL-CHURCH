@@ -211,6 +211,23 @@ class FathersDayController extends Controller
         return $this->adminShow();
     }
 
+    /** Stream the uploaded song to the admin tap-to-sync player. */
+    public function adminSong(): BinaryFileResponse|JsonResponse
+    {
+        $c = $this->config();
+        if ($c['song_ext'] === null) {
+            return response()->json(['message' => 'No song'], 404);
+        }
+        $rel = self::DIR . "/song.{$c['song_ext']}";
+        if (! Storage::exists($rel)) {
+            return response()->json(['message' => 'No song'], 404);
+        }
+
+        return response()->file(Storage::path($rel), [
+            'Content-Type' => $c['song_ext'] === 'wav' ? 'audio/wav' : 'audio/mpeg',
+        ]);
+    }
+
     public function adminUploadSong(Request $request): JsonResponse
     {
         $request->validate([

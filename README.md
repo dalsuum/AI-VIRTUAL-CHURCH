@@ -1038,6 +1038,11 @@ for one occasion and removed cleanly afterwards.
   EN/MY/TD lyrics all display — the host has no Myanmar system font. Reuses the
   LRC convention from the worship `MusicPlayer`.
 - **Song**: MP3/WAV up to **50 MB**.
+- **Tap-to-sync** (exact karaoke timing): in the admin panel, *Tap-to-sync
+  lyrics* plays the song and the admin presses **Space** as each line is sung;
+  this writes per-line `[mm:ss.xx]` LRC timestamps and turns on synced mode, so
+  every line appears exactly when it's sung — reliable for any language. Without
+  tapping, lines are split evenly from the vocal-onset (below).
 - **Lyrics hold for the intro**: when a song is uploaded, `DetectVocalStartJob`
   runs **Demucs** (vocal source separation) on the first 90s to find when the
   singing starts, and caches `vocal_start` (seconds) in config. The renderer

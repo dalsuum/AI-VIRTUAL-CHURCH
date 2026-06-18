@@ -208,6 +208,7 @@ Route::middleware('auth:sanctum')->group(function () {
         // Father's Day (Special Day) MV — admin config + song upload (removable feature).
         Route::get('/fathers-day',          [\App\Http\Controllers\FathersDayController::class, 'adminShow']);
         Route::post('/fathers-day',         [\App\Http\Controllers\FathersDayController::class, 'adminSave']);
+        Route::get('/fathers-day/song',     [\App\Http\Controllers\FathersDayController::class, 'adminSong']);
         Route::post('/fathers-day/song',    [\App\Http\Controllers\FathersDayController::class, 'adminUploadSong']);
 
         // System actions — read-only refresh is enabled; git pull / package install stay disabled (destructive).

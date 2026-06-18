@@ -471,6 +471,16 @@ export const api = {
   fdJobStatus: (id) => request(`/fathers-day/job/${id}`),
   fdDownloadUrl: (id) => `${BASE_URL}/fathers-day/download/${id}`,
 
+  // Admin: fetch the song as a blob for the tap-to-sync player (cookie auth).
+  fdAdminSongBlob: async () => {
+    const res = await fetch(`${BASE_URL}/admin/fathers-day/song`, {
+      credentials: "include",
+      headers: { Accept: "audio/*" },
+    });
+    if (!res.ok) throw Object.assign(new Error("Could not load song"), { status: res.status });
+    return res.blob();
+  },
+
   // Admin config + song upload.
   fdAdminShow: () => request("/admin/fathers-day"),
   fdAdminSave: (payload) => request("/admin/fathers-day", { method: "POST", body: payload }),

@@ -46,6 +46,8 @@ class FathersDayController extends Controller
             'sync_enabled'   => false,       // time-synced highlight vs. even split
             'default_effect' => 'slide',
             'song_ext'       => null,        // 'mp3' | 'wav' once a song is uploaded
+            'vocal_start'        => 0.0,     // seconds; lyrics held until vocals enter
+            'vocal_start_status' => 'none',  // none | detecting | ready | failed
             'updated_at'     => null,
         ];
 
@@ -174,6 +176,8 @@ class FathersDayController extends Controller
             'default_effect' => $c['default_effect'],
             'has_song'       => $c['song_ext'] !== null,
             'song_ext'       => $c['song_ext'],
+            'vocal_start'        => (float) ($c['vocal_start'] ?? 0.0),
+            'vocal_start_status' => $c['vocal_start_status'] ?? 'none',
             'updated_at'     => $c['updated_at'],
         ]);
     }
@@ -187,6 +191,7 @@ class FathersDayController extends Controller
             'lyrics'         => ['nullable', 'string', 'max:20000'],
             'sync_enabled'   => ['required', 'boolean'],
             'default_effect' => ['required', 'in:' . implode(',', self::EFFECTS)],
+            'vocal_start'    => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:600'],
         ]);
 
         $c = $this->config();
@@ -196,6 +201,11 @@ class FathersDayController extends Controller
         $c['lyrics']         = $validated['lyrics'] ?? '';
         $c['sync_enabled']   = $validated['sync_enabled'];
         $c['default_effect'] = $validated['default_effect'];
+        // Manual override of the detected vocal-onset time (admin can correct it).
+        if (array_key_exists('vocal_start', $validated) && $validated['vocal_start'] !== null) {
+            $c['vocal_start']        = (float) $validated['vocal_start'];
+            $c['vocal_start_status'] = 'ready';
+        }
         $this->saveConfig($c);
 
         return $this->adminShow();
@@ -218,7 +228,13 @@ class FathersDayController extends Controller
 
         $c = $this->config();
         $c['song_ext'] = $ext;
+        // A new song invalidates the cached vocal-onset time; re-detect it so the
+        // lyrics hold through this song's intro.
+        $c['vocal_start']        = 0.0;
+        $c['vocal_start_status'] = 'detecting';
         $this->saveConfig($c);
+
+        \App\Jobs\DetectVocalStartJob::dispatch();
 
         return $this->adminShow();
     }

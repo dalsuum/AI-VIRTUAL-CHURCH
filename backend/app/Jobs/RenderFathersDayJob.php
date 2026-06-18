@@ -310,9 +310,14 @@ class RenderFathersDayJob implements ShouldQueue
             if (! $lines) {
                 return null;
             }
-            $per = $duration / count($lines);
+            // Hold the lyrics through the instrumental intro: start the even split
+            // at the detected vocal-onset time and spread the lines across the
+            // remaining (sung) portion of the song.
+            $start = max(0.0, min((float) ($c['vocal_start'] ?? 0.0), max(0.0, $duration - 1.0)));
+            $span  = max(1.0, $duration - $start);
+            $per   = $span / count($lines);
             foreach ($lines as $i => $text) {
-                $cues[] = ['start' => $i * $per, 'end' => ($i + 1) * $per, 'text' => $text];
+                $cues[] = ['start' => $start + $i * $per, 'end' => $start + ($i + 1) * $per, 'text' => $text];
             }
         }
 

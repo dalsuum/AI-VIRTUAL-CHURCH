@@ -4,7 +4,7 @@
   Remove with the rest of the feature (see FathersDayController).
 -->
 <script setup>
-import { ref, onMounted } from "vue";
+import { ref, onMounted, onUnmounted } from "vue";
 import { api } from "../composables/useApi";
 
 const cfg = ref(null);
@@ -22,16 +22,35 @@ const EFFECTS = [
 ];
 
 onMounted(load);
+onUnmounted(() => detectPoll && clearInterval(detectPoll));
 
+let detectPoll = null;
 async function load() {
   loading.value = true;
   try {
     cfg.value = await api.fdAdminShow();
+    watchDetection();
   } catch (e) {
     err.value = e.message || "Failed to load configuration.";
   } finally {
     loading.value = false;
   }
+}
+
+// While vocal detection runs in the background, refresh until it lands.
+function watchDetection() {
+  if (detectPoll) { clearInterval(detectPoll); detectPoll = null; }
+  if (cfg.value?.vocal_start_status !== "detecting") return;
+  detectPoll = setInterval(async () => {
+    try {
+      const fresh = await api.fdAdminShow();
+      if (fresh.vocal_start_status !== "detecting") {
+        cfg.value.vocal_start = fresh.vocal_start;
+        cfg.value.vocal_start_status = fresh.vocal_start_status;
+        clearInterval(detectPoll); detectPoll = null;
+      }
+    } catch { /* keep polling */ }
+  }, 5000);
 }
 
 async function save() {
@@ -44,6 +63,8 @@ async function save() {
       lyrics: cfg.value.lyrics || "",
       sync_enabled: !!cfg.value.sync_enabled,
       default_effect: cfg.value.default_effect || "slide",
+      vocal_start: cfg.value.vocal_start === "" || cfg.value.vocal_start == null
+        ? null : Number(cfg.value.vocal_start),
     });
     msg.value = "Saved.";
   } catch (e) {
@@ -59,7 +80,8 @@ async function uploadSong() {
   try {
     cfg.value = await api.fdAdminUploadSong(songFile.value);
     songFile.value = null;
-    msg.value = "Song uploaded.";
+    msg.value = "Song uploaded. Detecting where the vocals start…";
+    watchDetection();
   } catch (e) {
     err.value = e.message || "Upload failed.";
   } finally {
@@ -112,6 +134,20 @@ async function uploadSong() {
       </div>
 
       <div class="field">
+        <label>Lyrics start at — vocals onset (seconds)</label>
+        <div class="inline">
+          <input type="number" min="0" max="600" step="0.1" v-model="cfg.vocal_start" style="max-width:120px" />
+          <span class="hint small" :class="{ detecting: cfg.vocal_start_status === 'detecting' }">
+            <template v-if="cfg.vocal_start_status === 'detecting'">⏳ Detecting vocals… (auto, ~1–2 min after upload)</template>
+            <template v-else-if="cfg.vocal_start_status === 'ready'">✓ Auto-detected — edit to override</template>
+            <template v-else-if="cfg.vocal_start_status === 'failed'">⚠ Auto-detect failed — set manually</template>
+            <template v-else>Set the second the singing starts (0 = from the beginning)</template>
+          </span>
+        </div>
+        <p class="hint small">Lyrics are held during the intro and spread across the song from this point.</p>
+      </div>
+
+      <div class="field">
         <label>Song ({{ cfg.has_song ? "uploaded: " + cfg.song_ext : "none yet" }})</label>
         <input type="file" accept="audio/mpeg,audio/wav,.mp3,.wav" @change="songFile = $event.target.files[0]" />
         <button class="btn" :disabled="!songFile || uploading" @click="uploadSong">
@@ -146,6 +182,8 @@ input[type="text"], select, textarea {
   background: var(--bg); color: var(--text); font: inherit;
 }
 textarea { resize: vertical; font-family: monospace; }
+.inline { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.detecting { color: var(--primary); }
 .toggle { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; }
 .toggle.small span { font-size: 0.78rem; color: var(--text-muted); }
 .actions { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }

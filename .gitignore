@@ -3,12 +3,15 @@
 **/.env
 !.env.example
 !**/.env.example
+# Local-only server credential file (sudo password) — NEVER commit
+.srvcred
 
 # Python
 __pycache__/
 *.py[cod]
 *.egg-info/
 .venv/
+.venv-demucs/
 venv/
 
 # Logs / runtime output

@@ -1038,6 +1038,16 @@ for one occasion and removed cleanly afterwards.
   EN/MY/TD lyrics all display — the host has no Myanmar system font. Reuses the
   LRC convention from the worship `MusicPlayer`.
 - **Song**: MP3/WAV up to **50 MB**.
+- **Lyrics hold for the intro**: when a song is uploaded, `DetectVocalStartJob`
+  runs **Demucs** (vocal source separation) on the first 90s to find when the
+  singing starts, and caches `vocal_start` (seconds) in config. The renderer
+  holds the lyrics through the instrumental intro and spreads them from that
+  point. Admin can override the detected value. Demucs runs in an **isolated
+  venv** (`workers/.venv-demucs`, gitignored) so its torch can't disturb the
+  narration/avatar stack; detection is ~3 min on CPU but runs once per song.
+  Setup: `python3.12 -m venv workers/.venv-demucs && workers/.venv-demucs/bin/pip
+  install torch torchaudio --index-url https://download.pytorch.org/whl/cpu &&
+  workers/.venv-demucs/bin/pip install demucs diffq`.
 - **Rendering** runs on the existing Laravel `queue:work` worker via
   `RenderFathersDayJob` shelling out to `ffmpeg` — no new service or port.
 

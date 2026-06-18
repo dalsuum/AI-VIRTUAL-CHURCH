@@ -6,20 +6,23 @@ namespace App\Http\Controllers;
  * ============================================================================
  *  Father's Day (Special Day) Music-Video generator — SELF-CONTAINED & REMOVABLE
  * ============================================================================
- * A standalone feature that lets a visitor upload photo(s) of their father and
- * download a vertical (1080x1920) MP4 set to an admin-provided song + lyrics.
+ * A standalone feature that lets a visitor pick one of several admin-provided
+ * songs, upload photo(s) of their father, and download a vertical 720x1280 MP4
+ * set to that song + its lyrics.
  *
  * Nothing here touches the worship pipeline. To remove the whole feature:
- *   1. delete this controller + App\Jobs\RenderFathersDayJob
- *   2. delete the "Father's Day MV" route block in routes/api.php
+ *   1. delete this controller + App\Jobs\RenderFathersDayJob + DetectVocalStartJob
+ *   2. delete the "Father's Day MV" route blocks in routes/api.php
  *   3. delete storage/app/fathersday/
- *   4. delete frontend FathersDay.vue + its #fathers-day route + admin section
+ *   4. delete frontend FathersDay.vue + FathersDayManager.vue + their wiring
  *
  * Config + admin-uploaded assets live in storage/app/fathersday/ as plain files
- * (config.json, song.<ext>, lyrics.lrc) — no DB migration. Renders are queued
- * onto the existing Laravel queue worker.
+ * (config.json + songs/<songId>.<ext>) — no DB migration. Each song carries its
+ * own lyrics, sync mode and detected vocal-onset. Renders run on the dedicated
+ * 'fathersday' queue.
  */
 
+use App\Jobs\DetectVocalStartJob;
 use App\Jobs\RenderFathersDayJob;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -32,6 +35,7 @@ class FathersDayController extends Controller
     private const DIR        = 'fathersday';
     private const CONFIG     = 'fathersday/config.json';
     private const MAX_PHOTOS = 6;
+    private const MAX_SONGS  = 20;
     private const EFFECTS    = ['slide', 'fade', 'kenburns'];
 
     // ---- Config helpers ----------------------------------------------------
@@ -42,52 +46,111 @@ class FathersDayController extends Controller
             'enabled'        => false,
             'title'          => 'Happy Father\'s Day',
             'subtitle'       => 'Make a music video for your father',
-            'lyrics'         => '',          // plain text or LRC ([mm:ss.xx]) lines
-            'sync_enabled'   => false,       // time-synced highlight vs. even split
             'default_effect' => 'slide',
-            'song_ext'       => null,        // 'mp3' | 'wav' once a song is uploaded
-            'vocal_start'        => 0.0,     // seconds; lyrics held until vocals enter
-            'vocal_start_status' => 'none',  // none | detecting | ready | failed
+            'songs'          => [],   // [{id,title,ext,lyrics,sync_enabled,vocal_start,vocal_start_status}]
             'updated_at'     => null,
         ];
 
-        if (! Storage::exists(self::CONFIG)) {
-            return $defaults;
+        $data = Storage::exists(self::CONFIG)
+            ? json_decode((string) Storage::get(self::CONFIG), true)
+            : [];
+        $config = is_array($data) ? array_merge($defaults, $data) : $defaults;
+        $config = $this->migrateLegacy($config);
+        $this->healSongPerms();
+
+        return $config;
+    }
+
+    /**
+     * Keep the songs dir + files readable by the render worker (a different OS
+     * user in the shared www-data group). Storage::makeDirectory/move create them
+     * private (0700/0600); open dir to 0775 and files to 0664. Idempotent + cheap;
+     * runs as www-data so it can fix anything this app created.
+     */
+    private function healSongPerms(): void
+    {
+        $dir = Storage::path(self::DIR . '/songs');
+        if (! is_dir($dir)) {
+            return;
         }
+        @chmod($dir, 0775);
+        foreach (glob($dir . '/*') ?: [] as $f) {
+            @chmod($f, 0664);
+        }
+    }
 
-        $data = json_decode((string) Storage::get(self::CONFIG), true);
+    /** Convert the old single-song config into a one-entry songs[] library. */
+    private function migrateLegacy(array $c): array
+    {
+        if (! empty($c['songs']) || empty($c['song_ext'])) {
+            return $c;
+        }
+        $id  = (string) Str::uuid();
+        $ext = $c['song_ext'];
+        $from = self::DIR . "/song.{$ext}";
+        if (Storage::exists($from)) {
+            Storage::makeDirectory(self::DIR . '/songs');
+            Storage::move($from, self::DIR . "/songs/{$id}.{$ext}");
+        }
+        $c['songs'] = [[
+            'id'                 => $id,
+            'title'              => $c['title'] ?? 'Song 1',
+            'ext'                => $ext,
+            'lyrics'             => $c['lyrics'] ?? '',
+            'sync_enabled'       => (bool) ($c['sync_enabled'] ?? false),
+            'vocal_start'        => (float) ($c['vocal_start'] ?? 0.0),
+            'vocal_start_status' => $c['vocal_start_status'] ?? 'none',
+        ]];
+        unset($c['song_ext'], $c['lyrics'], $c['sync_enabled'], $c['vocal_start'], $c['vocal_start_status']);
+        $this->saveConfig($c);
 
-        return is_array($data) ? array_merge($defaults, $data) : $defaults;
+        return $c;
     }
 
     private function saveConfig(array $config): void
     {
         $config['updated_at'] = now()->toIso8601String();
         Storage::put(self::CONFIG, json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+        @chmod(Storage::path(self::CONFIG), 0664);
+    }
+
+    private function findSong(array $c, ?string $id): ?array
+    {
+        foreach ($c['songs'] as $s) {
+            if (($s['id'] ?? null) === $id) {
+                return $s;
+            }
+        }
+        return null;
     }
 
     // ---- Public ------------------------------------------------------------
 
-    /** What the public page needs to render itself (no lyrics/song bytes leaked unless ready). */
+    /** What the public page needs: enabled flag, effects, and the song menu. */
     public function publicConfig(): JsonResponse
     {
         $c = $this->config();
+        $songs = array_values(array_map(
+            fn ($s) => ['id' => $s['id'], 'title' => $s['title']],
+            array_filter($c['songs'], fn ($s) => ! empty($s['ext']))
+        ));
 
         return response()->json([
-            'enabled'        => (bool) $c['enabled'] && $c['song_ext'] !== null,
+            'enabled'        => (bool) $c['enabled'] && count($songs) > 0,
             'title'          => $c['title'],
             'subtitle'       => $c['subtitle'],
             'default_effect' => in_array($c['default_effect'], self::EFFECTS, true) ? $c['default_effect'] : 'slide',
             'effects'        => self::EFFECTS,
             'max_photos'     => self::MAX_PHOTOS,
+            'songs'          => $songs,
         ]);
     }
 
-    /** Accept uploaded photo(s) + an effect, queue a render, return a job id. */
+    /** Accept uploaded photo(s) + an effect + chosen song, queue a render. */
     public function render(Request $request): JsonResponse
     {
         $c = $this->config();
-        if (! $c['enabled'] || $c['song_ext'] === null) {
+        if (! $c['enabled'] || count($c['songs']) === 0) {
             return response()->json(['message' => 'This feature is not available right now.'], 404);
         }
 
@@ -95,7 +158,14 @@ class FathersDayController extends Controller
             'photos'   => ['required', 'array', 'min:1', 'max:' . self::MAX_PHOTOS],
             'photos.*' => ['required', 'file', 'mimes:jpg,jpeg,png,webp', 'max:8192'],
             'effect'   => ['nullable', 'in:' . implode(',', self::EFFECTS)],
+            'song_id'  => ['nullable', 'string'],
         ]);
+
+        // Default to the first song when the client doesn't specify one.
+        $song = $this->findSong($c, $validated['song_id'] ?? null) ?? $c['songs'][0];
+        if (empty($song['ext'])) {
+            return response()->json(['message' => 'Selected song is unavailable.'], 422);
+        }
 
         $effect = $validated['effect'] ?? $c['default_effect'];
         $jobId  = (string) Str::uuid();
@@ -103,8 +173,7 @@ class FathersDayController extends Controller
 
         // Store each upload re-named (never trust client filenames). The render
         // job re-encodes every image through ffmpeg, which strips EXIF/GPS and
-        // neutralises malformed-image payloads — extension is validated above,
-        // content is validated by ffmpeg decoding it.
+        // neutralises malformed-image payloads.
         $i = 0;
         foreach ($request->file('photos') as $photo) {
             $ext = strtolower($photo->getClientOriginalExtension() ?: 'jpg');
@@ -117,20 +186,19 @@ class FathersDayController extends Controller
             'progress'   => 0,
             'stage'      => 'Queued',
             'effect'     => $effect,
+            'song_id'    => $song['id'],
             'created_at' => now()->toIso8601String(),
         ]));
 
-        // The web server (www-data) creates these with private 0700/0600 perms,
-        // but the queue worker runs as a different user and must read the photos
-        // and rewrite the status. Open the tree to group/other so both can work.
+        // www-data creates these private; the worker (other user, shared group)
+        // must read the photos and rewrite the status — open the tree.
         $this->openPerms(Storage::path($jobDir));
 
-        RenderFathersDayJob::dispatch($jobId, $effect);
+        RenderFathersDayJob::dispatch($jobId, $effect, $song['id']);
 
         return response()->json(['job_id' => $jobId, 'status' => 'queued']);
     }
 
-    /** Poll render progress. */
     public function status(string $jobId): JsonResponse
     {
         $jobId = $this->safeId($jobId);
@@ -147,7 +215,6 @@ class FathersDayController extends Controller
         return response()->json($data);
     }
 
-    /** Stream the finished MP4 as a download. */
     public function download(string $jobId): BinaryFileResponse|JsonResponse
     {
         $jobId = $this->safeId($jobId);
@@ -161,7 +228,7 @@ class FathersDayController extends Controller
         ]);
     }
 
-    // ---- Admin -------------------------------------------------------------
+    // ---- Admin: global settings -------------------------------------------
 
     public function adminShow(): JsonResponse
     {
@@ -171,13 +238,17 @@ class FathersDayController extends Controller
             'enabled'        => (bool) $c['enabled'],
             'title'          => $c['title'],
             'subtitle'       => $c['subtitle'],
-            'lyrics'         => $c['lyrics'],
-            'sync_enabled'   => (bool) $c['sync_enabled'],
             'default_effect' => $c['default_effect'],
-            'has_song'       => $c['song_ext'] !== null,
-            'song_ext'       => $c['song_ext'],
-            'vocal_start'        => (float) ($c['vocal_start'] ?? 0.0),
-            'vocal_start_status' => $c['vocal_start_status'] ?? 'none',
+            'songs'          => array_values(array_map(fn ($s) => [
+                'id'                 => $s['id'],
+                'title'              => $s['title'],
+                'has_song'           => ! empty($s['ext']),
+                'ext'                => $s['ext'] ?? null,
+                'lyrics'             => $s['lyrics'] ?? '',
+                'sync_enabled'       => (bool) ($s['sync_enabled'] ?? false),
+                'vocal_start'        => (float) ($s['vocal_start'] ?? 0.0),
+                'vocal_start_status' => $s['vocal_start_status'] ?? 'none',
+            ], $c['songs'])),
             'updated_at'     => $c['updated_at'],
         ]);
     }
@@ -188,94 +259,147 @@ class FathersDayController extends Controller
             'enabled'        => ['required', 'boolean'],
             'title'          => ['nullable', 'string', 'max:120'],
             'subtitle'       => ['nullable', 'string', 'max:200'],
-            'lyrics'         => ['nullable', 'string', 'max:20000'],
-            'sync_enabled'   => ['required', 'boolean'],
             'default_effect' => ['required', 'in:' . implode(',', self::EFFECTS)],
-            'vocal_start'    => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:600'],
         ]);
 
         $c = $this->config();
         $c['enabled']        = $validated['enabled'];
         $c['title']          = $validated['title'] ?: 'Happy Father\'s Day';
         $c['subtitle']       = $validated['subtitle'] ?: 'Make a music video for your father';
-        $c['lyrics']         = $validated['lyrics'] ?? '';
-        $c['sync_enabled']   = $validated['sync_enabled'];
         $c['default_effect'] = $validated['default_effect'];
-        // Manual override of the detected vocal-onset time (admin can correct it).
-        if (array_key_exists('vocal_start', $validated) && $validated['vocal_start'] !== null) {
-            $c['vocal_start']        = (float) $validated['vocal_start'];
-            $c['vocal_start_status'] = 'ready';
+        $this->saveConfig($c);
+
+        return $this->adminShow();
+    }
+
+    // ---- Admin: song library ----------------------------------------------
+
+    /** Add a song to the library (upload file + title), then detect its vocals. */
+    public function createSong(Request $request): JsonResponse
+    {
+        $request->validate([
+            'song'  => ['required', 'file', 'mimes:mp3,wav', 'max:51200'],
+            'title' => ['nullable', 'string', 'max:120'],
+        ]);
+
+        $c = $this->config();
+        if (count($c['songs']) >= self::MAX_SONGS) {
+            return response()->json(['message' => 'Song limit reached.'], 422);
+        }
+
+        $id  = (string) Str::uuid();
+        $ext = strtolower($request->file('song')->getClientOriginalExtension() ?: 'mp3');
+        $ext = in_array($ext, ['mp3', 'wav'], true) ? $ext : 'mp3';
+        $request->file('song')->storeAs(self::DIR . '/songs', "{$id}.{$ext}");
+        @chmod(Storage::path(self::DIR . "/songs/{$id}.{$ext}"), 0664);
+
+        $c['songs'][] = [
+            'id'                 => $id,
+            'title'              => $request->input('title') ?: ('Song ' . (count($c['songs']) + 1)),
+            'ext'                => $ext,
+            'lyrics'             => '',
+            'sync_enabled'       => false,
+            'vocal_start'        => 0.0,
+            'vocal_start_status' => 'detecting',
+        ];
+        $this->saveConfig($c);
+
+        DetectVocalStartJob::dispatch($id);
+
+        return $this->adminShow();
+    }
+
+    /** Update a song's title / lyrics / sync mode / vocal-onset override. */
+    public function updateSong(Request $request, string $songId): JsonResponse
+    {
+        $validated = $request->validate([
+            'title'        => ['sometimes', 'string', 'max:120'],
+            'lyrics'       => ['sometimes', 'nullable', 'string', 'max:20000'],
+            'sync_enabled' => ['sometimes', 'boolean'],
+            'vocal_start'  => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:600'],
+        ]);
+
+        $c = $this->config();
+        $found = false;
+        foreach ($c['songs'] as &$s) {
+            if ($s['id'] !== $songId) {
+                continue;
+            }
+            $found = true;
+            if (array_key_exists('title', $validated) && $validated['title'] !== null) {
+                $s['title'] = $validated['title'];
+            }
+            if (array_key_exists('lyrics', $validated)) {
+                $s['lyrics'] = $validated['lyrics'] ?? '';
+            }
+            if (array_key_exists('sync_enabled', $validated)) {
+                $s['sync_enabled'] = (bool) $validated['sync_enabled'];
+            }
+            if (array_key_exists('vocal_start', $validated) && $validated['vocal_start'] !== null) {
+                $s['vocal_start']        = (float) $validated['vocal_start'];
+                $s['vocal_start_status'] = 'ready';
+            }
+            break;
+        }
+        unset($s);
+
+        if (! $found) {
+            return response()->json(['message' => 'Song not found'], 404);
         }
         $this->saveConfig($c);
 
         return $this->adminShow();
     }
 
-    /** Stream the uploaded song to the admin tap-to-sync player. */
-    public function adminSong(): BinaryFileResponse|JsonResponse
+    public function deleteSong(string $songId): JsonResponse
     {
         $c = $this->config();
-        if ($c['song_ext'] === null) {
+        $song = $this->findSong($c, $songId);
+        if (! $song) {
+            return response()->json(['message' => 'Song not found'], 404);
+        }
+        if (! empty($song['ext'])) {
+            Storage::delete(self::DIR . "/songs/{$songId}.{$song['ext']}");
+        }
+        $c['songs'] = array_values(array_filter($c['songs'], fn ($s) => $s['id'] !== $songId));
+        $this->saveConfig($c);
+
+        return $this->adminShow();
+    }
+
+    /** Stream a library song to the admin tap-to-sync player. */
+    public function adminSong(string $songId): BinaryFileResponse|JsonResponse
+    {
+        $song = $this->findSong($this->config(), $songId);
+        if (! $song || empty($song['ext'])) {
             return response()->json(['message' => 'No song'], 404);
         }
-        $rel = self::DIR . "/song.{$c['song_ext']}";
+        $rel = self::DIR . "/songs/{$songId}.{$song['ext']}";
         if (! Storage::exists($rel)) {
             return response()->json(['message' => 'No song'], 404);
         }
 
         return response()->file(Storage::path($rel), [
-            'Content-Type' => $c['song_ext'] === 'wav' ? 'audio/wav' : 'audio/mpeg',
+            'Content-Type' => $song['ext'] === 'wav' ? 'audio/wav' : 'audio/mpeg',
         ]);
-    }
-
-    public function adminUploadSong(Request $request): JsonResponse
-    {
-        $request->validate([
-            'song' => ['required', 'file', 'mimes:mp3,wav', 'max:51200'],
-        ]);
-
-        // Remove any prior song so only one canonical track exists.
-        foreach (['mp3', 'wav'] as $ext) {
-            Storage::delete(self::DIR . "/song.{$ext}");
-        }
-
-        $ext = strtolower($request->file('song')->getClientOriginalExtension() ?: 'mp3');
-        $ext = in_array($ext, ['mp3', 'wav'], true) ? $ext : 'mp3';
-        $request->file('song')->storeAs(self::DIR, "song.{$ext}");
-
-        $c = $this->config();
-        $c['song_ext'] = $ext;
-        // A new song invalidates the cached vocal-onset time; re-detect it so the
-        // lyrics hold through this song's intro.
-        $c['vocal_start']        = 0.0;
-        $c['vocal_start_status'] = 'detecting';
-        $this->saveConfig($c);
-
-        \App\Jobs\DetectVocalStartJob::dispatch();
-
-        return $this->adminShow();
     }
 
     // ---- Guards ------------------------------------------------------------
 
-    /** Job ids are UUIDs; reject anything else so they can't escape the dir. */
     private function safeId(string $id): ?string
     {
         return preg_match('/^[0-9a-f-]{36}$/i', $id) ? $id : null;
     }
 
     /**
-     * Recursively make a job tree readable/traversable by the queue worker (a
-     * different OS user). Dirs 0775 (group can create/delete temp files), files
-     * 0644. The tree holds only ephemeral photos + status and is deleted after
-     * the render, and is never web-exposed, so group/other read is acceptable.
+     * Recursively open a job tree to the queue worker (a different OS user in the
+     * shared www-data group): dirs 0775 (group create/delete temp files), files
+     * 0664 (worker rewrites status.json). The tree is ephemeral and not
+     * web-exposed, so group/other access is acceptable.
      */
     private function openPerms(string $path): void
     {
         @chmod($path, 0775);
-        // 0664 (group-writable): status.json is rewritten by the queue worker,
-        // which runs as a different user but shares the www-data group, so it
-        // must be able to overwrite files this web request created.
         foreach (glob(rtrim($path, '/') . '/*') ?: [] as $child) {
             is_dir($child) ? $this->openPerms($child) : @chmod($child, 0664);
         }

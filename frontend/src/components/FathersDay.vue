@@ -13,6 +13,7 @@ const config    = ref(null);          // { enabled, title, subtitle, default_eff
 const photos    = ref([]);            // File[]
 const previews  = ref([]);            // object URLs
 const effect    = ref("slide");
+const songId    = ref("");            // chosen song
 const phase     = ref("idle");        // idle | rendering | done | error
 const errorMsg  = ref("");
 const jobId     = ref(null);
@@ -32,13 +33,15 @@ const effectLabels = {
   kenburns: "Gentle zoom",
 };
 
-const canGenerate = computed(() => photos.value.length > 0 && phase.value !== "rendering");
+const songs       = computed(() => config.value?.songs ?? []);
+const canGenerate = computed(() => photos.value.length > 0 && !!songId.value && phase.value !== "rendering");
 const maxPhotos   = computed(() => config.value?.max_photos ?? 6);
 
 onMounted(async () => {
   try {
     config.value = await api.fdPublicConfig();
     effect.value = config.value?.default_effect || "slide";
+    songId.value = config.value?.songs?.[0]?.id || "";
   } catch {
     config.value = { enabled: false };
   } finally {
@@ -99,7 +102,7 @@ async function generate() {
   stageLabel.value = "Starting…";
   startEasing();
   try {
-    const { job_id } = await api.fdRender(photos.value, effect.value);
+    const { job_id } = await api.fdRender(photos.value, effect.value, songId.value);
     jobId.value = job_id;
     pollTimer = setInterval(checkStatus, 2000);
     checkStatus();
@@ -174,6 +177,20 @@ function reset() {
         <h1>{{ config.title }}</h1>
         <p class="fd-muted">{{ config.subtitle }}</p>
       </header>
+
+      <!-- Choose a song -->
+      <div v-if="songs.length" class="fd-songs">
+        <p class="fd-label">🎵 Choose a song</p>
+        <div class="fd-song-row">
+          <button
+            v-for="s in songs"
+            :key="s.id"
+            class="fd-chip"
+            :class="{ active: songId === s.id }"
+            @click="songId = s.id"
+          >{{ s.title }}</button>
+        </div>
+      </div>
 
       <!-- Upload -->
       <div
@@ -270,6 +287,8 @@ function reset() {
   font-size: 0.9rem; line-height: 1; cursor: pointer;
 }
 
+.fd-songs { margin-bottom: 1.25rem; }
+.fd-song-row { display: flex; gap: 0.5rem; flex-wrap: wrap; }
 .fd-effects { margin-top: 1.25rem; }
 .fd-label { font-size: 0.8rem; font-weight: 600; margin: 0 0 0.5rem; }
 .fd-effect-row { display: flex; gap: 0.5rem; flex-wrap: wrap; }

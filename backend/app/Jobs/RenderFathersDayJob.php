@@ -41,7 +41,7 @@ class RenderFathersDayJob implements ShouldQueue
     private const STILL_FPS = 12;
     private const XFADE = 1.0;   // crossfade seconds for the "fade" effect
 
-    public function __construct(public string $jobId, public string $effect)
+    public function __construct(public string $jobId, public string $effect, public ?string $songId = null)
     {
         // Dedicated queue so heavy ffmpeg renders never block worship-service
         // dispatch on the shared 'default' worker. Served by aivc-fathersday-render@.
@@ -299,7 +299,7 @@ class RenderFathersDayJob implements ShouldQueue
     /** Returns the relative .ass filename (rendered with cwd=$work) or null. */
     private function buildSubtitles(float $duration, string $work): ?string
     {
-        $c      = $this->config();
+        $c      = $this->song();
         $lyrics = trim((string) ($c['lyrics'] ?? ''));
         if ($lyrics === '') {
             return null;
@@ -435,13 +435,25 @@ class RenderFathersDayJob implements ShouldQueue
 
     private function songPath(): ?string
     {
-        foreach (['mp3', 'wav'] as $ext) {
-            $rel = "fathersday/song.{$ext}";
-            if (Storage::exists($rel)) {
-                return Storage::path($rel);
+        $s = $this->song();
+        $ext = $s['ext'] ?? null;
+        if (! $ext) {
+            return null;
+        }
+        $rel = "fathersday/songs/{$s['id']}.{$ext}";
+        return Storage::exists($rel) ? Storage::path($rel) : null;
+    }
+
+    /** The chosen song's config entry (by songId; falls back to the first song). */
+    private function song(): array
+    {
+        $songs = $this->config()['songs'] ?? [];
+        foreach ($songs as $s) {
+            if (($s['id'] ?? null) === $this->songId) {
+                return $s;
             }
         }
-        return null;
+        return $songs[0] ?? [];
     }
 
     private function probeDuration(string $file): float

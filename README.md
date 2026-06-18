@@ -1022,12 +1022,14 @@ lyrics. It is deliberately isolated from the worship pipeline so it can be added
 for one occasion and removed cleanly afterwards.
 
 **How it works**
-- **Admin** (`#admin` → *Special Day MV* tab, admin role only): upload the song
-  (MP3/WAV), paste lyrics, choose the default effect, toggle **time-synced
-  highlight** vs. even-split lyrics, and **enable** the page. Config + assets live
-  as plain files in `backend/storage/app/fathersday/` — **no DB migration**.
-- **Visitor** (`#fathers-day`, link appears only when enabled): drops 1–6 photos,
-  picks an effect, hits *Create video*, and the MP4 auto-downloads when ready.
+- **Admin** (`#admin` → *Special Day MV* tab, admin role only): manage a **song
+  library** — add multiple songs (MP3/WAV), each with its own lyrics, sync mode,
+  detected vocal-onset and tap-to-sync. Set the default effect and **enable** the
+  page. Config + assets live as plain files in `backend/storage/app/fathersday/`
+  (`config.json` + `songs/<id>.<ext>`) — **no DB migration**.
+- **Visitor** (`#fathers-day`, link appears only when enabled): **picks a song**,
+  drops 1–6 photos, picks an effect, hits *Create video*, and the MP4
+  auto-downloads when ready.
 - **Effects**: `slide` (hard cut), `fade` (crossfade), `kenburns` (gentle
   zoom/pan). A single photo is held for the whole song (with optional zoom).
 - **Lyrics**: `[mm:ss.xx]` LRC tags drive the time-synced highlight; otherwise

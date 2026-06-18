@@ -28,7 +28,7 @@ class DetectVocalStartJob implements ShouldQueue
 
     private const CONFIG = 'fathersday/config.json';
 
-    public function __construct()
+    public function __construct(public string $songId)
     {
         // Same dedicated queue as the renders — heavy Demucs work stays off the
         // worship 'default' worker.
@@ -75,23 +75,35 @@ class DetectVocalStartJob implements ShouldQueue
 
     private function songPath(): ?string
     {
-        foreach (['mp3', 'wav'] as $ext) {
-            $rel = "fathersday/song.{$ext}";
-            if (Storage::exists($rel)) {
-                return Storage::path($rel);
+        $config = $this->load();
+        foreach ($config['songs'] ?? [] as $s) {
+            if (($s['id'] ?? null) === $this->songId && ! empty($s['ext'])) {
+                $rel = "fathersday/songs/{$this->songId}.{$s['ext']}";
+                return Storage::exists($rel) ? Storage::path($rel) : null;
             }
         }
         return null;
     }
 
-    /** Merge the detected start + status back into config.json. */
-    private function write(float $start, string $status): void
+    private function load(): array
     {
-        $config = Storage::exists(self::CONFIG)
+        return Storage::exists(self::CONFIG)
             ? (json_decode((string) Storage::get(self::CONFIG), true) ?: [])
             : [];
-        $config['vocal_start']        = $start;
-        $config['vocal_start_status'] = $status;   // detecting | ready | failed
+    }
+
+    /** Merge the detected start + status into the matching song entry. */
+    private function write(float $start, string $status): void
+    {
+        $config = $this->load();
+        foreach ($config['songs'] ?? [] as &$s) {
+            if (($s['id'] ?? null) === $this->songId) {
+                $s['vocal_start']        = $start;
+                $s['vocal_start_status'] = $status;   // detecting | ready | failed
+                break;
+            }
+        }
+        unset($s);
         Storage::put(self::CONFIG, json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
         @chmod(Storage::path(self::CONFIG), 0664);
     }

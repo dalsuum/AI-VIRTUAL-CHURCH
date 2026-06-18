@@ -206,10 +206,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/ads/{ad}/reorder',                  [AdController::class, 'reorderSlides']);
 
         // Father's Day (Special Day) MV — admin config + song upload (removable feature).
-        Route::get('/fathers-day',          [\App\Http\Controllers\FathersDayController::class, 'adminShow']);
-        Route::post('/fathers-day',         [\App\Http\Controllers\FathersDayController::class, 'adminSave']);
-        Route::get('/fathers-day/song',     [\App\Http\Controllers\FathersDayController::class, 'adminSong']);
-        Route::post('/fathers-day/song',    [\App\Http\Controllers\FathersDayController::class, 'adminUploadSong']);
+        Route::get('/fathers-day',                      [\App\Http\Controllers\FathersDayController::class, 'adminShow']);
+        Route::post('/fathers-day',                     [\App\Http\Controllers\FathersDayController::class, 'adminSave']);
+        Route::post('/fathers-day/songs',               [\App\Http\Controllers\FathersDayController::class, 'createSong']);
+        Route::patch('/fathers-day/songs/{songId}',     [\App\Http\Controllers\FathersDayController::class, 'updateSong']);
+        Route::delete('/fathers-day/songs/{songId}',    [\App\Http\Controllers\FathersDayController::class, 'deleteSong']);
+        Route::get('/fathers-day/songs/{songId}/audio', [\App\Http\Controllers\FathersDayController::class, 'adminSong']);
 
         // System actions — read-only refresh is enabled; git pull / package install stay disabled (destructive).
         Route::post('/updates/check',           [UpdateController::class, 'check']);

@@ -453,11 +453,12 @@ export const api = {
   // Public page config (enabled flag, effects, copy).
   fdPublicConfig: () => request("/fathers-day/config"),
   // Public render: upload photo(s) + chosen effect. Multipart, so raw fetch.
-  fdRender: async (files, effect) => {
+  fdRender: async (files, effect, songId) => {
     await ensureCsrf();      // CSRF cookie/token for the stateful SPA POST
     const fd = new FormData();
     files.forEach((f) => fd.append("photos[]", f, f.name));
     if (effect) fd.append("effect", effect);
+    if (songId) fd.append("song_id", songId);
     const res = await fetch(`${BASE_URL}/fathers-day/render`, {
       method: "POST",
       credentials: "include",
@@ -471,9 +472,9 @@ export const api = {
   fdJobStatus: (id) => request(`/fathers-day/job/${id}`),
   fdDownloadUrl: (id) => `${BASE_URL}/fathers-day/download/${id}`,
 
-  // Admin: fetch the song as a blob for the tap-to-sync player (cookie auth).
-  fdAdminSongBlob: async () => {
-    const res = await fetch(`${BASE_URL}/admin/fathers-day/song`, {
+  // Admin: fetch a library song as a blob for the tap-to-sync player (cookie auth).
+  fdSongBlob: async (songId) => {
+    const res = await fetch(`${BASE_URL}/admin/fathers-day/songs/${songId}/audio`, {
       credentials: "include",
       headers: { Accept: "audio/*" },
     });
@@ -481,14 +482,17 @@ export const api = {
     return res.blob();
   },
 
-  // Admin config + song upload.
+  // Admin global settings + song library.
   fdAdminShow: () => request("/admin/fathers-day"),
   fdAdminSave: (payload) => request("/admin/fathers-day", { method: "POST", body: payload }),
-  fdAdminUploadSong: async (file) => {
+  fdUpdateSong: (songId, payload) => request(`/admin/fathers-day/songs/${songId}`, { method: "PATCH", body: payload }),
+  fdDeleteSong: (songId) => request(`/admin/fathers-day/songs/${songId}`, { method: "DELETE" }),
+  fdAddSong: async (file, title) => {
     await ensureCsrf();
     const fd = new FormData();
     fd.append("song", file, file.name);
-    const res = await fetch(`${BASE_URL}/admin/fathers-day/song`, {
+    if (title) fd.append("title", title);
+    const res = await fetch(`${BASE_URL}/admin/fathers-day/songs`, {
       method: "POST",
       credentials: "include",
       headers: { Accept: "application/json", "X-XSRF-TOKEN": getCsrfToken() },

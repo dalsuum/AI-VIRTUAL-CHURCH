@@ -72,8 +72,10 @@ class DispatchServiceJob implements ShouldQueue
             // When the service falls inside a special-Sunday window (Mother's Day,
             // Easter, Pentecost…), bias sermon + worship toward the observance. The
             // worker filters the sermon theme by `sermon_tags` and the hymn/worship
-            // mood by `music_moods`. null outside any window — normal selection.
-            'special_sunday' => $this->resolveSpecialSunday($language),
+            // mood by `music_moods`, and — when the day's per-language mode is
+            // 'manual' — hands the worker a curated sermon/song under `content`.
+            // null outside any window — normal selection.
+            'special_sunday' => $this->resolveSpecialSunday($language, $intake->mood ?? null),
         ]);
 
         // The Python orchestrator (tasks.orchestrate) BLPOPs this list.
@@ -85,10 +87,10 @@ class DispatchServiceJob implements ShouldQueue
      * dispatch time. Returns the worker-facing bias payload, or null when no
      * observance window is open. Resolution is cheap and never blocks dispatch.
      */
-    private function resolveSpecialSunday(string $language): ?array
+    private function resolveSpecialSunday(string $language, ?string $mood = null): ?array
     {
         try {
-            return app(\App\Services\SpecialSundayResolver::class)->currentPayload($language);
+            return app(\App\Services\SpecialSundayResolver::class)->dispatchPayload($language, $mood);
         } catch (\Throwable $e) {
             // A catalog/DB hiccup must never stop a service from going out.
             report($e);

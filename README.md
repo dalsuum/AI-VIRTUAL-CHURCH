@@ -971,6 +971,21 @@ tab (permissions `special_sundays.view` / `special_sundays.manage`) backed by
   NFC-normalized to Myanmar Unicode), and the date rule, or **add a new observance**
   manually. Everything is auto-seeded by default; edits/additions live in the DB row.
 
+**Curated content (manual mode).** Beyond biasing the AI, each observance can carry
+a **hand-authored sermon** and **specific songs** per service language, managed from
+the same admin tab (tables `special_sermons` / `special_songs`):
+- Each observance has a per-language **mode** for sermon and for worship
+  (`content_modes` JSON on `special_sundays`). Default **Auto** = the AI sermon /
+  mood-selected worship run normally. Flip to **Manual** to serve the highest-priority
+  active curated entry instead; if none is active, the worker safely falls back to Auto.
+- Curated **sermons** are spoken verbatim (still classifier-reviewed, narrated, and
+  avatar-rendered). Curated **songs** support four source kinds — `youtube` (id/URL),
+  `hymn` (a Song-library id, reusing its audio + lyrics), `audio` (a direct hosted
+  URL), and `suno` (a composition prompt rendered at service time).
+- Entries are tagged by `mood` / `priority` / `region`; when several match a
+  day+language, a matching mood wins, then highest priority. The worker honors this on
+  both the pipeline and agent orchestration paths. my/td text is NFC-normalized.
+
 **Adding a special Sunday (config).** For a permanent, version-controlled entry,
 append it to
 [`config/special_sundays.php`](backend/config/special_sundays.php) with a unique

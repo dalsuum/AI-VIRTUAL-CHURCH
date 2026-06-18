@@ -497,22 +497,35 @@ class AdminController extends Controller
         PermissionService::require(request()->user(), 'special_sundays.view');
 
         $now  = \Carbon\CarbonImmutable::now();
-        $rows = \App\Models\SpecialSunday::orderByDesc('priority')->orderBy('key')->get();
+        $rows = \App\Models\SpecialSunday::with(['sermons', 'songs'])
+            ->orderByDesc('priority')->orderBy('key')->get();
 
         $observances = $rows->map(function (\App\Models\SpecialSunday $s) {
             return [
-                'id'          => $s->id,
-                'key'         => $s->key,
-                'rule_type'   => $s->rule_type,
-                'rule'        => $s->rule,
-                'titles'      => $s->titles,
-                'briefs'      => $s->briefs,
-                'sermon_tags' => $s->sermon_tags,
-                'music_moods' => $s->music_moods,
-                'region'      => $s->region,
-                'priority'    => $s->priority,
-                'active'      => $s->active,
-                'next_dates'  => array_map(fn ($d) => $d->toDateString(), $s->nextOccurrences(3)),
+                'id'            => $s->id,
+                'key'           => $s->key,
+                'rule_type'     => $s->rule_type,
+                'rule'          => $s->rule,
+                'titles'        => $s->titles,
+                'briefs'        => $s->briefs,
+                'sermon_tags'   => $s->sermon_tags,
+                'music_moods'   => $s->music_moods,
+                'content_modes' => $s->content_modes ?? new \stdClass(),
+                'region'        => $s->region,
+                'priority'      => $s->priority,
+                'active'        => $s->active,
+                'next_dates'    => array_map(fn ($d) => $d->toDateString(), $s->nextOccurrences(3)),
+                'sermons'       => $s->sermons->map(fn ($m) => [
+                    'id' => $m->id, 'language' => $m->language, 'title' => $m->title,
+                    'body' => $m->body, 'mood' => $m->mood, 'region' => $m->region,
+                    'priority' => $m->priority, 'active' => $m->active,
+                ])->values(),
+                'songs'         => $s->songs->map(fn ($m) => [
+                    'id' => $m->id, 'language' => $m->language, 'title' => $m->title,
+                    'source_type' => $m->source_type, 'source_ref' => $m->source_ref,
+                    'lyrics' => $m->lyrics, 'mood' => $m->mood, 'region' => $m->region,
+                    'priority' => $m->priority, 'active' => $m->active,
+                ])->values(),
             ];
         })->values();
 
@@ -644,6 +657,12 @@ class AdminController extends Controller
             'region'         => ['nullable', 'string', 'max:60'],
             'priority'       => ['sometimes', 'integer', 'min:0', 'max:1000'],
             'active'         => ['sometimes', 'boolean'],
+            // Per-language delivery mode: { sermon: {en,my,td}, music: {en,my,td} }
+            'content_modes'              => ['sometimes', 'nullable', 'array'],
+            'content_modes.sermon'       => ['sometimes', 'array'],
+            'content_modes.sermon.*'     => ['in:auto,manual'],
+            'content_modes.music'        => ['sometimes', 'array'],
+            'content_modes.music.*'      => ['in:auto,manual'],
         ];
 
         $data = $request->validate($rules);
@@ -703,6 +722,116 @@ class AdminController extends Controller
         }
 
         return $map;
+    }
+
+    /** NFC-normalize a single string (Myanmar Unicode invariant). */
+    private function normalizeText(?string $text): ?string
+    {
+        if ($text === null || ! class_exists(\Normalizer::class)) {
+            return $text;
+        }
+
+        return \Normalizer::normalize($text, \Normalizer::FORM_C) ?: $text;
+    }
+
+    // ── Curated sermons attached to a special Sunday ─────────────────────────
+
+    public function createSpecialSermon(Request $request, \App\Models\SpecialSunday $specialSunday): JsonResponse
+    {
+        PermissionService::require($request->user(), 'special_sundays.manage');
+
+        $data = $this->validateSermon($request);
+        $data['special_sunday_id'] = $specialSunday->id;
+        $sermon = \App\Models\SpecialSermon::create($data);
+
+        return response()->json(['ok' => true, 'sermon' => $sermon], 201);
+    }
+
+    public function updateSpecialSermon(Request $request, \App\Models\SpecialSermon $specialSermon): JsonResponse
+    {
+        PermissionService::require($request->user(), 'special_sundays.manage');
+
+        $specialSermon->update($this->validateSermon($request, partial: true));
+
+        return response()->json(['ok' => true, 'sermon' => $specialSermon->fresh()]);
+    }
+
+    public function deleteSpecialSermon(Request $request, \App\Models\SpecialSermon $specialSermon): JsonResponse
+    {
+        PermissionService::require($request->user(), 'special_sundays.manage');
+        $specialSermon->delete();
+
+        return response()->json(['ok' => true]);
+    }
+
+    private function validateSermon(Request $request, bool $partial = false): array
+    {
+        $req  = $partial ? 'sometimes' : 'required';
+        $data = $request->validate([
+            'language' => [$req, 'string', 'in:en,my,td'],
+            'title'    => [$req, 'string', 'max:200'],
+            'body'     => [$req, 'string', 'max:20000'],
+            'mood'     => ['nullable', 'string', 'max:60'],
+            'region'   => ['nullable', 'string', 'max:60'],
+            'priority' => ['sometimes', 'integer', 'min:0', 'max:1000'],
+            'active'   => ['sometimes', 'boolean'],
+        ]);
+
+        if (array_key_exists('title', $data)) $data['title'] = $this->normalizeText($data['title']);
+        if (array_key_exists('body', $data))  $data['body']  = $this->normalizeText($data['body']);
+
+        return $data;
+    }
+
+    // ── Curated songs attached to a special Sunday ───────────────────────────
+
+    public function createSpecialSong(Request $request, \App\Models\SpecialSunday $specialSunday): JsonResponse
+    {
+        PermissionService::require($request->user(), 'special_sundays.manage');
+
+        $data = $this->validateSong($request);
+        $data['special_sunday_id'] = $specialSunday->id;
+        $song = \App\Models\SpecialSong::create($data);
+
+        return response()->json(['ok' => true, 'song' => $song], 201);
+    }
+
+    public function updateSpecialSong(Request $request, \App\Models\SpecialSong $specialSong): JsonResponse
+    {
+        PermissionService::require($request->user(), 'special_sundays.manage');
+
+        $specialSong->update($this->validateSong($request, partial: true));
+
+        return response()->json(['ok' => true, 'song' => $specialSong->fresh()]);
+    }
+
+    public function deleteSpecialSong(Request $request, \App\Models\SpecialSong $specialSong): JsonResponse
+    {
+        PermissionService::require($request->user(), 'special_sundays.manage');
+        $specialSong->delete();
+
+        return response()->json(['ok' => true]);
+    }
+
+    private function validateSong(Request $request, bool $partial = false): array
+    {
+        $req  = $partial ? 'sometimes' : 'required';
+        $data = $request->validate([
+            'language'    => [$req, 'string', 'in:en,my,td'],
+            'title'       => [$req, 'string', 'max:200'],
+            'source_type' => [$req, 'string', 'in:youtube,hymn,audio,suno'],
+            'source_ref'  => [$req, 'string', 'max:5000'],
+            'lyrics'      => ['nullable', 'string', 'max:20000'],
+            'mood'        => ['nullable', 'string', 'max:60'],
+            'region'      => ['nullable', 'string', 'max:60'],
+            'priority'    => ['sometimes', 'integer', 'min:0', 'max:1000'],
+            'active'      => ['sometimes', 'boolean'],
+        ]);
+
+        if (array_key_exists('title', $data))  $data['title']  = $this->normalizeText($data['title']);
+        if (array_key_exists('lyrics', $data)) $data['lyrics'] = $this->normalizeText($data['lyrics']);
+
+        return $data;
     }
 
     /**

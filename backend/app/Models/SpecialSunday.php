@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * One observance in the data-driven special-Sundays catalog. The actual date is
@@ -22,18 +23,120 @@ class SpecialSunday extends Model
 {
     protected $fillable = [
         'key', 'rule_type', 'rule', 'titles', 'briefs',
-        'sermon_tags', 'music_moods', 'region', 'priority', 'active',
+        'sermon_tags', 'music_moods', 'content_modes', 'region', 'priority', 'active',
     ];
 
     protected $casts = [
-        'rule'        => 'array',
-        'titles'      => 'array',
-        'briefs'      => 'array',
-        'sermon_tags' => 'array',
-        'music_moods' => 'array',
-        'priority'    => 'integer',
-        'active'      => 'boolean',
+        'rule'          => 'array',
+        'titles'        => 'array',
+        'briefs'        => 'array',
+        'sermon_tags'   => 'array',
+        'music_moods'   => 'array',
+        'content_modes' => 'array',
+        'priority'      => 'integer',
+        'active'        => 'boolean',
     ];
+
+    public function sermons(): HasMany
+    {
+        return $this->hasMany(SpecialSermon::class);
+    }
+
+    public function songs(): HasMany
+    {
+        return $this->hasMany(SpecialSong::class);
+    }
+
+    /**
+     * The delivery mode ('auto' | 'manual') for a segment ('sermon' | 'music')
+     * in a given language. Defaults to 'auto' when unset, so untouched rows keep
+     * the AI/bias behavior.
+     */
+    public function modeFor(string $segment, string $language): string
+    {
+        $mode = $this->content_modes[$segment][$language] ?? 'auto';
+
+        return $mode === 'manual' ? 'manual' : 'auto';
+    }
+
+    /**
+     * Resolve the curated content the worker should use for this observance in a
+     * language, honoring the per-language mode and falling back to 'auto' when a
+     * 'manual' segment has no active entry. $mood (the worshipper's mood) refines
+     * tie-breaking: an entry whose mood matches is preferred, else highest priority.
+     *
+     * @return array{sermon: array, music: array}
+     */
+    public function resolveContent(string $language, ?string $mood = null): array
+    {
+        return [
+            'sermon' => $this->resolveSegment('sermon', $language, $mood),
+            'music'  => $this->resolveSegment('music', $language, $mood),
+        ];
+    }
+
+    private function resolveSegment(string $segment, string $language, ?string $mood): array
+    {
+        if ($this->modeFor($segment, $language) !== 'manual') {
+            return ['mode' => 'auto'];
+        }
+
+        $entry = $segment === 'sermon'
+            ? $this->pickBest($this->sermons, $language, $mood)
+            : $this->pickBest($this->songs, $language, $mood);
+
+        if ($entry === null) {
+            // Manual requested but nothing active — never strand the service.
+            return ['mode' => 'auto', 'fallback' => true];
+        }
+
+        if ($segment === 'sermon') {
+            return [
+                'mode'  => 'manual',
+                'id'    => $entry->id,
+                'title' => $entry->title,
+                'body'  => $entry->body,
+            ];
+        }
+
+        return [
+            'mode'        => 'manual',
+            'id'          => $entry->id,
+            'title'       => $entry->title,
+            'source_type' => $entry->source_type,
+            'source_ref'  => $entry->source_ref,
+            'lyrics'      => $entry->lyrics,
+        ];
+    }
+
+    /**
+     * Choose the best active entry for a language: prefer one whose mood matches
+     * the worshipper's mood, otherwise the highest priority (then newest).
+     */
+    private function pickBest($collection, string $language, ?string $mood)
+    {
+        $candidates = $collection
+            ->where('active', true)
+            ->where('language', $language);
+
+        if ($candidates->isEmpty()) {
+            return null;
+        }
+
+        if ($mood !== null && $mood !== '') {
+            $moodLower = mb_strtolower($mood);
+            $byMood = $candidates->filter(
+                fn ($e) => $e->mood !== null && str_contains($moodLower, mb_strtolower($e->mood))
+            );
+            if ($byMood->isNotEmpty()) {
+                $candidates = $byMood;
+            }
+        }
+
+        return $candidates
+            ->sortByDesc(fn ($e) => [$e->priority, $e->id])
+            ->first();
+    }
 
     /**
      * Resolve this observance to its actual Sunday in the given year, or null if

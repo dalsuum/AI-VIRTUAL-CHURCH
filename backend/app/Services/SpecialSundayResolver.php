@@ -85,6 +85,28 @@ class SpecialSundayResolver
         });
     }
 
+    /**
+     * Full bias payload for the dispatch path: the localized title/brief/tags PLUS
+     * the resolved curated `content` (manual sermon/song or 'auto' per segment),
+     * refined by the worshipper's $mood. Not cached — content depends on mood and
+     * the active manual entries, and it's only built once per service dispatch.
+     *
+     * Returns null when no observance window is open.
+     */
+    public function dispatchPayload(string $language, ?string $mood = null, ?CarbonInterface $date = null): ?array
+    {
+        $active = $this->activeFor($date);
+        if ($active === null) {
+            return null;
+        }
+
+        $special = $active['special'];
+        $payload = $special->localizedPayload($language, $active['sunday']);
+        $payload['content'] = $special->resolveContent($language, $mood);
+
+        return $payload;
+    }
+
     /** True when $moment falls in [Sunday − 2 days @ 00:00 .. Sunday @ 23:59:59]. */
     private function withinWindow(CarbonImmutable $moment, CarbonImmutable $sunday): bool
     {

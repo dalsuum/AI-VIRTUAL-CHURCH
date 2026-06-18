@@ -171,6 +171,15 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::patch('/special-sundays/{specialSunday}',   [AdminController::class, 'updateSpecialSunday']);
         Route::delete('/special-sundays/{specialSunday}',  [AdminController::class, 'deleteSpecialSunday']);
 
+        // Curated sermon/song libraries attached to a special Sunday (manual mode).
+        Route::post('/special-sundays/{specialSunday}/sermons', [AdminController::class, 'createSpecialSermon']);
+        Route::patch('/special-sermons/{specialSermon}',        [AdminController::class, 'updateSpecialSermon']);
+        Route::delete('/special-sermons/{specialSermon}',       [AdminController::class, 'deleteSpecialSermon']);
+
+        Route::post('/special-sundays/{specialSunday}/songs',   [AdminController::class, 'createSpecialSong']);
+        Route::patch('/special-songs/{specialSong}',            [AdminController::class, 'updateSpecialSong']);
+        Route::delete('/special-songs/{specialSong}',           [AdminController::class, 'deleteSpecialSong']);
+
         // Ads — admin writes (create, update, delete, slide management, image upload).
         Route::post('/ads',                               [AdController::class, 'store']);
         Route::patch('/ads/{ad}',                         [AdController::class, 'update']);

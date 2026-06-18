@@ -334,6 +334,21 @@ def _special_sunday_theme(job: dict) -> str | None:
     return f"{title}: {', '.join(tags)}" if tags else title
 
 
+def _special_sunday_manual(job: dict, segment: str) -> dict | None:
+    """Curated 'manual' content for a segment when the active special Sunday's
+    per-language mode is manual. Mirrors tasks._special_sunday_content."""
+    special = job.get("special_sunday")
+    if not isinstance(special, dict):
+        return None
+    content = special.get("content")
+    if not isinstance(content, dict):
+        return None
+    seg = content.get(segment)
+    if isinstance(seg, dict) and seg.get("mode") == "manual":
+        return seg
+    return None
+
+
 def _special_sunday_query(job: dict, base_query: str) -> str:
     """Fold the observance's music_moods into a search query (sermon video)."""
     special = job.get("special_sunday")
@@ -421,6 +436,9 @@ def _build_tools(job: dict, plan: dict) -> tuple[list[dict], dict[str, callable]
         return h_post_text_segment("opening_prayer", text)
 
     def h_generate_and_post_sermon(scripture_ref: str = "") -> dict:
+        manual = _special_sunday_manual(job, "sermon")
+        if manual and (manual.get("body") or "").strip():
+            return h_post_text_segment("sermon", manual["body"].strip())
         minutes = 5 if job.get("music_source") == "musicgen" else 8
         text = llm_engine.generate_sermon(
             user_name=job.get("user_name", ""),
@@ -445,6 +463,10 @@ def _build_tools(job: dict, plan: dict) -> tuple[list[dict], dict[str, callable]
         return h_post_text_segment("benediction", text)
 
     def h_find_and_post_sermon_video(query: str = "") -> dict:
+        # A curated manual sermon overrides the YouTube sermon video too.
+        manual = _special_sunday_manual(job, "sermon")
+        if manual and (manual.get("body") or "").strip():
+            return h_post_text_segment("sermon", manual["body"].strip())
         query = query or ""
         past  = (job.get("user_history") or {}).get("past_video_ids", [])
         

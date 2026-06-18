@@ -19,9 +19,23 @@ const calendar    = ref([]);
 const audit       = ref([]);
 const ruleTypes   = ref(["nth_weekday", "easter_offset", "fixed"]);
 
-const view    = ref("list");      // 'list' | 'edit'
+const view    = ref("list");      // 'list' | 'edit' | 'content'
 const editing = ref(null);        // the row id being edited, or null for a new one
 const form    = ref(blankForm());
+
+// Content management (manual sermons/songs + per-language modes)
+const contentRow  = ref(null);    // the observance whose content we're managing
+const sermonForm  = ref(null);    // editing/creating a sermon, or null
+const songForm    = ref(null);    // editing/creating a song, or null
+
+const LANGS = ["en", "my", "td"];
+const LANG_LABEL = { en: "English", my: "မြန်မာ", td: "Zolai" };
+const SONG_TYPES = [
+  { value: "youtube", label: "YouTube link", hint: "Video id or URL" },
+  { value: "hymn",    label: "Hymn library", hint: "Song id from your library" },
+  { value: "audio",   label: "Hosted audio", hint: "Direct .mp3 URL" },
+  { value: "suno",    label: "Suno prompt",  hint: "Composition prompt" },
+];
 
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -198,6 +212,93 @@ async function remove(o) {
     busy.value = false;
   }
 }
+
+// ── Content management (manual sermons / songs + per-language modes) ─────────
+function openContent(o) {
+  contentRow.value = observances.value.find((x) => x.id === o.id) || o;
+  sermonForm.value = null;
+  songForm.value = null;
+  view.value = "content";
+}
+function closeContent() {
+  view.value = "list";
+  contentRow.value = null;
+}
+
+function modeOf(segment, lang) {
+  return contentRow.value?.content_modes?.[segment]?.[lang] || "auto";
+}
+async function setMode(segment, lang, mode) {
+  if (!props.canManage || busy.value) return;
+  const o = contentRow.value;
+  const modes = JSON.parse(JSON.stringify(o.content_modes || {}));
+  modes[segment] = modes[segment] || {};
+  modes[segment][lang] = mode;
+  busy.value = true;
+  try {
+    await api.adminUpdateSpecialSunday(o.id, { content_modes: modes });
+    o.content_modes = modes;
+    flash(`${segment} (${lang}) → ${mode}.`);
+  } catch (e) {
+    error.value = e?.message || "Could not change mode.";
+  } finally {
+    busy.value = false;
+  }
+}
+
+const sermonsFor = (lang) => (contentRow.value?.sermons || []).filter((s) => s.language === lang);
+const songsFor   = (lang) => (contentRow.value?.songs   || []).filter((s) => s.language === lang);
+
+// Sermons
+function newSermon(lang) {
+  sermonForm.value = { id: null, language: lang, title: "", body: "", mood: "", region: "", priority: 50, active: true };
+}
+function editSermon(s) { sermonForm.value = { ...s, mood: s.mood || "", region: s.region || "" }; }
+async function saveSermon() {
+  const f = sermonForm.value, o = contentRow.value;
+  const payload = { language: f.language, title: f.title, body: f.body, mood: f.mood || null, region: f.region || null, priority: +f.priority, active: !!f.active };
+  busy.value = true; error.value = "";
+  try {
+    if (f.id) await api.adminUpdateSpecialSermon(f.id, payload);
+    else      await api.adminCreateSpecialSermon(o.id, payload);
+    flash("Sermon saved."); sermonForm.value = null; await reloadKeepingContent(o.id);
+  } catch (e) { error.value = e?.message || "Save failed."; } finally { busy.value = false; }
+}
+async function deleteSermon(s) {
+  if (!confirm(`Delete sermon "${s.title}"?`)) return;
+  busy.value = true;
+  try { await api.adminDeleteSpecialSermon(s.id); flash("Sermon deleted."); await reloadKeepingContent(contentRow.value.id); }
+  catch (e) { error.value = e?.message || "Delete failed."; } finally { busy.value = false; }
+}
+
+// Songs
+function newSong(lang) {
+  songForm.value = { id: null, language: lang, title: "", source_type: "youtube", source_ref: "", lyrics: "", mood: "", region: "", priority: 50, active: true };
+}
+function editSong(s) { songForm.value = { ...s, lyrics: s.lyrics || "", mood: s.mood || "", region: s.region || "" }; }
+async function saveSong() {
+  const f = songForm.value, o = contentRow.value;
+  const payload = { language: f.language, title: f.title, source_type: f.source_type, source_ref: f.source_ref, lyrics: f.lyrics || null, mood: f.mood || null, region: f.region || null, priority: +f.priority, active: !!f.active };
+  busy.value = true; error.value = "";
+  try {
+    if (f.id) await api.adminUpdateSpecialSong(f.id, payload);
+    else      await api.adminCreateSpecialSong(o.id, payload);
+    flash("Song saved."); songForm.value = null; await reloadKeepingContent(o.id);
+  } catch (e) { error.value = e?.message || "Save failed — check the source value."; } finally { busy.value = false; }
+}
+async function deleteSong(s) {
+  if (!confirm(`Delete song "${s.title}"?`)) return;
+  busy.value = true;
+  try { await api.adminDeleteSpecialSong(s.id); flash("Song deleted."); await reloadKeepingContent(contentRow.value.id); }
+  catch (e) { error.value = e?.message || "Delete failed."; } finally { busy.value = false; }
+}
+
+// Reload the catalog but stay on the content panel for the same observance.
+async function reloadKeepingContent(id) {
+  await load();
+  contentRow.value = observances.value.find((x) => x.id === id) || null;
+  if (!contentRow.value) view.value = "list";
+}
 </script>
 
 <template>
@@ -282,6 +383,7 @@ async function remove(o) {
                 >{{ o.active ? "On" : "Off" }}</button>
               </td>
               <td v-if="canManage" class="ss-actions">
+                <button class="btn" @click="openContent(o)">Content</button>
                 <button class="btn" @click="startEdit(o)">Edit</button>
                 <button class="btn danger" @click="remove(o)">Delete</button>
               </td>
@@ -399,6 +501,116 @@ async function remove(o) {
         <button type="button" class="btn" @click="cancelEdit">Cancel</button>
       </div>
     </form>
+
+    <!-- ──────────────────── MANAGE CONTENT (manual mode) ──────────────────── -->
+    <div v-else-if="view === 'content' && contentRow" class="ss-content">
+      <div class="ss-content-head">
+        <h3>Content — {{ contentRow.titles?.en || contentRow.key }}</h3>
+        <button class="btn" @click="closeContent">← Back</button>
+      </div>
+      <p class="ss-muted">
+        By default the AI sermon &amp; mood-selected worship run normally. Flip a
+        language to <strong>Manual</strong> to serve your curated sermon/song below
+        instead — if none is active, it safely falls back to the AI.
+      </p>
+
+      <!-- Mode matrix -->
+      <table class="ss-grid ss-modes">
+        <thead><tr><th>Language</th><th>Sermon</th><th>Worship song</th></tr></thead>
+        <tbody>
+          <tr v-for="l in LANGS" :key="l">
+            <td><strong>{{ LANG_LABEL[l] }}</strong></td>
+            <td v-for="seg in ['sermon','music']" :key="seg">
+              <button class="ss-seg" :class="{ on: modeOf(seg, l) === 'auto' }"   :disabled="busy" @click="setMode(seg, l, 'auto')">Auto (AI)</button>
+              <button class="ss-seg" :class="{ on: modeOf(seg, l) === 'manual' }" :disabled="busy" @click="setMode(seg, l, 'manual')">Manual</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <!-- Per-language sermon + song libraries -->
+      <div v-for="l in LANGS" :key="'lib'+l" class="ss-lang-block" :class="{ 'my-text': l !== 'en' }">
+        <h4>{{ LANG_LABEL[l] }}</h4>
+
+        <div class="ss-lib">
+          <div class="ss-lib-head">
+            <span>Sermons <small class="ss-muted">({{ modeOf('sermon', l) }})</small></span>
+            <button class="btn" @click="newSermon(l)">+ Add sermon</button>
+          </div>
+          <ul class="ss-lib-list">
+            <li v-for="s in sermonsFor(l)" :key="s.id" :class="{ off: !s.active }">
+              <span><strong>{{ s.title }}</strong> <small class="ss-muted">prio {{ s.priority }}{{ s.mood ? ' · '+s.mood : '' }}</small></span>
+              <span class="ss-lib-act">
+                <button class="btn" @click="editSermon(s)">Edit</button>
+                <button class="btn danger" @click="deleteSermon(s)">Del</button>
+              </span>
+            </li>
+            <li v-if="!sermonsFor(l).length" class="ss-muted">No curated sermon.</li>
+          </ul>
+
+          <div class="ss-lib-head">
+            <span>Songs <small class="ss-muted">({{ modeOf('music', l) }})</small></span>
+            <button class="btn" @click="newSong(l)">+ Add song</button>
+          </div>
+          <ul class="ss-lib-list">
+            <li v-for="s in songsFor(l)" :key="s.id" :class="{ off: !s.active }">
+              <span><strong>{{ s.title }}</strong> <small class="ss-muted">{{ s.source_type }} · prio {{ s.priority }}{{ s.mood ? ' · '+s.mood : '' }}</small></span>
+              <span class="ss-lib-act">
+                <button class="btn" @click="editSong(s)">Edit</button>
+                <button class="btn danger" @click="deleteSong(s)">Del</button>
+              </span>
+            </li>
+            <li v-if="!songsFor(l).length" class="ss-muted">No curated song.</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Sermon editor modal -->
+      <div v-if="sermonForm" class="ss-modal" @click.self="sermonForm = null">
+        <form class="ss-modal-box" @submit.prevent="saveSermon">
+          <h4>{{ sermonForm.id ? "Edit" : "New" }} sermon — {{ LANG_LABEL[sermonForm.language] }}</h4>
+          <label>Title</label>
+          <input v-model="sermonForm.title" :class="{ 'my-text': sermonForm.language !== 'en' }" required />
+          <label>Body <small>(spoken verbatim)</small></label>
+          <textarea v-model="sermonForm.body" rows="8" :class="{ 'my-text': sermonForm.language !== 'en' }" required></textarea>
+          <div class="ss-rule-row">
+            <span><label>Mood <small>(optional tag)</small></label><input v-model="sermonForm.mood" style="width:9rem" /></span>
+            <span><label>Priority</label><input type="number" v-model.number="sermonForm.priority" style="width:6rem" /></span>
+            <span class="ss-active"><label><input type="checkbox" v-model="sermonForm.active" /> Active</label></span>
+          </div>
+          <div class="ss-form-actions">
+            <button type="submit" class="btn primary" :disabled="busy">{{ busy ? "Saving…" : "Save" }}</button>
+            <button type="button" class="btn" @click="sermonForm = null">Cancel</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Song editor modal -->
+      <div v-if="songForm" class="ss-modal" @click.self="songForm = null">
+        <form class="ss-modal-box" @submit.prevent="saveSong">
+          <h4>{{ songForm.id ? "Edit" : "New" }} song — {{ LANG_LABEL[songForm.language] }}</h4>
+          <label>Title</label>
+          <input v-model="songForm.title" :class="{ 'my-text': songForm.language !== 'en' }" required />
+          <label>Source type</label>
+          <select v-model="songForm.source_type">
+            <option v-for="t in SONG_TYPES" :key="t.value" :value="t.value">{{ t.label }}</option>
+          </select>
+          <label>Source <small>{{ (SONG_TYPES.find(t => t.value === songForm.source_type) || {}).hint }}</small></label>
+          <input v-model="songForm.source_ref" required />
+          <label>Lyrics <small>(optional, on-screen)</small></label>
+          <textarea v-model="songForm.lyrics" rows="4" :class="{ 'my-text': songForm.language !== 'en' }"></textarea>
+          <div class="ss-rule-row">
+            <span><label>Mood</label><input v-model="songForm.mood" style="width:9rem" /></span>
+            <span><label>Priority</label><input type="number" v-model.number="songForm.priority" style="width:6rem" /></span>
+            <span class="ss-active"><label><input type="checkbox" v-model="songForm.active" /> Active</label></span>
+          </div>
+          <div class="ss-form-actions">
+            <button type="submit" class="btn primary" :disabled="busy">{{ busy ? "Saving…" : "Save" }}</button>
+            <button type="button" class="btn" @click="songForm = null">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -443,4 +655,25 @@ async function remove(o) {
 .ss-active label { display: inline-flex; align-items: center; gap: 0.4rem; }
 .ss-active input { width: auto; }
 .ss-form-actions { margin-top: 1.25rem; display: flex; gap: 0.5rem; }
+
+/* Content management */
+.ss-content-head { display: flex; justify-content: space-between; align-items: center; }
+.ss-modes { max-width: 560px; margin: 0.75rem 0 1.5rem; }
+.ss-seg { padding: 0.2rem 0.6rem; border: 1px solid var(--border); background: var(--surface); cursor: pointer; font: inherit; }
+.ss-seg:first-of-type { border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
+.ss-seg:last-of-type  { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; border-left: none; }
+.ss-seg.on { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
+.ss-lang-block { border-top: 1px solid var(--border); padding-top: 0.75rem; margin-top: 1rem; }
+.ss-lang-block h4 { margin: 0 0 0.5rem; }
+.ss-lib-head { display: flex; justify-content: space-between; align-items: center; margin: 0.6rem 0 0.3rem; font-weight: 600; font-size: 0.9rem; }
+.ss-lib-list { list-style: none; padding: 0; margin: 0; }
+.ss-lib-list li { display: flex; justify-content: space-between; align-items: center; padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
+.ss-lib-list li.off { opacity: 0.5; }
+.ss-lib-act { white-space: nowrap; }
+.my-text, .my-text input, .my-text textarea { font-family: "Padauk", "Noto Sans Myanmar", "Myanmar Text", sans-serif; }
+.ss-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: flex-start; justify-content: center; padding: 4vh 1rem; z-index: 50; overflow-y: auto; }
+.ss-modal-box { background: var(--surface); border-radius: var(--radius-sm); padding: 1.25rem 1.5rem; width: 100%; max-width: 560px; border: 1px solid var(--border); }
+.ss-modal-box label { display: block; margin: 0.7rem 0 0.2rem; font-weight: 600; font-size: 0.9rem; }
+.ss-modal-box input, .ss-modal-box select, .ss-modal-box textarea { width: 100%; padding: 0.4rem 0.5rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg, var(--surface)); color: var(--text); font: inherit; }
+.ss-modal-box .ss-rule-row input { width: auto; }
 </style>

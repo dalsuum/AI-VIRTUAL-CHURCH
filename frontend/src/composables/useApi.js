@@ -289,6 +289,19 @@ export const api = {
     request(`/admin/special-sundays/${id}`, { method: "PATCH", body: payload }),
   adminDeleteSpecialSunday: (id) =>
     request(`/admin/special-sundays/${id}`, { method: "DELETE" }),
+  // Curated sermon/song libraries attached to a special Sunday (manual mode).
+  adminCreateSpecialSermon: (dayId, payload) =>
+    request(`/admin/special-sundays/${dayId}/sermons`, { method: "POST", body: payload }),
+  adminUpdateSpecialSermon: (id, payload) =>
+    request(`/admin/special-sermons/${id}`, { method: "PATCH", body: payload }),
+  adminDeleteSpecialSermon: (id) =>
+    request(`/admin/special-sermons/${id}`, { method: "DELETE" }),
+  adminCreateSpecialSong: (dayId, payload) =>
+    request(`/admin/special-sundays/${dayId}/songs`, { method: "POST", body: payload }),
+  adminUpdateSpecialSong: (id, payload) =>
+    request(`/admin/special-songs/${id}`, { method: "PATCH", body: payload }),
+  adminDeleteSpecialSong: (id) =>
+    request(`/admin/special-songs/${id}`, { method: "DELETE" }),
   // Song library CRUD (admin Lyrics tab; requires lyrics.manage).
   adminGetSong: (id) => request(`/admin/songs/${id}`),
   adminCreateSong: (payload) =>

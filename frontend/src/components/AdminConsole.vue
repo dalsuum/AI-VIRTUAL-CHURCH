@@ -1146,6 +1146,16 @@ onUnmounted(() => {
             <span class="lbl">MusicGen generations</span>
             <small>{{ stats.musicgen?.today ?? 0 }} today · ~{{ stats.musicgen?.audio_minutes ?? 0 }} min audio</small>
           </div>
+          <div v-if="stats.features?.special_day" class="card">
+            <span class="n">{{ stats.features.special_day.total }}</span>
+            <span class="lbl">Special Day MV</span>
+            <small>{{ stats.features.special_day.today }} today</small>
+          </div>
+          <div v-if="stats.features?.live_sticker" class="card">
+            <span class="n">{{ stats.features.live_sticker.total }}</span>
+            <span class="lbl">Live Stickers</span>
+            <small>{{ stats.features.live_sticker.today }} today</small>
+          </div>
           <div class="card">
             <span class="n">{{ stats.users.admins }}</span>
             <span class="lbl">Admins</span>

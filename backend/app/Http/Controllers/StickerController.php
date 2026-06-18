@@ -233,6 +233,7 @@ class StickerController extends Controller
         $this->openPerms(Storage::path($jobDir));
 
         RenderStickerJob::dispatch($token);
+        $this->recordUse();
 
         return response()->json(['job_id' => $token, 'status' => 'queued']);
     }
@@ -276,6 +277,28 @@ class StickerController extends Controller
     }
 
     // ---- helpers -----------------------------------------------------------
+
+    /**
+     * Bump the cumulative + today's render counter so the admin dashboard can
+     * show traffic for this feature. Re-reads fresh config to limit clobbering
+     * a concurrent admin save.
+     */
+    private function recordUse(): void
+    {
+        $c = $this->config();
+        $today = now()->toDateString();
+        $u = is_array($c['usage'] ?? null) ? $c['usage'] : [];
+        $u['total'] = (int) ($u['total'] ?? 0) + 1;
+        if (($u['date'] ?? null) !== $today) {
+            $u['date']  = $today;
+            $u['today'] = 0;
+        }
+        $u['today'] = (int) ($u['today'] ?? 0) + 1;
+        $c['usage'] = $u;
+
+        Storage::put(self::CONFIG, json_encode($c));
+        @chmod(Storage::path(self::CONFIG), 0664);
+    }
 
     /** Short, de-duplicated lyric lines drawn from the Father's Day songs. */
     private function lyricSuggestions(): array

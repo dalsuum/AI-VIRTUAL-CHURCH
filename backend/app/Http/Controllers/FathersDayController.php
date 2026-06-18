@@ -195,6 +195,7 @@ class FathersDayController extends Controller
         $this->openPerms(Storage::path($jobDir));
 
         RenderFathersDayJob::dispatch($jobId, $effect, $song['id']);
+        $this->recordUse();
 
         return response()->json(['job_id' => $jobId, 'status' => 'queued']);
     }
@@ -382,6 +383,28 @@ class FathersDayController extends Controller
         return response()->file(Storage::path($rel), [
             'Content-Type' => $song['ext'] === 'wav' ? 'audio/wav' : 'audio/mpeg',
         ]);
+    }
+
+    /**
+     * Bump the cumulative + today's render counter so the admin dashboard can
+     * show traffic for this feature. Preserves updated_at (a render isn't an
+     * admin edit). Re-reads fresh config to limit clobbering concurrent saves.
+     */
+    private function recordUse(): void
+    {
+        $c = $this->config();
+        $today = now()->toDateString();
+        $u = is_array($c['usage'] ?? null) ? $c['usage'] : [];
+        $u['total'] = (int) ($u['total'] ?? 0) + 1;
+        if (($u['date'] ?? null) !== $today) {
+            $u['date']  = $today;
+            $u['today'] = 0;
+        }
+        $u['today'] = (int) ($u['today'] ?? 0) + 1;
+        $c['usage'] = $u;
+
+        Storage::put(self::CONFIG, json_encode($c, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+        @chmod(Storage::path(self::CONFIG), 0664);
     }
 
     // ---- Guards ------------------------------------------------------------

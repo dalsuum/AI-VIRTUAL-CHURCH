@@ -778,7 +778,7 @@ The console is at `/#admin`. Access is role-based:
 | `staff` | admin + moderator + presenter | Dashboard, Services, Testimonies, Donors, Prayer Requests, and **permission-checked reads** (Users, Settings, Music Pool, Permissions, Grammar Review, Voice Training, System health) |
 | `admin` | admin only | All writes: Settings PATCH, User mutations, Music Pool CRUD, Permissions PATCH, CSV Export, System actions |
 
-- **Dashboard** — sessions, worship-time totals, donations, intercept counts, and prayer-request counts (total + today).
+- **Dashboard** — sessions, worship-time totals, donations, intercept counts, and prayer-request counts (total + today). When the admin enables a removable special-day feature (**Special Day MV** and/or **Live Sticker**), a card per enabled feature shows its visitor render traffic (total + today); the card hides automatically while the feature is disabled.
 - **Services** — list + **retry** a failed/stuck service (clears existing assets first so segment count visibly drops to zero, confirming regeneration is in progress) + **delete**.
 - **Testimonies** — approve / delete (moderation queue); each entry shows the user's custom mood words so the moderator has context.
 - **Users** — list + **create** new users (admin generates a first-login reset link when no password is set) + **assign role** (`admin`/`moderator`/`presenter`/`member`) + **block/unblock** + **delete** + **force password reset** (generates a one-time token link the admin shares out-of-band) + set **presenter gender**.

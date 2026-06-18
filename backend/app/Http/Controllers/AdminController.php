@@ -17,6 +17,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Redis;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -84,7 +85,43 @@ class AdminController extends Controller
                     ServiceSession::where('music_source', 'musicgen')->count() * 30 / 60, 1
                 ),
             ],
+            // Removable special-day features (MV + Live Sticker): surface their
+            // visitor render traffic, but only while the admin has them enabled.
+            'features' => $this->featureUsage(),
         ]);
+    }
+
+    /**
+     * Per-feature visitor render counts for the dashboard. Each feature stores
+     * its own enable flag + usage counter in a plain config.json (no DB); we read
+     * them here and report only the features that are currently enabled.
+     */
+    private function featureUsage(): array
+    {
+        $features = [
+            'special_day' => 'fathersday/config.json', // Special Day Music Video
+            'live_sticker'=> 'stickers/config.json',    // Live Sticker maker
+        ];
+
+        $out = [];
+        foreach ($features as $key => $rel) {
+            $c = Storage::exists($rel)
+                ? json_decode((string) Storage::get($rel), true)
+                : null;
+            if (! is_array($c) || empty($c['enabled'])) {
+                continue;
+            }
+            $u = is_array($c['usage'] ?? null) ? $c['usage'] : [];
+            $today = (($u['date'] ?? null) === today()->toDateString())
+                ? (int) ($u['today'] ?? 0) : 0;
+            $out[$key] = [
+                'enabled' => true,
+                'total'   => (int) ($u['total'] ?? 0),
+                'today'   => $today,
+            ];
+        }
+
+        return $out;
     }
 
     /** Cumulative worship hours: each session's started_at→ended_at, summed. */

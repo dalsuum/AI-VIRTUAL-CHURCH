@@ -58,9 +58,12 @@ let pollTimer = null;
 const MEDIA_GRACE_POLLS = computed(() =>
   (["my", "td"].includes(service.value?.language) && serverNarrationExpected.value) ? 150 : 75
 );
-// Fallback open after ~140s (35 polls x 4s) once text is composed, so
-// provider failures (Suno moderation, late/missing narration callbacks) do
-// not trap worshippers on the preparing screen for many minutes.
+// Fallback open after ~140s (35 polls x 4s) once the opening prayer TEXT is
+// ready, so a slow or failed narration callback (e.g. edge_tts/MMS-TTS for
+// Myanmar/Tedim, which is the door's gating asset) does not trap worshippers
+// on the preparing screen. This starts counting from the prayer text — not the
+// full service "complete" — so a stuck narration opens within a bounded time
+// even if later segments (benediction) are also slow.
 const OPEN_FAILSAFE_POLLS = 35;
 // Absolute ceiling: open after 15 min of polling even if the service never
 // reaches "complete" (e.g. worker outage, LLM silent failure). Prevents the
@@ -127,7 +130,7 @@ const requiredOpeningMediaReady = computed(() => {
 // the app's degrade-not-block behavior if an external media provider never returns.
 const mediaReady = computed(() =>
   requiredOpeningMediaReady.value ||
-  (textComposed.value && openWaitPolls >= OPEN_FAILSAFE_POLLS) ||
+  (openingPrayerTextReady.value && openWaitPolls >= OPEN_FAILSAFE_POLLS) ||
   totalPolls >= TOTAL_FAILSAFE_POLLS
 );
 
@@ -158,7 +161,7 @@ async function poll() {
   try {
     service.value = await api.getService(sessionToken.value);
     totalPolls += 1;
-    if (textComposed.value && !requiredOpeningMediaReady.value) {
+    if (openingPrayerTextReady.value && !requiredOpeningMediaReady.value) {
       openWaitPolls += 1;
     }
     // Once the player can safely open, keep polling until both the worship music

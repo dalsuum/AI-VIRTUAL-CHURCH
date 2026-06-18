@@ -41,7 +41,7 @@ class RenderFathersDayJob implements ShouldQueue
         $out = "{$dir}/output.mp4";
 
         try {
-            $this->setStatus('rendering');
+            $this->setStatus('rendering', null, 5, 'Preparing');
 
             $song = $this->songPath();
             if (! $song) {
@@ -59,7 +59,9 @@ class RenderFathersDayJob implements ShouldQueue
 
             // 1) Normalise every photo to a vertical frame. -map_metadata -1
             //    strips EXIF/GPS; ffmpeg decoding it validates the bytes.
+            // Photo prep spans 10% → 40% of the bar.
             $frames = [];
+            $count  = count($photos);
             foreach ($photos as $i => $photo) {
                 $frame = sprintf('%s/norm_%02d.jpg', $work, $i);
                 $this->ffmpeg([
@@ -74,19 +76,22 @@ class RenderFathersDayJob implements ShouldQueue
                     $frame,
                 ]);
                 $frames[] = $frame;
+                $this->setStatus('rendering', null, (int) (10 + 30 * (($i + 1) / $count)), 'Processing photos');
             }
 
             $duration = $this->probeDuration($song);
 
             // 2) Build the silent slideshow video matching the song length.
+            $this->setStatus('rendering', null, 45, 'Building slideshow');
             $slideshow = "{$work}/slideshow.mp4";
             $this->buildSlideshow($frames, $duration, $slideshow, $work);
 
             // 3) Burn lyrics (optional) and mux the song in.
+            $this->setStatus('rendering', null, 75, 'Adding music & lyrics');
             $assRel = $this->buildSubtitles($duration, $work); // relative name or null
             $this->mux($slideshow, $song, $assRel, $work, $out);
 
-            $this->setStatus('done');
+            $this->setStatus('done', null, 100, 'Done');
         } catch (\Throwable $e) {
             Log::error("FathersDay render {$this->jobId} failed: {$e->getMessage()}");
             $this->setStatus('error', 'Sorry — the video could not be generated. Please try again.');
@@ -415,12 +420,18 @@ class RenderFathersDayJob implements ShouldQueue
         return json_decode((string) Storage::get($rel), true) ?: [];
     }
 
-    private function setStatus(string $status, ?string $message = null): void
+    private function setStatus(string $status, ?string $message = null, ?int $progress = null, ?string $stage = null): void
     {
         $rel  = "fathersday/jobs/{$this->jobId}/status.json";
         $data = ['status' => $status, 'updated_at' => now()->toIso8601String()];
-        if ($message) {
+        if ($message !== null) {
             $data['message'] = $message;
+        }
+        if ($progress !== null) {
+            $data['progress'] = max(0, min(100, $progress));
+        }
+        if ($stage !== null) {
+            $data['stage'] = $stage;
         }
         Storage::put($rel, json_encode($data));
     }

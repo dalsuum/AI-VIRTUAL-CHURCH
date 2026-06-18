@@ -18,8 +18,13 @@ const errorMsg  = ref("");
 const jobId     = ref(null);
 const downloadUrl = ref("");
 const dragActive = ref(false);
+const targetProgress = ref(0);   // last % reported by the server
+const shownProgress  = ref(0);   // eased value actually displayed
+const stageLabel     = ref("Starting…");
+const finished       = ref(false);
 
 let pollTimer = null;
+let easeTimer = null;
 
 const effectLabels = {
   slide: "Slideshow",
@@ -43,8 +48,28 @@ onMounted(async () => {
 
 onUnmounted(() => {
   pollTimer && clearInterval(pollTimer);
+  easeTimer && clearInterval(easeTimer);
   previews.value.forEach((u) => URL.revokeObjectURL(u));
 });
+
+// Ease the displayed % toward the server target so the bar glides instead of
+// jumping between stages. Never quite reaches the target until "done" so it
+// keeps creeping during a long ffmpeg step.
+function startEasing() {
+  easeTimer && clearInterval(easeTimer);
+  easeTimer = setInterval(() => {
+    // While running, creep toward target but stay a touch behind so the bar
+    // keeps moving during a long ffmpeg step. Once finished, drive to 100.
+    const ceiling = finished.value ? 100 : Math.min(targetProgress.value, 96);
+    if (shownProgress.value < ceiling) {
+      shownProgress.value = Math.min(ceiling, shownProgress.value + 1);
+    } else if (finished.value && shownProgress.value >= 100) {
+      clearInterval(easeTimer);
+      phase.value = "done";
+      triggerDownload();
+    }
+  }, 90);
+}
 
 function addFiles(fileList) {
   const incoming = Array.from(fileList).filter((f) => /^image\/(jpe?g|png|webp)$/.test(f.type));
@@ -68,13 +93,19 @@ function removePhoto(i) {
 async function generate() {
   errorMsg.value = "";
   phase.value = "rendering";
+  targetProgress.value = 0;
+  shownProgress.value = 0;
+  finished.value = false;
+  stageLabel.value = "Starting…";
+  startEasing();
   try {
     const { job_id } = await api.fdRender(photos.value, effect.value);
     jobId.value = job_id;
-    pollTimer = setInterval(checkStatus, 3000);
+    pollTimer = setInterval(checkStatus, 2000);
     checkStatus();
   } catch (e) {
     phase.value = "error";
+    easeTimer && clearInterval(easeTimer);
     errorMsg.value = e.message || "Something went wrong. Please try again.";
   }
 }
@@ -83,13 +114,17 @@ async function checkStatus() {
   if (!jobId.value) return;
   try {
     const s = await api.fdJobStatus(jobId.value);
+    if (typeof s.progress === "number") targetProgress.value = s.progress;
+    if (s.stage) stageLabel.value = s.stage;
     if (s.status === "done") {
       clearInterval(pollTimer);
+      targetProgress.value = 100;
+      stageLabel.value = "Finishing up…";
       downloadUrl.value = api.fdDownloadUrl(jobId.value);
-      phase.value = "done";
-      triggerDownload();
+      finished.value = true;   // easing drives the bar to 100, then flips to done
     } else if (s.status === "error") {
       clearInterval(pollTimer);
+      easeTimer && clearInterval(easeTimer);
       phase.value = "error";
       errorMsg.value = s.message || "The video could not be generated.";
     }
@@ -115,6 +150,9 @@ function reset() {
   downloadUrl.value = "";
   phase.value = "idle";
   errorMsg.value = "";
+  targetProgress.value = 0;
+  shownProgress.value = 0;
+  finished.value = false;
 }
 </script>
 
@@ -179,8 +217,9 @@ function reset() {
 
       <!-- Actions / progress -->
       <div v-if="phase === 'rendering'" class="fd-progress">
-        <div class="fd-spinner"></div>
-        <p>Creating your video… this can take a minute.</p>
+        <div class="fd-bar"><div class="fd-bar-fill" :style="{ width: shownProgress + '%' }"></div></div>
+        <p class="fd-progress-pct">{{ shownProgress }}%</p>
+        <p class="fd-progress-stage">{{ stageLabel }}</p>
       </div>
 
       <div v-else-if="phase === 'done'" class="fd-done">
@@ -254,12 +293,17 @@ function reset() {
 .fd-btn.big { width: 100%; margin-top: 1.5rem; padding: 0.85rem; font-size: 1rem; }
 
 .fd-progress { text-align: center; margin-top: 1.5rem; }
-.fd-spinner {
-  width: 36px; height: 36px; margin: 0 auto 0.75rem; border-radius: 50%;
-  border: 3px solid var(--border); border-top-color: var(--primary);
-  animation: fd-spin 0.8s linear infinite;
+.fd-bar {
+  width: 100%; height: 10px; border-radius: 999px; overflow: hidden;
+  background: var(--border);
 }
-@keyframes fd-spin { to { transform: rotate(360deg); } }
+.fd-bar-fill {
+  height: 100%; border-radius: 999px;
+  background: linear-gradient(90deg, var(--primary), color-mix(in srgb, var(--primary) 60%, #8b5cf6));
+  transition: width 0.12s linear;
+}
+.fd-progress-pct { font-size: 1.4rem; font-weight: 700; margin: 0.75rem 0 0.15rem; }
+.fd-progress-stage { color: var(--text-muted); font-size: 0.85rem; margin: 0; }
 
 .fd-done { text-align: center; margin-top: 1.5rem; display: flex; flex-direction: column; gap: 0.6rem; align-items: center; }
 .fd-done-msg { font-size: 1.05rem; font-weight: 600; }

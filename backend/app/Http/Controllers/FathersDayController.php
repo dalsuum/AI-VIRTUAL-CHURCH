@@ -112,6 +112,8 @@ class FathersDayController extends Controller
 
         Storage::put("{$jobDir}/status.json", json_encode([
             'status'     => 'queued',
+            'progress'   => 0,
+            'stage'      => 'Queued',
             'effect'     => $effect,
             'created_at' => now()->toIso8601String(),
         ]));

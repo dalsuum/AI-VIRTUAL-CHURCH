@@ -327,6 +327,31 @@ def wrap_clusters(draw, text, font, max_w, max_lines):
     return lines, True
 
 
+_CMAP = {}
+
+
+def font_supports(fpath):
+    """Cached set of code points the font has glyphs for (None if unreadable)."""
+    if fpath not in _CMAP:
+        try:
+            from fontTools.ttLib import TTFont
+            _CMAP[fpath] = set(TTFont(fpath).getBestCmap().keys())
+        except Exception:
+            _CMAP[fpath] = None
+    return _CMAP[fpath]
+
+
+def drop_unsupported(text, fpath):
+    """Strip characters the font can't render (e.g. the Myanmar font has no Latin
+    glyphs, so a stray '.' would show as a tofu box). Keep spaces + ZW joiners,
+    which shaping needs but the cmap may omit."""
+    cm = font_supports(fpath)
+    if not cm:
+        return text
+    keep = {0x20, 0x200B, 0x200C, 0x200D}
+    return "".join(ch for ch in text if ord(ch) in cm or ord(ch) in keep)
+
+
 def add_caption(canvas, text):
     if not text:
         return
@@ -334,6 +359,10 @@ def add_caption(canvas, text):
     fpath = MYANMAR_FONT if has_myanmar(text) and os.path.exists(MYANMAR_FONT) \
         else (LATIN_FONTS[0] if LATIN_FONTS else None)
     if not fpath:
+        return
+
+    text = drop_unsupported(text, fpath).strip()
+    if not text:
         return
 
     max_w = SIZE - 56

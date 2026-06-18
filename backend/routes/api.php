@@ -127,6 +127,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
         // Special Sundays — monitor + catalog read (special_sundays.view).
         Route::get('/special-sundays', [AdminController::class, 'specialSundays']);
+        // Preview what would play for a language + mood (read-only, no dispatch).
+        Route::get('/special-sundays/{specialSunday}/preview', [AdminController::class, 'previewSpecialSunday']);
 
         Route::get('/voice-training/status', [VoiceTrainingController::class, 'status']);
         Route::post('/voice-training/start', [VoiceTrainingController::class, 'start']);

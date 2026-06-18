@@ -218,6 +218,7 @@ function openContent(o) {
   contentRow.value = observances.value.find((x) => x.id === o.id) || o;
   sermonForm.value = null;
   songForm.value = null;
+  preview.value = null;
   view.value = "content";
 }
 function closeContent() {
@@ -291,6 +292,24 @@ async function deleteSong(s) {
   busy.value = true;
   try { await api.adminDeleteSpecialSong(s.id); flash("Song deleted."); await reloadKeepingContent(contentRow.value.id); }
   catch (e) { error.value = e?.message || "Delete failed."; } finally { busy.value = false; }
+}
+
+// Preview — resolve what would actually play for a language + mood.
+const previewLang = ref("en");
+const previewMood = ref("");
+const preview     = ref(null);
+const previewBusy = ref(false);
+async function runPreview() {
+  if (!contentRow.value) return;
+  previewBusy.value = true;
+  preview.value = null;
+  try {
+    preview.value = await api.adminPreviewSpecialSunday(contentRow.value.id, previewLang.value, previewMood.value.trim());
+  } catch (e) {
+    error.value = e?.message || "Preview failed.";
+  } finally {
+    previewBusy.value = false;
+  }
 }
 
 // Reload the catalog but stay on the content panel for the same observance.
@@ -528,6 +547,51 @@ async function reloadKeepingContent(id) {
         </tbody>
       </table>
 
+      <!-- Preview: what would actually play -->
+      <div class="ss-preview">
+        <div class="ss-preview-bar">
+          <strong>Preview what plays</strong>
+          <label>Language
+            <select v-model="previewLang">
+              <option v-for="l in LANGS" :key="l" :value="l">{{ LANG_LABEL[l] }}</option>
+            </select>
+          </label>
+          <label>Mood
+            <input v-model="previewMood" placeholder="e.g. grateful" @keyup.enter="runPreview" />
+          </label>
+          <button class="btn primary" :disabled="previewBusy" @click="runPreview">{{ previewBusy ? "…" : "Preview" }}</button>
+        </div>
+
+        <div v-if="preview" class="ss-preview-out" :class="{ 'my-text': preview.language !== 'en' }">
+          <div class="ss-preview-seg">
+            <span class="ss-preview-label">Sermon</span>
+            <template v-if="preview.sermon.mode === 'manual'">
+              <span class="ss-chip sermon">manual</span>
+              <strong>{{ preview.sermon.title }}</strong>
+              <p class="ss-preview-body">{{ preview.sermon.body }}</p>
+            </template>
+            <template v-else>
+              <span class="ss-chip">auto (AI)</span>
+              <span v-if="preview.sermon.fallback" class="ss-muted">— manual set but no active entry, falling back</span>
+              <span class="ss-muted">biased by: {{ (preview.sermon_tags || []).join(", ") || "—" }}</span>
+            </template>
+          </div>
+          <div class="ss-preview-seg">
+            <span class="ss-preview-label">Worship</span>
+            <template v-if="preview.music.mode === 'manual'">
+              <span class="ss-chip mood">manual</span>
+              <strong>{{ preview.music.title }}</strong>
+              <span class="ss-muted">{{ preview.music.source_type }}: {{ preview.music.source_ref }}</span>
+            </template>
+            <template v-else>
+              <span class="ss-chip">auto (mood-selected)</span>
+              <span v-if="preview.music.fallback" class="ss-muted">— manual set but no active entry, falling back</span>
+              <span class="ss-muted">biased by: {{ (preview.music_moods || []).join(", ") || "—" }}</span>
+            </template>
+          </div>
+        </div>
+      </div>
+
       <!-- Per-language sermon + song libraries -->
       <div v-for="l in LANGS" :key="'lib'+l" class="ss-lang-block" :class="{ 'my-text': l !== 'en' }">
         <h4>{{ LANG_LABEL[l] }}</h4>
@@ -663,6 +727,14 @@ async function reloadKeepingContent(id) {
 .ss-seg:first-of-type { border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
 .ss-seg:last-of-type  { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; border-left: none; }
 .ss-seg.on { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
+.ss-preview { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0.75rem 1rem; margin: 0.5rem 0 1rem; }
+.ss-preview-bar { display: flex; flex-wrap: wrap; gap: 0.9rem; align-items: center; }
+.ss-preview-bar label { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.88rem; }
+.ss-preview-bar select, .ss-preview-bar input { padding: 0.3rem 0.45rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font: inherit; }
+.ss-preview-out { margin-top: 0.85rem; display: grid; gap: 0.7rem; }
+.ss-preview-seg { display: flex; flex-wrap: wrap; gap: 0.4rem 0.6rem; align-items: baseline; }
+.ss-preview-label { display: inline-block; min-width: 4.5rem; font-weight: 700; }
+.ss-preview-body { flex-basis: 100%; margin: 0.25rem 0 0; padding: 0.5rem 0.7rem; background: var(--surface); border-radius: var(--radius-sm); max-height: 9rem; overflow: auto; white-space: pre-wrap; line-height: 1.6; }
 .ss-lang-block { border-top: 1px solid var(--border); padding-top: 0.75rem; margin-top: 1rem; }
 .ss-lang-block h4 { margin: 0 0 0.5rem; }
 .ss-lib-head { display: flex; justify-content: space-between; align-items: center; margin: 0.6rem 0 0.3rem; font-weight: 600; font-size: 0.9rem; }

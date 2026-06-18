@@ -289,6 +289,11 @@ export const api = {
     request(`/admin/special-sundays/${id}`, { method: "PATCH", body: payload }),
   adminDeleteSpecialSunday: (id) =>
     request(`/admin/special-sundays/${id}`, { method: "DELETE" }),
+  adminPreviewSpecialSunday: (id, language = "en", mood = "") => {
+    const qs = new URLSearchParams({ language });
+    if (mood) qs.set("mood", mood);
+    return request(`/admin/special-sundays/${id}/preview?${qs.toString()}`);
+  },
   // Curated sermon/song libraries attached to a special Sunday (manual mode).
   adminCreateSpecialSermon: (dayId, payload) =>
     request(`/admin/special-sundays/${dayId}/sermons`, { method: "POST", body: payload }),

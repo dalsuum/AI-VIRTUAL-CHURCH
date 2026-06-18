@@ -599,6 +599,35 @@ class AdminController extends Controller
         return $audit;
     }
 
+    /**
+     * Preview what a service WOULD play for this observance at a given language +
+     * mood, without dispatching anything. Shows the resolved mode per segment and
+     * the concrete manual pick (or, for 'auto', the bias tags/moods that steer the
+     * AI). Lets an admin confirm a manual selection before Sunday.
+     */
+    public function previewSpecialSunday(Request $request, \App\Models\SpecialSunday $specialSunday): JsonResponse
+    {
+        PermissionService::require($request->user(), 'special_sundays.view');
+
+        $language = in_array($request->query('language'), ['en', 'my', 'td'], true)
+            ? $request->query('language')
+            : 'en';
+        $mood = mb_substr(trim((string) $request->query('mood', '')), 0, 100);
+
+        $content = $specialSunday->resolveContent($language, $mood !== '' ? $mood : null);
+
+        return response()->json([
+            'language'    => $language,
+            'mood'        => $mood,
+            'title'       => $specialSunday->titles[$language] ?? $specialSunday->titles['en'] ?? $specialSunday->key,
+            'sermon'      => $content['sermon'],
+            'music'       => $content['music'],
+            // For the 'auto' case, the bias that would steer the AI selection.
+            'sermon_tags' => $specialSunday->sermon_tags,
+            'music_moods' => $specialSunday->music_moods,
+        ]);
+    }
+
     public function createSpecialSunday(Request $request): JsonResponse
     {
         PermissionService::require($request->user(), 'special_sundays.manage');

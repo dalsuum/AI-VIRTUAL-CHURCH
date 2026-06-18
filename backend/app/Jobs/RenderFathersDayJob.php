@@ -29,7 +29,11 @@ class RenderFathersDayJob implements ShouldQueue
 
     private const W   = 1080;
     private const H   = 1920;
-    private const FPS = 25;
+    // 15 fps keeps slideshows/motion smooth enough while roughly halving the
+    // per-frame subtitle-burn + encode cost vs 25 fps. The single-still path
+    // drops further to STILL_FPS since only the lyrics ever change.
+    private const FPS = 15;
+    private const STILL_FPS = 12;
     private const XFADE = 1.0;   // crossfade seconds for the "fade" effect
 
     public function __construct(public string $jobId, public string $effect) {}
@@ -80,16 +84,25 @@ class RenderFathersDayJob implements ShouldQueue
             }
 
             $duration = $this->probeDuration($song);
+            $assRel   = $this->buildSubtitles($duration, $work); // relative name or null
 
-            // 2) Build the silent slideshow video matching the song length.
-            $this->setStatus('rendering', null, 45, 'Building slideshow');
-            $slideshow = "{$work}/slideshow.mp4";
-            $this->buildSlideshow($frames, $duration, $slideshow, $work);
+            // Single still photo (the common case) renders in ONE encode pass —
+            // loop the image, burn lyrics and mux audio together — instead of
+            // encoding a full-length slideshow and then re-encoding it. Roughly
+            // halves the render time. Multi-photo / Ken Burns still build a
+            // slideshow first (their frames differ over time).
+            if ($count === 1 && $this->effect !== 'kenburns') {
+                $this->setStatus('rendering', null, 50, 'Rendering video');
+                $this->renderStill($frames[0], $song, $assRel, $duration, $work, $out);
+            } else {
+                $this->setStatus('rendering', null, 45, 'Building slideshow');
+                $slideshow = "{$work}/slideshow.mp4";
+                $this->buildSlideshow($frames, $duration, $slideshow, $work);
 
-            // 3) Burn lyrics (optional) and mux the song in.
-            $this->setStatus('rendering', null, 75, 'Adding music & lyrics');
-            $assRel = $this->buildSubtitles($duration, $work); // relative name or null
-            $this->mux($slideshow, $song, $assRel, $work, $out);
+                $this->setStatus('rendering', null, 75, 'Adding music & lyrics');
+                $this->mux($slideshow, $song, $assRel, $work, $out);
+            }
+            @chmod($out, 0644);   // web server (different user) serves the download
 
             $this->setStatus('done', null, 100, 'Done');
         } catch (\Throwable $e) {
@@ -118,7 +131,7 @@ class RenderFathersDayJob implements ShouldQueue
                     '-t', (string) $duration,
                     '-r', (string) self::FPS,
                     '-vf', sprintf('scale=%d:%d,setsar=1,format=yuv420p', self::W, self::H),
-                    '-c:v', 'libx264', '-preset', 'veryfast', '-tune', 'stillimage',
+                    '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'stillimage',
                     $out,
                 ]);
             }
@@ -152,9 +165,36 @@ class RenderFathersDayJob implements ShouldQueue
             '-t', (string) $duration,
             '-r', (string) self::FPS,
             '-vf', sprintf('scale=%d:%d,setsar=1,format=yuv420p', self::W, self::H),
-            '-c:v', 'libx264', '-preset', 'veryfast',
+            '-c:v', 'libx264', '-preset', 'ultrafast',
             $out,
         ]);
+    }
+
+    /**
+     * One-pass render for a single still image: loop the frame for the song's
+     * length, optionally burn lyrics, and mux the audio — all in one encode.
+     * cwd=$work so the relative .ass path resolves without filter escaping.
+     */
+    private function renderStill(string $frame, string $song, ?string $assRel, float $duration, string $work, string $out): void
+    {
+        $vf = sprintf('scale=%d:%d,setsar=1,format=yuv420p', self::W, self::H);
+        if ($assRel !== null) {
+            $fontsDir = base_path('resources/fonts');
+            $vf .= ",ass={$assRel}:fontsdir={$fontsDir}";
+        }
+
+        $this->ffmpeg([
+            '-loop', '1', '-i', $frame,
+            '-i', $song,
+            '-t', (string) $duration,
+            '-r', (string) self::STILL_FPS,
+            '-vf', $vf,
+            '-map', '0:v:0', '-map', '1:a:0',
+            '-c:v', 'libx264', '-preset', 'veryfast', '-tune', 'stillimage', '-pix_fmt', 'yuv420p',
+            '-c:a', 'aac', '-b:a', '192k',
+            '-shortest', '-movflags', '+faststart',
+            $out,
+        ], $work);
     }
 
     private function kenburns(string $frame, float $duration, string $out): void
@@ -168,7 +208,7 @@ class RenderFathersDayJob implements ShouldQueue
                 'scale=%d:%d,zoompan=z=\'min(zoom+0.0006,1.3)\':d=%d:s=%dx%d:fps=%d,setsar=1,format=yuv420p',
                 self::W * 2, self::H * 2, $d, self::W, self::H, self::FPS
             ),
-            '-c:v', 'libx264', '-preset', 'veryfast',
+            '-c:v', 'libx264', '-preset', 'ultrafast',
             $out,
         ]);
     }
@@ -239,7 +279,7 @@ class RenderFathersDayJob implements ShouldQueue
             '-map', '[vout]',
             '-t', (string) $duration,
             '-r', (string) self::FPS,
-            '-c:v', 'libx264', '-preset', 'veryfast',
+            '-c:v', 'libx264', '-preset', 'ultrafast',
             $out,
         ]));
     }
@@ -434,6 +474,8 @@ class RenderFathersDayJob implements ShouldQueue
             $data['stage'] = $stage;
         }
         Storage::put($rel, json_encode($data));
+        // The web server (a different OS user) polls this file — make it readable.
+        @chmod(Storage::path($rel), 0644);
     }
 
     private function rrmdir(string $path): void

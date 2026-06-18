@@ -118,6 +118,11 @@ class FathersDayController extends Controller
             'created_at' => now()->toIso8601String(),
         ]));
 
+        // The web server (www-data) creates these with private 0700/0600 perms,
+        // but the queue worker runs as a different user and must read the photos
+        // and rewrite the status. Open the tree to group/other so both can work.
+        $this->openPerms(Storage::path($jobDir));
+
         RenderFathersDayJob::dispatch($jobId, $effect);
 
         return response()->json(['job_id' => $jobId, 'status' => 'queued']);
@@ -224,5 +229,19 @@ class FathersDayController extends Controller
     private function safeId(string $id): ?string
     {
         return preg_match('/^[0-9a-f-]{36}$/i', $id) ? $id : null;
+    }
+
+    /**
+     * Recursively make a job tree readable/traversable by the queue worker (a
+     * different OS user). Dirs 0775 (group can create/delete temp files), files
+     * 0644. The tree holds only ephemeral photos + status and is deleted after
+     * the render, and is never web-exposed, so group/other read is acceptable.
+     */
+    private function openPerms(string $path): void
+    {
+        @chmod($path, 0775);
+        foreach (glob(rtrim($path, '/') . '/*') ?: [] as $child) {
+            is_dir($child) ? $this->openPerms($child) : @chmod($child, 0644);
+        }
     }
 }

@@ -6,7 +6,7 @@
   Remove by deleting this file + its #stickers route/nav-link in App.vue.
 -->
 <script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick } from "vue";
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from "vue";
 import Cropper from "cropperjs";
 import "cropperjs/dist/cropper.css";
 import { api } from "../composables/useApi";
@@ -39,7 +39,12 @@ const stage    = ref("");
 let pollTimer = null;
 
 const suggestions = computed(() => config.value?.suggestions ?? []);
-const hasLyrics   = computed(() => suggestions.value.length > 0);
+const songs       = computed(() => config.value?.songs ?? []);
+const songIndex   = ref(0);
+const songLines   = computed(() => songs.value[songIndex.value]?.lines ?? []);
+// With a song library, offer song→line; otherwise fall back to the flat list.
+const hasSongs    = computed(() => songs.value.length > 0);
+const hasLyrics   = computed(() => hasSongs.value || suggestions.value.length > 0);
 const maxChars    = computed(() => config.value?.max_chars ?? 120);
 const enabled     = computed(() => config.value?.enabled !== false);
 const pageTitle   = computed(() => config.value?.title || "Live Sticker Maker");
@@ -49,11 +54,14 @@ const chosenText = computed(() =>
   source.value === "lyrics" ? lyricLine.value : manualText.value
 );
 
+// Picking a different song resets the line to that song's first line.
+watch(songIndex, () => { lyricLine.value = songLines.value[0] || ""; });
+
 onMounted(async () => {
   try {
     config.value = await api.stickerConfig();
-    source.value = (config.value?.suggestions?.length ? "lyrics" : "manual");
-    lyricLine.value = config.value?.suggestions?.[0] || "";
+    source.value = hasLyrics.value ? "lyrics" : "manual";
+    lyricLine.value = songLines.value[0] || config.value?.suggestions?.[0] || "";
   } catch {
     config.value = { enabled: false, suggestions: [] };
     source.value = "manual";
@@ -218,13 +226,19 @@ function reset() {
 
         <p class="sk-step">2 · Sticker words</p>
         <div class="sk-source">
-          <button v-if="hasLyrics" :class="{ on: source === 'lyrics' }" @click="source = 'lyrics'">Father's Day lyrics</button>
+          <button v-if="hasLyrics" :class="{ on: source === 'lyrics' }" @click="source = 'lyrics'">Song lyrics</button>
           <button :class="{ on: source === 'manual' }" @click="source = 'manual'">Type my own</button>
         </div>
 
-        <select v-if="source === 'lyrics'" v-model="lyricLine" class="sk-select">
-          <option v-for="(s, i) in suggestions" :key="i" :value="s">{{ s }}</option>
-        </select>
+        <template v-if="source === 'lyrics'">
+          <!-- Pick a song first, then a line from it. -->
+          <select v-if="hasSongs" v-model.number="songIndex" class="sk-select sk-song">
+            <option v-for="(s, i) in songs" :key="i" :value="i">🎵 {{ s.title }}</option>
+          </select>
+          <select v-model="lyricLine" class="sk-select">
+            <option v-for="(s, i) in (hasSongs ? songLines : suggestions)" :key="i" :value="s">{{ s }}</option>
+          </select>
+        </template>
         <div v-else>
           <input v-model="manualText" :maxlength="maxChars" class="sk-input"
                  placeholder="e.g. Best Dad Ever" />
@@ -307,6 +321,7 @@ function reset() {
   background: transparent; cursor: pointer; font-size: .9rem;
 }
 .sk-source button.on { background: #dc2626; color: #fff; border-color: #dc2626; }
+.sk-song { margin-bottom: .5rem; }
 .sk-select, .sk-input {
   width: 100%; padding: .65rem; border: 1px solid var(--border, #ccc); border-radius: 10px;
   font-size: 1rem; box-sizing: border-box;

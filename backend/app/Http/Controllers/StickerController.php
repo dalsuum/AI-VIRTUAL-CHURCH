@@ -78,6 +78,8 @@ class StickerController extends Controller
             'count'       => self::COUNT,
             'max_chars'   => self::MAX_CHARS,
             'suggestions' => $suggestions,
+            // Lyric lines grouped per song so the visitor picks a song then a line.
+            'songs'       => $this->songLyrics(),
         ]);
     }
 
@@ -278,21 +280,44 @@ class StickerController extends Controller
     /** Short, de-duplicated lyric lines drawn from the Father's Day songs. */
     private function lyricSuggestions(): array
     {
+        $out = [];
+        foreach ($this->songLyrics() as $song) {
+            foreach ($song['lines'] as $line) {
+                $out[$line] = true;
+            }
+        }
+        return array_slice(array_keys($out), 0, 40);
+    }
+
+    /**
+     * Lyric lines grouped by song: [{title, lines:[…]}], so the visitor can pick
+     * a song first, then a line. Pulled from the Father's Day song library.
+     */
+    private function songLyrics(): array
+    {
         $rel = 'fathersday/config.json';
         if (! Storage::exists($rel)) {
             return [];
         }
         $c = json_decode((string) Storage::get($rel), true) ?: [];
-        $out = [];
+        $songs = [];
         foreach ($c['songs'] ?? [] as $song) {
+            $lines = [];
             foreach (preg_split('/\r?\n/', (string) ($song['lyrics'] ?? '')) as $line) {
                 $line = trim(preg_replace('/\[[^\]]*\]/', '', $line)); // drop [tags]/[mm:ss]
                 if ($line !== '' && mb_strlen($line) <= 40) {
-                    $out[$line] = true;
+                    $lines[$line] = true;   // de-dupe within the song
                 }
             }
+            $lines = array_slice(array_keys($lines), 0, 60);
+            if ($lines) {
+                $songs[] = [
+                    'title' => (string) ($song['title'] ?? 'Song'),
+                    'lines' => $lines,
+                ];
+            }
         }
-        return array_slice(array_keys($out), 0, 40);
+        return $songs;
     }
 
     private function runPython(array $args, int $timeout): string

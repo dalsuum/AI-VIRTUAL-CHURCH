@@ -101,9 +101,16 @@ class UpdateController extends Controller
     {
         $current = [];
         if (file_exists(self::CACHE_FILE)) {
-            $current = json_decode(file_get_contents(self::CACHE_FILE), true) ?? [];
+            $current = json_decode(@file_get_contents(self::CACHE_FILE), true) ?? [];
         }
         $current['checking'] = true;
-        file_put_contents(self::CACHE_FILE, json_encode($current));
+
+        // The cache file is shared with the queue worker (user: simon), which
+        // writes it as simon:www-data. Suppress warnings so a transient
+        // permission glitch degrades the spinner hint instead of 500-ing the
+        // request, and keep the file group-writable so both users can rewrite it.
+        if (@file_put_contents(self::CACHE_FILE, json_encode($current)) !== false) {
+            @chmod(self::CACHE_FILE, 0664);
+        }
     }
 }

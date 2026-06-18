@@ -825,6 +825,10 @@ The console is at `/#admin`. Access is role-based:
   - The cache lives at `/tmp/aivc_update_status.json`, refreshed by the `aivc-update-checker`
     systemd timer (every hour, 5 min after boot) and on demand via the **Refresh now** button.
     The dashboard auto-polls every 30 s while the tab is open (4 s while a check is running).
+    Because the file is written by both the queue worker (user `simon`, via
+    `update_checker.py`) and the web request (`www-data`, via `markChecking()`), both writers
+    keep it group-writable (`0664`, group `www-data`) and fall back gracefully so a permission
+    glitch degrades the spinner hint instead of returning a 500 to **Refresh now**.
 - **Ads** — full ad-campaign CRUD with multi-slide carousel, in-browser Cropper.js image editor, audience targeting (language + mood), and billing by impression/click. See [Ad Management](#ad-management) below.
 - **Voice Studio** — in-browser TTS training-data recorder and automatic MMS/VITS
   fine-tune feeder. Displays Tedim and Burmese recording-script sentences one at

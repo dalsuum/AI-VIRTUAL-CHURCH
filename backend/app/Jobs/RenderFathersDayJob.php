@@ -59,13 +59,13 @@ class RenderFathersDayJob implements ShouldQueue
 
             $song = $this->songPath();
             if (! $song) {
-                throw new \RuntimeException('No song configured.');
+                throw new \RuntimeException('The selected song isn\'t available right now. Please pick another song.');
             }
 
             $photos = glob("{$src}/*");
             sort($photos);
             if (! $photos) {
-                throw new \RuntimeException('No photos uploaded.');
+                throw new \RuntimeException('We didn\'t receive any photos. Please add at least one photo and try again.');
             }
 
             @mkdir("{$dir}/work", 0775, true);
@@ -78,17 +78,22 @@ class RenderFathersDayJob implements ShouldQueue
             $count  = count($photos);
             foreach ($photos as $i => $photo) {
                 $frame = sprintf('%s/norm_%02d.jpg', $work, $i);
-                $this->ffmpeg([
-                    '-i', $photo,
-                    '-vf', sprintf(
-                        'scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d,setsar=1',
-                        self::W, self::H, self::W, self::H
-                    ),
-                    '-map_metadata', '-1',
-                    '-frames:v', '1',
-                    '-q:v', '2',
-                    $frame,
-                ]);
+                try {
+                    $this->ffmpeg([
+                        '-i', $photo,
+                        '-vf', sprintf(
+                            'scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d,setsar=1',
+                            self::W, self::H, self::W, self::H
+                        ),
+                        '-map_metadata', '-1',
+                        '-frames:v', '1',
+                        '-q:v', '2',
+                        $frame,
+                    ]);
+                } catch (\Throwable $e) {
+                    Log::warning("FathersDay photo {$i} failed to process: {$e->getMessage()}");
+                    throw new \RuntimeException('One of your photos couldn\'t be read (it may be corrupted or an unsupported format). Please remove it or try a different image.');
+                }
                 $frames[] = $frame;
                 $this->setStatus('rendering', null, (int) (10 + 30 * (($i + 1) / $count)), 'Processing photos');
             }
@@ -117,7 +122,12 @@ class RenderFathersDayJob implements ShouldQueue
             $this->setStatus('done', null, 100, 'Done');
         } catch (\Throwable $e) {
             Log::error("FathersDay render {$this->jobId} failed: {$e->getMessage()}");
-            $this->setStatus('error', 'Sorry — the video could not be generated. Please try again.');
+            // Surface our own friendly guidance; hide raw ffmpeg/technical text.
+            $msg = $e->getMessage();
+            $userMsg = ($msg === '' || str_contains($msg, 'ffmpeg') || str_contains($msg, 'Process'))
+                ? 'We couldn\'t create the video. Please try different photos, or pick another song.'
+                : $msg;
+            $this->setStatus('error', $userMsg);
         } finally {
             // Drop the originals; keep only output.mp4 + status.json.
             $this->rrmdir($src);

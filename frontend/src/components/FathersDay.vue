@@ -5,7 +5,9 @@
   Remove by deleting this file + its #fathers-day route/nav-link in App.vue.
 -->
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from "vue";
+import { ref, computed, onMounted, onUnmounted, nextTick } from "vue";
+import Cropper from "cropperjs";
+import "cropperjs/dist/cropper.css";
 import { api } from "../composables/useApi";
 
 const loading   = ref(true);
@@ -52,6 +54,7 @@ onMounted(async () => {
 onUnmounted(() => {
   pollTimer && clearInterval(pollTimer);
   easeTimer && clearInterval(easeTimer);
+  destroyCropper();
   previews.value.forEach((u) => URL.revokeObjectURL(u));
 });
 
@@ -74,18 +77,79 @@ function startEasing() {
   }, 90);
 }
 
-function addFiles(fileList) {
-  const incoming = Array.from(fileList).filter((f) => /^image\/(jpe?g|png|webp)$/.test(f.type));
-  for (const f of incoming) {
-    if (photos.value.length >= maxPhotos.value) break;
-    if (f.size > 8 * 1024 * 1024) { errorMsg.value = `${f.name} is larger than 8 MB.`; continue; }
-    photos.value.push(f);
-    previews.value.push(URL.createObjectURL(f));
-  }
+// ── Crop-to-vertical editor ─────────────────────────────────────────────────
+// Every photo is cropped to 9:16 in the browser before upload, so the framing is
+// the user's choice and horizontal/odd-ratio photos always fit the vertical MV.
+const cropQueue = ref([]);     // Files still to crop
+const cropSrc   = ref("");     // data URL of the image being cropped
+const cropImg   = ref(null);   // <img> ref for cropperjs
+let cropper = null;
+
+function enqueueFiles(fileList) {
+  errorMsg.value = "";
+  const room = maxPhotos.value - photos.value.length - cropQueue.value.length;
+  const incoming = Array.from(fileList)
+    .filter((f) => /^image\/(jpe?g|png|webp)$/.test(f.type))
+    .filter((f) => {
+      if (f.size > 8 * 1024 * 1024) { errorMsg.value = `${f.name} is larger than 8 MB.`; return false; }
+      return true;
+    })
+    .slice(0, Math.max(0, room));
+  if (!incoming.length) return;
+  cropQueue.value.push(...incoming);
+  if (!cropSrc.value) startNextCrop();
 }
 
-function onFileInput(e) { addFiles(e.target.files); e.target.value = ""; }
-function onDrop(e) { dragActive.value = false; addFiles(e.dataTransfer.files); }
+function startNextCrop() {
+  destroyCropper();
+  const next = cropQueue.value[0];
+  if (!next) { cropSrc.value = ""; return; }
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    cropSrc.value = ev.target.result;
+    nextTick(() => {
+      if (!cropImg.value) return;
+      cropper = new Cropper(cropImg.value, {
+        aspectRatio: 9 / 16,   // vertical, matches the 720x1280 output
+        viewMode: 1,
+        autoCropArea: 1,
+        background: false,
+      });
+    });
+  };
+  reader.readAsDataURL(next);
+}
+
+function destroyCropper() {
+  if (cropper) { cropper.destroy(); cropper = null; }
+}
+
+async function confirmCrop() {
+  if (!cropper) return;
+  const canvas = cropper.getCroppedCanvas({ maxWidth: 1080, maxHeight: 1920, imageSmoothingQuality: "high" });
+  const blob = await new Promise((res) => canvas.toBlob(res, "image/jpeg", 0.9));
+  if (blob) {
+    const file = new File([blob], `photo_${Date.now()}.jpg`, { type: "image/jpeg" });
+    photos.value.push(file);
+    previews.value.push(URL.createObjectURL(file));
+  }
+  cropQueue.value.shift();
+  startNextCrop();
+}
+
+function skipCrop() {
+  cropQueue.value.shift();
+  startNextCrop();
+}
+
+function cancelCropAll() {
+  cropQueue.value = [];
+  destroyCropper();
+  cropSrc.value = "";
+}
+
+function onFileInput(e) { enqueueFiles(e.target.files); e.target.value = ""; }
+function onDrop(e) { dragActive.value = false; enqueueFiles(e.dataTransfer.files); }
 
 function removePhoto(i) {
   URL.revokeObjectURL(previews.value[i]);
@@ -232,6 +296,23 @@ function reset() {
 
       <p v-if="errorMsg" class="fd-error">{{ errorMsg }}</p>
 
+      <!-- Crop-to-vertical editor -->
+      <div v-if="cropSrc" class="fd-crop-modal">
+        <div class="fd-crop-box">
+          <h3>Crop to fit</h3>
+          <p class="fd-muted small">Drag and pinch/scroll to frame your father. The video is vertical, so this keeps the part you want.</p>
+          <div class="fd-crop-area">
+            <img ref="cropImg" :src="cropSrc" alt="" />
+          </div>
+          <p class="fd-muted small" style="text-align:center">{{ cropQueue.length }} photo{{ cropQueue.length === 1 ? '' : 's' }} left to crop</p>
+          <div class="fd-crop-actions">
+            <button class="fd-btn primary" @click="confirmCrop">✓ Use this</button>
+            <button class="fd-btn ghost" @click="skipCrop">Skip</button>
+            <button class="fd-btn ghost" @click="cancelCropAll">Cancel all</button>
+          </div>
+        </div>
+      </div>
+
       <!-- Actions / progress -->
       <div v-if="phase === 'rendering'" class="fd-progress">
         <div class="fd-bar"><div class="fd-bar-fill" :style="{ width: shownProgress + '%' }"></div></div>
@@ -287,6 +368,18 @@ function reset() {
   font-size: 0.9rem; line-height: 1; cursor: pointer;
 }
 
+.fd-crop-modal {
+  position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.7); padding: 1rem;
+}
+.fd-crop-box {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: var(--shadow); padding: 1.25rem; width: 100%; max-width: 460px;
+}
+.fd-crop-box h3 { margin: 0 0 0.25rem; }
+.fd-crop-area { width: 100%; height: 50vh; margin: 0.75rem 0; background: #000; border-radius: var(--radius-sm); overflow: hidden; }
+.fd-crop-area img { display: block; max-width: 100%; }
+.fd-crop-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
 .fd-songs { margin-bottom: 1.25rem; }
 .fd-song-row { display: flex; gap: 0.5rem; flex-wrap: wrap; }
 .fd-effects { margin-top: 1.25rem; }

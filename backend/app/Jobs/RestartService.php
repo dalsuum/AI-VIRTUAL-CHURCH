@@ -12,14 +12,14 @@ use Illuminate\Queue\SerializesModels;
  * Restarts a whitelisted systemd service via `sudo systemctl restart`.
  *
  * Prerequisite — add this sudoers rule (run `sudo visudo -f /etc/sudoers.d/aivc`):
- *   simon ALL=(root) NOPASSWD: /bin/systemctl restart aivc-workers.service, \
- *     /bin/systemctl restart aivc-workers-music.service, \
- *     /bin/systemctl restart aivc-bridge.service, \
- *     /bin/systemctl restart aivc-queue.service, \
- *     /bin/systemctl restart aivc-scheduler.service, \
- *     /bin/systemctl restart aivc-tedim-api.service, \
- *     /bin/systemctl restart aivc-burmese-api.service, \
- *     /bin/systemctl restart aivc-mms-tts.service
+ *   simon ALL=(root) NOPASSWD: /usr/bin/systemctl restart aivc-workers.service, \
+ *     /usr/bin/systemctl restart aivc-workers-music.service, \
+ *     /usr/bin/systemctl restart aivc-bridge.service, \
+ *     /usr/bin/systemctl restart aivc-queue.service, \
+ *     /usr/bin/systemctl restart aivc-scheduler.service, \
+ *     /usr/bin/systemctl restart aivc-tedim-api.service, \
+ *     /usr/bin/systemctl restart aivc-burmese-api.service, \
+ *     /usr/bin/systemctl restart aivc-mms-tts.service
  */
 class RestartService implements ShouldQueue
 {

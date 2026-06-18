@@ -1079,10 +1079,10 @@ frontend `FathersDay.vue` + `FathersDayManager.vue`, and their wiring in
 ## Live Sticker Maker — standalone & removable
 
 A self-contained fun tool that lets a public visitor upload **any** photo
-(vertical or horizontal) and get **five AI watercolor die-cut stickers** —
-each an illustration repaint of their photo, cut out from its background with a
-white sticker border + soft shadow and scattered colour-emoji (hearts /
-sparkles), like a ChatGPT/Telegram sticker. An optional caption can come from
+(vertical or horizontal) and get **an AI watercolor die-cut sticker** — an
+illustration repaint of their photo, cut out from its background with a white
+sticker border + soft shadow and scattered colour-emoji (hearts / sparkles),
+like a ChatGPT/Telegram sticker. An optional caption can come from
 the admin **Father's Day song lyrics** (reused from the Special Day feature) or
 **free text the visitor types** (lightly **auto-corrected** for English).
 Isolated from the worship pipeline so it can be removed cleanly.
@@ -1090,15 +1090,16 @@ Isolated from the worship pipeline so it can be removed cleanly.
 **How it works** (`workers/tools/sticker_render.py`)
 - **Visitor** (`#stickers`, always linked): taps the red **Create Live Sticker**
   box, picks a photo, fine-tunes the square crop (pre-centred on the detected
-  face/group), optionally adds a caption, and gets 5 downloadable PNG stickers.
+  face/group), optionally adds a caption, and gets a downloadable PNG sticker.
 - **Face detection + crop**: **OpenCV** (Haar cascade) finds the face(s) and
   suggests a padded square box. `/stickers/detect` runs this **synchronously**
   and returns the box; the frontend shows it in **cropper.js** for manual
   adjustment. EXIF orientation is honoured so phone photos aren't sideways.
-- **AI repaint (img2img)**: each sticker is repainted via **OpenRouter** using
-  Google's **`google/gemini-2.5-flash-image`** model with a rotating watercolour
-  style prompt (5 variations), driven by the existing `OPENROUTER_API_KEY`
-  (`workers/.env`). ~$0.02–0.04/image → ~$0.15/job of 5. If the key is missing
+- **AI repaint (img2img)**: the sticker is repainted via **OpenRouter** using
+  Google's **`google/gemini-2.5-flash-image`** model with a watercolour style
+  prompt, driven by the existing `OPENROUTER_API_KEY` (`workers/.env`).
+  **One image per job (~$0.02–0.04)** to keep cost low — change `COUNT` in
+  `sticker_render.py` + `StickerController` to make more. If the key is missing
   or a call fails, it falls back to a cutout of the **real** photo so the tool
   still works.
 - **Die-cut cutout**: **rembg** (U²-Net) removes the background; **Pillow** +
@@ -1111,7 +1112,7 @@ Isolated from the worship pipeline so it can be removed cleanly.
   for free text.
 - **Rendering** runs on the dedicated `fathersday` queue via `RenderStickerJob`
   (reuses the existing `aivc-fathersday-render@` workers — no new service; job
-  timeout 360s for the 5 AI calls). Outputs/uploads live as plain files in
+  timeout 150s). Outputs/uploads live as plain files in
   `backend/storage/app/stickers/jobs/<id>/` — **no DB migration**.
 
 **Dependencies** (worker venv, one-off):

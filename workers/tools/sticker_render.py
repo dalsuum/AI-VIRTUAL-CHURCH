@@ -56,6 +56,7 @@ LATIN_FONTS = [f for f in (
     os.path.join(DEJAVU, "DejaVuSerif-Bold.ttf"),
 ) if os.path.exists(f)]
 
+COUNT = 1                  # stickers per job (1 AI repaint → ~$0.02-0.04/job)
 SIZE = 768                 # final square sticker, px
 EMOJI_STRIKE = 109         # NotoColorEmoji's single bitmap strike
 PAD = 90                   # canvas padding for border + shadow + decorations
@@ -339,8 +340,10 @@ def cmd_render(job_dir):
     rng = random.Random(int.from_bytes(os.urandom(4), "big"))
     styles = STYLES[:]
     rng.shuffle(styles)
-    for i in range(1, 6):
-        set_status(job_dir, progress=8 + i * 17, stage=f"Painting sticker {i}/5")
+    for i in range(1, COUNT + 1):
+        pct = 8 + int(i * (90 / COUNT))
+        set_status(job_dir, progress=pct,
+                   stage="Painting your sticker" if COUNT == 1 else f"Painting sticker {i}/{COUNT}")
         sticker = build_sticker(base, styles[(i - 1) % len(styles)], caption, rng)
         sticker.save(os.path.join(job_dir, f"sticker_{i}.png"))
         try:

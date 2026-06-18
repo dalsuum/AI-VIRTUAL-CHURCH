@@ -292,8 +292,8 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
         <a v-if="view === 'intake'" href="#stickers" class="sk-banner">
           <span class="sk-banner-emoji">🎨</span>
           <span class="sk-banner-text">
-            <strong>Make Live Stickers!</strong>
-            Upload a photo → get 5 fun stickers →
+            <strong>Make a Live Sticker!</strong>
+            Upload a photo → get a fun watercolor sticker →
           </span>
         </a>
 

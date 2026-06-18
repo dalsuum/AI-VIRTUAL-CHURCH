@@ -22,7 +22,7 @@ class RenderStickerJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public int $timeout = 360;   // 5 AI repaints (OpenRouter) + cutouts; fail fast
+    public int $timeout = 150;   // 1 AI repaint (OpenRouter) + cutout; fail fast
     public int $tries   = 1;
 
     public function __construct(public string $jobId)

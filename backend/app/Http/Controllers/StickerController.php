@@ -36,7 +36,7 @@ use Symfony\Component\Process\Process;
 class StickerController extends Controller
 {
     private const DIR        = 'stickers';
-    private const COUNT      = 5;     // stickers produced per job
+    private const COUNT      = 1;     // stickers produced per job (1 AI repaint = low cost)
     private const MAX_CHARS  = 120;   // sticker source text length cap
     private const STALE_SECS = 21600; // prune job dirs older than 6h
 

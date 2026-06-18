@@ -170,7 +170,7 @@ function reset() {
     <header class="sk-top">
       <a class="sk-back" href="#">← Back</a>
       <h1>🎨 Live Sticker Maker</h1>
-      <p class="sk-sub">Upload a photo — we'll find the face and make 5 fun stickers.</p>
+      <p class="sk-sub">Upload a photo — we'll turn it into a fun watercolor sticker.</p>
     </header>
 
     <main class="sk-main">
@@ -214,7 +214,7 @@ function reset() {
         <div class="sk-actions">
           <button class="sk-ghost" @click="reset">Cancel</button>
           <button class="sk-go" :disabled="busy" @click="createStickers">
-            {{ busy ? "Starting…" : "Make 5 stickers ✨" }}
+            {{ busy ? "Starting…" : "Make my sticker ✨" }}
           </button>
         </div>
       </section>
@@ -228,14 +228,14 @@ function reset() {
 
       <!-- Step 3: results -->
       <section v-else-if="phase === 'done'" class="sk-done">
-        <p class="sk-step">Your stickers — tap any to download</p>
+        <p class="sk-step">Your sticker — tap to download</p>
         <div class="sk-grid">
           <a v-for="(url, i) in stickers" :key="i" :href="url" :download="`sticker_${i + 1}.png`" class="sk-cell">
             <img :src="url" :alt="`sticker ${i + 1}`" />
           </a>
         </div>
         <div class="sk-actions">
-          <button class="sk-go" @click="reset">Make more 🎨</button>
+          <button class="sk-go" @click="reset">Make another 🎨</button>
         </div>
       </section>
 

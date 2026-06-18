@@ -2,88 +2,105 @@
 """
 Live Sticker engine — SELF-CONTAINED & REMOVABLE.
 
+Pipeline (render): photo -> face-detect square crop -> AI watercolor repaint
+(OpenRouter / Gemini image, img2img) -> background removal (rembg) -> die-cut
+white sticker border + soft shadow -> scattered colour-emoji decorations -> PNG.
+Five stickers per job, each with a slightly different painterly style.
+
 Two modes:
 
   detect <photo>            -> prints JSON {"w","h","box":{x,y,w,h}|null}
-                               (fast face-detect; suggests a square crop the
-                               frontend shows for manual adjustment)
+                               (fast face-detect; the frontend shows the box for
+                               manual adjustment)
 
   render <job_dir>          -> reads <job_dir>/input.json + the uploaded photo,
-                               crops to a square (auto face box or the user's
-                               adjusted box), then composites 5 random PNG
-                               stickers (sticker_1..5.png) and updates
-                               <job_dir>/status.json.
+                               writes sticker_1..5.png + status.json.
 
 input.json (render):
   {
-    "photo":   "src/<file>",        # relative to job_dir
-    "crop":    {"x":,"y":,"w":,"h":} | null,   # square px box in ORIGINAL image
-    "text":    "free text or chosen lyric line",
-    "source":  "lyrics" | "manual",
+    "photo":  "src/<file>",                   # relative to job_dir
+    "crop":   {"x":,"y":,"w":,"h":} | null,   # square px box in ORIGINAL image
+    "text":   "optional caption",
+    "source": "lyrics" | "manual",
     "autocorrect": true
   }
 
-Nothing here touches the worship pipeline. To remove: delete this file plus
-StickerController, RenderStickerJob, the /stickers routes and the frontend
-LiveSticker.vue. No DB, no shared state.
+The OpenRouter key is read from workers/.env (OPENROUTER_API_KEY); when it is
+missing or a call fails we fall back to a non-AI cutout so the tool still works.
+
+Nothing here touches the worship pipeline. See StickerController for removal.
 """
 
+import base64
+import io
 import json
 import os
 import random
 import re
 import sys
+import urllib.request
 
 import cv2
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 
 # --- fonts ------------------------------------------------------------------
-# Bundled with the backend so the host needs no extra system fonts.
 BACKEND_FONTS = os.path.join(
     os.path.dirname(__file__), "..", "..", "backend", "resources", "fonts"
 )
 EMOJI_FONT = os.path.join(BACKEND_FONTS, "NotoColorEmoji.ttf")
 MYANMAR_FONT = os.path.join(BACKEND_FONTS, "MyanmarNjaun.ttf")
 DEJAVU = "/usr/share/fonts/truetype/dejavu"
-LATIN_FONTS = [
+LATIN_FONTS = [f for f in (
     os.path.join(DEJAVU, "DejaVuSans-Bold.ttf"),
     os.path.join(DEJAVU, "DejaVuSerif-Bold.ttf"),
-    os.path.join(DEJAVU, "DejaVuSansMono-Bold.ttf"),
-]
-LATIN_FONTS = [f for f in LATIN_FONTS if os.path.exists(f)]
+) if os.path.exists(f)]
 
-SIZE = 512                      # final square sticker, px
-EMOJI_STRIKE = 109              # NotoColorEmoji has a single bitmap strike
+SIZE = 768                 # final square sticker, px
+EMOJI_STRIKE = 109         # NotoColorEmoji's single bitmap strike
+PAD = 90                   # canvas padding for border + shadow + decorations
+BORDER = 16                # white die-cut outline thickness, px
 
-# Fun decorative palettes (banner fill, text colour).
-PALETTES = [
-    ((233, 30, 99), (255, 255, 255)),    # pink
-    ((33, 150, 243), (255, 255, 255)),   # blue
-    ((255, 152, 0), (40, 20, 0)),        # orange
-    ((76, 175, 80), (255, 255, 255)),    # green
-    ((156, 39, 176), (255, 255, 255)),   # purple
-    ((255, 235, 59), (40, 30, 0)),       # yellow
-    ((0, 0, 0), (255, 255, 255)),        # classic
-]
-EMOJIS = ["🎉", "❤️", "🙏", "⭐", "🥳", "👑", "🌟", "💛", "🎈", "🔥", "😎", "✨"]
-# Generic short phrases used to fill / decorate when the source text is empty
-# or very long (sticker text must stay short to read at thumbnail size).
-FALLBACK_PHRASES = [
-    "Happy Father's Day", "Best Dad", "Love You Dad", "Super Dad",
-    "Dad #1", "My Hero", "Thank You Dad", "Forever Grateful",
-]
+# --- OpenRouter image model -------------------------------------------------
+OR_MODEL = "google/gemini-2.5-flash-image"
+OR_URL = "https://openrouter.ai/api/v1/chat/completions"
 
+# Five painterly variations so the 5 stickers differ in feel.
+STYLES = [
+    "soft watercolor painting, gentle pastel washes",
+    "delicate watercolor illustration, light airy colours",
+    "vibrant watercolor portrait, expressive loose brush strokes",
+    "dreamy watercolor art, soft edges and warm pastel tones",
+    "clean watercolour sketch with subtle colour washes",
+]
+PROMPT = (
+    "Repaint this photo as a cute die-cut sticker portrait in {style}. "
+    "Keep the same people, faces, hairstyle, clothing and pose; head and "
+    "shoulders. Plain solid white background. No text, no border. "
+    "Friendly and warm."
+)
+
+DECOR = ["❤️", "\U0001f49b", "✨", "⭐", "\U0001f31f", "\U0001fa77"]
 MYANMAR_RE = re.compile(r"[က-႟ꩠ-ꩿ]")
 
 
-def has_myanmar(text):
-    return bool(MYANMAR_RE.search(text))
+def load_env():
+    """Merge workers/.env into os.environ (without overwriting real env vars)."""
+    path = os.path.join(os.path.dirname(__file__), "..", ".env")
+    if not os.path.exists(path):
+        return
+    for line in open(path):
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            k, v = line.split("=", 1)
+            os.environ.setdefault(k.strip(), v.strip())
+
+
+def has_myanmar(t):
+    return bool(MYANMAR_RE.search(t))
 
 
 def autocorrect_en(text):
-    """Light, conservative English spell-fix. Never touches non-ascii, all-caps
-    (likely names/acronyms), or capitalised words (likely proper nouns)."""
     try:
         from spellchecker import SpellChecker
     except Exception:
@@ -91,12 +108,7 @@ def autocorrect_en(text):
     sp = SpellChecker()
     out = []
     for tok in re.findall(r"\w+|\W+", text):
-        if (
-            tok.isalpha()
-            and tok.islower()
-            and len(tok) > 2
-            and tok in sp.unknown([tok])
-        ):
+        if tok.isalpha() and tok.islower() and len(tok) > 2 and tok in sp.unknown([tok]):
             out.append(sp.correction(tok) or tok)
         else:
             out.append(tok)
@@ -104,15 +116,10 @@ def autocorrect_en(text):
 
 
 def load_image(path):
-    """Load via PIL so EXIF orientation is honoured (phones save rotated)."""
-    img = Image.open(path)
-    img = ImageOps.exif_transpose(img).convert("RGB")
-    return img
+    return ImageOps.exif_transpose(Image.open(path)).convert("RGB")
 
 
 def detect_face_box(pil_img):
-    """Return a square (x,y,w,h) box in original pixels centred on the largest
-    detected face (padded), or a sensible centre-square fallback."""
     rgb = np.array(pil_img)
     gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
     cascade = cv2.CascadeClassifier(
@@ -122,10 +129,11 @@ def detect_face_box(pil_img):
     W, H = pil_img.size
     side = min(W, H)
     if len(faces):
-        fx, fy, fw, fh = max(faces, key=lambda f: f[2] * f[3])
-        cx, cy = fx + fw / 2, fy + fh / 2
-        # Square ~2.4x the face so head + shoulders fit; clamp to image.
-        s = int(min(max(fw, fh) * 2.4, side))
+        # Square around ALL detected faces (group photos), padded.
+        x1 = min(f[0] for f in faces); y1 = min(f[1] for f in faces)
+        x2 = max(f[0] + f[2] for f in faces); y2 = max(f[1] + f[3] for f in faces)
+        cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
+        s = int(min(max(x2 - x1, y2 - y1) * 1.7, side))
         x = int(min(max(cx - s / 2, 0), W - s))
         y = int(min(max(cy - s / 2, 0), H - s))
         return {"x": x, "y": y, "w": s, "h": s}
@@ -134,125 +142,168 @@ def detect_face_box(pil_img):
 
 def crop_square(pil_img, box):
     W, H = pil_img.size
-    x = max(0, int(box["x"]))
-    y = max(0, int(box["y"]))
+    x = max(0, int(box["x"])); y = max(0, int(box["y"]))
     s = max(16, int(min(box["w"], box["h"])))
     s = min(s, W - x, H - y)
-    crop = pil_img.crop((x, y, x + s, y + s)).resize((SIZE, SIZE), Image.LANCZOS)
-    return crop
+    return pil_img.crop((x, y, x + s, y + s))
+
+
+def openrouter_repaint(pil_square, style):
+    """img2img watercolor repaint via OpenRouter; returns a PIL RGB or None."""
+    key = os.environ.get("OPENROUTER_API_KEY", "").strip()
+    if not key:
+        return None
+    buf = io.BytesIO()
+    pil_square.convert("RGB").save(buf, "JPEG", quality=90)
+    b64 = base64.b64encode(buf.getvalue()).decode()
+    body = {
+        "model": OR_MODEL,
+        "modalities": ["image", "text"],
+        "messages": [{"role": "user", "content": [
+            {"type": "text", "text": PROMPT.format(style=style)},
+            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
+        ]}],
+    }
+    req = urllib.request.Request(
+        OR_URL, data=json.dumps(body).encode(),
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+    )
+    try:
+        d = json.loads(urllib.request.urlopen(req, timeout=90).read())
+        imgs = d["choices"][0]["message"].get("images") or []
+        if not imgs:
+            return None
+        raw = base64.b64decode(imgs[0]["image_url"]["url"].split(",", 1)[1])
+        return Image.open(io.BytesIO(raw)).convert("RGB")
+    except Exception as e:
+        sys.stderr.write(f"repaint failed: {e}\n")
+        return None
+
+
+_REMBG = {"session": None}
+
+
+def cutout(pil_rgb):
+    """Remove the background; returns an RGBA trimmed to the subject."""
+    from rembg import remove, new_session
+    if _REMBG["session"] is None:
+        _REMBG["session"] = new_session("u2net")
+    out = remove(pil_rgb.convert("RGBA"), session=_REMBG["session"],
+                 post_process_mask=True)
+    bbox = out.getbbox()
+    return out.crop(bbox) if bbox else out
+
+
+def die_cut(cut_rgba):
+    """Place the cutout on a SIZE canvas with a white silhouette border + shadow."""
+    # Scale the subject to fit inside the padded area.
+    inner = SIZE - 2 * PAD
+    ratio = inner / max(cut_rgba.size)
+    new = (max(1, int(cut_rgba.width * ratio)), max(1, int(cut_rgba.height * ratio)))
+    subj = cut_rgba.resize(new, Image.LANCZOS)
+    ox = (SIZE - subj.width) // 2
+    oy = (SIZE - subj.height) // 2
+
+    alpha = subj.split()[3]
+    a = np.array(alpha)
+    mask_full = np.zeros((SIZE, SIZE), np.uint8)
+    mask_full[oy:oy + subj.height, ox:ox + subj.width] = a
+
+    # White border = dilated silhouette filled white.
+    k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (BORDER * 2 + 1,) * 2)
+    border_mask = cv2.dilate(mask_full, k)
+    border_mask = cv2.GaussianBlur(border_mask, (0, 0), 1.2)
+
+    canvas = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
+
+    # Soft drop shadow under the border, offset down-right.
+    shadow = Image.fromarray(border_mask).filter(ImageFilter.GaussianBlur(10))
+    shadow_layer = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
+    sm = np.array(shadow).astype(np.float32) * 0.45
+    shadow_rgba = np.zeros((SIZE, SIZE, 4), np.uint8)
+    shadow_rgba[..., 3] = sm.astype(np.uint8)
+    shadow_layer = Image.fromarray(shadow_rgba)
+    canvas.alpha_composite(shadow_layer, (8, 12))
+
+    # White border layer.
+    white = np.zeros((SIZE, SIZE, 4), np.uint8)
+    white[..., :3] = 255
+    white[..., 3] = border_mask
+    canvas = Image.alpha_composite(canvas, Image.fromarray(white))
+
+    # Subject on top.
+    canvas.alpha_composite(subj, (ox, oy))
+    return canvas, mask_full
 
 
 def emoji_image(ch, target):
-    """Render a single colour emoji to an RGBA image of ~target px."""
     try:
         font = ImageFont.truetype(EMOJI_FONT, EMOJI_STRIKE)
-        canvas = Image.new("RGBA", (EMOJI_STRIKE + 20, EMOJI_STRIKE + 20), (0, 0, 0, 0))
-        d = ImageDraw.Draw(canvas)
-        d.text((10, 10), ch, font=font, embedded_color=True)
-        bbox = canvas.getbbox()
+        c = Image.new("RGBA", (EMOJI_STRIKE + 20, EMOJI_STRIKE + 20), (0, 0, 0, 0))
+        ImageDraw.Draw(c).text((10, 10), ch, font=font, embedded_color=True)
+        bbox = c.getbbox()
         if not bbox:
             return None
-        glyph = canvas.crop(bbox)
-        ratio = target / max(glyph.size)
-        return glyph.resize(
-            (max(1, int(glyph.width * ratio)), max(1, int(glyph.height * ratio))),
-            Image.LANCZOS,
-        )
+        g = c.crop(bbox)
+        r = target / max(g.size)
+        return g.resize((max(1, int(g.width * r)), max(1, int(g.height * r))), Image.LANCZOS)
     except Exception:
         return None
 
 
-def pick_phrase(text, source):
-    """Choose a short, readable phrase for the sticker banner."""
-    text = (text or "").strip()
-    if not text:
-        return random.choice(FALLBACK_PHRASES)
-    # Split lyrics into individual lines / short clauses and prefer short ones.
-    parts = [p.strip() for p in re.split(r"[\r\n]+|[.!?]+", text) if p.strip()]
-    parts = [p for p in parts if not re.fullmatch(r"\[.*\]", p)]  # drop [Verse] tags
-    short = [p for p in parts if len(p) <= 28] or parts or [text]
-    phrase = random.choice(short)
-    if len(phrase) > 36:
-        phrase = phrase[:33].rstrip() + "…"
-    return phrase
-
-
-def wrap(draw, text, font, max_w):
-    words, lines, cur = text.split(), [], ""
-    for w in words:
-        trial = (cur + " " + w).strip()
-        if draw.textlength(trial, font=font) <= max_w or not cur:
-            cur = trial
-        else:
-            lines.append(cur)
-            cur = w
-    if cur:
-        lines.append(cur)
-    return lines[:3]
-
-
-def font_for(text, size):
-    path = MYANMAR_FONT if has_myanmar(text) and os.path.exists(MYANMAR_FONT) \
-        else random.choice(LATIN_FONTS)
-    return ImageFont.truetype(path, size)
-
-
-def rounded(draw, xy, r, fill):
-    draw.rounded_rectangle(xy, radius=r, fill=fill)
-
-
-def make_sticker(base, phrase, seed):
-    """Compose one decorated sticker on top of the square photo `base`."""
-    random.seed(seed)
-    img = base.copy().convert("RGBA")
-    overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
-    d = ImageDraw.Draw(overlay)
-
-    band, txt = random.choice(PALETTES)
-    top = random.random() < 0.5
-    margin = 28
-
-    # --- text banner ---
-    fsize = random.choice([46, 52, 58])
-    font = font_for(phrase, fsize)
-    lines = wrap(d, phrase, font, SIZE - 2 * margin - 30)
-    line_h = fsize + 10
-    block_h = line_h * len(lines) + 28
-    by0 = margin if top else SIZE - margin - block_h
-    rounded(d, (margin, by0, SIZE - margin, by0 + block_h), 26,
-            (band[0], band[1], band[2], 220))
-    for i, ln in enumerate(lines):
-        lw = d.textlength(ln, font=font)
-        d.text(((SIZE - lw) / 2, by0 + 14 + i * line_h), ln, font=font,
-               fill=(txt[0], txt[1], txt[2], 255),
-               stroke_width=2, stroke_fill=(0, 0, 0, 160))
-
-    img = Image.alpha_composite(img, overlay)
-
-    # --- emoji decorations (1-2 corners, opposite the banner) ---
-    for ch in random.sample(EMOJIS, random.choice([1, 2])):
-        em = emoji_image(ch, random.choice([84, 104]))
+def decorate(canvas, subj_mask, rng):
+    """Scatter colour-emoji around the subject, avoiding heavy overlap."""
+    placed = []
+    picks = rng.sample(DECOR, rng.choice([3, 4, 5]))
+    for ch in picks:
+        em = emoji_image(ch, rng.choice([70, 90, 110]))
         if em is None:
             continue
-        ex = random.choice([margin - 6, SIZE - em.width - margin + 6])
-        ey = (SIZE - em.height - margin + 6) if top else (margin - 6)
-        img.alpha_composite(em, (max(0, ex), max(0, ey)))
+        for _ in range(20):
+            x = rng.randint(8, SIZE - em.width - 8)
+            y = rng.randint(8, SIZE - em.height - 8)
+            cx, cy = x + em.width // 2, y + em.height // 2
+            # Prefer spots where the subject isn't (keep faces clear).
+            if subj_mask[min(cy, SIZE - 1), min(cx, SIZE - 1)] > 40:
+                continue
+            if any(abs(cx - px) < 70 and abs(cy - py) < 70 for px, py in placed):
+                continue
+            canvas.alpha_composite(em, (x, y))
+            placed.append((cx, cy))
+            break
 
-    # --- sticker frame (rounded white outline = classic sticker look) ---
-    frame = Image.new("RGBA", img.size, (0, 0, 0, 0))
-    fd = ImageDraw.Draw(frame)
-    bw = random.choice([10, 14, 18])
-    col = random.choice([(255, 255, 255, 255), band + (255,)])
-    fd.rounded_rectangle((bw // 2, bw // 2, SIZE - bw // 2, SIZE - bw // 2),
-                         radius=48, outline=col, width=bw)
-    img = Image.alpha_composite(img, frame)
 
-    # Round the corners (transparent outside the rounded square).
-    mask = Image.new("L", img.size, 0)
-    ImageDraw.Draw(mask).rounded_rectangle((0, 0, SIZE, SIZE), radius=48, fill=255)
-    img.putalpha(mask)
-    return img
+def add_caption(canvas, text):
+    if not text:
+        return
+    d = ImageDraw.Draw(canvas)
+    fpath = MYANMAR_FONT if has_myanmar(text) and os.path.exists(MYANMAR_FONT) \
+        else (LATIN_FONTS[0] if LATIN_FONTS else None)
+    if not fpath:
+        return
+    if len(text) > 30:
+        text = text[:29].rstrip() + "…"
+    font = ImageFont.truetype(fpath, 46)
+    w = d.textlength(text, font=font)
+    x = (SIZE - w) / 2
+    y = SIZE - 92
+    # White outline so it reads over the art.
+    d.text((x, y), text, font=font, fill=(40, 40, 60, 255),
+           stroke_width=6, stroke_fill=(255, 255, 255, 235))
 
+
+def build_sticker(base_square, style, caption, rng):
+    art = openrouter_repaint(base_square, style)
+    if art is None:
+        art = base_square          # graceful fallback: cut out the real photo
+    cut = cutout(art)
+    canvas, mask = die_cut(cut)
+    decorate(canvas, mask, rng)
+    add_caption(canvas, caption)
+    return canvas
+
+
+# --- modes ------------------------------------------------------------------
 
 def cmd_detect(photo):
     pil = load_image(photo)
@@ -272,37 +323,37 @@ def set_status(job_dir, **kw):
 
 
 def cmd_render(job_dir):
+    load_env()
     with open(os.path.join(job_dir, "input.json")) as f:
         inp = json.load(f)
-    set_status(job_dir, progress=10, stage="Loading photo")
+    set_status(job_dir, progress=8, stage="Loading photo")
 
     pil = load_image(os.path.join(job_dir, inp["photo"]))
     box = inp.get("crop") or detect_face_box(pil)
     base = crop_square(pil, box)
-    set_status(job_dir, progress=35, stage="Detecting & cropping")
 
-    text = (inp.get("text") or "").strip()
-    if inp.get("autocorrect") and inp.get("source") == "manual" and not has_myanmar(text):
-        text = autocorrect_en(text)
+    caption = (inp.get("text") or "").strip()
+    if caption and inp.get("autocorrect") and inp.get("source") == "manual" and not has_myanmar(caption):
+        caption = autocorrect_en(caption)
 
     rng = random.Random(int.from_bytes(os.urandom(4), "big"))
+    styles = STYLES[:]
+    rng.shuffle(styles)
     for i in range(1, 6):
-        phrase = pick_phrase(text, inp.get("source"))
-        sticker = make_sticker(base, phrase, rng.randint(0, 2**31))
+        set_status(job_dir, progress=8 + i * 17, stage=f"Painting sticker {i}/5")
+        sticker = build_sticker(base, styles[(i - 1) % len(styles)], caption, rng)
         sticker.save(os.path.join(job_dir, f"sticker_{i}.png"))
         try:
             os.chmod(os.path.join(job_dir, f"sticker_{i}.png"), 0o644)
         except OSError:
             pass
-        set_status(job_dir, progress=35 + i * 12, stage=f"Sticker {i}/5")
 
     set_status(job_dir, status="done", progress=100, stage="Done")
 
 
 def main():
     if len(sys.argv) < 3:
-        print("usage: sticker_render.py detect <photo> | render <job_dir>",
-              file=sys.stderr)
+        print("usage: sticker_render.py detect <photo> | render <job_dir>", file=sys.stderr)
         return 2
     mode, arg = sys.argv[1], sys.argv[2]
     if mode == "detect":
@@ -310,7 +361,6 @@ def main():
     elif mode == "render":
         cmd_render(arg)
     else:
-        print("unknown mode", file=sys.stderr)
         return 2
     return 0
 

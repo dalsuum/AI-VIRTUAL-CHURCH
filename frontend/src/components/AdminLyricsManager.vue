@@ -26,6 +26,35 @@ const filtered = computed(() => {
   });
 });
 
+// ── Row selection ───────────────────────────────────────────────────────────
+// Admins can tick individual songs to export just those; with nothing ticked,
+// export falls back to the whole current view (language filter + search).
+const selectedIds = ref(new Set());
+
+function toggleSelect(id) {
+  if (selectedIds.value.has(id)) selectedIds.value.delete(id);
+  else selectedIds.value.add(id);
+}
+
+// "Select all" reflects only the rows currently visible (the filtered view).
+const allSelected = computed(() =>
+  filtered.value.length > 0 && filtered.value.every((s) => selectedIds.value.has(s.id)));
+
+function toggleSelectAll() {
+  if (allSelected.value) {
+    for (const s of filtered.value) selectedIds.value.delete(s.id);
+  } else {
+    for (const s of filtered.value) selectedIds.value.add(s.id);
+  }
+}
+
+// Rows that an export should include: the ticked subset (within the current
+// view) if any are ticked, otherwise the whole filtered view.
+const exportRows = computed(() => {
+  const picked = filtered.value.filter((s) => selectedIds.value.has(s.id));
+  return picked.length ? picked : filtered.value;
+});
+
 async function loadSongs() {
   loading.value = true;
   error.value = "";
@@ -154,19 +183,19 @@ function csvCell(v) {
 
 function exportCsv() {
   const lines = [EXPORT_COLS.join(",")];
-  for (const s of filtered.value) lines.push(EXPORT_COLS.map((c) => csvCell(s[c])).join(","));
+  for (const s of exportRows.value) lines.push(EXPORT_COLS.map((c) => csvCell(s[c])).join(","));
   // Leading BOM so Excel reads the Myanmar/Tedim UTF-8 correctly.
   downloadBlob("﻿" + lines.join("\r\n"), `songs-${stamp()}.csv`, "text/csv;charset=utf-8");
 }
 
 function exportJson() {
-  const rows = filtered.value.map((s) => Object.fromEntries(EXPORT_COLS.map((c) => [c, s[c] ?? null])));
+  const rows = exportRows.value.map((s) => Object.fromEntries(EXPORT_COLS.map((c) => [c, s[c] ?? null])));
   downloadBlob(JSON.stringify(rows, null, 2), `songs-${stamp()}.json`, "application/json");
 }
 
 function exportTxt() {
   const sep = "\n" + "—".repeat(40) + "\n\n";
-  const blocks = filtered.value.map((s) => {
+  const blocks = exportRows.value.map((s) => {
     const head = [`Title: ${s.title}`];
     if (s.artist) head.push(`Artist: ${s.artist}`);
     head.push(`Language: ${s.language.toUpperCase()}`);
@@ -178,8 +207,15 @@ function exportTxt() {
 
 async function exportPdf() {
   const container = document.createElement("div");
-  container.style.cssText = "font-family:'Padauk','Noto Sans Myanmar',sans-serif;padding:8px;color:#111;";
-  container.innerHTML = filtered.value.map((s) => `
+  // html2canvas can only rasterise nodes that are actually laid out by the
+  // browser, so the container must live in the DOM while it renders — a
+  // detached node produces blank/white pages. Park it off-screen (not
+  // display:none, which would give it zero size and the same blank result),
+  // then remove it once the PDF has been produced.
+  container.style.cssText =
+    "font-family:'Padauk','Noto Sans Myanmar',sans-serif;padding:8px;color:#111;" +
+    "background:#fff;width:190mm;position:fixed;left:-9999px;top:0;z-index:-1;";
+  container.innerHTML = exportRows.value.map((s) => `
     <section style="page-break-inside:avoid;margin-bottom:26px;">
       <h2 style="margin:0 0 2px;font-size:17px;">${escapeHtml(s.title)}</h2>
       <div style="font-size:11px;color:#555;margin-bottom:8px;">${
@@ -187,11 +223,16 @@ async function exportPdf() {
       }</div>
       <pre style="white-space:pre-wrap;font-family:inherit;font-size:13px;line-height:1.7;margin:0;">${escapeHtml(s.lyrics || "")}</pre>
     </section>`).join("");
-  const { default: html2pdf } = await import("html2pdf.js");
-  await html2pdf()
-    .set({ margin: 10, filename: `songs-${stamp()}.pdf`, html2canvas: { scale: 2 }, jsPDF: { unit: "mm", format: "a4" } })
-    .from(container)
-    .save();
+  document.body.appendChild(container);
+  try {
+    const { default: html2pdf } = await import("html2pdf.js");
+    await html2pdf()
+      .set({ margin: 10, filename: `songs-${stamp()}.pdf`, html2canvas: { scale: 2, backgroundColor: "#fff" }, jsPDF: { unit: "mm", format: "a4" } })
+      .from(container)
+      .save();
+  } finally {
+    container.remove();
+  }
 }
 
 function doExport(fmt) {
@@ -285,7 +326,9 @@ const langLabel = (v) => LANGUAGES.find((l) => l.value === v)?.label || v;
         <h2>Song Library</h2>
         <div class="head-actions">
           <div class="menu">
-            <button class="btn" :disabled="!filtered.length" @click="exportOpen = !exportOpen">Export ▾</button>
+            <button class="btn" :disabled="!filtered.length" @click="exportOpen = !exportOpen">
+              Export{{ exportRows.length && exportRows.length !== filtered.length ? ` (${exportRows.length})` : "" }} ▾
+            </button>
             <div v-if="exportOpen" class="menu-pop">
               <button type="button" @click="doExport('csv')">CSV</button>
               <button type="button" @click="doExport('txt')">TXT</button>
@@ -319,10 +362,19 @@ const langLabel = (v) => LANGUAGES.find((l) => l.value === v)?.label || v;
 
       <table v-else class="tbl">
         <thead>
-          <tr><th>Title</th><th>Artist</th><th>Lang</th><th>Category</th><th>Chords</th><th></th></tr>
+          <tr>
+            <th class="t-check">
+              <input type="checkbox" :checked="allSelected" @change="toggleSelectAll"
+                     title="Select all in this view" />
+            </th>
+            <th>Title</th><th>Artist</th><th>Lang</th><th>Category</th><th>Chords</th><th></th>
+          </tr>
         </thead>
         <tbody>
-          <tr v-for="s in filtered" :key="s.id">
+          <tr v-for="s in filtered" :key="s.id" :class="{ picked: selectedIds.has(s.id) }">
+            <td class="t-check">
+              <input type="checkbox" :checked="selectedIds.has(s.id)" @change="toggleSelect(s.id)" />
+            </td>
             <td class="t-title">{{ s.title }}</td>
             <td>{{ s.artist || "—" }}</td>
             <td>{{ s.language.toUpperCase() }}</td>
@@ -428,6 +480,9 @@ const langLabel = (v) => LANGUAGES.find((l) => l.value === v)?.label || v;
 .tbl th, .tbl td { text-align: left; padding: 0.55rem 0.6rem; border-bottom: 1px solid var(--border); }
 .tbl th { color: var(--text-muted); font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; }
 .t-title { font-weight: 600; }
+.t-check { width: 1%; text-align: center; white-space: nowrap; }
+.t-check input { cursor: pointer; }
+.tbl tr.picked td { background: var(--accent-soft, rgba(99, 102, 241, 0.12)); }
 .t-actions { display: flex; gap: 0.4rem; justify-content: flex-end; }
 
 .btn { padding: 0.45rem 0.9rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); cursor: pointer; font: inherit; font-size: 0.85rem; }

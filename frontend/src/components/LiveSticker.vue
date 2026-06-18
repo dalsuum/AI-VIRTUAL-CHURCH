@@ -12,8 +12,10 @@ import "cropperjs/dist/cropper.css";
 import { api } from "../composables/useApi";
 import AdCarousel from "./AdCarousel.vue";
 
-const ads = ref([]);   // active ads shown in the box below the sticker block
-const adsEnabled = ref(false);
+const ads = ref([]);   // active ads for the box below the sticker block
+const hasStickerAd = computed(() =>
+  ads.value.some((a) => a.status === "active" && (a.locations || []).includes("sticker_ads"))
+);
 
 const config   = ref(null);
 const phase    = ref("idle");     // idle | cropping | rendering | done | error
@@ -53,15 +55,12 @@ onMounted(async () => {
     config.value = { enabled: true, suggestions: [] };
     source.value = "manual";
   }
-  adsEnabled.value = config.value?.ads_enabled !== false;
   // Active ads for the box below the sticker block — fire-and-forget so a
-  // failure never blocks the page.
-  if (adsEnabled.value) {
-    try {
-      const res = await api.fetchActiveAds();
-      ads.value = res.ads || [];
-    } catch { /* non-critical */ }
-  }
+  // failure never blocks the page. Shown only when an ad is tagged 'Sticker page'.
+  try {
+    const res = await api.fetchActiveAds();
+    ads.value = res.ads || [];
+  } catch { /* non-critical */ }
 });
 
 onUnmounted(() => {
@@ -256,10 +255,9 @@ function reset() {
         <div class="sk-actions"><button class="sk-go" @click="reset">Try again</button></div>
       </section>
 
-      <!-- Ads box — below the sticker block. Gated by the admin Ads-tab toggle
-           and hidden when no 'end' ad is active. -->
-      <div v-if="adsEnabled && ads.length" class="sk-ads">
-        <AdCarousel :ads="ads" location="end" />
+      <!-- Ads box — below the sticker block. Shows only when an ad is tagged 'Sticker page'. -->
+      <div v-if="hasStickerAd" class="sk-ads">
+        <AdCarousel :ads="ads" location="sticker_ads" />
       </div>
     </main>
   </div>

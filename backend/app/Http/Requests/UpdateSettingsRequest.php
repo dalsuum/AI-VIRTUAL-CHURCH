@@ -83,8 +83,6 @@ class UpdateSettingsRequest extends FormRequest
             // Ad slot — raw HTML/embed pasted by the admin (Google Ads, custom banner, etc.)
             'ad_slot_enabled' => ['sometimes', 'boolean'],
             'ad_slot_html'    => ['sometimes', 'nullable', 'string', 'max:8000'],
-            // Show the ads box on the public Live Sticker page.
-            'sticker_ads_enabled' => ['sometimes', 'boolean'],
             // AI chord detection for the song editor. Off = manual ChordPro only.
             // The model id/endpoint can be set here or fall back to env (AI_CHORD_MODEL).
             'ai_chords_enabled' => ['sometimes', 'boolean'],

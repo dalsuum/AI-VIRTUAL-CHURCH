@@ -1056,9 +1056,6 @@ class AdminController extends Controller
         if (array_key_exists('ad_slot_html', $data)) {
             Setting::set('ad_slot_html', $data['ad_slot_html'] ?? '');
         }
-        if (array_key_exists('sticker_ads_enabled', $data)) {
-            Setting::set('sticker_ads_enabled', $data['sticker_ads_enabled'] ? '1' : '0');
-        }
         if (array_key_exists('ai_chords_enabled', $data)) {
             Setting::set('ai_chords_enabled', $data['ai_chords_enabled'] ? '1' : '0');
         }
@@ -1105,8 +1102,6 @@ class AdminController extends Controller
             'agent_provider'            => Setting::get('agent_provider', 'claude'),
             'ad_slot_enabled'           => Setting::get('ad_slot_enabled', '0') === '1',
             'ad_slot_html'              => Setting::get('ad_slot_html', ''),
-            // Show the ads box on the public Live Sticker page. Default on.
-            'sticker_ads_enabled'       => Setting::get('sticker_ads_enabled', '1') === '1',
             'ai_chords_enabled'         => Setting::get('ai_chords_enabled', '0') === '1',
             'ai_chords_model'           => Setting::get('ai_chords_model', env('AI_CHORD_MODEL', '')),
         ];

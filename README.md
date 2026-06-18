@@ -810,10 +810,12 @@ The console is at `/#admin`. Access is role-based:
 - **Export** — CSV of `donations` | `users` | `testimonies`.
 - **System** (admin-only) — live system monitor with one-click installs and service restarts:
   - **Service health** — real-time status (active / inactive / unknown) of all AIVC systemd
-    units (`aivc-workers`, `aivc-workers-music`, `aivc-bridge`, `aivc-queue`,
-    `aivc-scheduler`, `aivc-tedim-api`, `aivc-burmese-api`) plus `redis-server` and `nginx`.
+    units (`aivc-workers`, `aivc-workers-music`, `aivc-workers-orchestrate`,
+    `aivc-workers-avatar`, `aivc-bridge`, `aivc-queue`, `aivc-scheduler`, `aivc-tedim-api`,
+    `aivc-burmese-api`) plus `redis-server` and `nginx`.
     Each restartable unit has a **Restart** button that dispatches a `RestartService` queue
-    job (requires the `sudoers` entry documented in `RestartService.php`).
+    job (requires the `sudoers` entry — `/usr/bin/systemctl` — documented in
+    `RestartService.php`).
   - **App version (git)** — current branch, commit hash + message, and how many commits
     behind `origin` the working tree is. A **Pull latest from origin** button dispatches a
     `RunUpdateCheck(gitPull: true)` job that runs `git pull --ff-only` then refreshes the
@@ -989,6 +991,13 @@ the same admin tab (tables `special_sermons` / `special_songs`):
 - Entries are tagged by `mood` / `priority` / `region`; when several match a
   day+language, a matching mood wins, then highest priority. The worker honors this on
   both the pipeline and agent orchestration paths. my/td text is NFC-normalized.
+
+**Preview (confirm before Sunday).** The Content panel has a read-only **preview**
+(`GET /api/admin/special-sundays/{id}/preview?language=&mood=`) that resolves the exact
+sermon + worship that *would* be served for a chosen language and mood — showing the
+manual pick (sermon title/body, song) or, for **Auto** mode, the bias `sermon_tags` /
+`music_moods` that steer the AI. Lets staff verify a manual selection ahead of time
+without dispatching a real service.
 
 **Adding a special Sunday (config).** For a permanent, version-controlled entry,
 append it to

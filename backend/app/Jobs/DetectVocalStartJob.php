@@ -28,6 +28,13 @@ class DetectVocalStartJob implements ShouldQueue
 
     private const CONFIG = 'fathersday/config.json';
 
+    public function __construct()
+    {
+        // Same dedicated queue as the renders — heavy Demucs work stays off the
+        // worship 'default' worker.
+        $this->onQueue('fathersday');
+    }
+
     public function handle(): void
     {
         $song = $this->songPath();

@@ -27,8 +27,13 @@ class RenderFathersDayJob implements ShouldQueue
     public int $timeout = 600;   // a long song + libx264 can take minutes
     public int $tries   = 1;     // re-encoding is expensive; fail fast
 
-    private const W   = 1080;
-    private const H   = 1920;
+    // 720x1280 vertical — standard for social media, ~half the pixels of 1080p
+    // so the subtitle-burn/encode is roughly twice as fast.
+    private const W   = 720;
+    private const H   = 1280;
+    // Cap libx264 threads so two renders can run side-by-side (two workers) on
+    // the 4-core box without starving worship narration.
+    private const THREADS = 2;
     // 15 fps keeps slideshows/motion smooth enough while roughly halving the
     // per-frame subtitle-burn + encode cost vs 25 fps. The single-still path
     // drops further to STILL_FPS since only the lyrics ever change.
@@ -36,7 +41,12 @@ class RenderFathersDayJob implements ShouldQueue
     private const STILL_FPS = 12;
     private const XFADE = 1.0;   // crossfade seconds for the "fade" effect
 
-    public function __construct(public string $jobId, public string $effect) {}
+    public function __construct(public string $jobId, public string $effect)
+    {
+        // Dedicated queue so heavy ffmpeg renders never block worship-service
+        // dispatch on the shared 'default' worker. Served by aivc-fathersday-render@.
+        $this->onQueue('fathersday');
+    }
 
     public function handle(): void
     {
@@ -131,7 +141,7 @@ class RenderFathersDayJob implements ShouldQueue
                     '-t', (string) $duration,
                     '-r', (string) self::FPS,
                     '-vf', sprintf('scale=%d:%d,setsar=1,format=yuv420p', self::W, self::H),
-                    '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'stillimage',
+                    '-c:v', 'libx264', '-threads', (string) self::THREADS, '-preset', 'ultrafast', '-tune', 'stillimage',
                     $out,
                 ]);
             }
@@ -165,7 +175,7 @@ class RenderFathersDayJob implements ShouldQueue
             '-t', (string) $duration,
             '-r', (string) self::FPS,
             '-vf', sprintf('scale=%d:%d,setsar=1,format=yuv420p', self::W, self::H),
-            '-c:v', 'libx264', '-preset', 'ultrafast',
+            '-c:v', 'libx264', '-threads', (string) self::THREADS, '-preset', 'ultrafast',
             $out,
         ]);
     }
@@ -190,7 +200,7 @@ class RenderFathersDayJob implements ShouldQueue
             '-r', (string) self::STILL_FPS,
             '-vf', $vf,
             '-map', '0:v:0', '-map', '1:a:0',
-            '-c:v', 'libx264', '-preset', 'veryfast', '-tune', 'stillimage', '-pix_fmt', 'yuv420p',
+            '-c:v', 'libx264', '-threads', (string) self::THREADS, '-preset', 'veryfast', '-tune', 'stillimage', '-pix_fmt', 'yuv420p',
             '-c:a', 'aac', '-b:a', '192k',
             '-shortest', '-movflags', '+faststart',
             $out,
@@ -208,7 +218,7 @@ class RenderFathersDayJob implements ShouldQueue
                 'scale=%d:%d,zoompan=z=\'min(zoom+0.0006,1.3)\':d=%d:s=%dx%d:fps=%d,setsar=1,format=yuv420p',
                 self::W * 2, self::H * 2, $d, self::W, self::H, self::FPS
             ),
-            '-c:v', 'libx264', '-preset', 'ultrafast',
+            '-c:v', 'libx264', '-threads', (string) self::THREADS, '-preset', 'ultrafast',
             $out,
         ]);
     }
@@ -279,7 +289,7 @@ class RenderFathersDayJob implements ShouldQueue
             '-map', '[vout]',
             '-t', (string) $duration,
             '-r', (string) self::FPS,
-            '-c:v', 'libx264', '-preset', 'ultrafast',
+            '-c:v', 'libx264', '-threads', (string) self::THREADS, '-preset', 'ultrafast',
             $out,
         ]));
     }
@@ -411,7 +421,7 @@ class RenderFathersDayJob implements ShouldQueue
         }
         $args = array_merge($args, [
             '-map', '0:v:0', '-map', '1:a:0',
-            '-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p',
+            '-c:v', 'libx264', '-threads', (string) self::THREADS, '-preset', 'veryfast', '-pix_fmt', 'yuv420p',
             '-c:a', 'aac', '-b:a', '192k',
             '-shortest', '-movflags', '+faststart',
             $out,

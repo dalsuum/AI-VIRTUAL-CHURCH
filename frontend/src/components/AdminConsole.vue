@@ -10,6 +10,7 @@ import PermissionsMatrix from "./PermissionsMatrix.vue";
 import AdsManager from "./AdsManager.vue";
 import AdminLyricsManager from "./AdminLyricsManager.vue";
 import SpecialSundaysManager from "./SpecialSundaysManager.vue";
+import FathersDayManager from "./FathersDayManager.vue";
 
 const authed      = ref(false);
 const currentUser = ref(null); // { id, name, role, permissions: string[] }
@@ -43,6 +44,7 @@ const TABS = [
   { name: "voice-training", label: "Voice Training",   can: () => can("voice_training.view"),  load: () => { loadVoiceTrainingStatus(); scheduleVoiceTrainingPoll(); } },
   { name: "ads",            label: "Ads",              can: () => can("ads.view"),             load: null },
   { name: "special-sundays",label: "Special Sundays",  can: () => can("special_sundays.view"), load: null },
+  { name: "special-day-mv", label: "Special Day MV",   can: () => isAdminUser.value,           load: null },
   { name: "permissions",    label: "Permissions",      can: () => can("permissions.view"),     load: loadPermissions },
   { name: "grammar-review", label: "Language Review",  can: () => can("language_review.view"), load: () => { grData.value = null; loadGrammarReview(); } },
   { name: "system",         label: "System",           can: () => can("system.view"),          load: () => { loadUpdateStatus(); scheduleUpdatePoll(); loadVoiceboxStatus(); scheduleVoiceboxPoll(); } },
@@ -2263,6 +2265,10 @@ onUnmounted(() => {
       </section>
 
       <!-- Ads management -->
+      <section v-else-if="tab === 'special-day-mv' && isAdminUser">
+        <FathersDayManager />
+      </section>
+
       <section v-else-if="tab === 'special-sundays' && can('special_sundays.view')">
         <SpecialSundaysManager :can-manage="can('special_sundays.manage')" />
       </section>

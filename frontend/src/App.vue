@@ -8,16 +8,22 @@ import PasswordReset from "./components/PasswordReset.vue";
 import ThemeToggle from "./components/ThemeToggle.vue";
 import ZolaiVocabulary from "./components/ZolaiVocabulary.vue";
 import MyanmarLyrics from "./components/MyanmarLyrics.vue";
+import FathersDay from "./components/FathersDay.vue";
 import { api } from "./composables/useApi";
 
 // The admin console lives at #admin so it never collides with the worship flow.
 const isAdminRoute  = ref(window.location.hash === "#admin");
 const isVocabRoute  = ref(window.location.hash === "#vocabulary");
 const isLyricsRoute = ref(window.location.hash === "#lyrics");
+// Father's Day (Special Day) MV — standalone, removable page.
+const isFathersDayRoute = ref(window.location.hash === "#fathers-day");
+const fathersDayEnabled = ref(false);
+api.fdPublicConfig().then((c) => { fathersDayEnabled.value = !!c?.enabled; }).catch(() => {});
 window.addEventListener("hashchange", () => {
   isAdminRoute.value  = window.location.hash === "#admin";
   isVocabRoute.value  = window.location.hash === "#vocabulary";
   isLyricsRoute.value = window.location.hash === "#lyrics";
+  isFathersDayRoute.value = window.location.hash === "#fathers-day";
 });
 
 // view: "intake" | "preparing" | "service" | "intercepted" | "reset"
@@ -245,6 +251,7 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
   <AdminConsole v-if="isAdminRoute" />
   <ZolaiVocabulary v-else-if="isVocabRoute" />
   <MyanmarLyrics v-else-if="isLyricsRoute" />
+  <FathersDay v-else-if="isFathersDayRoute" />
 
   <div v-else class="page">
     <header class="topbar">
@@ -256,6 +263,7 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
         <nav class="topbar-nav">
           <a href="#lyrics" class="nav-link" :class="{ active: isLyricsRoute }">🎵 သီချင်း</a>
           <a href="#vocabulary" class="nav-link" :class="{ active: isVocabRoute }">📖 Zolai</a>
+          <a v-if="fathersDayEnabled" href="#fathers-day" class="nav-link" :class="{ active: isFathersDayRoute }">💙 Father's Day</a>
         </nav>
         <ThemeToggle />
       </div>

@@ -1014,6 +1014,46 @@ No migration is needed — the seeder upserts by `key`.
 
 ---
 
+## Special Day Music Video (Father's Day) — standalone & removable
+
+A self-contained feature that lets a public visitor upload photo(s) of their
+father and download a vertical **1080×1920 MP4** set to an admin-provided song +
+lyrics. It is deliberately isolated from the worship pipeline so it can be added
+for one occasion and removed cleanly afterwards.
+
+**How it works**
+- **Admin** (`#admin` → *Special Day MV* tab, admin role only): upload the song
+  (MP3/WAV), paste lyrics, choose the default effect, toggle **time-synced
+  highlight** vs. even-split lyrics, and **enable** the page. Config + assets live
+  as plain files in `backend/storage/app/fathersday/` — **no DB migration**.
+- **Visitor** (`#fathers-day`, link appears only when enabled): drops 1–6 photos,
+  picks an effect, hits *Create video*, and the MP4 auto-downloads when ready.
+- **Effects**: `slide` (hard cut), `fade` (crossfade), `kenburns` (gentle
+  zoom/pan). A single photo is held for the whole song (with optional zoom).
+- **Lyrics**: `[mm:ss.xx]` LRC tags drive the time-synced highlight; otherwise
+  lines are split evenly across the song length. Lyrics are burned in as ASS
+  subtitles. Reuses the LRC convention from the worship `MusicPlayer`.
+- **Rendering** runs on the existing Laravel `queue:work` worker via
+  `RenderFathersDayJob` shelling out to `ffmpeg` — no new service or port.
+
+**Security**: uploads are validated by extension + size (≤8 MB/photo, ≤6 photos),
+then **re-encoded through ffmpeg**, which strips EXIF/GPS and neutralises
+malformed-image payloads. Filenames are server-generated (never client-trusted),
+job ids are UUIDs validated against path traversal, the render endpoint is
+throttled (`10/min`), and originals are deleted after the render. The public page
+only appears once a song is uploaded **and** the feature is enabled.
+
+**nginx note**: photo uploads can exceed the default body cap. Bump the API
+server block: `client_max_body_size 60M;` then `nginx -t && systemctl reload nginx`.
+
+**To remove the whole feature**, delete:
+`FathersDayController.php`, `app/Jobs/RenderFathersDayJob.php`, the *Father's Day
+MV* route block in `routes/api.php`, `backend/storage/app/fathersday/`, the
+frontend `FathersDay.vue` + `FathersDayManager.vue`, and their wiring in
+`App.vue` / `AdminConsole.vue` / `useApi.js`.
+
+---
+
 ## Running locally
 
 You need **four** long-running processes plus Redis and MySQL. None auto-restart and

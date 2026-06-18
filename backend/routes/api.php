@@ -52,6 +52,19 @@ Route::post('/webhooks/stripe', [OfferingController::class, 'webhook']);
 Route::get('/ads/active', [AdController::class, 'activeForService']);
 Route::post('/ads/track', [AdController::class, 'track'])->middleware('throttle:60,1');
 
+// ===========================================================================
+// Father's Day (Special Day) MV — SELF-CONTAINED & REMOVABLE.
+// Public visitors upload father photo(s) + pick an effect; we render a vertical
+// MP4 to the admin-provided song/lyrics. Delete this block + FathersDayController
+// + RenderFathersDayJob + storage/app/fathersday/ to remove the feature.
+// ===========================================================================
+Route::get('/fathers-day/config', [\App\Http\Controllers\FathersDayController::class, 'publicConfig']);
+Route::post('/fathers-day/render', [\App\Http\Controllers\FathersDayController::class, 'render'])
+    ->middleware('throttle:10,1');
+Route::get('/fathers-day/job/{jobId}', [\App\Http\Controllers\FathersDayController::class, 'status'])
+    ->middleware('throttle:120,1');
+Route::get('/fathers-day/download/{jobId}', [\App\Http\Controllers\FathersDayController::class, 'download']);
+
 // Authenticated user routes
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
@@ -191,6 +204,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/ads/{ad}/slides/{slide}',         [AdController::class, 'destroySlide']);
         Route::post('/ads/{ad}/slides/{slide}/image',     [AdController::class, 'uploadSlideImage']);
         Route::post('/ads/{ad}/reorder',                  [AdController::class, 'reorderSlides']);
+
+        // Father's Day (Special Day) MV — admin config + song upload (removable feature).
+        Route::get('/fathers-day',          [\App\Http\Controllers\FathersDayController::class, 'adminShow']);
+        Route::post('/fathers-day',         [\App\Http\Controllers\FathersDayController::class, 'adminSave']);
+        Route::post('/fathers-day/song',    [\App\Http\Controllers\FathersDayController::class, 'adminUploadSong']);
 
         // System actions — read-only refresh is enabled; git pull / package install stay disabled (destructive).
         Route::post('/updates/check',           [UpdateController::class, 'check']);

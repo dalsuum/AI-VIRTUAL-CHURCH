@@ -448,4 +448,43 @@ export const api = {
     if (!res.ok) throw Object.assign(new Error("Export failed"), { status: res.status });
     return res.blob();
   },
+
+  // ---- Father's Day (Special Day) MV — removable feature -------------------
+  // Public page config (enabled flag, effects, copy).
+  fdPublicConfig: () => request("/fathers-day/config"),
+  // Public render: upload photo(s) + chosen effect. Multipart, so raw fetch.
+  fdRender: async (files, effect) => {
+    const fd = new FormData();
+    files.forEach((f) => fd.append("photos[]", f, f.name));
+    if (effect) fd.append("effect", effect);
+    const res = await fetch(`${BASE_URL}/fathers-day/render`, {
+      method: "POST",
+      credentials: "include",
+      headers: { Accept: "application/json" },
+      body: fd,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw Object.assign(new Error(data.message || "Render failed"), { status: res.status, data });
+    return data;
+  },
+  fdJobStatus: (id) => request(`/fathers-day/job/${id}`),
+  fdDownloadUrl: (id) => `${BASE_URL}/fathers-day/download/${id}`,
+
+  // Admin config + song upload.
+  fdAdminShow: () => request("/admin/fathers-day"),
+  fdAdminSave: (payload) => request("/admin/fathers-day", { method: "POST", body: payload }),
+  fdAdminUploadSong: async (file) => {
+    await ensureCsrf();
+    const fd = new FormData();
+    fd.append("song", file, file.name);
+    const res = await fetch(`${BASE_URL}/admin/fathers-day/song`, {
+      method: "POST",
+      credentials: "include",
+      headers: { Accept: "application/json", "X-XSRF-TOKEN": getCsrfToken() },
+      body: fd,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw Object.assign(new Error(data.message || "Upload failed"), { status: res.status, data });
+    return data;
+  },
 };

@@ -1088,7 +1088,15 @@ the admin **Father's Day song lyrics** (reused from the Special Day feature) or
 Isolated from the worship pipeline so it can be removed cleanly.
 
 **How it works** (`workers/tools/sticker_render.py`)
-- **Visitor** (`#stickers`, always linked): taps the red **Create Live Sticker**
+- **Admin** (`#admin` → *Live Sticker* tab, admin only): **enable/disable** the
+  page and set fallback page copy (title/subtitle). Config is a plain file at
+  `backend/storage/app/stickers/config.json` — **no DB migration**. The link,
+  intake banner and page only appear when enabled.
+- **Special-Sunday theme**: when a Special Sunday is active (resolved by
+  `SpecialSundayResolver`), the page title, caption suggestions and the AI repaint
+  prompt + decorations automatically follow it (Father's Day → dad theme,
+  Christmas → 🎄🎁, etc.). Outside observances the admin fallback copy is used.
+- **Visitor** (`#stickers`, shown when enabled): taps the red **Create Live Sticker**
   box, picks a photo, fine-tunes the square crop (pre-centred on the detected
   face/group), optionally adds a caption, and gets a downloadable PNG sticker.
 - **Face detection + crop**: **OpenCV** (Haar cascade) finds the face(s) and

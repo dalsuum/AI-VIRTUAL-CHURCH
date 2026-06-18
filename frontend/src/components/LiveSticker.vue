@@ -41,6 +41,9 @@ let pollTimer = null;
 const suggestions = computed(() => config.value?.suggestions ?? []);
 const hasLyrics   = computed(() => suggestions.value.length > 0);
 const maxChars    = computed(() => config.value?.max_chars ?? 120);
+const enabled     = computed(() => config.value?.enabled !== false);
+const pageTitle   = computed(() => config.value?.title || "Live Sticker Maker");
+const pageSubtitle = computed(() => config.value?.subtitle || "Upload a photo — we'll turn it into a fun watercolor sticker.");
 
 const chosenText = computed(() =>
   source.value === "lyrics" ? lyricLine.value : manualText.value
@@ -52,7 +55,7 @@ onMounted(async () => {
     source.value = (config.value?.suggestions?.length ? "lyrics" : "manual");
     lyricLine.value = config.value?.suggestions?.[0] || "";
   } catch {
-    config.value = { enabled: true, suggestions: [] };
+    config.value = { enabled: false, suggestions: [] };
     source.value = "manual";
   }
   // Active ads for the box below the sticker block — fire-and-forget so a
@@ -181,15 +184,20 @@ function reset() {
   <div class="sticker-page">
     <header class="sk-top">
       <a class="sk-back" href="#">← Back</a>
-      <h1>🎨 Live Sticker Maker</h1>
-      <p class="sk-sub">Upload a photo — we'll turn it into a fun watercolor sticker.</p>
+      <h1>🎨 {{ pageTitle }}</h1>
+      <p class="sk-sub">{{ pageSubtitle }}</p>
     </header>
 
     <main class="sk-main">
       <p v-if="errorMsg" class="sk-error">{{ errorMsg }}</p>
 
+      <!-- Feature disabled by admin. -->
+      <section v-if="!enabled" class="sk-render">
+        <p>This feature isn't available right now. Please check back soon.</p>
+      </section>
+
       <!-- Step 0: the red square Create button -->
-      <section v-if="phase === 'idle'" class="sk-start">
+      <section v-else-if="phase === 'idle'" class="sk-start">
         <label class="sk-redbox" :class="{ busy }">
           <input type="file" accept="image/jpeg,image/png,image/webp" @change="onPhoto" :disabled="busy" hidden />
           <span v-if="!busy" class="sk-redbox-inner">

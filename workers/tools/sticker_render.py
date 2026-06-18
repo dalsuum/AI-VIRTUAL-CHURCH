@@ -75,13 +75,31 @@ STYLES = [
     "clean watercolour sketch with subtle colour washes",
 ]
 PROMPT = (
-    "Repaint this photo as a cute die-cut sticker portrait in {style}. "
+    "Repaint this photo as a cute die-cut sticker portrait{occasion} in {style}. "
     "Keep the same people, faces, hairstyle, clothing and pose; head and "
     "shoulders. Plain solid white background. No text, no border. "
     "Friendly and warm."
 )
 
 DECOR = ["❤️", "\U0001f49b", "✨", "⭐", "\U0001f31f", "\U0001fa77"]
+# Themed decoration sets keyed by words in the current Special Sunday title.
+THEME_DECOR = {
+    "father":    ["❤️", "\U0001f44a", "⭐", "✨", "\U0001f3c5"],
+    "mother":    ["\U0001f337", "❤️", "\U0001f49b", "✨", "\U0001f338"],
+    "christmas": ["\U0001f384", "\U0001f381", "⭐", "❄️", "✨"],
+    "easter":    ["\U0001f430", "\U0001f338", "\U0001f95a", "✨", "\U0001f337"],
+    "thanksgiv": ["\U0001f342", "\U0001f33d", "⭐", "✨", "❤️"],
+    "new year":  ["\U0001f389", "✨", "⭐", "\U0001f38a", "\U0001f31f"],
+    "valentine": ["❤️", "\U0001f49d", "\U0001f495", "✨", "\U0001f339"],
+}
+
+
+def decor_for(theme):
+    t = (theme or "").lower()
+    for key, emojis in THEME_DECOR.items():
+        if key in t:
+            return emojis
+    return DECOR
 MYANMAR_RE = re.compile(r"[က-႟ꩠ-ꩿ]")
 
 
@@ -149,11 +167,12 @@ def crop_square(pil_img, box):
     return pil_img.crop((x, y, x + s, y + s))
 
 
-def openrouter_repaint(pil_square, style):
+def openrouter_repaint(pil_square, style, occasion=""):
     """img2img watercolor repaint via OpenRouter; returns a PIL RGB or None."""
     key = os.environ.get("OPENROUTER_API_KEY", "").strip()
     if not key:
         return None
+    occ = f" celebrating {occasion}" if occasion else ""
     buf = io.BytesIO()
     pil_square.convert("RGB").save(buf, "JPEG", quality=90)
     b64 = base64.b64encode(buf.getvalue()).decode()
@@ -161,7 +180,7 @@ def openrouter_repaint(pil_square, style):
         "model": OR_MODEL,
         "modalities": ["image", "text"],
         "messages": [{"role": "user", "content": [
-            {"type": "text", "text": PROMPT.format(style=style)},
+            {"type": "text", "text": PROMPT.format(style=style, occasion=occ)},
             {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
         ]}],
     }
@@ -252,10 +271,10 @@ def emoji_image(ch, target):
         return None
 
 
-def decorate(canvas, subj_mask, rng):
+def decorate(canvas, subj_mask, rng, decor=DECOR):
     """Scatter colour-emoji around the subject, avoiding heavy overlap."""
     placed = []
-    picks = rng.sample(DECOR, rng.choice([3, 4, 5]))
+    picks = rng.sample(decor, rng.choice([3, 4, 5]))
     for ch in picks:
         em = emoji_image(ch, rng.choice([70, 90, 110]))
         if em is None:
@@ -293,13 +312,13 @@ def add_caption(canvas, text):
            stroke_width=6, stroke_fill=(255, 255, 255, 235))
 
 
-def build_sticker(base_square, style, caption, rng):
-    art = openrouter_repaint(base_square, style)
+def build_sticker(base_square, style, caption, rng, occasion=""):
+    art = openrouter_repaint(base_square, style, occasion)
     if art is None:
         art = base_square          # graceful fallback: cut out the real photo
     cut = cutout(art)
     canvas, mask = die_cut(cut)
-    decorate(canvas, mask, rng)
+    decorate(canvas, mask, rng, decor_for(occasion))
     add_caption(canvas, caption)
     return canvas
 
@@ -336,6 +355,7 @@ def cmd_render(job_dir):
     caption = (inp.get("text") or "").strip()
     if caption and inp.get("autocorrect") and inp.get("source") == "manual" and not has_myanmar(caption):
         caption = autocorrect_en(caption)
+    occasion = (inp.get("theme") or "").strip()
 
     rng = random.Random(int.from_bytes(os.urandom(4), "big"))
     styles = STYLES[:]
@@ -344,7 +364,7 @@ def cmd_render(job_dir):
         pct = 8 + int(i * (90 / COUNT))
         set_status(job_dir, progress=pct,
                    stage="Painting your sticker" if COUNT == 1 else f"Painting sticker {i}/{COUNT}")
-        sticker = build_sticker(base, styles[(i - 1) % len(styles)], caption, rng)
+        sticker = build_sticker(base, styles[(i - 1) % len(styles)], caption, rng, occasion)
         sticker.save(os.path.join(job_dir, f"sticker_{i}.png"))
         try:
             os.chmod(os.path.join(job_dir, f"sticker_{i}.png"), 0o644)

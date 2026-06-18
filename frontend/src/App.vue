@@ -22,6 +22,12 @@ const fathersDayEnabled = ref(false);
 api.fdPublicConfig().then((c) => { fathersDayEnabled.value = !!c?.enabled; }).catch(() => {});
 // Live Sticker maker — standalone, removable page at #stickers.
 const isStickerRoute = ref(window.location.hash === "#stickers");
+const stickersEnabled = ref(false);
+const stickersTitle = ref("Make a Live Sticker");
+api.stickerConfig().then((c) => {
+  stickersEnabled.value = !!c?.enabled;
+  if (c?.title) stickersTitle.value = c.title;
+}).catch(() => {});
 window.addEventListener("hashchange", () => {
   isAdminRoute.value  = window.location.hash === "#admin";
   isVocabRoute.value  = window.location.hash === "#vocabulary";
@@ -269,7 +275,7 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
           <a href="#lyrics" class="nav-link" :class="{ active: isLyricsRoute }">🎵 သီချင်း</a>
           <a href="#vocabulary" class="nav-link" :class="{ active: isVocabRoute }">📖 Zolai</a>
           <a v-if="fathersDayEnabled" href="#fathers-day" class="nav-link" :class="{ active: isFathersDayRoute }">💙 Father's Day</a>
-          <a href="#stickers" class="nav-link" :class="{ active: isStickerRoute }">🎨 Stickers</a>
+          <a v-if="stickersEnabled" href="#stickers" class="nav-link" :class="{ active: isStickerRoute }">🎨 Stickers</a>
         </nav>
         <ThemeToggle />
       </div>
@@ -289,10 +295,10 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
         </a>
 
         <!-- Live Sticker maker — promo banner on the intake page. -->
-        <a v-if="view === 'intake'" href="#stickers" class="sk-banner">
+        <a v-if="view === 'intake' && stickersEnabled" href="#stickers" class="sk-banner">
           <span class="sk-banner-emoji">🎨</span>
           <span class="sk-banner-text">
-            <strong>Make a Live Sticker!</strong>
+            <strong>{{ stickersTitle }}</strong>
             Upload a photo → get a fun watercolor sticker →
           </span>
         </a>

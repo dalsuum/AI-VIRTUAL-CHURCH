@@ -492,6 +492,9 @@ export const api = {
   // Step 2: queue the 5-sticker composite with the adjusted crop + text.
   stickerRender: (payload) => request("/stickers/render", { method: "POST", body: payload }),
   stickerJobStatus: (id) => request(`/stickers/job/${id}`),
+  // Admin enable/disable + page copy.
+  stickerAdminShow: () => request("/admin/stickers"),
+  stickerAdminSave: (payload) => request("/admin/stickers", { method: "POST", body: payload }),
 
   // Admin: fetch a library song as a blob for the tap-to-sync player (cookie auth).
   fdSongBlob: async (songId) => {

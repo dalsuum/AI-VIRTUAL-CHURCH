@@ -36,19 +36,101 @@ use Symfony\Component\Process\Process;
 class StickerController extends Controller
 {
     private const DIR        = 'stickers';
+    private const CONFIG     = 'stickers/config.json';
     private const COUNT      = 1;     // stickers produced per job (1 AI repaint = low cost)
     private const MAX_CHARS  = 120;   // sticker source text length cap
     private const STALE_SECS = 21600; // prune job dirs older than 6h
 
-    /** Public config: feature flag + Father's Day lyric lines to choose from. */
-    public function publicConfig(): JsonResponse
+    /** Admin-managed feature config (enable flag + fallback page copy). */
+    private function config(): array
     {
+        $defaults = [
+            'enabled'  => false,
+            'title'    => 'Make a Live Sticker',
+            'subtitle' => 'Upload a photo — we\'ll turn it into a fun watercolor sticker.',
+        ];
+        $data = Storage::exists(self::CONFIG)
+            ? json_decode((string) Storage::get(self::CONFIG), true)
+            : [];
+
+        return is_array($data) ? array_merge($defaults, $data) : $defaults;
+    }
+
+    /**
+     * Public config: feature flag + page copy + caption suggestions. The theme
+     * (title/occasion/suggestions) follows the CURRENT Special Sunday when one is
+     * active, falling back to the admin-set copy otherwise.
+     */
+    public function publicConfig(\App\Services\SpecialSundayResolver $resolver): JsonResponse
+    {
+        $c = $this->config();
+        $observance = $c['enabled'] ? $resolver->currentPayload('en') : null;
+
+        $title    = $observance['title'] ?? $c['title'];
+        $occasion = $observance['title'] ?? '';
+        $suggestions = $this->suggestions($resolver, $observance);
+
         return response()->json([
-            'enabled'    => true,
-            'count'      => self::COUNT,
-            'max_chars'  => self::MAX_CHARS,
-            'suggestions' => $this->lyricSuggestions(),
+            'enabled'     => (bool) $c['enabled'],
+            'title'       => $title,
+            'subtitle'    => $c['subtitle'],
+            'occasion'    => $occasion,
+            'count'       => self::COUNT,
+            'max_chars'   => self::MAX_CHARS,
+            'suggestions' => $suggestions,
         ]);
+    }
+
+    // ---- Admin ------------------------------------------------------------
+
+    public function adminShow(): JsonResponse
+    {
+        $c = $this->config();
+
+        return response()->json([
+            'enabled'  => (bool) $c['enabled'],
+            'title'    => $c['title'],
+            'subtitle' => $c['subtitle'],
+        ]);
+    }
+
+    public function adminSave(Request $request): JsonResponse
+    {
+        $v = $request->validate([
+            'enabled'  => ['required', 'boolean'],
+            'title'    => ['nullable', 'string', 'max:120'],
+            'subtitle' => ['nullable', 'string', 'max:200'],
+        ]);
+
+        $c = $this->config();
+        $c['enabled']  = (bool) $v['enabled'];
+        $c['title']    = $v['title'] ?: 'Make a Live Sticker';
+        $c['subtitle'] = $v['subtitle'] ?: 'Upload a photo — we\'ll turn it into a fun watercolor sticker.';
+        $c['updated_at'] = now()->toIso8601String();
+
+        Storage::put(self::CONFIG, json_encode($c));
+        @chmod(Storage::path(self::CONFIG), 0664);
+
+        return response()->json($c + ['ok' => true]);
+    }
+
+    /** Caption suggestions: the current observance's titles, else lyric lines. */
+    private function suggestions(\App\Services\SpecialSundayResolver $resolver, ?array $observance): array
+    {
+        $out = [];
+        if ($observance) {
+            foreach (['en', 'my', 'td'] as $lang) {
+                $p = $resolver->currentPayload($lang);
+                if (! empty($p['title'])) {
+                    $out[$p['title']] = true;
+                }
+            }
+        }
+        foreach ($this->lyricSuggestions() as $line) {
+            $out[$line] = true;
+        }
+
+        return array_slice(array_keys($out), 0, 40);
     }
 
     /**
@@ -92,8 +174,12 @@ class StickerController extends Controller
      * Step 2 — using the token from detect(), queue the 5-sticker composite
      * with the (possibly user-adjusted) crop box and the chosen text.
      */
-    public function render(Request $request): JsonResponse
+    public function render(Request $request, \App\Services\SpecialSundayResolver $resolver): JsonResponse
     {
+        if (! $this->config()['enabled']) {
+            return response()->json(['message' => 'This feature is not available right now.'], 404);
+        }
+
         $v = $request->validate([
             'token'  => ['required', 'string'],
             'text'   => ['nullable', 'string', 'max:' . self::MAX_CHARS],
@@ -104,6 +190,9 @@ class StickerController extends Controller
             'crop.w' => ['nullable', 'numeric', 'min:1'],
             'crop.h' => ['nullable', 'numeric', 'min:1'],
         ]);
+
+        // Theme the AI repaint after the current Special Sunday, if any.
+        $occasion = $resolver->currentPayload('en')['title'] ?? '';
 
         $token  = $this->safeId($v['token']);
         $jobDir = self::DIR . "/jobs/{$token}";
@@ -130,6 +219,7 @@ class StickerController extends Controller
             'crop'        => $crop,
             'text'        => trim((string) ($v['text'] ?? '')),
             'source'      => $v['source'] ?? 'manual',
+            'theme'       => $occasion,
             'autocorrect' => true,
         ]));
         Storage::put("{$jobDir}/status.json", json_encode([

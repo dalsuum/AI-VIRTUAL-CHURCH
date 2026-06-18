@@ -65,6 +65,23 @@ Route::get('/fathers-day/job/{jobId}', [\App\Http\Controllers\FathersDayControll
     ->middleware('throttle:120,1');
 Route::get('/fathers-day/download/{jobId}', [\App\Http\Controllers\FathersDayController::class, 'download']);
 
+// ===========================================================================
+// Live Sticker maker — SELF-CONTAINED & REMOVABLE.
+// Public visitors upload any photo; we auto face-crop and composite 5 random
+// PNG stickers from Father's Day lyrics or typed text. Delete this block +
+// StickerController + RenderStickerJob + workers/tools/sticker_render.py +
+// storage/app/stickers/ + frontend LiveSticker.vue to remove the feature.
+// ===========================================================================
+Route::get('/stickers/config', [\App\Http\Controllers\StickerController::class, 'publicConfig']);
+Route::post('/stickers/detect', [\App\Http\Controllers\StickerController::class, 'detect'])
+    ->middleware('throttle:20,1');
+Route::post('/stickers/render', [\App\Http\Controllers\StickerController::class, 'render'])
+    ->middleware('throttle:20,1');
+Route::get('/stickers/job/{jobId}', [\App\Http\Controllers\StickerController::class, 'status'])
+    ->middleware('throttle:120,1');
+Route::get('/stickers/image/{jobId}/{n}', [\App\Http\Controllers\StickerController::class, 'image'])
+    ->whereNumber('n');
+
 // Authenticated user routes
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);

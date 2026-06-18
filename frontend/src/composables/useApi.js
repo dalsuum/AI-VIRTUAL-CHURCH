@@ -472,6 +472,27 @@ export const api = {
   fdJobStatus: (id) => request(`/fathers-day/job/${id}`),
   fdDownloadUrl: (id) => `${BASE_URL}/fathers-day/download/${id}`,
 
+  // --- Live Sticker maker (SELF-CONTAINED & REMOVABLE) ------------------
+  stickerConfig: () => request("/stickers/config"),
+  // Step 1: upload one photo, get a token + auto face-crop box. Multipart.
+  stickerDetect: async (file) => {
+    await ensureCsrf();
+    const fd = new FormData();
+    fd.append("photo", file, file.name);
+    const res = await fetch(`${BASE_URL}/stickers/detect`, {
+      method: "POST",
+      credentials: "include",
+      headers: { Accept: "application/json", "X-XSRF-TOKEN": getCsrfToken() },
+      body: fd,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw Object.assign(new Error(data.message || "Could not read image"), { status: res.status, data });
+    return data;
+  },
+  // Step 2: queue the 5-sticker composite with the adjusted crop + text.
+  stickerRender: (payload) => request("/stickers/render", { method: "POST", body: payload }),
+  stickerJobStatus: (id) => request(`/stickers/job/${id}`),
+
   // Admin: fetch a library song as a blob for the tap-to-sync player (cookie auth).
   fdSongBlob: async (songId) => {
     const res = await fetch(`${BASE_URL}/admin/fathers-day/songs/${songId}/audio`, {

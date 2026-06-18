@@ -1076,6 +1076,53 @@ frontend `FathersDay.vue` + `FathersDayManager.vue`, and their wiring in
 
 ---
 
+## Live Sticker Maker — standalone & removable
+
+A self-contained fun tool that lets a public visitor upload **any** photo
+(vertical or horizontal), auto-detects the face, and composes **five random
+512×512 PNG stickers** (random frame / font / colour / short text + colour
+emoji). The sticker words come either from the admin **Father's Day song
+lyrics** (reused from the Special Day feature) or from **free text the visitor
+types**, which is lightly **auto-corrected** for English. Isolated from the
+worship pipeline so it can be removed cleanly.
+
+**How it works**
+- **Visitor** (`#stickers`, always linked): taps the red **Create Live Sticker**
+  box, picks a photo, fine-tunes the square crop (pre-centred on the detected
+  face), chooses a lyric line or types words, and gets 5 downloadable stickers.
+- **Face detection + crop**: `workers/tools/sticker_render.py` uses **OpenCV**
+  (Haar cascade) to find the largest face and suggest a padded square box. The
+  `/stickers/detect` endpoint runs this **synchronously** (fast) and returns the
+  box; the frontend shows it in **cropper.js** for manual adjustment. EXIF
+  orientation is honoured so phone photos aren't sideways.
+- **Compositing**: **Pillow** crops to a square and draws a random sticker frame,
+  text banner (DejaVu / Myanmar Njaun for MY/TD), and 1–2 colour emoji rendered
+  from the bundled **Noto Color Emoji** font (`backend/resources/fonts/`).
+- **Auto-correct**: English-only via `pyspellchecker`, conservative (skips
+  proper nouns / all-caps / non-Latin) — matches the project rule that the
+  Burmese model is unusable for free text.
+- **Rendering** runs on the dedicated `fathersday` queue via `RenderStickerJob`
+  (reuses the existing `aivc-fathersday-render@` workers — no new service).
+  Outputs/uploads live as plain files in `backend/storage/app/stickers/jobs/<id>/`
+  — **no DB migration**.
+
+**Dependencies** (worker venv, one-off):
+`workers/.venv/bin/pip install opencv-python-headless Pillow pyspellchecker`.
+The Noto Color Emoji font is committed under `backend/resources/fonts/`.
+
+**Security**: uploads validated by extension + size (≤12 MB), stored under
+server-generated names; job ids are UUIDs validated against path traversal;
+`detect`/`render` throttled (`20/min`); originals deleted after the render; stale
+job dirs pruned after 6h. The base storage dir is `setgid 02775` so the render
+worker (separate OS user in the `www-data` group) can read the queued job.
+
+**To remove the whole feature**, delete: `StickerController.php`,
+`app/Jobs/RenderStickerJob.php`, `workers/tools/sticker_render.py`, the
+*Live Sticker* route block in `routes/api.php`, `backend/storage/app/stickers/`,
+the frontend `LiveSticker.vue`, and its wiring in `App.vue` / `useApi.js`.
+
+---
+
 ## Running locally
 
 You need **four** long-running processes plus Redis and MySQL. None auto-restart and

@@ -9,6 +9,7 @@ import ThemeToggle from "./components/ThemeToggle.vue";
 import ZolaiVocabulary from "./components/ZolaiVocabulary.vue";
 import MyanmarLyrics from "./components/MyanmarLyrics.vue";
 import FathersDay from "./components/FathersDay.vue";
+import LiveSticker from "./components/LiveSticker.vue";
 import { api } from "./composables/useApi";
 
 // The admin console lives at #admin so it never collides with the worship flow.
@@ -19,11 +20,14 @@ const isLyricsRoute = ref(window.location.hash === "#lyrics");
 const isFathersDayRoute = ref(window.location.hash === "#fathers-day");
 const fathersDayEnabled = ref(false);
 api.fdPublicConfig().then((c) => { fathersDayEnabled.value = !!c?.enabled; }).catch(() => {});
+// Live Sticker maker — standalone, removable page at #stickers.
+const isStickerRoute = ref(window.location.hash === "#stickers");
 window.addEventListener("hashchange", () => {
   isAdminRoute.value  = window.location.hash === "#admin";
   isVocabRoute.value  = window.location.hash === "#vocabulary";
   isLyricsRoute.value = window.location.hash === "#lyrics";
   isFathersDayRoute.value = window.location.hash === "#fathers-day";
+  isStickerRoute.value = window.location.hash === "#stickers";
 });
 
 // view: "intake" | "preparing" | "service" | "intercepted" | "reset"
@@ -252,6 +256,7 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
   <ZolaiVocabulary v-else-if="isVocabRoute" />
   <MyanmarLyrics v-else-if="isLyricsRoute" />
   <FathersDay v-else-if="isFathersDayRoute" />
+  <LiveSticker v-else-if="isStickerRoute" />
 
   <div v-else class="page">
     <header class="topbar">
@@ -264,6 +269,7 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
           <a href="#lyrics" class="nav-link" :class="{ active: isLyricsRoute }">🎵 သီချင်း</a>
           <a href="#vocabulary" class="nav-link" :class="{ active: isVocabRoute }">📖 Zolai</a>
           <a v-if="fathersDayEnabled" href="#fathers-day" class="nav-link" :class="{ active: isFathersDayRoute }">💙 Father's Day</a>
+          <a href="#stickers" class="nav-link" :class="{ active: isStickerRoute }">🎨 Stickers</a>
         </nav>
         <ThemeToggle />
       </div>

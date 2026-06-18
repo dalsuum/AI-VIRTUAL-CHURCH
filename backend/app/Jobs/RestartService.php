@@ -14,6 +14,8 @@ use Illuminate\Queue\SerializesModels;
  * Prerequisite — add this sudoers rule (run `sudo visudo -f /etc/sudoers.d/aivc`):
  *   simon ALL=(root) NOPASSWD: /usr/bin/systemctl restart aivc-workers.service, \
  *     /usr/bin/systemctl restart aivc-workers-music.service, \
+ *     /usr/bin/systemctl restart aivc-workers-orchestrate.service, \
+ *     /usr/bin/systemctl restart aivc-workers-avatar.service, \
  *     /usr/bin/systemctl restart aivc-bridge.service, \
  *     /usr/bin/systemctl restart aivc-queue.service, \
  *     /usr/bin/systemctl restart aivc-scheduler.service, \
@@ -31,6 +33,8 @@ class RestartService implements ShouldQueue
     private const ALLOWED = [
         'aivc-workers',
         'aivc-workers-music',
+        'aivc-workers-orchestrate',
+        'aivc-workers-avatar',
         'aivc-bridge',
         'aivc-queue',
         'aivc-scheduler',

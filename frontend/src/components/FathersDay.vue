@@ -8,6 +8,7 @@
 import { ref, computed, onMounted, onUnmounted, nextTick } from "vue";
 import Cropper from "cropperjs";
 import "cropperjs/dist/cropper.css";
+import AdCarousel from "./AdCarousel.vue";
 import { api } from "../composables/useApi";
 
 const loading   = ref(true);
@@ -21,6 +22,7 @@ const errorMsg  = ref("");
 const jobId     = ref(null);
 const downloadUrl = ref("");
 const dragActive = ref(false);
+const ads        = ref([]);      // active ads for the box below the block
 const targetProgress = ref(0);   // last % reported by the server
 const shownProgress  = ref(0);   // eased value actually displayed
 const stageLabel     = ref("Starting…");
@@ -36,6 +38,9 @@ const effectLabels = {
 };
 
 const songs       = computed(() => config.value?.songs ?? []);
+const hasSpecialDayAd = computed(() =>
+  ads.value.some((a) => a.status === "active" && (a.locations || []).includes("special_day"))
+);
 const canGenerate = computed(() => photos.value.length > 0 && !!songId.value && phase.value !== "rendering");
 const maxPhotos   = computed(() => config.value?.max_photos ?? 6);
 
@@ -49,6 +54,12 @@ onMounted(async () => {
   } finally {
     loading.value = false;
   }
+  // Active ads for the box below the block — fire-and-forget so a failure
+  // never blocks the page.
+  try {
+    const res = await api.fetchActiveAds();
+    ads.value = res.ads || [];
+  } catch { /* non-critical */ }
 });
 
 onUnmounted(() => {
@@ -332,11 +343,17 @@ function reset() {
 
       <p class="fd-muted small fd-foot">Your photos are used only to make this video and are removed after.</p>
     </div>
+
+    <!-- Ads box — below the block. Shows only when an ad is tagged 'Special Day pages'. -->
+    <div v-if="hasSpecialDayAd" class="fd-ads">
+      <AdCarousel :ads="ads" location="special_day" />
+    </div>
   </div>
 </template>
 
 <style scoped>
 .fd-page { max-width: 560px; margin: 0 auto; padding: 1.5rem 1rem 4rem; }
+.fd-ads { margin-top: 1.5rem; }
 .fd-back { display: inline-block; margin-bottom: 1rem; color: var(--text-muted); text-decoration: none; font-size: 0.85rem; }
 .fd-back:hover { color: var(--primary); }
 .fd-card {

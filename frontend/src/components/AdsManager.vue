@@ -45,9 +45,10 @@ const availableMoods = ref([]);
 const moodInput      = ref('');
 
 const LOCATION_OPTIONS = [
-  { value: 'start',   label: 'Service Start',    hint: 'Before the first stage begins.' },
-  { value: 'between', label: 'Between Stages',   hint: 'In the content area between Previous / Next.' },
-  { value: 'end',     label: 'Service End',      hint: 'After the final stage, before "End service".' },
+  { value: 'start',       label: 'Service Start',    hint: 'Before the first stage begins.' },
+  { value: 'between',     label: 'Between Stages',   hint: 'In the content area between Previous / Next.' },
+  { value: 'end',         label: 'Service End',      hint: 'After the final stage, before "End service".' },
+  { value: 'special_day', label: 'Special Day pages', hint: 'In the box below the Father\'s Day music-video page. Tag an ad here to show it; untag to hide.' },
 ];
 
 const CURRENCY_OPTIONS = ['USD','EUR','GBP','SGD','MMK','INR','KRW','JPY','AUD','CAD'];
@@ -389,6 +390,32 @@ function backToList() {
         :disabled="saving || readOnly"
         @click="emit('save-setting', 'ad_slot_html', settings.ad_slot_html, 'Ad slot code saved.')"
       >Save ad code</button>
+    </div>
+
+    <!-- ── Live Sticker page ads box ── -->
+    <div v-if="settings" class="slot-panel">
+      <div class="slot-header">
+        <div class="slot-title-row">
+          <strong>Sticker Page Ads</strong>
+          <span class="slot-hint">Show the ads box below the sticker on the public Live Sticker page (uses ads targeted to the “end” location).</span>
+        </div>
+        <div class="slot-toggle">
+          <button
+            type="button"
+            class="toggle-btn"
+            :class="{ active: settings.sticker_ads_enabled === true }"
+            :disabled="saving || readOnly"
+            @click="emit('save-setting', 'sticker_ads_enabled', true, 'Sticker page ads enabled.')"
+          >Enabled</button>
+          <button
+            type="button"
+            class="toggle-btn"
+            :class="{ active: settings.sticker_ads_enabled !== true }"
+            :disabled="saving || readOnly"
+            @click="emit('save-setting', 'sticker_ads_enabled', false, 'Sticker page ads disabled.')"
+          >Disabled</button>
+        </div>
+      </div>
     </div>
 
     <!-- ── List view ── -->

@@ -272,6 +272,16 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
     <main class="shell">
       <div class="card">
         <p v-if="resumeError" style="color:var(--danger);font-size:0.85rem;margin-bottom:1rem;">{{ resumeError }}</p>
+
+        <!-- Father's Day (Special Day) MV — promo banner, only when enabled. -->
+        <a v-if="view === 'intake' && fathersDayEnabled" href="#fathers-day" class="fd-banner">
+          <span class="fd-banner-emoji">💙</span>
+          <span class="fd-banner-text">
+            <strong>Happy Father's Day!</strong>
+            Make a music video for your father →
+          </span>
+        </a>
+
         <IntakeForm
           v-if="view === 'intake'"
           @started="onStarted"
@@ -372,6 +382,20 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
   background: var(--primary); color: var(--on-primary); font-size: 1rem;
 }
 .brand-name { font-size: 0.98rem; letter-spacing: -0.01em; }
+
+/* Father's Day (Special Day) MV promo banner on the intake card. */
+.fd-banner {
+  display: flex; align-items: center; gap: 0.7rem;
+  margin-bottom: 1.25rem; padding: 0.85rem 1rem;
+  border-radius: var(--radius-sm); text-decoration: none;
+  background: linear-gradient(135deg, var(--primary), color-mix(in srgb, var(--primary) 70%, #8b5cf6));
+  color: var(--on-primary);
+  box-shadow: var(--shadow); transition: transform 0.12s, filter 0.12s;
+}
+.fd-banner:hover { transform: translateY(-1px); filter: brightness(1.05); }
+.fd-banner-emoji { font-size: 1.5rem; line-height: 1; }
+.fd-banner-text { font-size: 0.9rem; line-height: 1.4; }
+.fd-banner-text strong { display: block; font-size: 1rem; }
 
 .shell { max-width: 600px; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
 .card {

@@ -117,7 +117,7 @@ async function uploadSong() {
         <button class="btn" :disabled="!songFile || uploading" @click="uploadSong">
           {{ uploading ? "Uploading…" : "Upload song" }}
         </button>
-        <p class="hint small">MP3 or WAV, up to 30 MB.</p>
+        <p class="hint small">MP3 or WAV, up to 50 MB.</p>
       </div>
 
       <div class="actions">

@@ -256,8 +256,10 @@ class RenderFathersDayJob implements ShouldQueue
 
         if (! $cues) {
             // Even-split fallback (also covers static mode and malformed LRC).
-            $lines = array_values(array_filter(array_map('trim', preg_split('/\r?\n/', $lyrics)), fn ($l) => $l !== ''));
-            // Strip any [..] timestamp tags left from pasted LRC.
+            $lines = preg_split('/\r?\n/', $lyrics);
+            // Drop section markers ([Verse 1], [Chorus], [Bridge]…) — a line that is
+            // wholly a bracketed tag. Then strip any inline [mm:ss.xx] timestamps.
+            $lines = array_filter(array_map('trim', $lines), fn ($l) => $l !== '' && ! preg_match('/^\[[^\]]*\]$/', $l));
             $lines = array_map(fn ($l) => trim(preg_replace('/\[[0-9:.]+\]/', '', $l)), $lines);
             $lines = array_values(array_filter($lines, fn ($l) => $l !== ''));
             if (! $lines) {
@@ -322,7 +324,9 @@ class RenderFathersDayJob implements ShouldQueue
             . "[V4+ Styles]\n"
             . "Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, Bold, Alignment, MarginL, MarginR, MarginV, Outline, Shadow, BorderStyle\n"
             // White text, black outline, large, centered near the lower third.
-            . "Style: Lyric,DejaVu Sans,64,&H00FFFFFF,&H00000000,&H64000000,1,2,80,80,260,3,1,1\n\n"
+            // Myanmar Njaun (bundled in resources/fonts) renders Myanmar + Latin so
+            // EN/MY/TD lyrics all display; the host has no Myanmar system font.
+            . "Style: Lyric,Myanmar Njaun,60,&H00FFFFFF,&H00000000,&H64000000,1,2,80,80,260,3,1,1\n\n"
             . "[Events]\n"
             . "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n";
     }
@@ -349,8 +353,11 @@ class RenderFathersDayJob implements ShouldQueue
     {
         $args = ['-i', $slideshow, '-i', $song];
         if ($assRel !== null) {
+            // Point libass at the bundled Padauk font so Myanmar (and Latin) lyrics
+            // render — the host has no Myanmar system font.
+            $fontsDir = base_path('resources/fonts');
             $args[] = '-vf';
-            $args[] = "ass={$assRel}";
+            $args[] = "ass={$assRel}:fontsdir={$fontsDir}";
         }
         $args = array_merge($args, [
             '-map', '0:v:0', '-map', '1:a:0',

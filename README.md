@@ -1031,8 +1031,13 @@ for one occasion and removed cleanly afterwards.
 - **Effects**: `slide` (hard cut), `fade` (crossfade), `kenburns` (gentle
   zoom/pan). A single photo is held for the whole song (with optional zoom).
 - **Lyrics**: `[mm:ss.xx]` LRC tags drive the time-synced highlight; otherwise
-  lines are split evenly across the song length. Lyrics are burned in as ASS
-  subtitles. Reuses the LRC convention from the worship `MusicPlayer`.
+  lines are split evenly across the song length. Section markers like
+  `[Verse 1]` / `[Chorus]` / `[Bridge]` are recognised and **not** shown on the
+  video. Lyrics are burned in as ASS subtitles using the bundled **Myanmar
+  Njaun** font (`backend/resources/fonts/`), which renders Myanmar *and* Latin so
+  EN/MY/TD lyrics all display — the host has no Myanmar system font. Reuses the
+  LRC convention from the worship `MusicPlayer`.
+- **Song**: MP3/WAV up to **50 MB**.
 - **Rendering** runs on the existing Laravel `queue:work` worker via
   `RenderFathersDayJob` shelling out to `ffmpeg` — no new service or port.
 

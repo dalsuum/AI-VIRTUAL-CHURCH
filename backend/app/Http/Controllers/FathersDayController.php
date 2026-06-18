@@ -197,7 +197,7 @@ class FathersDayController extends Controller
     public function adminUploadSong(Request $request): JsonResponse
     {
         $request->validate([
-            'song' => ['required', 'file', 'mimes:mp3,wav', 'max:30720'],
+            'song' => ['required', 'file', 'mimes:mp3,wav', 'max:51200'],
         ]);
 
         // Remove any prior song so only one canonical track exists.

@@ -38,6 +38,7 @@ import os
 import random
 import re
 import sys
+import unicodedata
 import urllib.request
 
 import cv2
@@ -293,6 +294,39 @@ def decorate(canvas, subj_mask, rng, decor=DECOR):
             break
 
 
+def graphemes(text):
+    """Split into grapheme clusters so we never break a Burmese stack (a base
+    letter + its medials/vowel-signs/asat). A cluster extends while the next char
+    is a combining mark or a Myanmar dependent sign (U+102B–U+103E)."""
+    out = []
+    for ch in text:
+        dep = unicodedata.combining(ch) or unicodedata.category(ch) in ("Mn", "Mc", "Me") \
+            or 0x102B <= ord(ch) <= 0x103E or ch in ("‍", "‌")
+        if out and dep:
+            out[-1] += ch
+        else:
+            out.append(ch)
+    return out
+
+
+def wrap_clusters(draw, text, font, max_w, max_lines):
+    """Greedy wrap on grapheme boundaries. Returns (lines, ok) where ok is False
+    if the text didn't fully fit in max_lines (caller can shrink the font)."""
+    lines, cur = [], ""
+    for g in graphemes(text):
+        trial = cur + g
+        if draw.textlength(trial, font=font) <= max_w or not cur:
+            cur = trial
+        else:
+            lines.append(cur)
+            cur = g
+            if len(lines) == max_lines:
+                return lines, False
+    if cur:
+        lines.append(cur)
+    return lines, True
+
+
 def add_caption(canvas, text):
     if not text:
         return
@@ -301,15 +335,28 @@ def add_caption(canvas, text):
         else (LATIN_FONTS[0] if LATIN_FONTS else None)
     if not fpath:
         return
-    if len(text) > 30:
-        text = text[:29].rstrip() + "…"
-    font = ImageFont.truetype(fpath, 46)
-    w = d.textlength(text, font=font)
-    x = (SIZE - w) / 2
-    y = SIZE - 92
-    # White outline so it reads over the art.
-    d.text((x, y), text, font=font, fill=(40, 40, 60, 255),
-           stroke_width=6, stroke_fill=(255, 255, 255, 235))
+
+    max_w = SIZE - 56
+    # Pick the largest size where the whole caption fits in <=2 lines — never
+    # truncate (mid-cluster cuts produce broken Burmese glyphs).
+    lines, font, fsize = None, None, 28
+    for size in (46, 40, 34, 28):
+        f = ImageFont.truetype(fpath, size)
+        wrapped, ok = wrap_clusters(d, text, f, max_w, 2)
+        if ok:
+            lines, font, fsize = wrapped, f, size
+            break
+    if lines is None:           # extremely long: keep 2 lines at the smallest size
+        font = ImageFont.truetype(fpath, 28)
+        lines, _ = wrap_clusters(d, text, font, max_w, 2)
+
+    line_h = fsize + 12
+    y = SIZE - 28 - line_h * len(lines)
+    for ln in lines:
+        w = d.textlength(ln, font=font)
+        d.text(((SIZE - w) / 2, y), ln, font=font, fill=(40, 40, 60, 255),
+               stroke_width=6, stroke_fill=(255, 255, 255, 235))
+        y += line_h
 
 
 def build_sticker(base_square, style, caption, rng, occasion=""):

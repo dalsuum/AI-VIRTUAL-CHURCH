@@ -48,6 +48,8 @@ class StickerController extends Controller
             'count'      => self::COUNT,
             'max_chars'  => self::MAX_CHARS,
             'suggestions' => $this->lyricSuggestions(),
+            // Admin toggle (Ads tab): show the ads box below the sticker block.
+            'ads_enabled' => \App\Models\Setting::get('sticker_ads_enabled', '1') === '1',
         ]);
     }
 

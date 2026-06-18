@@ -454,13 +454,14 @@ export const api = {
   fdPublicConfig: () => request("/fathers-day/config"),
   // Public render: upload photo(s) + chosen effect. Multipart, so raw fetch.
   fdRender: async (files, effect) => {
+    await ensureCsrf();      // CSRF cookie/token for the stateful SPA POST
     const fd = new FormData();
     files.forEach((f) => fd.append("photos[]", f, f.name));
     if (effect) fd.append("effect", effect);
     const res = await fetch(`${BASE_URL}/fathers-day/render`, {
       method: "POST",
       credentials: "include",
-      headers: { Accept: "application/json" },
+      headers: { Accept: "application/json", "X-XSRF-TOKEN": getCsrfToken() },
       body: fd,
     });
     const data = await res.json().catch(() => ({}));

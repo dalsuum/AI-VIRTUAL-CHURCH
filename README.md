@@ -918,6 +918,63 @@ sending it.
 
 ---
 
+## Special Sundays (observance-driven sermon & worship)
+
+During the window around a "special Sunday" (Mother's/Father's/Children's/Youth
+Day, Palm Sunday, Easter, Pentecost, Reformation, Advent, Thanksgiving…) the app
+**pre-biases the sermon and worship music** toward the observance and shows a
+localized highlight card on the intake screen.
+
+**Window math.** Each observance resolves to a Sunday `S`; its active window is
+`[S − 2 days @ 00:00 .. S @ 23:59:59]` — i.e. **Friday 00:00 → Sunday 23:59**. A
+worshipper arriving Fri/Sat/Sun of that week gets the bias + card; Mon–Thu they
+do not. Overlapping windows are broken by `priority` (higher wins).
+
+**Dates are never hardcoded** — they move every year. Each observance carries a
+*rule* that [`App\Models\SpecialSunday`](backend/app/Models/SpecialSunday.php)
+resolves for any year:
+
+| `rule_type`     | `rule`                                 | Example                      |
+|-----------------|----------------------------------------|------------------------------|
+| `nth_weekday`   | `{month, weekday(0=Sun..6=Sat), nth}`  | Mother's Day = 2nd Sun May   |
+| `easter_offset` | `{offset}` days from Western Easter     | Palm = −7, Pentecost = +49   |
+| `fixed`         | `{month, day}` civil/fixed date         | Children's Day = Jun 1       |
+
+Western Easter is computed in-house (Anonymous Gregorian algorithm); any anchor
+that isn't already a Sunday is snapped to the **nearest Sunday** (±3 days).
+
+**How it flows.**
+- The catalog lives in [`config/special_sundays.php`](backend/config/special_sundays.php)
+  (versioned, region-editable) and is upserted into the `special_sundays` table by
+  `SpecialSundaySeeder` (my/td text NFC-normalized to Myanmar Unicode).
+- [`SpecialSundayResolver`](backend/app/Services/SpecialSundayResolver.php) returns
+  the active observance for a moment. It's consulted **live at dispatch time** in
+  [`DispatchServiceJob`](backend/app/Jobs/DispatchServiceJob.php), which adds a
+  `special_sunday` block (`sermon_tags`, `music_moods`, localized `title`/`brief`)
+  to the Redis payload. The `special-sunday:evaluate` command (daily) just warms
+  the cache and logs the active observance.
+- Worker-side, the bias filters selection without overriding the worshipper's own
+  mood/prayer: `sermon_tags` steer `generate_sermon(theme=…)` and the YouTube
+  sermon query; `music_moods` fold into the hymn/worship search query. Scripture
+  still bypasses the LLM, and my/td prose still passes the Zawgyi/Unicode guard.
+- The SPA fetches `GET /api/special-sunday/current?language=en|my|td` and renders
+  the highlight card in [IntakeForm.vue](frontend/src/components/IntakeForm.vue),
+  in Myanmar Unicode fonts (Pyidaungsu/Padauk/Noto Sans Myanmar) for my/td.
+
+**Adding a special Sunday.** Append an entry to
+[`config/special_sundays.php`](backend/config/special_sundays.php) with a unique
+`key`, a `rule_type` + `rule`, `titles`/`briefs` for `en`/`my`/`td` (Myanmar
+Unicode only), `sermon_tags`, `music_moods`, optional `region`, and `priority`,
+then re-seed:
+
+```bash
+php artisan db:seed --class="Database\Seeders\SpecialSundaySeeder" --force
+```
+
+No migration is needed — the seeder upserts by `key`.
+
+---
+
 ## Running locally
 
 You need **four** long-running processes plus Redis and MySQL. None auto-restart and

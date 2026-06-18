@@ -7,6 +7,7 @@ use App\Http\Controllers\ConfigController;
 use App\Http\Controllers\OfferingController;
 use App\Http\Controllers\ServiceController;
 use App\Http\Controllers\SongController;
+use App\Http\Controllers\SpecialSundayController;
 use App\Http\Controllers\TestimonyController;
 use App\Http\Controllers\UpdateController;
 use App\Http\Controllers\VoiceboxController;
@@ -20,6 +21,11 @@ Route::get('/config', [ConfigController::class, 'show']);
 
 // Public worship song library — feeds the front song panel (my/td).
 Route::get('/songs', [SongController::class, 'index']);
+
+// Public special-Sunday highlight — the active observance (if any) for the
+// intake/home card, localized to ?language=en|my|td.
+Route::get('/special-sunday/current', [SpecialSundayController::class, 'current'])
+    ->middleware('throttle:60,1');
 
 // Public auth — rate-limited per IP to slow credential stuffing and account spam.
 Route::middleware('throttle:auth')->group(function () {
@@ -166,10 +172,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/ads/{ad}/slides/{slide}/image',     [AdController::class, 'uploadSlideImage']);
         Route::post('/ads/{ad}/reorder',                  [AdController::class, 'reorderSlides']);
 
-        // System actions (destructive — git pull, package installs, service restarts)
-        // Route::post('/updates/check',           [UpdateController::class, 'check']);
+        // System actions — read-only refresh is enabled; git pull / package install stay disabled (destructive).
+        Route::post('/updates/check',           [UpdateController::class, 'check']);
         // Route::post('/updates/git-pull',        [UpdateController::class, 'gitPull']);
         // Route::post('/updates/install',         [UpdateController::class, 'install']);
-        // Route::post('/updates/restart-service', [UpdateController::class, 'restartService']);
+        Route::post('/updates/restart-service', [UpdateController::class, 'restartService']);
     });
 });

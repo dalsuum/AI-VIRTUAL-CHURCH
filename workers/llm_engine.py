@@ -1380,8 +1380,12 @@ def generate_opening_prayer(*, user_name: str | None, mood: str, prayer_text: st
         return _ensure_exact_name(_fallback_opening_prayer(user_name, mood, language), user_name)
 
 
-def generate_sermon(*, user_name: str | None, mood: str, scripture_ref: str, target_minutes: int = 8, language: str = "en", prayer_text: str | None = None, user_history: dict | None = None) -> str:
-    """Preaching segment, built around the user's mood and the chosen passage."""
+def generate_sermon(*, user_name: str | None, mood: str, scripture_ref: str, target_minutes: int = 8, language: str = "en", prayer_text: str | None = None, user_history: dict | None = None, theme: str | None = None) -> str:
+    """Preaching segment, built around the user's mood and the chosen passage.
+
+    `theme` carries an optional special-Sunday observance (e.g. "Easter Sunday:
+    resurrection, victory, empty tomb"). When present it steers the message
+    toward that occasion without overriding the worshipper's own mood/prayer."""
     lang_inst = _language_instruction(language) if language != "en" else ""
     system = (
         (f"{lang_inst} " if lang_inst else "") +
@@ -1406,6 +1410,11 @@ def generate_sermon(*, user_name: str | None, mood: str, scripture_ref: str, tar
     )
     if anchor := _keyword_anchor(prayer_text):
         user = f"{user}\n{anchor}"
+    if theme and (theme := theme.strip()):
+        user = (
+            f"{user}\nToday is a special observance: {theme}. Ground the message in "
+            "this occasion while still speaking to the listener's theme above."
+        )
     # Local Myanmar/Tedim Ollama models on small CPU boxes are much slower than the
     # hosted English chat model. Keep those messages shorter so the text pages land
     # reliably and narration is not asked to synthesize an eight-minute segment.

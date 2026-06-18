@@ -72,6 +72,36 @@ SERVER_NARRATION_MODES = {"openai", "kokoro", "edge_tts", "mms_tts", "voicebox"}
 NARRATED_SEGMENTS = {"opening_prayer", "scripture", "sermon", "benediction"}
 
 
+def _special_sunday_theme(job: dict) -> str | None:
+    """Build a sermon-theme string from the special-Sunday bias on the job, e.g.
+    "Easter Sunday: resurrection, victory, empty tomb". Always English (it steers
+    the LLM, never reaches the worshipper) and uses the language-neutral key/tags.
+    Returns None outside any observance window."""
+    special = job.get("special_sunday")
+    if not isinstance(special, dict):
+        return None
+    # The English title is the clearest LLM anchor; fall back to the key.
+    title = (special.get("title") or special.get("key") or "").strip()
+    tags = [t for t in (special.get("sermon_tags") or []) if isinstance(t, str) and t.strip()]
+    if not title and not tags:
+        return None
+    return f"{title}: {', '.join(tags)}" if tags else title
+
+
+def _special_sunday_music_query(job: dict, base_query: str) -> str:
+    """Fold the observance's `music_moods` into the hymn/worship search query so
+    the mood→hymn matcher leans toward themed worship. Leaves the base query
+    intact when no special Sunday is active."""
+    special = job.get("special_sunday")
+    if not isinstance(special, dict):
+        return base_query
+    moods = [m for m in (special.get("music_moods") or []) if isinstance(m, str) and m.strip()]
+    if not moods:
+        return base_query
+    extra = " ".join(moods)
+    return f"{base_query} {extra}".strip() if base_query else extra
+
+
 def _wants_server_narration(job: dict) -> bool:
     mode = job.get("narration_mode")
     return bool(
@@ -259,7 +289,11 @@ def generate_text_segments(job: dict, plan: dict) -> None:
     if youtube_mode:
         try:
             past_video_ids = (user_history or {}).get("past_video_ids", [])
-            video = find_sermon_video(mood=mood, query=plan.get("preaching_query", ""),
+            # A special Sunday biases the YouTube sermon search toward the
+            # observance (its moods/title) on top of the worshipper's keywords.
+            preaching_query = _special_sunday_music_query(
+                job, plan.get("preaching_query", ""))
+            video = find_sermon_video(mood=mood, query=preaching_query,
                                       language=language,
                                       excluded_ids=past_video_ids)
             _post_asset(token, "sermon", asset_type="youtube",
@@ -313,7 +347,7 @@ def generate_text_segments(job: dict, plan: dict) -> None:
         sermon_text = llm_engine.generate_sermon(
             user_name=name, mood=mood, scripture_ref=ref, language=language,
             target_minutes=sermon_minutes, prayer_text=prayer_text,
-            user_history=user_history)
+            user_history=user_history, theme=_special_sunday_theme(job))
         _process_spoken_segment("sermon", sermon_text)
 
     ben_text = llm_engine.generate_benediction(
@@ -439,7 +473,9 @@ def generate_music(job: dict, plan: dict) -> None:
                 result = strategy.fetch(
                     mood=job["mood"],
                     prompt=music_prompt,
-                    query=plan.get("music_query", ""),
+                    # A special Sunday folds its music_moods into the hymn query so
+                    # worship leans toward the observance (e.g. Easter → joyful).
+                    query=_special_sunday_music_query(job, plan.get("music_query", "")),
                 )
                 break
             except Exception as exc:  # noqa: BLE001 — degrade gracefully
@@ -463,7 +499,7 @@ def generate_music(job: dict, plan: dict) -> None:
                     result = fb_strategy.fetch(
                         mood=job["mood"],
                         prompt="",
-                        query=plan.get("music_query", ""),
+                        query=_special_sunday_music_query(job, plan.get("music_query", "")),
                     )
                     used_local_fallback = True
                     print(

@@ -182,6 +182,11 @@ export const api = {
     return request(`/config${qs ? `?${qs}` : ""}`);
   },
 
+  // Active special Sunday (if any) for the highlight card, localized to the
+  // service language. Returns { active: false } outside any observance window.
+  getCurrentSpecialSunday: (language = "en") =>
+    request(`/special-sunday/current?language=${encodeURIComponent(language)}`),
+
   // Worship song library (public read for the front song panel).
   getSongs: (params = {}) => {
     const qs = new URLSearchParams();

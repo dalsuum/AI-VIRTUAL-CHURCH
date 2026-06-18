@@ -21,6 +21,20 @@ const language = ref(LANGS.includes(stored) ? stored : "en");
 function setLanguage(l) {
   language.value = l;
   localStorage.setItem("service_language", l);
+  loadSpecialSunday(); // re-fetch the highlight in the newly selected language
+}
+
+// ---- Special-Sunday highlight ---------------------------------------------
+// The active observance (localized title + short brief), or null outside any
+// window. Best-effort: a failure simply hides the card.
+const specialSunday = ref(null);
+async function loadSpecialSunday() {
+  try {
+    const res = await api.getCurrentSpecialSunday(language.value);
+    specialSunday.value = res && res.active ? res.observance : null;
+  } catch {
+    specialSunday.value = null;
+  }
 }
 
 // UI strings per language. Myanmar text is Myanmar Unicode (rendered with
@@ -210,6 +224,7 @@ onMounted(async () => {
   } catch {
     // Keep the defaults above — the worshipper can still begin a service.
   }
+  loadSpecialSunday();
 });
 
 // Identity is optional: a worshipper may give their name and/or email, or stay
@@ -349,6 +364,21 @@ async function begin() {
       <button v-if="enabledLangs.includes('td')" type="button" role="tab" class="lang-tab"
               :aria-selected="language === 'td'" :class="{ active: language === 'td' }"
               @click="setLanguage('td')">Zolai</button>
+    </div>
+
+    <!-- Special-Sunday highlight: only shown during the observance's active
+         window (Fri–Sun). Title + short brief localized to the service language;
+         Myanmar Unicode font for my/td (see .lang-my below + lang-my-text). -->
+    <div
+      v-if="specialSunday"
+      class="special-sunday"
+      :class="{ 'lang-my-text': language !== 'en' }"
+    >
+      <span class="special-sunday-badge">✦</span>
+      <div class="special-sunday-body">
+        <h2 class="special-sunday-title">{{ specialSunday.title }}</h2>
+        <p class="special-sunday-brief">{{ specialSunday.brief }}</p>
+      </div>
     </div>
 
     <h1>{{ returningName ? t.welcomeBack(returningName) : t.welcome }}</h1>
@@ -510,6 +540,25 @@ async function begin() {
 .lang-tab + .lang-tab { border-left: 1px solid var(--border); }
 .lang-tab.active { background: var(--primary); color: var(--on-primary); font-weight: 600; }
 .lang-tab-my { font-family: "Padauk", "Noto Sans Myanmar", "Myanmar Text", sans-serif; }
+
+/* Special-Sunday highlight card */
+.special-sunday {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  margin: 0 0 1.25rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--primary);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--primary) 8%, var(--surface));
+}
+.special-sunday-badge { color: var(--primary); font-size: 1.1rem; line-height: 1.4; }
+.special-sunday-title { margin: 0 0 0.2rem; font-size: 1.1rem; color: var(--primary); }
+.special-sunday-brief { margin: 0; color: var(--text-muted); line-height: 1.55; font-size: 0.92rem; }
+/* Myanmar Unicode for my/td brief + title, regardless of the .intake lang class. */
+.special-sunday.lang-my-text { font-family: "Pyidaungsu", "Padauk", "Noto Sans Myanmar", "Myanmar Text", sans-serif; }
+.special-sunday.lang-my-text .special-sunday-brief { line-height: 1.9; }
+
 h1 { font-size: 1.55rem; margin: 0 0 0.35rem; letter-spacing: -0.02em; }
 .sub { color: var(--text-muted); margin: 0 0 1.5rem; line-height: 1.55; }
 .field-label { display: block; font-size: 0.85rem; color: var(--text-muted); margin: 1rem 0 0.5rem; }

@@ -12,6 +12,12 @@ Artisan::command('inspire', function () {
 // running: `php artisan schedule:work` in dev, or a once-a-minute cron in prod.
 Schedule::command('services:dispatch-due')->everyMinute();
 
+// Evaluate the special-Sunday window once a day (early, before traffic) so the
+// current-observance cache is warm and the active observance is logged. The
+// resolver is also consulted live at dispatch/request time, so this is a warmer,
+// not the critical path. See App\Services\SpecialSundayResolver for window math.
+Schedule::command('special-sunday:evaluate')->dailyAt('00:05');
+
 // Train custom Voice Studio MMS/VITS voices only in the low-load overnight window.
 // The command itself re-checks the configured time window and load average before
 // it starts any heavy work, so this scheduler line is a coarse first gate.

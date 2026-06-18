@@ -69,10 +69,32 @@ class DispatchServiceJob implements ShouldQueue
             // repeating the same scripture passages, prayer themes, or sermon angles
             // for someone who has attended before.
             'user_history' => $this->buildUserHistory($session),
+            // When the service falls inside a special-Sunday window (Mother's Day,
+            // Easter, Pentecost…), bias sermon + worship toward the observance. The
+            // worker filters the sermon theme by `sermon_tags` and the hymn/worship
+            // mood by `music_moods`. null outside any window — normal selection.
+            'special_sunday' => $this->resolveSpecialSunday($language),
         ]);
 
         // The Python orchestrator (tasks.orchestrate) BLPOPs this list.
         Redis::rpush('ai:intake', $payload);
+    }
+
+    /**
+     * Resolve the active special Sunday (if any) for this service's language at
+     * dispatch time. Returns the worker-facing bias payload, or null when no
+     * observance window is open. Resolution is cheap and never blocks dispatch.
+     */
+    private function resolveSpecialSunday(string $language): ?array
+    {
+        try {
+            return app(\App\Services\SpecialSundayResolver::class)->currentPayload($language);
+        } catch (\Throwable $e) {
+            // A catalog/DB hiccup must never stop a service from going out.
+            report($e);
+
+            return null;
+        }
     }
 
     /**

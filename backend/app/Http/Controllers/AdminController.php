@@ -481,6 +481,230 @@ class AdminController extends Controller
         return response()->json(['ok' => true]);
     }
 
+    // ── Special Sundays (observance-driven sermon/worship bias) ──────────────
+
+    /**
+     * Monitor + manage payload for the Special Sundays console tab:
+     *   - current:     the observance active right now (if any)
+     *   - observances: every catalog row + its next 3 resolved dates (controls)
+     *   - calendar:    every observance resolved for this year + next, date-sorted
+     *   - audit:       recent services that were generated inside a window, with
+     *                  the observance that biased them (resolved retroactively, so
+     *                  no extra columns are needed on service_sessions)
+     */
+    public function specialSundays(\App\Services\SpecialSundayResolver $resolver): JsonResponse
+    {
+        PermissionService::require(request()->user(), 'special_sundays.view');
+
+        $now  = \Carbon\CarbonImmutable::now();
+        $rows = \App\Models\SpecialSunday::orderByDesc('priority')->orderBy('key')->get();
+
+        $observances = $rows->map(function (\App\Models\SpecialSunday $s) {
+            return [
+                'id'          => $s->id,
+                'key'         => $s->key,
+                'rule_type'   => $s->rule_type,
+                'rule'        => $s->rule,
+                'titles'      => $s->titles,
+                'briefs'      => $s->briefs,
+                'sermon_tags' => $s->sermon_tags,
+                'music_moods' => $s->music_moods,
+                'region'      => $s->region,
+                'priority'    => $s->priority,
+                'active'      => $s->active,
+                'next_dates'  => array_map(fn ($d) => $d->toDateString(), $s->nextOccurrences(3)),
+            ];
+        })->values();
+
+        // Year calendar: this year + next, only active rows, sorted by date.
+        $calendar = [];
+        foreach ($rows->where('active', true) as $s) {
+            foreach ([$now->year, $now->year + 1] as $year) {
+                $occ = $s->occurrenceFor($year);
+                if ($occ === null) {
+                    continue;
+                }
+                $calendar[] = [
+                    'key'      => $s->key,
+                    'title'    => $s->titles['en'] ?? $s->key,
+                    'date'     => $occ->toDateString(),
+                    'priority' => $s->priority,
+                    'is_past'  => $occ->lessThan($now->startOfDay()),
+                ];
+            }
+        }
+        usort($calendar, fn ($a, $b) => strcmp($a['date'], $b['date']));
+
+        $active = $resolver->activeFor($now);
+
+        return response()->json([
+            'current'     => $active === null ? null : [
+                'key'   => $active['special']->key,
+                'title' => $active['special']->titles['en'] ?? $active['special']->key,
+                'date'  => $active['sunday']->toDateString(),
+            ],
+            'observances' => $observances,
+            'calendar'    => $calendar,
+            'audit'       => $this->specialSundayAudit($resolver),
+            'rule_types'  => ['nth_weekday', 'easter_offset', 'fixed'],
+        ]);
+    }
+
+    /**
+     * Recent services whose creation time fell inside an observance window, with
+     * the observance that biased them. Resolved retroactively from created_at so
+     * we never had to persist the bias on the row.
+     */
+    private function specialSundayAudit(\App\Services\SpecialSundayResolver $resolver, int $limit = 40): array
+    {
+        $sessions = ServiceSession::with('intake:session_id,mood')
+            ->where('created_at', '>=', now()->subDays(120))
+            ->orderByDesc('id')
+            ->limit(300)
+            ->get(['id', 'language', 'status', 'created_at']);
+
+        $audit = [];
+        foreach ($sessions as $session) {
+            $active = $resolver->activeFor(\Carbon\CarbonImmutable::instance($session->created_at));
+            if ($active === null) {
+                continue;
+            }
+            $audit[] = [
+                'session_id' => $session->id,
+                'created_at' => $session->created_at->toDateTimeString(),
+                'language'   => $session->language,
+                'status'     => $session->status,
+                'mood'       => $session->intake?->mood,
+                'observance' => $active['special']->key,
+                'title'      => $active['special']->titles['en'] ?? $active['special']->key,
+            ];
+            if (count($audit) >= $limit) {
+                break;
+            }
+        }
+
+        return $audit;
+    }
+
+    public function createSpecialSunday(Request $request): JsonResponse
+    {
+        PermissionService::require($request->user(), 'special_sundays.manage');
+
+        $data = $this->validateSpecialSunday($request, null);
+        $special = \App\Models\SpecialSunday::create($data);
+
+        return response()->json(['ok' => true, 'observance' => $special], 201);
+    }
+
+    public function updateSpecialSunday(Request $request, \App\Models\SpecialSunday $specialSunday): JsonResponse
+    {
+        PermissionService::require($request->user(), 'special_sundays.manage');
+
+        $data = $this->validateSpecialSunday($request, $specialSunday, partial: true);
+        $specialSunday->update($data);
+
+        return response()->json(['ok' => true, 'observance' => $specialSunday->fresh()]);
+    }
+
+    public function deleteSpecialSunday(Request $request, \App\Models\SpecialSunday $specialSunday): JsonResponse
+    {
+        PermissionService::require($request->user(), 'special_sundays.manage');
+
+        $specialSunday->delete();
+
+        return response()->json(['ok' => true]);
+    }
+
+    /**
+     * Validate a special-Sunday create/update. The `rule` shape is checked
+     * against `rule_type`, and my/td title+brief text is NFC-normalized to
+     * canonical Myanmar Unicode (the invariant the rest of the stack assumes).
+     */
+    private function validateSpecialSunday(Request $request, ?\App\Models\SpecialSunday $existing, bool $partial = false): array
+    {
+        $req = $partial ? 'sometimes' : 'required';
+
+        $rules = [
+            'key'            => [$req, 'string', 'max:80', 'regex:/^[a-z0-9_]+$/',
+                                 'unique:special_sundays,key' . ($existing ? ',' . $existing->id : '')],
+            'rule_type'      => [$req, 'string', 'in:nth_weekday,easter_offset,fixed'],
+            'rule'           => [$req, 'array'],
+            'titles'         => [$req, 'array'],
+            'titles.en'      => [$req, 'string', 'max:120'],
+            'titles.my'      => ['nullable', 'string', 'max:120'],
+            'titles.td'      => ['nullable', 'string', 'max:120'],
+            'briefs'         => [$req, 'array'],
+            'briefs.en'      => [$req, 'string', 'max:500'],
+            'briefs.my'      => ['nullable', 'string', 'max:500'],
+            'briefs.td'      => ['nullable', 'string', 'max:500'],
+            'sermon_tags'    => ['sometimes', 'array', 'max:20'],
+            'sermon_tags.*'  => ['string', 'max:60'],
+            'music_moods'    => ['sometimes', 'array', 'max:20'],
+            'music_moods.*'  => ['string', 'max:60'],
+            'region'         => ['nullable', 'string', 'max:60'],
+            'priority'       => ['sometimes', 'integer', 'min:0', 'max:1000'],
+            'active'         => ['sometimes', 'boolean'],
+        ];
+
+        $data = $request->validate($rules);
+
+        // Cross-validate the rule body against the selected rule_type.
+        $ruleType = $data['rule_type'] ?? $existing?->rule_type;
+        if (array_key_exists('rule', $data)) {
+            $this->assertRuleShape($ruleType, $data['rule']);
+        }
+
+        foreach (['titles', 'briefs'] as $field) {
+            if (isset($data[$field]) && is_array($data[$field])) {
+                $data[$field] = $this->normalizeLangMap($data[$field]);
+            }
+        }
+
+        return $data;
+    }
+
+    /** Abort 422 if $rule does not carry the keys the $ruleType needs. */
+    private function assertRuleShape(?string $ruleType, array $rule): void
+    {
+        $fail = fn (string $msg) => abort(422, $msg);
+
+        switch ($ruleType) {
+            case 'nth_weekday':
+                $m = (int) ($rule['month'] ?? 0);
+                $w = (int) ($rule['weekday'] ?? -1);
+                $n = (int) ($rule['nth'] ?? 0);
+                if ($m < 1 || $m > 12)  $fail('nth_weekday rule needs month 1–12.');
+                if ($w < 0 || $w > 6)   $fail('nth_weekday rule needs weekday 0 (Sun)–6 (Sat).');
+                if ($n === 0 || $n < -5 || $n > 5) $fail('nth_weekday rule needs nth in -5..5 (negative counts from the end).');
+                break;
+            case 'easter_offset':
+                if (! array_key_exists('offset', $rule) || ! is_numeric($rule['offset'])) {
+                    $fail('easter_offset rule needs a numeric offset (days from Easter Sunday).');
+                }
+                break;
+            case 'fixed':
+                $m = (int) ($rule['month'] ?? 0);
+                $d = (int) ($rule['day'] ?? 0);
+                if ($m < 1 || $m > 12) $fail('fixed rule needs month 1–12.');
+                if ($d < 1 || $d > 31) $fail('fixed rule needs day 1–31.');
+                break;
+            default:
+                $fail('Unknown rule_type.');
+        }
+    }
+
+    /** NFC-normalize each {en,my,td} string so Myanmar text is canonical Unicode. */
+    private function normalizeLangMap(array $map): array
+    {
+        foreach ($map as $lang => $text) {
+            if (is_string($text) && class_exists(\Normalizer::class)) {
+                $map[$lang] = \Normalizer::normalize($text, \Normalizer::FORM_C) ?: $text;
+            }
+        }
+
+        return $map;
+    }
+
     /**
      * Stream a report as CSV for download. Supported reports: donations, users,
      * testimonies. Generated on the fly so exports always reflect live data.

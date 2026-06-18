@@ -54,6 +54,29 @@ class SpecialSunday extends Model
     }
 
     /**
+     * The next $count occurrences on/after $from (default today), as immutable
+     * Sundays. Walks forward year by year so it works across the year boundary.
+     *
+     * @return CarbonImmutable[]
+     */
+    public function nextOccurrences(int $count = 3, ?CarbonImmutable $from = null): array
+    {
+        $from  = ($from ?? CarbonImmutable::now())->startOfDay();
+        $dates = [];
+        $year  = $from->year;
+
+        // At most a handful of years to gather $count dates (one per year per rule).
+        for ($i = 0; $i < $count + 2 && count($dates) < $count; $i++) {
+            $occ = $this->occurrenceFor($year + $i);
+            if ($occ !== null && $occ->greaterThanOrEqualTo($from)) {
+                $dates[] = $occ;
+            }
+        }
+
+        return $dates;
+    }
+
+    /**
      * Convenience payload for the API / frontend, localized to a service language.
      * Falls back to English text when a translation is missing.
      */

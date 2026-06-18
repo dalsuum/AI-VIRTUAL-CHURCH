@@ -961,7 +961,18 @@ that isn't already a Sunday is snapped to the **nearest Sunday** (±3 days).
   the highlight card in [IntakeForm.vue](frontend/src/components/IntakeForm.vue),
   in Myanmar Unicode fonts (Pyidaungsu/Padauk/Noto Sans Myanmar) for my/td.
 
-**Adding a special Sunday.** Append an entry to
+**Admin console — monitor & control.** The staff console has a **Special Sundays**
+tab (permissions `special_sundays.view` / `special_sundays.manage`) backed by
+`GET /api/admin/special-sundays` and write routes under `/api/admin/special-sundays`:
+- *Monitor* — the observance active right now, an upcoming calendar (this year +
+  next), and a **bias audit** (recent services generated inside a window, with the
+  observance that biased them, resolved retroactively from `created_at`).
+- *Control* — enable/disable each observance, edit priority, title/brief (en/my/td,
+  NFC-normalized to Myanmar Unicode), and the date rule, or **add a new observance**
+  manually. Everything is auto-seeded by default; edits/additions live in the DB row.
+
+**Adding a special Sunday (config).** For a permanent, version-controlled entry,
+append it to
 [`config/special_sundays.php`](backend/config/special_sundays.php) with a unique
 `key`, a `rule_type` + `rule`, `titles`/`briefs` for `en`/`my`/`td` (Myanmar
 Unicode only), `sermon_tags`, `music_moods`, optional `region`, and `priority`,

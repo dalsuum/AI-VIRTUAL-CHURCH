@@ -38,6 +38,8 @@ class PermissionService
         'ads.view',
         'ads.manage',
         'ads.analytics',
+        'special_sundays.view',
+        'special_sundays.manage',
     ];
 
     /** Only these roles appear in the permissions matrix. Admin is always full access. */
@@ -56,6 +58,7 @@ class PermissionService
             'voice_studio.view',
             'ads.view',
             'ads.analytics',
+            'special_sundays.view',
         ],
         'presenter' => [
             'dashboard.view',

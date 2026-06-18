@@ -125,6 +125,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/ads/{ad}',      [AdController::class, 'show']);
         Route::get('/ads-analytics', [AdController::class, 'analytics']);
 
+        // Special Sundays — monitor + catalog read (special_sundays.view).
+        Route::get('/special-sundays', [AdminController::class, 'specialSundays']);
+
         Route::get('/voice-training/status', [VoiceTrainingController::class, 'status']);
         Route::post('/voice-training/start', [VoiceTrainingController::class, 'start']);
         Route::get('/updates/status',        [UpdateController::class, 'status']);
@@ -161,6 +164,12 @@ Route::middleware('auth:sanctum')->group(function () {
 
         // Permissions write
         Route::patch('/permissions', [AdminController::class, 'updatePermissions']);
+
+        // Special Sundays — manual add / edit / enable-disable / delete
+        // (special_sundays.manage). Auto-seeded rows are editable here.
+        Route::post('/special-sundays',                    [AdminController::class, 'createSpecialSunday']);
+        Route::patch('/special-sundays/{specialSunday}',   [AdminController::class, 'updateSpecialSunday']);
+        Route::delete('/special-sundays/{specialSunday}',  [AdminController::class, 'deleteSpecialSunday']);
 
         // Ads — admin writes (create, update, delete, slide management, image upload).
         Route::post('/ads',                               [AdController::class, 'store']);

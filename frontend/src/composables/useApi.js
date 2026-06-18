@@ -281,6 +281,14 @@ export const api = {
     request(`/admin/music-tracks/${id}`, { method: "PATCH", body: payload }),
   adminDeleteMusicTrack: (id) =>
     request(`/admin/music-tracks/${id}`, { method: "DELETE" }),
+  // Special Sundays — monitor + catalog management (special_sundays.view/manage).
+  adminSpecialSundays: () => request("/admin/special-sundays"),
+  adminCreateSpecialSunday: (payload) =>
+    request("/admin/special-sundays", { method: "POST", body: payload }),
+  adminUpdateSpecialSunday: (id, payload) =>
+    request(`/admin/special-sundays/${id}`, { method: "PATCH", body: payload }),
+  adminDeleteSpecialSunday: (id) =>
+    request(`/admin/special-sundays/${id}`, { method: "DELETE" }),
   // Song library CRUD (admin Lyrics tab; requires lyrics.manage).
   adminGetSong: (id) => request(`/admin/songs/${id}`),
   adminCreateSong: (payload) =>

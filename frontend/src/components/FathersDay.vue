@@ -465,19 +465,23 @@ function reset() {
 
       <div v-else-if="phase === 'done'" class="fd-done">
         <p class="fd-done-msg">🎉 Your video is ready!</p>
-        <div class="fd-share">
-          <button class="fd-btn primary" :disabled="sharing" @click="shareVideo">📤 Share</button>
-          <button class="fd-btn ghost" @click="saveVideo">⬇ Save</button>
-        </div>
-        <p class="fd-muted small">Share to WhatsApp, Facebook, Messenger, Viber, X and more.</p>
-        <div class="fd-social">
-          <button class="fd-soc" title="Facebook" @click="socialShare('facebook')">f</button>
-          <button class="fd-soc" title="X" @click="socialShare('x')">𝕏</button>
-          <button class="fd-soc" title="WhatsApp" @click="socialShare('whatsapp')">✆</button>
-          <button class="fd-soc" title="Telegram" @click="socialShare('telegram')">✈</button>
-          <button class="fd-soc" title="Viber" @click="socialShare('viber')">V</button>
-          <button class="fd-soc wide" @click="copyLink">🔗 Copy link</button>
-        </div>
+        <button class="fd-btn primary big" :disabled="sharing" @click="shareVideo">📤 Share video</button>
+        <p class="fd-muted small">Posts the actual video to WhatsApp, Facebook, Instagram, TikTok… — like uploading it yourself (plays right in the feed).</p>
+        <button class="fd-btn ghost" @click="saveVideo">⬇ Save to device</button>
+
+        <details class="fd-linkshare">
+          <summary>Or share a link</summary>
+          <p class="fd-muted small">A link shows a preview card that opens the video on tap (not a native upload).</p>
+          <div class="fd-social">
+            <button class="fd-soc" title="Facebook" @click="socialShare('facebook')">f</button>
+            <button class="fd-soc" title="X" @click="socialShare('x')">𝕏</button>
+            <button class="fd-soc" title="WhatsApp" @click="socialShare('whatsapp')">✆</button>
+            <button class="fd-soc" title="Telegram" @click="socialShare('telegram')">✈</button>
+            <button class="fd-soc" title="Viber" @click="socialShare('viber')">V</button>
+            <button class="fd-soc wide" @click="copyLink">🔗 Copy link</button>
+          </div>
+        </details>
+
         <p v-if="shareNote" class="fd-muted small">{{ shareNote }}</p>
         <button class="fd-btn ghost" @click="reset">Make another</button>
       </div>
@@ -583,9 +587,10 @@ function reset() {
 .fd-progress-pct { font-size: 1.4rem; font-weight: 700; margin: 0.75rem 0 0.15rem; }
 .fd-progress-stage { color: var(--text-muted); font-size: 0.85rem; margin: 0; }
 
-.fd-share { display: flex; gap: 0.5rem; width: 100%; }
-.fd-share .fd-btn { flex: 1; }
-.fd-social { display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: center; }
+.fd-linkshare { width: 100%; text-align: center; margin-top: 0.25rem; }
+.fd-linkshare summary { cursor: pointer; color: var(--text-muted); font-size: 0.85rem; }
+.fd-linkshare summary:hover { color: var(--primary); }
+.fd-social { display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: center; margin-top: 0.5rem; }
 .fd-soc {
   width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--border);
   background: transparent; color: var(--text); cursor: pointer; font-size: 1rem;

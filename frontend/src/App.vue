@@ -19,7 +19,14 @@ const isLyricsRoute = ref(window.location.hash === "#lyrics");
 // Father's Day (Special Day) MV — standalone, removable page.
 const isFathersDayRoute = ref(window.location.hash === "#fathers-day");
 const fathersDayEnabled = ref(false);
-api.fdPublicConfig().then((c) => { fathersDayEnabled.value = !!c?.enabled; }).catch(() => {});
+// Banner/nav text is admin-driven so any special day can re-theme it from the console.
+const fdTitle    = ref("Happy Father's Day");
+const fdSubtitle = ref("Make a music video for your father");
+api.fdPublicConfig().then((c) => {
+  fathersDayEnabled.value = !!c?.enabled;
+  if (c?.title) fdTitle.value = c.title;
+  if (c?.subtitle) fdSubtitle.value = c.subtitle;
+}).catch(() => {});
 // Live Sticker maker — standalone, removable page at #stickers.
 const isStickerRoute = ref(window.location.hash === "#stickers");
 const stickersEnabled = ref(false);
@@ -274,7 +281,7 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
         <nav class="topbar-nav">
           <a href="#lyrics" class="nav-link" :class="{ active: isLyricsRoute }">🎵 သီချင်း</a>
           <a href="#vocabulary" class="nav-link" :class="{ active: isVocabRoute }">📖 Zolai</a>
-          <a v-if="fathersDayEnabled" href="#fathers-day" class="nav-link" :class="{ active: isFathersDayRoute }">💙 Father's Day</a>
+          <a v-if="fathersDayEnabled" href="#fathers-day" class="nav-link" :class="{ active: isFathersDayRoute }">💙 {{ fdTitle }}</a>
           <a v-if="stickersEnabled" href="#stickers" class="nav-link" :class="{ active: isStickerRoute }">🎨 Stickers</a>
         </nav>
         <ThemeToggle />
@@ -289,8 +296,8 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
         <a v-if="view === 'intake' && fathersDayEnabled" href="#fathers-day" class="fd-banner">
           <span class="fd-banner-emoji">💙</span>
           <span class="fd-banner-text">
-            <strong>Happy Father's Day!</strong>
-            Make a music video for your father →
+            <strong>{{ fdTitle }}</strong>
+            {{ fdSubtitle }} →
           </span>
         </a>
 

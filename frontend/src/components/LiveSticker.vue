@@ -182,6 +182,34 @@ function poll() {
 const shareNote = ref("");
 const sharing = ref(false);
 
+// Clean, public share link on the MAIN domain (Open-Graph preview, no api.*).
+const shareUrl = computed(() =>
+  jobId.value ? `${window.location.origin}/s/${jobId.value}` : ""
+);
+
+async function copyLink() {
+  shareNote.value = "";
+  try {
+    await navigator.clipboard.writeText(shareUrl.value);
+    shareNote.value = "Link copied!";
+  } catch {
+    shareNote.value = shareUrl.value;
+  }
+}
+
+function socialShare(target) {
+  const u = encodeURIComponent(shareUrl.value);
+  const t = encodeURIComponent(pageTitle.value);
+  const links = {
+    facebook: `https://www.facebook.com/sharer/sharer.php?u=${u}`,
+    x:        `https://twitter.com/intent/tweet?url=${u}&text=${t}`,
+    whatsapp: `https://wa.me/?text=${t}%20${u}`,
+    telegram: `https://t.me/share/url?url=${u}&text=${t}`,
+    viber:    `viber://forward?text=${t}%20${u}`,
+  };
+  if (links[target]) window.open(links[target], "_blank", "noopener");
+}
+
 async function fetchStickerFile(url, idx) {
   const res = await fetch(url, { credentials: "include" });
   if (!res.ok) throw new Error("fetch failed");
@@ -329,6 +357,17 @@ function reset() {
           </div>
         </div>
         <p class="sk-tiny sk-center">Share to WhatsApp, Instagram, Messenger, Viber, X and more.</p>
+
+        <!-- Clean public link (main domain, Open-Graph preview). -->
+        <div class="sk-social">
+          <button class="sk-chip" title="Facebook"  @click="socialShare('facebook')">f</button>
+          <button class="sk-chip" title="X"         @click="socialShare('x')">𝕏</button>
+          <button class="sk-chip" title="WhatsApp"  @click="socialShare('whatsapp')">✆</button>
+          <button class="sk-chip" title="Telegram"  @click="socialShare('telegram')">✈</button>
+          <button class="sk-chip" title="Viber"     @click="socialShare('viber')">V</button>
+          <button class="sk-chip wide" @click="copyLink">🔗 Copy link</button>
+        </div>
+
         <p v-if="shareNote" class="sk-tiny sk-center">{{ shareNote }}</p>
         <div class="sk-actions">
           <button class="sk-ghost" @click="reset">Make another 🎨</button>
@@ -414,4 +453,9 @@ function reset() {
 .sk-share { display: flex; gap: .5rem; }
 .sk-share .sk-go, .sk-share .sk-ghost { flex: 1; padding: .6rem; font-size: .95rem; }
 .sk-center { text-align: center; }
+.sk-social { display: flex; gap: .5rem; justify-content: center; flex-wrap: wrap; margin-top: .9rem; }
+.sk-chip { width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--border, #444);
+  background: transparent; color: inherit; cursor: pointer; font-size: 1.1rem; font-weight: 700; }
+.sk-chip.wide { width: auto; border-radius: 22px; padding: 0 1rem; font-size: .9rem; }
+.sk-chip:hover { background: rgba(220,38,38,.12); border-color: #dc2626; }
 </style>

@@ -268,6 +268,22 @@ async function fetchVideoFile() {
   return new File([blob], "fathers-day.mp4", { type: blob.type || "video/mp4" });
 }
 
+// Read a video file's duration in the browser.
+function getVideoDuration(file) {
+  return new Promise((resolve) => {
+    const v = document.createElement("video");
+    v.preload = "metadata";
+    v.onloadedmetadata = () => { const d = v.duration || 0; URL.revokeObjectURL(v.src); resolve(d); };
+    v.onerror = () => resolve(0);
+    v.src = URL.createObjectURL(file);
+  });
+}
+
+// Facebook (and others) split an uploaded video longer than ~90s into multiple
+// Reels. So we only NATIVE-share files at/under this; longer videos share as a
+// single link (one post, tap to play) to avoid the multi-reel mess.
+const REEL_MAX_SEC = 90;
+
 function saveBlob(file) {
   const u = URL.createObjectURL(file);
   const a = document.createElement("a");
@@ -276,11 +292,28 @@ function saveBlob(file) {
   setTimeout(() => URL.revokeObjectURL(u), 5000);
 }
 
+async function shareNativeLink() {
+  // Single post: hand the social app a URL (one feed post + tap-to-play card).
+  if (navigator.share) {
+    await navigator.share({ title: shareTitle.value, text: shareTitle.value, url: shareUrl.value });
+  } else {
+    await copyLink();
+    shareNote.value = "Link copied — paste it to post once (it won't be split).";
+  }
+}
+
 async function shareVideo() {
   shareNote.value = ""; sharing.value = true;
   try {
     const file = await fetchVideoFile();
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    const dur = await getVideoDuration(file);
+    const canFile = navigator.canShare && navigator.canShare({ files: [file] });
+
+    // Long video → share as ONE link so Facebook can't split it into many reels.
+    if (dur > REEL_MAX_SEC) {
+      await shareNativeLink();
+    } else if (canFile) {
+      // Short clip → native upload = one clean reel that plays in the feed.
       await navigator.share({ files: [file], title: shareTitle.value, text: shareTitle.value });
     } else {
       saveBlob(file);
@@ -288,8 +321,7 @@ async function shareVideo() {
     }
   } catch (e) {
     if (e?.name !== "AbortError") {
-      shareNote.value = "Couldn't open the share menu — the video was downloaded instead.";
-      try { saveBlob(await fetchVideoFile()); } catch { /* give up */ }
+      shareNote.value = "Couldn't open the share menu. Try Save, or the link option below.";
     }
   } finally {
     sharing.value = false;
@@ -466,7 +498,7 @@ function reset() {
       <div v-else-if="phase === 'done'" class="fd-done">
         <p class="fd-done-msg">🎉 Your video is ready!</p>
         <button class="fd-btn primary big" :disabled="sharing" @click="shareVideo">📤 Share video</button>
-        <p class="fd-muted small">Posts the actual video to WhatsApp, Facebook, Instagram, TikTok… — like uploading it yourself (plays right in the feed).</p>
+        <p class="fd-muted small">Short clips post as one video; longer ones post as a single link — never split into multiple posts.</p>
         <button class="fd-btn ghost" @click="saveVideo">⬇ Save to device</button>
 
         <details class="fd-linkshare">

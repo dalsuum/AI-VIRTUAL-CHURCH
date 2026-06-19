@@ -268,17 +268,6 @@ async function fetchVideoFile() {
   return new File([blob], "fathers-day.mp4", { type: blob.type || "video/mp4" });
 }
 
-// Read a video file's duration in the browser.
-function getVideoDuration(file) {
-  return new Promise((resolve) => {
-    const v = document.createElement("video");
-    v.preload = "metadata";
-    v.onloadedmetadata = () => { const d = v.duration || 0; URL.revokeObjectURL(v.src); resolve(d); };
-    v.onerror = () => resolve(0);
-    v.src = URL.createObjectURL(file);
-  });
-}
-
 // Facebook (and others) split an uploaded video longer than ~90s into multiple
 // Reels. So we only NATIVE-share files at/under this; longer videos share as a
 // single link (one post, tap to play) to avoid the multi-reel mess.
@@ -302,18 +291,21 @@ async function shareNativeLink() {
   }
 }
 
+// Is the rendered video longer than one reel? Decided from the visitor's choice
+// (full song, or a clip over the limit) — no need to download the file to measure.
+const isLongShare = computed(() => songMode.value === "full" || clipLen.value > REEL_MAX_SEC);
+
 async function shareVideo() {
   shareNote.value = ""; sharing.value = true;
   try {
-    const file = await fetchVideoFile();
-    const dur = await getVideoDuration(file);
-    const canFile = navigator.canShare && navigator.canShare({ files: [file] });
-
     // Long video → share as ONE link so Facebook can't split it into many reels.
-    if (dur > REEL_MAX_SEC) {
+    if (isLongShare.value) {
       await shareNativeLink();
-    } else if (canFile) {
-      // Short clip → native upload = one clean reel that plays in the feed.
+      return;
+    }
+    // Short clip → native upload = one clean reel that plays in the feed.
+    const file = await fetchVideoFile();
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
       await navigator.share({ files: [file], title: shareTitle.value, text: shareTitle.value });
     } else {
       saveBlob(file);

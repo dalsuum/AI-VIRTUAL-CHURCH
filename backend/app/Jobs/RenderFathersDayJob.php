@@ -41,6 +41,8 @@ class RenderFathersDayJob implements ShouldQueue
     private const STILL_FPS = 12;
     private const XFADE = 1.0;   // crossfade seconds for the "fade" effect
 
+    private float $clipOffset = 0.0;   // seconds trimmed from the song front (clip mode)
+
     public function __construct(public string $jobId, public string $effect, public ?string $songId = null)
     {
         // Dedicated queue so heavy ffmpeg renders never block worship-service
@@ -70,6 +72,10 @@ class RenderFathersDayJob implements ShouldQueue
 
             @mkdir("{$dir}/work", 0775, true);
             $work = "{$dir}/work";
+
+            // 0) Optional clip (chorus/hook only) — trim the song up front so the
+            //    whole pipeline just works on a shorter track. Far less encoding.
+            $song = $this->applyClip($song, $work);
 
             // 1) Normalise every photo to a vertical frame. -map_metadata -1
             //    strips EXIF/GPS; ffmpeg decoding it validates the bytes.
@@ -315,9 +321,24 @@ class RenderFathersDayJob implements ShouldQueue
             return null;
         }
 
+        // In clip mode the LRC times are absolute to the full song; parse against a
+        // large window then shift into the clip and keep only lines sung in it.
         $cues = ($c['sync_enabled'] ?? false)
-            ? $this->parseLrc($lyrics, $duration)
+            ? $this->parseLrc($lyrics, $this->clipOffset > 0 ? $this->clipOffset + $duration + 3600 : $duration)
             : [];
+
+        if ($cues && $this->clipOffset > 0) {
+            $shifted = [];
+            foreach ($cues as $cue) {
+                $s = $cue['start'] - $this->clipOffset;
+                $e = $cue['end'] - $this->clipOffset;
+                if ($e <= 0 || $s >= $duration) {
+                    continue;   // line sung outside the clip
+                }
+                $shifted[] = ['start' => max(0.0, $s), 'end' => min($duration, $e), 'text' => $cue['text']];
+            }
+            $cues = $shifted;
+        }
 
         if (! $cues) {
             // Even-split fallback (also covers static mode and malformed LRC).
@@ -330,10 +351,11 @@ class RenderFathersDayJob implements ShouldQueue
             if (! $lines) {
                 return null;
             }
-            // Hold the lyrics through the instrumental intro: start the even split
-            // at the detected vocal-onset time and spread the lines across the
-            // remaining (sung) portion of the song.
-            $start = max(0.0, min((float) ($c['vocal_start'] ?? 0.0), max(0.0, $duration - 1.0)));
+            // Full song: hold lyrics through the intro (start at the vocal onset).
+            // Clip mode: vocals fill the clip, so spread evenly from the start.
+            $start = $this->clipOffset > 0
+                ? 0.0
+                : max(0.0, min((float) ($c['vocal_start'] ?? 0.0), max(0.0, $duration - 1.0)));
             $span  = max(1.0, $duration - $start);
             $per   = $span / count($lines);
             foreach ($lines as $i => $text) {
@@ -452,6 +474,38 @@ class RenderFathersDayJob implements ShouldQueue
         }
         $rel = "fathersday/songs/{$s['id']}.{$ext}";
         return Storage::exists($rel) ? Storage::path($rel) : null;
+    }
+
+    /**
+     * If the chosen song has a clip (chorus/hook) enabled, trim the audio to that
+     * range and return the trimmed path; otherwise return the original. Records
+     * the clip start so lyrics can be shifted into the clip window.
+     */
+    private function applyClip(string $song, string $work): string
+    {
+        $s = $this->song();
+        if (empty($s['clip_enabled'])) {
+            return $song;
+        }
+        $start = max(0.0, (float) ($s['clip_start'] ?? 0.0));
+        $end   = (float) ($s['clip_end'] ?? 0.0);
+        $len   = $end - $start;
+        if ($len < 1.0) {            // invalid/empty range → fall back to full song
+            return $song;
+        }
+
+        $ext     = pathinfo($song, PATHINFO_EXTENSION) ?: 'mp3';
+        $trimmed = "{$work}/clip.{$ext}";
+        // Re-encode the short slice so the cut is sample-accurate (mp3 copy-seek
+        // can be off by a frame). Cheap — it's only a few seconds of audio.
+        $this->ffmpeg([
+            '-ss', (string) $start, '-i', $song, '-t', (string) $len,
+            '-c:a', $ext === 'wav' ? 'pcm_s16le' : 'libmp3lame', '-q:a', '4',
+            $trimmed,
+        ]);
+        $this->clipOffset = $start;
+
+        return $trimmed;
     }
 
     /** The chosen song's config entry (by songId; falls back to the first song). */

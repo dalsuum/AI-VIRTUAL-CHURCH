@@ -249,9 +249,33 @@ class FathersDayController extends Controller
                 'sync_enabled'       => (bool) ($s['sync_enabled'] ?? false),
                 'vocal_start'        => (float) ($s['vocal_start'] ?? 0.0),
                 'vocal_start_status' => $s['vocal_start_status'] ?? 'none',
+                'clip_enabled'       => (bool) ($s['clip_enabled'] ?? false),
+                'clip_start'         => (float) ($s['clip_start'] ?? 0.0),
+                'clip_end'           => (float) ($s['clip_end'] ?? 0.0),
             ], $c['songs'])),
             'updated_at'     => $c['updated_at'],
+            'usage'          => $this->usageSummary($c),
         ]);
+    }
+
+    /** Reset the visitor render counters (cumulative + today) back to zero. */
+    public function resetUsage(): JsonResponse
+    {
+        $c = $this->config();
+        $c['usage'] = ['total' => 0, 'today' => 0, 'date' => now()->toDateString()];
+        Storage::put(self::CONFIG, json_encode($c, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+        @chmod(Storage::path(self::CONFIG), 0664);
+
+        return $this->adminShow();
+    }
+
+    /** Normalise the stored usage counter for display (today resets daily). */
+    private function usageSummary(array $c): array
+    {
+        $u = is_array($c['usage'] ?? null) ? $c['usage'] : [];
+        $today = (($u['date'] ?? null) === now()->toDateString()) ? (int) ($u['today'] ?? 0) : 0;
+
+        return ['total' => (int) ($u['total'] ?? 0), 'today' => $today];
     }
 
     public function adminSave(Request $request): JsonResponse
@@ -302,6 +326,9 @@ class FathersDayController extends Controller
             'sync_enabled'       => false,
             'vocal_start'        => 0.0,
             'vocal_start_status' => 'detecting',
+            'clip_enabled'       => false,
+            'clip_start'         => 0.0,
+            'clip_end'           => 0.0,
         ];
         $this->saveConfig($c);
 
@@ -318,6 +345,9 @@ class FathersDayController extends Controller
             'lyrics'       => ['sometimes', 'nullable', 'string', 'max:20000'],
             'sync_enabled' => ['sometimes', 'boolean'],
             'vocal_start'  => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:600'],
+            'clip_enabled' => ['sometimes', 'boolean'],
+            'clip_start'   => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:6000'],
+            'clip_end'     => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:6000'],
         ]);
 
         $c = $this->config();
@@ -339,6 +369,15 @@ class FathersDayController extends Controller
             if (array_key_exists('vocal_start', $validated) && $validated['vocal_start'] !== null) {
                 $s['vocal_start']        = (float) $validated['vocal_start'];
                 $s['vocal_start_status'] = 'ready';
+            }
+            if (array_key_exists('clip_enabled', $validated)) {
+                $s['clip_enabled'] = (bool) $validated['clip_enabled'];
+            }
+            if (array_key_exists('clip_start', $validated) && $validated['clip_start'] !== null) {
+                $s['clip_start'] = (float) $validated['clip_start'];
+            }
+            if (array_key_exists('clip_end', $validated) && $validated['clip_end'] !== null) {
+                $s['clip_end'] = (float) $validated['clip_end'];
             }
             break;
         }

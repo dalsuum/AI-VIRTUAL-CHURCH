@@ -28,6 +28,7 @@ onUnmounted(() => {
   detectPoll && clearInterval(detectPoll);
   window.removeEventListener("keydown", onKey);
   if (syncObjUrl.value) URL.revokeObjectURL(syncObjUrl.value);
+  if (clipObjUrl.value) URL.revokeObjectURL(clipObjUrl.value);
 });
 
 async function load() {
@@ -79,6 +80,20 @@ async function saveSettings() {
   }
 }
 
+async function resetUsage() {
+  if (!confirm("Reset the visitor traffic count for this page to zero?")) return;
+  saving.value = true; msg.value = ""; err.value = "";
+  try {
+    const r = await api.fdResetUsage();
+    cfg.value.usage = r.usage;
+    msg.value = "Traffic count reset.";
+  } catch (e) {
+    err.value = e.message || "Reset failed.";
+  } finally {
+    saving.value = false;
+  }
+}
+
 async function addSong() {
   if (!newSong.value.file) return;
   adding.value = true; msg.value = ""; err.value = "";
@@ -102,6 +117,9 @@ async function saveSong(song) {
       lyrics: song.lyrics || "",
       sync_enabled: !!song.sync_enabled,
       vocal_start: song.vocal_start === "" || song.vocal_start == null ? null : Number(song.vocal_start),
+      clip_enabled: !!song.clip_enabled,
+      clip_start: song.clip_start === "" || song.clip_start == null ? null : Number(song.clip_start),
+      clip_end: song.clip_end === "" || song.clip_end == null ? null : Number(song.clip_end),
     });
     msg.value = "Song saved.";
   } catch (e) {
@@ -195,6 +213,51 @@ function onKey(e) {
   if (!syncSong.value) return;
   if (e.code === "Space") { e.preventDefault(); tap(); }
 }
+
+// ── Clip picker (chorus/hook range) ─────────────────────────────────────────
+const clipSong = ref(null);
+const clipAudio = ref(null);
+const clipObjUrl = ref("");
+const clipStartVal = ref(0);
+const clipEndVal = ref(0);
+
+async function openClip(song) {
+  err.value = ""; msg.value = "";
+  try {
+    const blob = await api.fdSongBlob(song.id);
+    if (clipObjUrl.value) URL.revokeObjectURL(clipObjUrl.value);
+    clipObjUrl.value = URL.createObjectURL(blob);
+    clipSong.value = song;
+    clipStartVal.value = Number(song.clip_start) || 0;
+    clipEndVal.value = Number(song.clip_end) || 0;
+  } catch (e) {
+    err.value = e.message || "Could not load the song.";
+  }
+}
+function setClipStart() { if (clipAudio.value) clipStartVal.value = Math.round(clipAudio.value.currentTime * 10) / 10; }
+function setClipEnd() { if (clipAudio.value) clipEndVal.value = Math.round(clipAudio.value.currentTime * 10) / 10; }
+function previewClip() {
+  const a = clipAudio.value; if (!a) return;
+  a.currentTime = clipStartVal.value; a.play();
+}
+async function saveClip() {
+  if (clipEndVal.value - clipStartVal.value < 1) { err.value = "Clip end must be at least 1s after start."; return; }
+  try {
+    cfg.value = await api.fdUpdateSong(clipSong.value.id, {
+      clip_enabled: true,
+      clip_start: Number(clipStartVal.value),
+      clip_end: Number(clipEndVal.value),
+    });
+    msg.value = "Clip saved.";
+    closeClip();
+  } catch (e) {
+    err.value = e.message || "Save failed.";
+  }
+}
+function closeClip() {
+  if (clipAudio.value) clipAudio.value.pause();
+  clipSong.value = null;
+}
 </script>
 
 <template>
@@ -231,6 +294,11 @@ function onKey(e) {
         <button class="btn primary" :disabled="saving" @click="saveSettings">{{ saving ? "Saving…" : "Save settings" }}</button>
       </div>
 
+      <div v-if="cfg.usage" class="usage">
+        <span>Visitor traffic: <strong>{{ cfg.usage.total }}</strong> total · {{ cfg.usage.today }} today</span>
+        <button class="btn" type="button" :disabled="saving" @click="resetUsage">Reset count</button>
+      </div>
+
       <hr />
 
       <!-- Song library -->
@@ -263,6 +331,19 @@ function onKey(e) {
               <template v-else-if="song.vocal_start_status === 'failed'">⚠ Auto-detect failed — set manually</template>
             </span>
           </div>
+        </div>
+
+        <div class="field">
+          <label class="toggle">
+            <input type="checkbox" v-model="song.clip_enabled" />
+            <span><strong>Use chorus/hook clip only</strong> — shorter video, saves server resources</span>
+          </label>
+          <div v-if="song.clip_enabled" class="inline" style="margin-top:0.4rem">
+            <label class="small">Start (s) <input type="number" min="0" step="0.1" v-model="song.clip_start" style="max-width:90px" /></label>
+            <label class="small">End (s) <input type="number" min="0" step="0.1" v-model="song.clip_end" style="max-width:90px" /></label>
+            <button class="btn" type="button" @click="openClip(song)">🎧 Pick from audio</button>
+          </div>
+          <p v-if="song.clip_enabled" class="hint small">The video uses only this slice (e.g. the chorus). Lyrics shown are the ones sung within it.</p>
         </div>
 
         <div class="sync-row">
@@ -320,6 +401,27 @@ function onKey(e) {
             <button class="btn primary" type="button" @click="saveSync">💾 Save timings</button>
             <button class="btn ghost" type="button" @click="closeSync">Cancel</button>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Clip picker overlay -->
+    <div v-if="clipSong" class="sync-modal" @click.self="closeClip">
+      <div class="sync-box">
+        <h3>Clip “{{ clipSong.title }}”</h3>
+        <p class="hint small">Play to find the chorus/hook, then mark its start and end. The video uses only this slice.</p>
+        <audio ref="clipAudio" :src="clipObjUrl" controls style="width:100%"></audio>
+        <div class="inline" style="margin:0.8rem 0">
+          <button class="btn" type="button" @click="setClipStart">⏮ Set start</button>
+          <span class="t">{{ clipStartVal }}s</span>
+          <button class="btn" type="button" @click="setClipEnd">Set end ⏭</button>
+          <span class="t">{{ clipEndVal }}s</span>
+          <button class="btn" type="button" @click="previewClip">▶ Preview</button>
+        </div>
+        <p class="hint small">Length: {{ Math.max(0, (clipEndVal - clipStartVal)).toFixed(1) }}s</p>
+        <div class="sync-row">
+          <button class="btn primary" type="button" @click="saveClip">💾 Save clip</button>
+          <button class="btn ghost" type="button" @click="closeClip">Cancel</button>
         </div>
       </div>
     </div>

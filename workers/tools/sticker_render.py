@@ -71,13 +71,17 @@ MAX_PIXELS = 60_000_000
 OR_MODEL = "google/gemini-2.5-flash-image"
 OR_URL = "https://openrouter.ai/api/v1/chat/completions"
 
-# Five painterly variations so the 5 stickers differ in feel.
+# Visually DISTINCT art styles, picked at random per render so consecutive
+# users get different-looking stickers (not just watercolor variants).
 STYLES = [
-    "soft watercolor painting, gentle pastel washes",
-    "delicate watercolor illustration, light airy colours",
-    "vibrant watercolor portrait, expressive loose brush strokes",
-    "dreamy watercolor art, soft edges and warm pastel tones",
-    "clean watercolour sketch with subtle colour washes",
+    "soft watercolor painting with gentle pastel washes",
+    "bold cartoon comic style with clean black outlines and flat colours",
+    "Japanese anime style with expressive eyes and cel shading",
+    "vibrant pop-art style with bright saturated colours and halftone dots",
+    "warm oil painting with visible textured brush strokes",
+    "cute 3D animated character style, soft studio lighting (Pixar-like)",
+    "colour pencil sketch with light hand-drawn shading",
+    "flat modern vector illustration, minimal clean shading",
 ]
 PROMPT = (
     "Repaint this photo as a cute die-cut sticker portrait{occasion} in {style}. "
@@ -436,6 +440,33 @@ def set_status(job_dir, **kw):
         pass
 
 
+def pick_styles(job_dir, count, rng):
+    """Pick `count` distinct styles, never starting with the previous render's
+    style. Persists the last index in stickers/.laststyle so back-to-back users
+    get different-looking art."""
+    base = os.path.dirname(os.path.dirname(job_dir))   # .../stickers
+    statef = os.path.join(base, ".laststyle")
+    last = -1
+    try:
+        last = int(open(statef).read().strip())
+    except Exception:
+        pass
+
+    order = list(range(len(STYLES)))
+    rng.shuffle(order)
+    # Don't let the first pick equal the previous job's pick.
+    if len(order) > 1 and order[0] == last:
+        order[0], order[1] = order[1], order[0]
+
+    picks = order[:max(1, count)]
+    try:
+        open(statef, "w").write(str(picks[-1]))
+        os.chmod(statef, 0o664)
+    except Exception:
+        pass
+    return [STYLES[i] for i in picks]
+
+
 def cmd_render(job_dir):
     load_env()
     with open(os.path.join(job_dir, "input.json")) as f:
@@ -453,13 +484,14 @@ def cmd_render(job_dir):
     title = (inp.get("title") or "").strip()
 
     rng = random.Random(int.from_bytes(os.urandom(4), "big"))
-    styles = STYLES[:]
-    rng.shuffle(styles)
+    # Rotate through styles without repeating the previous render's pick, so
+    # consecutive visitors get visibly different art styles.
+    chosen = pick_styles(job_dir, COUNT, rng)
     for i in range(1, COUNT + 1):
         pct = 8 + int(i * (90 / COUNT))
         set_status(job_dir, progress=pct,
                    stage="Painting your sticker" if COUNT == 1 else f"Painting sticker {i}/{COUNT}")
-        sticker = build_sticker(base, styles[(i - 1) % len(styles)], caption, rng, occasion, title)
+        sticker = build_sticker(base, chosen[i - 1], caption, rng, occasion, title)
         sticker.save(os.path.join(job_dir, f"sticker_{i}.png"))
         try:
             os.chmod(os.path.join(job_dir, f"sticker_{i}.png"), 0o644)

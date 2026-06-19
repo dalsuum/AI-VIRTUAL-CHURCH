@@ -130,6 +130,15 @@ class RenderFathersDayJob implements ShouldQueue
             }
             @chmod($out, 0644);   // web server (different user) serves the download
 
+            // Poster frame for the social share page's Open-Graph preview.
+            try {
+                $poster = "{$dir}/poster.jpg";
+                $this->ffmpeg(['-ss', '1', '-i', $out, '-frames:v', '1', '-q:v', '3', $poster]);
+                @chmod($poster, 0644);
+            } catch (\Throwable $e) {
+                Log::warning("FathersDay poster failed: {$e->getMessage()}");
+            }
+
             $this->setStatus('done', null, 100, 'Done');
         } catch (\Throwable $e) {
             Log::error("FathersDay render {$this->jobId} failed: {$e->getMessage()}");

@@ -254,6 +254,72 @@ async function checkStatus() {
   }
 }
 
+// ── Sharing (mirrors the Live Sticker feature) ───────────────────────────────
+const shareNote = ref("");
+const sharing   = ref(false);
+// Clean public share link on the MAIN domain (Open-Graph video preview, no api.*).
+const shareUrl = computed(() => (jobId.value ? `${window.location.origin}/v/${jobId.value}` : ""));
+const shareTitle = computed(() => config.value?.title || "My Father's Day video");
+
+async function fetchVideoFile() {
+  const res = await fetch(api.fdDownloadUrl(jobId.value), { credentials: "include" });
+  if (!res.ok) throw new Error("fetch failed");
+  const blob = await res.blob();
+  return new File([blob], "fathers-day.mp4", { type: blob.type || "video/mp4" });
+}
+
+function saveBlob(file) {
+  const u = URL.createObjectURL(file);
+  const a = document.createElement("a");
+  a.href = u; a.download = file.name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(u), 5000);
+}
+
+async function shareVideo() {
+  shareNote.value = ""; sharing.value = true;
+  try {
+    const file = await fetchVideoFile();
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: shareTitle.value, text: shareTitle.value });
+    } else {
+      saveBlob(file);
+      shareNote.value = "Saved the video — attach it in your app to share.";
+    }
+  } catch (e) {
+    if (e?.name !== "AbortError") {
+      shareNote.value = "Couldn't open the share menu — the video was downloaded instead.";
+      try { saveBlob(await fetchVideoFile()); } catch { /* give up */ }
+    }
+  } finally {
+    sharing.value = false;
+  }
+}
+
+async function saveVideo() {
+  try { saveBlob(await fetchVideoFile()); }
+  catch { window.open(downloadUrl.value, "_blank"); }
+}
+
+async function copyLink() {
+  shareNote.value = "";
+  try { await navigator.clipboard.writeText(shareUrl.value); shareNote.value = "Link copied!"; }
+  catch { shareNote.value = shareUrl.value; }
+}
+
+function socialShare(target) {
+  const u = encodeURIComponent(shareUrl.value);
+  const t = encodeURIComponent(shareTitle.value);
+  const links = {
+    facebook: `https://www.facebook.com/sharer/sharer.php?u=${u}`,
+    x:        `https://twitter.com/intent/tweet?url=${u}&text=${t}`,
+    whatsapp: `https://wa.me/?text=${t}%20${u}`,
+    telegram: `https://t.me/share/url?url=${u}&text=${t}`,
+    viber:    `viber://forward?text=${t}%20${u}`,
+  };
+  if (links[target]) window.open(links[target], "_blank", "noopener");
+}
+
 function triggerDownload() {
   const a = document.createElement("a");
   a.href = downloadUrl.value;
@@ -274,6 +340,7 @@ function reset() {
   targetProgress.value = 0;
   shownProgress.value = 0;
   finished.value = false;
+  shareNote.value = "";
 }
 </script>
 
@@ -398,7 +465,20 @@ function reset() {
 
       <div v-else-if="phase === 'done'" class="fd-done">
         <p class="fd-done-msg">🎉 Your video is ready!</p>
-        <a class="fd-btn primary" :href="downloadUrl" download="fathers-day.mp4">⬇ Download again</a>
+        <div class="fd-share">
+          <button class="fd-btn primary" :disabled="sharing" @click="shareVideo">📤 Share</button>
+          <button class="fd-btn ghost" @click="saveVideo">⬇ Save</button>
+        </div>
+        <p class="fd-muted small">Share to WhatsApp, Facebook, Messenger, Viber, X and more.</p>
+        <div class="fd-social">
+          <button class="fd-soc" title="Facebook" @click="socialShare('facebook')">f</button>
+          <button class="fd-soc" title="X" @click="socialShare('x')">𝕏</button>
+          <button class="fd-soc" title="WhatsApp" @click="socialShare('whatsapp')">✆</button>
+          <button class="fd-soc" title="Telegram" @click="socialShare('telegram')">✈</button>
+          <button class="fd-soc" title="Viber" @click="socialShare('viber')">V</button>
+          <button class="fd-soc wide" @click="copyLink">🔗 Copy link</button>
+        </div>
+        <p v-if="shareNote" class="fd-muted small">{{ shareNote }}</p>
         <button class="fd-btn ghost" @click="reset">Make another</button>
       </div>
 
@@ -503,6 +583,16 @@ function reset() {
 .fd-progress-pct { font-size: 1.4rem; font-weight: 700; margin: 0.75rem 0 0.15rem; }
 .fd-progress-stage { color: var(--text-muted); font-size: 0.85rem; margin: 0; }
 
+.fd-share { display: flex; gap: 0.5rem; width: 100%; }
+.fd-share .fd-btn { flex: 1; }
+.fd-social { display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: center; }
+.fd-soc {
+  width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--border);
+  background: transparent; color: var(--text); cursor: pointer; font-size: 1rem;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.fd-soc:hover { border-color: var(--primary); color: var(--primary); }
+.fd-soc.wide { width: auto; border-radius: 999px; padding: 0 0.9rem; font-size: 0.85rem; }
 .fd-done { text-align: center; margin-top: 1.5rem; display: flex; flex-direction: column; gap: 0.6rem; align-items: center; }
 .fd-done-msg { font-size: 1.05rem; font-weight: 600; }
 .fd-foot { text-align: center; margin-top: 1.25rem; }

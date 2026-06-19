@@ -13,3 +13,9 @@ Route::get('/s/{jobId}/{n?}', [ShareController::class, 'page'])
     ->whereNumber('n')->middleware('throttle:120,1');
 Route::get('/si/{jobId}/{n}', [ShareController::class, 'image'])
     ->whereNumber('n')->middleware('throttle:240,1');
+
+// Father's Day MV share pages — SELF-CONTAINED & REMOVABLE (needs /v//vi//vp
+// nginx locations on the main domain). Delete with the rest of the feature.
+Route::get('/v/{jobId}',  [ShareController::class, 'videoPage'])->middleware('throttle:120,1');
+Route::get('/vi/{jobId}', [ShareController::class, 'video'])->middleware('throttle:240,1');
+Route::get('/vp/{jobId}', [ShareController::class, 'videoPoster'])->middleware('throttle:240,1');

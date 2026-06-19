@@ -16,10 +16,12 @@ class SecurityHeaders
         $response->headers->set('X-Frame-Options', 'DENY');
         $response->headers->set('Referrer-Policy', 'strict-origin-when-cross-origin');
         $response->headers->set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
-        // The public sticker share page (/s/<id>) renders an <img> + inline CSS,
-        // so it needs a relaxed policy; everything else stays locked to 'none'.
-        $csp = $request->is('s/*')
-            ? "default-src 'none'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'"
+        // The public share pages render media + inline CSS, so they need a
+        // relaxed policy: the sticker page (/s/<id>) shows an <img>; the Father's
+        // Day MV page (/v/<id>) shows a <video> + poster. Everything else stays
+        // locked to 'none'.
+        $csp = ($request->is('s/*') || $request->is('v/*'))
+            ? "default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'self' 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'"
             : "default-src 'none'; frame-ancestors 'none'";
         $response->headers->set('Content-Security-Policy', $csp);
 

@@ -43,6 +43,20 @@ async function save() {
     saving.value = false;
   }
 }
+
+async function resetUsage() {
+  if (!confirm("Reset the visitor traffic count for this page to zero?")) return;
+  saving.value = true; msg.value = ""; err.value = "";
+  try {
+    const r = await api.stickerResetUsage();
+    cfg.value.usage = r.usage;
+    msg.value = "Traffic count reset.";
+  } catch (e) {
+    err.value = e.message || "Reset failed.";
+  } finally {
+    saving.value = false;
+  }
+}
 </script>
 
 <template>
@@ -76,6 +90,11 @@ async function save() {
       <div class="actions">
         <button class="btn primary" :disabled="saving" @click="save">{{ saving ? "Saving…" : "Save settings" }}</button>
       </div>
+
+      <div v-if="cfg.usage" class="usage">
+        <span>Visitor traffic: <strong>{{ cfg.usage.total }}</strong> total · {{ cfg.usage.today }} today</span>
+        <button class="btn" type="button" :disabled="saving" @click="resetUsage">Reset count</button>
+      </div>
     </div>
   </section>
 </template>
@@ -89,6 +108,7 @@ async function save() {
 .field label { font-size: .8rem; font-weight: 700; }
 .field input { padding: .65rem; border: 1px solid var(--border, #444); border-radius: 8px; background: transparent; color: inherit; }
 .actions { margin-top: .5rem; }
+.usage { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; font-size: .9rem; color: var(--muted, #888); }
 .btn { padding: .6rem 1.4rem; border: none; border-radius: 8px; cursor: pointer; }
 .btn.primary { background: var(--primary, #3b82f6); color: #fff; font-weight: 700; }
 .btn:disabled { opacity: .6; cursor: wait; }

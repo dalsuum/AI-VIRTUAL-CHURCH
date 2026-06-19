@@ -229,10 +229,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::patch('/fathers-day/songs/{songId}',     [\App\Http\Controllers\FathersDayController::class, 'updateSong']);
         Route::delete('/fathers-day/songs/{songId}',    [\App\Http\Controllers\FathersDayController::class, 'deleteSong']);
         Route::get('/fathers-day/songs/{songId}/audio', [\App\Http\Controllers\FathersDayController::class, 'adminSong']);
+        Route::post('/fathers-day/reset-usage',         [\App\Http\Controllers\FathersDayController::class, 'resetUsage']);
 
         // Live Sticker — admin enable/disable + page copy (removable feature).
-        Route::get('/stickers',  [\App\Http\Controllers\StickerController::class, 'adminShow']);
-        Route::post('/stickers', [\App\Http\Controllers\StickerController::class, 'adminSave']);
+        Route::get('/stickers',             [\App\Http\Controllers\StickerController::class, 'adminShow']);
+        Route::post('/stickers',            [\App\Http\Controllers\StickerController::class, 'adminSave']);
+        Route::post('/stickers/reset-usage',[\App\Http\Controllers\StickerController::class, 'resetUsage']);
 
         // System actions — read-only refresh is enabled; git pull / package install stay disabled (destructive).
         Route::post('/updates/check',           [UpdateController::class, 'check']);

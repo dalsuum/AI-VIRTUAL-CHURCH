@@ -93,7 +93,28 @@ class StickerController extends Controller
             'enabled'  => (bool) $c['enabled'],
             'title'    => $c['title'],
             'subtitle' => $c['subtitle'],
+            'usage'    => $this->usageSummary($c),
         ]);
+    }
+
+    /** Reset the visitor render counters (cumulative + today) back to zero. */
+    public function resetUsage(): JsonResponse
+    {
+        $c = $this->config();
+        $c['usage'] = ['total' => 0, 'today' => 0, 'date' => now()->toDateString()];
+        Storage::put(self::CONFIG, json_encode($c));
+        @chmod(Storage::path(self::CONFIG), 0664);
+
+        return $this->adminShow();
+    }
+
+    /** Normalise the stored usage counter for display (today resets daily). */
+    private function usageSummary(array $c): array
+    {
+        $u = is_array($c['usage'] ?? null) ? $c['usage'] : [];
+        $today = (($u['date'] ?? null) === now()->toDateString()) ? (int) ($u['today'] ?? 0) : 0;
+
+        return ['total' => (int) ($u['total'] ?? 0), 'today' => $today];
     }
 
     public function adminSave(Request $request): JsonResponse

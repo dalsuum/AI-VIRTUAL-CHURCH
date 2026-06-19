@@ -495,6 +495,7 @@ export const api = {
   // Admin enable/disable + page copy.
   stickerAdminShow: () => request("/admin/stickers"),
   stickerAdminSave: (payload) => request("/admin/stickers", { method: "POST", body: payload }),
+  stickerResetUsage: () => request("/admin/stickers/reset-usage", { method: "POST" }),
 
   // Admin: fetch a library song as a blob for the tap-to-sync player (cookie auth).
   fdSongBlob: async (songId) => {
@@ -509,6 +510,7 @@ export const api = {
   // Admin global settings + song library.
   fdAdminShow: () => request("/admin/fathers-day"),
   fdAdminSave: (payload) => request("/admin/fathers-day", { method: "POST", body: payload }),
+  fdResetUsage: () => request("/admin/fathers-day/reset-usage", { method: "POST" }),
   fdUpdateSong: (songId, payload) => request(`/admin/fathers-day/songs/${songId}`, { method: "PATCH", body: payload }),
   fdDeleteSong: (songId) => request(`/admin/fathers-day/songs/${songId}`, { method: "DELETE" }),
   fdAddSong: async (file, title) => {

@@ -446,6 +446,7 @@ textarea { resize: vertical; font-family: monospace; }
 .inline { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
 .detecting { color: var(--primary); }
 .actions { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+.usage { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; font-size: .9rem; color: var(--muted, #888); }
 hr { border: 0; border-top: 1px solid var(--border); width: 100%; margin: 0.5rem 0; }
 .song-card {
   border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem;

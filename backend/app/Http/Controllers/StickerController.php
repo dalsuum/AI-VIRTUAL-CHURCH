@@ -35,11 +35,15 @@ use Symfony\Component\Process\Process;
 
 class StickerController extends Controller
 {
-    private const DIR        = 'stickers';
-    private const CONFIG     = 'stickers/config.json';
-    private const COUNT      = 1;     // stickers produced per job (1 AI repaint = low cost)
-    private const MAX_CHARS  = 120;   // sticker source text length cap
-    private const STALE_SECS = 21600; // prune job dirs older than 6h
+    private const DIR         = 'stickers';
+    private const CONFIG      = 'stickers/config.json';
+    private const COUNT       = 1;     // stickers produced per job (1 AI repaint = low cost)
+    private const MAX_CHARS   = 120;   // sticker source text length cap
+    // Retention: finished stickers are kept long-term so shared LINKS keep
+    // working (~1 year); only abandoned uploads (detect without render) are
+    // cleaned up quickly for privacy.
+    private const KEEP_SECS    = 31536000; // finished stickers: 365 days
+    private const ABANDON_SECS = 3600;     // photo uploaded but never rendered: 1h
 
     /** Admin-managed feature config (enable flag + fallback page copy). */
     private function config(): array
@@ -406,7 +410,15 @@ class StickerController extends Controller
     {
         $base = Storage::path(self::DIR . '/jobs');
         foreach (glob("{$base}/*") ?: [] as $dir) {
-            if (is_dir($dir) && (time() - filemtime($dir)) > self::STALE_SECS) {
+            if (! is_dir($dir)) {
+                continue;
+            }
+            $age      = time() - filemtime($dir);
+            $finished = glob("{$dir}/sticker_*.png") !== [];
+            // Keep finished stickers ~1 year (shared links stay alive); drop
+            // abandoned uploads (no sticker produced) after 1h.
+            $ttl = $finished ? self::KEEP_SECS : self::ABANDON_SECS;
+            if ($age > $ttl) {
                 $this->rrmdir($dir);
             }
         }

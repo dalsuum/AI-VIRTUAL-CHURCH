@@ -186,6 +186,20 @@ class StickerController extends Controller
         $this->openPerms(Storage::path($jobDir));
 
         $photo = Storage::path("{$jobDir}/src/photo.{$ext}");
+
+        // Defence in depth: verify the bytes really are a JPEG/PNG/WebP (not just
+        // a trusted extension/MIME) and reject decompression bombs by declared
+        // pixel count before any decoder (cv2/Pillow) touches the file.
+        $info = @getimagesize($photo);
+        $allowed = [IMAGETYPE_JPEG, IMAGETYPE_PNG, IMAGETYPE_WEBP];
+        if ($info === false || ! in_array($info[2] ?? 0, $allowed, true)) {
+            $this->rrmdir(Storage::path($jobDir));
+            return response()->json(['message' => 'That file is not a valid image.'], 422);
+        }
+        if (((int) $info[0]) * ((int) $info[1]) > 60_000_000) {
+            $this->rrmdir(Storage::path($jobDir));
+            return response()->json(['message' => 'That photo is too large — please resize it and try again.'], 422);
+        }
         $result = $this->runPython(['detect', $photo], 60);
         $data   = json_decode($result, true);
         if (! is_array($data) || ! isset($data['w'], $data['h'])) {

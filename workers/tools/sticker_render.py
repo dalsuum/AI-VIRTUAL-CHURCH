@@ -62,6 +62,10 @@ SIZE = 768                 # final square sticker, px
 EMOJI_STRIKE = 109         # NotoColorEmoji's single bitmap strike
 PAD = 90                   # canvas padding for border + shadow + decorations
 BORDER = 16                # white die-cut outline thickness, px
+# Reject decompression bombs: a tiny file that declares huge dimensions can
+# exhaust RAM when decoded (OpenCV has no built-in guard). 60 MP covers any real
+# phone photo while a 60000x60000 bomb (3.6 GP) is refused at the header.
+MAX_PIXELS = 60_000_000
 
 # --- OpenRouter image model -------------------------------------------------
 OR_MODEL = "google/gemini-2.5-flash-image"
@@ -136,7 +140,13 @@ def autocorrect_en(text):
 
 
 def load_image(path):
-    return ImageOps.exif_transpose(Image.open(path)).convert("RGB")
+    img = Image.open(path)
+    # Check declared dimensions from the header BEFORE decoding pixels, so a
+    # decompression bomb is refused without ever allocating its full bitmap.
+    w, h = img.size
+    if w * h > MAX_PIXELS:
+        raise ValueError(f"image too large: {w}x{h}")
+    return ImageOps.exif_transpose(img).convert("RGB")
 
 
 def detect_face_box(pil_img):

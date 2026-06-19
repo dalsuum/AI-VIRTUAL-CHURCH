@@ -175,7 +175,63 @@ function poll() {
   }, 1500);
 }
 
+// --- Sharing -------------------------------------------------------------
+// Share the actual PNG file (Web Share API) rather than the API URL, so no
+// backend hostname is ever exposed and the image lands directly in WhatsApp /
+// Instagram / Messenger / Viber / X etc. Falls back to a download.
+const shareNote = ref("");
+const sharing = ref(false);
+
+async function fetchStickerFile(url, idx) {
+  const res = await fetch(url, { credentials: "include" });
+  if (!res.ok) throw new Error("fetch failed");
+  const blob = await res.blob();
+  return new File([blob], `sticker_${idx + 1}.png`, { type: blob.type || "image/png" });
+}
+
+function saveBlob(file) {
+  const u = URL.createObjectURL(file);
+  const a = document.createElement("a");
+  a.href = u;
+  a.download = file.name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(u), 5000);
+}
+
+async function shareSticker(url, idx) {
+  shareNote.value = "";
+  sharing.value = true;
+  try {
+    const file = await fetchStickerFile(url, idx);
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: pageTitle.value, text: pageTitle.value });
+    } else {
+      // Desktop / unsupported: download the image so they can attach it.
+      saveBlob(file);
+      shareNote.value = "Saved the image — attach it in your app to share.";
+    }
+  } catch (e) {
+    if (e?.name !== "AbortError") {
+      shareNote.value = "Couldn't open the share menu — the image was downloaded instead.";
+      try { saveBlob(await fetchStickerFile(url, idx)); } catch { /* give up */ }
+    }
+  } finally {
+    sharing.value = false;
+  }
+}
+
+async function downloadSticker(url, idx) {
+  try {
+    saveBlob(await fetchStickerFile(url, idx));
+  } catch {
+    window.open(url, "_blank");   // last resort
+  }
+}
+
 function reset() {
+  shareNote.value = "";
   pollTimer && clearInterval(pollTimer);
   destroyCropper();
   phase.value = "idle";
@@ -262,14 +318,20 @@ function reset() {
 
       <!-- Step 3: results -->
       <section v-else-if="phase === 'done'" class="sk-done">
-        <p class="sk-step">Your sticker — tap to download</p>
+        <p class="sk-step">Your sticker is ready 🎉</p>
         <div class="sk-grid">
-          <a v-for="(url, i) in stickers" :key="i" :href="url" :download="`sticker_${i + 1}.png`" class="sk-cell">
-            <img :src="url" :alt="`sticker ${i + 1}`" />
-          </a>
+          <div v-for="(url, i) in stickers" :key="i" class="sk-result">
+            <div class="sk-cell"><img :src="url" :alt="`sticker ${i + 1}`" /></div>
+            <div class="sk-share">
+              <button class="sk-go" :disabled="sharing" @click="shareSticker(url, i)">📤 Share</button>
+              <button class="sk-ghost" @click="downloadSticker(url, i)">⬇ Save</button>
+            </div>
+          </div>
         </div>
+        <p class="sk-tiny sk-center">Share to WhatsApp, Instagram, Messenger, Viber, X and more.</p>
+        <p v-if="shareNote" class="sk-tiny sk-center">{{ shareNote }}</p>
         <div class="sk-actions">
-          <button class="sk-go" @click="reset">Make another 🎨</button>
+          <button class="sk-ghost" @click="reset">Make another 🎨</button>
         </div>
       </section>
 
@@ -347,6 +409,9 @@ function reset() {
 
 .sk-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: .8rem; }
 .sk-cell { border-radius: 14px; overflow: hidden; background: repeating-conic-gradient(#f0f0f0 0% 25%, #fff 0% 50%) 0 0 / 20px 20px; }
-.sk-cell img { width: 100%; display: block; transition: transform .12s ease; }
-.sk-cell:hover img { transform: scale(1.04); }
+.sk-cell img { width: 100%; display: block; }
+.sk-result { display: flex; flex-direction: column; gap: .5rem; }
+.sk-share { display: flex; gap: .5rem; }
+.sk-share .sk-go, .sk-share .sk-ghost { flex: 1; padding: .6rem; font-size: .95rem; }
+.sk-center { text-align: center; }
 </style>

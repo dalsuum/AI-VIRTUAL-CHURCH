@@ -1103,6 +1103,8 @@ Isolated from the worship pipeline so it can be removed cleanly.
   suggests a padded square box. `/stickers/detect` runs this **synchronously**
   and returns the box; the frontend shows it in **cropper.js** for manual
   adjustment. EXIF orientation is honoured so phone photos aren't sideways.
+  Both `/stickers/detect` and `/stickers/render` return **404 when the feature
+  is disabled**, so no upload/CPU work happens unless an admin has turned it on.
 - **AI repaint (img2img)**: the sticker is repainted via **OpenRouter** using
   Google's **`google/gemini-2.5-flash-image`** model with a watercolour style
   prompt, driven by the existing `OPENROUTER_API_KEY` (`workers/.env`).

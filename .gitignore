@@ -6,6 +6,11 @@
 # Local-only server credential file (sudo password) — NEVER commit
 .srvcred
 
+# Server-hardening docs/scripts — contain admin IP, VPN subnets, firewall
+# whitelist and Wazuh enrollment. Repo is PUBLIC; never expose defensive posture.
+/SECURITY_FAIL2BAN.md
+/security/
+
 # Python
 __pycache__/
 *.py[cod]

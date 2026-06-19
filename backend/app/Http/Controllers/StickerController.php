@@ -166,6 +166,10 @@ class StickerController extends Controller
      */
     public function detect(Request $request): JsonResponse
     {
+        if (! $this->config()['enabled']) {
+            return response()->json(['message' => 'This feature is not available right now.'], 404);
+        }
+
         $request->validate([
             'photo' => ['required', 'file', 'mimes:jpg,jpeg,png,webp', 'max:12288'],
         ]);

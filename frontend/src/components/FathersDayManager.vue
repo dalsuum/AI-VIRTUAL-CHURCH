@@ -70,6 +70,7 @@ async function saveSettings() {
       title: cfg.value.title || "",
       subtitle: cfg.value.subtitle || "",
       default_effect: cfg.value.default_effect || "slide",
+      brand_tag_enabled: !!cfg.value.brand_tag_enabled,
     });
     cfg.value.updated_at = r.updated_at;
     msg.value = "Settings saved.";
@@ -120,10 +121,39 @@ async function saveSong(song) {
       clip_enabled: !!song.clip_enabled,
       clip_start: song.clip_start === "" || song.clip_start == null ? null : Number(song.clip_start),
       clip_end: song.clip_end === "" || song.clip_end == null ? null : Number(song.clip_end),
+      community_original: !!song.community_original,
     });
     msg.value = "Song saved.";
   } catch (e) {
     err.value = e.message || "Save failed.";
+  }
+}
+
+async function uploadBrandTag(e) {
+  const file = e.target.files?.[0];
+  e.target.value = "";
+  if (!file) return;
+  saving.value = true; msg.value = ""; err.value = "";
+  try {
+    cfg.value = await api.fdUploadBrandTag(file);
+    msg.value = "Brand tag uploaded.";
+  } catch (e2) {
+    err.value = e2.message || "Upload failed.";
+  } finally {
+    saving.value = false;
+  }
+}
+
+async function removeBrandTag() {
+  if (!confirm("Remove the brand audio tag?")) return;
+  saving.value = true; msg.value = ""; err.value = "";
+  try {
+    cfg.value = await api.fdDeleteBrandTag();
+    msg.value = "Brand tag removed.";
+  } catch (e) {
+    err.value = e.message || "Remove failed.";
+  } finally {
+    saving.value = false;
   }
 }
 
@@ -301,6 +331,33 @@ function closeClip() {
 
       <hr />
 
+      <!-- Brand audio tag -->
+      <h3>Brand audio tag</h3>
+      <p class="hint small">
+        Overlays a short <strong>aivirtual.church</strong> audio ident (a "radio
+        station" voice tag) at the very start of every rendered video. The song
+        body is untouched, so it still sounds good — but the audio is now clearly
+        identifiable as yours, which helps your community-original songs pass
+        Facebook/Instagram copyright checks.
+      </p>
+      <div class="field">
+        <label class="toggle">
+          <input type="checkbox" v-model="cfg.brand_tag_enabled" :disabled="!cfg.has_brand_tag" />
+          <span><strong>Add the brand tag</strong> to every video {{ cfg.has_brand_tag ? '' : '(upload a tag first)' }}</span>
+        </label>
+      </div>
+      <div class="inline" style="gap:0.75rem; flex-wrap:wrap">
+        <span class="hint small">{{ cfg.has_brand_tag ? '✓ Tag uploaded' : 'No tag yet' }}</span>
+        <label class="btn" style="cursor:pointer">
+          {{ cfg.has_brand_tag ? 'Replace tag' : 'Upload tag' }} (MP3/WAV ≤ 5 MB)
+          <input type="file" accept=".mp3,.wav,audio/mpeg,audio/wav" style="display:none" @change="uploadBrandTag" />
+        </label>
+        <button v-if="cfg.has_brand_tag" class="btn ghost danger" type="button" :disabled="saving" @click="removeBrandTag">Remove tag</button>
+      </div>
+      <p class="hint small">Tip: keep it 1–2 seconds and put it at the head only, so it plays like an intro and doesn't cover the song.</p>
+
+      <hr />
+
       <!-- Song library -->
       <h3>Songs ({{ cfg.songs.length }})</h3>
       <p v-if="cfg.enabled && cfg.songs.length === 0" class="bad small">⚠ Add at least one song or the page won't show to visitors.</p>
@@ -344,6 +401,13 @@ function closeClip() {
             <button class="btn" type="button" @click="openClip(song)">🎧 Pick from audio</button>
           </div>
           <p v-if="song.clip_enabled" class="hint small">The video uses only this slice (e.g. the chorus). Lyrics shown are the ones sung within it.</p>
+        </div>
+
+        <div class="field">
+          <label class="toggle small">
+            <input type="checkbox" v-model="song.community_original" />
+            <span><strong>Community Original</strong> — this audio is our own/cleared recording, safe to share on social media.</span>
+          </label>
         </div>
 
         <div class="sync-row">

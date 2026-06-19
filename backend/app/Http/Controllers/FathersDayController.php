@@ -47,7 +47,12 @@ class FathersDayController extends Controller
             'title'          => 'Happy Father\'s Day',
             'subtitle'       => 'Make a music video for your father',
             'default_effect' => 'slide',
-            'songs'          => [],   // [{id,title,ext,lyrics,sync_enabled,vocal_start,vocal_start_status}]
+            'songs'          => [],   // [{id,title,ext,lyrics,sync_enabled,vocal_start,vocal_start_status,community_original}]
+            // Brand tag: a short "aivirtual.church" audio ident overlaid at the very
+            // start of every rendered MV so the audio is identifiably ours (helps
+            // visitors avoid Facebook copyright blocks on community-original songs).
+            'brand_tag_enabled' => false,
+            'brand_tag_ext'     => null,
             'updated_at'     => null,
         ];
 
@@ -287,6 +292,9 @@ class FathersDayController extends Controller
             'title'          => $c['title'],
             'subtitle'       => $c['subtitle'],
             'default_effect' => $c['default_effect'],
+            'brand_tag_enabled' => (bool) ($c['brand_tag_enabled'] ?? false),
+            'has_brand_tag'     => ! empty($c['brand_tag_ext'])
+                                    && Storage::exists(self::DIR . "/brand_tag.{$c['brand_tag_ext']}"),
             'songs'          => array_values(array_map(fn ($s) => [
                 'id'                 => $s['id'],
                 'title'              => $s['title'],
@@ -299,6 +307,7 @@ class FathersDayController extends Controller
                 'clip_enabled'       => (bool) ($s['clip_enabled'] ?? false),
                 'clip_start'         => (float) ($s['clip_start'] ?? 0.0),
                 'clip_end'           => (float) ($s['clip_end'] ?? 0.0),
+                'community_original' => (bool) ($s['community_original'] ?? false),
             ], $c['songs'])),
             'updated_at'     => $c['updated_at'],
             'usage'          => $this->usageSummary($c),
@@ -332,6 +341,7 @@ class FathersDayController extends Controller
             'title'          => ['nullable', 'string', 'max:120'],
             'subtitle'       => ['nullable', 'string', 'max:200'],
             'default_effect' => ['required', 'in:' . implode(',', self::EFFECTS)],
+            'brand_tag_enabled' => ['sometimes', 'boolean'],
         ]);
 
         $c = $this->config();
@@ -339,6 +349,9 @@ class FathersDayController extends Controller
         $c['title']          = $validated['title'] ?: 'Happy Father\'s Day';
         $c['subtitle']       = $validated['subtitle'] ?: 'Make a music video for your father';
         $c['default_effect'] = $validated['default_effect'];
+        if (array_key_exists('brand_tag_enabled', $validated)) {
+            $c['brand_tag_enabled'] = (bool) $validated['brand_tag_enabled'];
+        }
         $this->saveConfig($c);
 
         return $this->adminShow();
@@ -376,6 +389,7 @@ class FathersDayController extends Controller
             'clip_enabled'       => false,
             'clip_start'         => 0.0,
             'clip_end'           => 0.0,
+            'community_original' => false,
         ];
         $this->saveConfig($c);
 
@@ -395,6 +409,7 @@ class FathersDayController extends Controller
             'clip_enabled' => ['sometimes', 'boolean'],
             'clip_start'   => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:6000'],
             'clip_end'     => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:6000'],
+            'community_original' => ['sometimes', 'boolean'],
         ]);
 
         $c = $this->config();
@@ -425,6 +440,9 @@ class FathersDayController extends Controller
             }
             if (array_key_exists('clip_end', $validated) && $validated['clip_end'] !== null) {
                 $s['clip_end'] = (float) $validated['clip_end'];
+            }
+            if (array_key_exists('community_original', $validated)) {
+                $s['community_original'] = (bool) $validated['community_original'];
             }
             break;
         }
@@ -469,6 +487,49 @@ class FathersDayController extends Controller
         return response()->file(Storage::path($rel), [
             'Content-Type' => $song['ext'] === 'wav' ? 'audio/wav' : 'audio/mpeg',
         ]);
+    }
+
+    // ---- Admin: brand audio tag -------------------------------------------
+
+    /**
+     * Upload the short "aivirtual.church" audio ident (≤6s recommended) that the
+     * renderer overlays at the very start of every MV. Stored as a single file
+     * (one tag for the whole feature) under fathersday/brand_tag.<ext>.
+     */
+    public function uploadBrandTag(Request $request): JsonResponse
+    {
+        $request->validate([
+            'tag' => ['required', 'file', 'mimes:mp3,wav', 'max:5120'],
+        ]);
+
+        $c = $this->config();
+        // Drop any previous tag (extension may differ).
+        if (! empty($c['brand_tag_ext'])) {
+            Storage::delete(self::DIR . "/brand_tag.{$c['brand_tag_ext']}");
+        }
+
+        $ext = strtolower($request->file('tag')->getClientOriginalExtension() ?: 'mp3');
+        $ext = in_array($ext, ['mp3', 'wav'], true) ? $ext : 'mp3';
+        $request->file('tag')->storeAs(self::DIR, "brand_tag.{$ext}");
+        @chmod(Storage::path(self::DIR . "/brand_tag.{$ext}"), 0664);
+
+        $c['brand_tag_ext'] = $ext;
+        $this->saveConfig($c);
+
+        return $this->adminShow();
+    }
+
+    public function deleteBrandTag(): JsonResponse
+    {
+        $c = $this->config();
+        if (! empty($c['brand_tag_ext'])) {
+            Storage::delete(self::DIR . "/brand_tag.{$c['brand_tag_ext']}");
+        }
+        $c['brand_tag_ext']     = null;
+        $c['brand_tag_enabled'] = false;
+        $this->saveConfig($c);
+
+        return $this->adminShow();
     }
 
     /**

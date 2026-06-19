@@ -82,6 +82,11 @@ class RenderFathersDayJob implements ShouldQueue
             //    whole pipeline just works on a shorter track. Far less encoding.
             $song = $this->applyClip($song, $work);
 
+            // 0b) Overlay the "aivirtual.church" brand audio tag at the head (if the
+            //     admin enabled it). Keeps the song length unchanged so lyric timings
+            //     stay in sync — the tag just rides over the intro like a radio ident.
+            $song = $this->applyBrandTag($song, $work);
+
             // 1) Normalise every photo to a vertical frame. -map_metadata -1
             //    strips EXIF/GPS; ffmpeg decoding it validates the bytes.
             // Photo prep spans 10% → 40% of the bar.
@@ -521,6 +526,47 @@ class RenderFathersDayJob implements ShouldQueue
         $this->clipOffset = $start;
 
         return $trimmed;
+    }
+
+    /**
+     * Overlay the short brand audio tag on top of the song's start, without
+     * changing its length. duration=first caps the mix to the song; normalize=0
+     * keeps the song at full volume so the tag adds over the (usually quiet) intro
+     * rather than ducking the whole track. Returns the original song untouched
+     * when the feature is off or no tag file exists.
+     */
+    private function applyBrandTag(string $song, string $work): string
+    {
+        $c = $this->config();
+        if (empty($c['brand_tag_enabled']) || empty($c['brand_tag_ext'])) {
+            return $song;
+        }
+        $rel = "fathersday/brand_tag.{$c['brand_tag_ext']}";
+        if (! Storage::exists($rel)) {
+            return $song;
+        }
+        $tag = Storage::path($rel);
+
+        $ext    = pathinfo($song, PATHINFO_EXTENSION) ?: 'mp3';
+        $tagged = "{$work}/tagged.{$ext}";
+        try {
+            $this->ffmpeg([
+                '-i', $song, '-i', $tag,
+                '-filter_complex',
+                '[1:a]aformat=sample_rates=44100:channel_layouts=stereo[tag];'
+                . '[0:a]aformat=sample_rates=44100:channel_layouts=stereo[song];'
+                . '[song][tag]amix=inputs=2:duration=first:normalize=0[a]',
+                '-map', '[a]',
+                '-c:a', $ext === 'wav' ? 'pcm_s16le' : 'libmp3lame', '-q:a', '4',
+                $tagged,
+            ]);
+        } catch (\Throwable $e) {
+            // A bad tag file must never fail the whole render — fall back silently.
+            Log::warning("FathersDay brand tag overlay failed: {$e->getMessage()}");
+            return $song;
+        }
+
+        return $tagged;
     }
 
     /** The chosen song's config entry (by songId; falls back to the first song). */

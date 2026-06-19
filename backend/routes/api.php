@@ -232,6 +232,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/fathers-day/songs/{songId}',    [\App\Http\Controllers\FathersDayController::class, 'deleteSong']);
         Route::get('/fathers-day/songs/{songId}/audio', [\App\Http\Controllers\FathersDayController::class, 'adminSong']);
         Route::post('/fathers-day/reset-usage',         [\App\Http\Controllers\FathersDayController::class, 'resetUsage']);
+        Route::post('/fathers-day/brand-tag',           [\App\Http\Controllers\FathersDayController::class, 'uploadBrandTag']);
+        Route::delete('/fathers-day/brand-tag',         [\App\Http\Controllers\FathersDayController::class, 'deleteBrandTag']);
 
         // Live Sticker — admin enable/disable + page copy (removable feature).
         Route::get('/stickers',             [\App\Http\Controllers\StickerController::class, 'adminShow']);

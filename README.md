@@ -1032,6 +1032,16 @@ for one occasion and removed cleanly afterwards.
   auto-downloads when ready.
 - **Effects**: `slide` (hard cut), `fade` (crossfade), `kenburns` (gentle
   zoom/pan). A single photo is held for the whole song (with optional zoom).
+- **Community Original + brand audio tag** (to avoid social-media copyright
+  blocks): mark a song *Community Original* (your own/cleared recording), and
+  optionally upload a short **aivirtual.church audio ident** that the renderer
+  overlays at the very *start* of every MV. The overlay (`amix duration=first
+  normalize=0`) keeps the song's length and full volume — lyric sync stays exact
+  and the song still sounds good — while making the audio identifiably yours so
+  community-original songs pass Facebook/Instagram checks. (A genuinely
+  copyrighted *melody* can still be flagged regardless; this protects your own
+  originals and public-domain hymns, it is not a way to disguise commercial
+  tracks.)
 - **Lyrics**: `[mm:ss.xx]` LRC tags drive the time-synced highlight; otherwise
   lines are split evenly across the song length. Section markers like
   `[Verse 1]` / `[Chorus]` / `[Bridge]` are recognised and **not** shown on the

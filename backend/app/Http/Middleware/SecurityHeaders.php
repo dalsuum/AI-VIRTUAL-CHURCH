@@ -21,7 +21,7 @@ class SecurityHeaders
         // Day MV page (/v/<id>) shows a <video> + poster. Everything else stays
         // locked to 'none'.
         $csp = ($request->is('s/*') || $request->is('v/*'))
-            ? "default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'self' 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'"
+            ? "default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'"
             : "default-src 'none'; frame-ancestors 'none'";
         $response->headers->set('Content-Security-Policy', $csp);
 

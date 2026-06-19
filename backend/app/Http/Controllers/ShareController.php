@@ -38,8 +38,12 @@ class ShareController extends Controller
         $title = $this->pageTitle();
         $img   = "{$base}/si/{$jobId}/{$n}";
         $desc  = 'Made with AI Virtual Church — create your own free sticker!';
+        $page  = "{$base}/s/{$jobId}/{$n}";
 
-        $e = fn ($s) => htmlspecialchars($s, ENT_QUOTES, 'UTF-8');
+        $e  = fn ($s) => htmlspecialchars($s, ENT_QUOTES, 'UTF-8');
+        $u  = rawurlencode($page);                          // link to spread
+        $t  = rawurlencode($title);
+        $tj = json_encode($title, JSON_UNESCAPED_UNICODE);  // for inline JS
         $html = <<<HTML
 <!doctype html>
 <html lang="en">
@@ -53,25 +57,50 @@ class ShareController extends Controller
 <meta property="og:image" content="{$e($img)}">
 <meta property="og:image:width" content="768">
 <meta property="og:image:height" content="768">
-<meta property="og:url" content="{$e("{$base}/s/{$jobId}/{$n}")}">
+<meta property="og:url" content="{$e($page)}">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="{$e($title)}">
 <meta name="twitter:description" content="{$e($desc)}">
 <meta name="twitter:image" content="{$e($img)}">
 <style>
   body{margin:0;min-height:100vh;display:flex;flex-direction:column;align-items:center;
-       justify-content:center;gap:1.25rem;background:#0f1115;color:#fff;
+       justify-content:center;gap:1.1rem;background:#0f1115;color:#fff;
        font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding:2rem}
   img{max-width:min(90vw,420px);height:auto;filter:drop-shadow(0 12px 30px rgba(0,0,0,.5))}
   h1{font-size:1.4rem;margin:0;text-align:center}
-  a.cta{background:#dc2626;color:#fff;text-decoration:none;font-weight:700;
-        padding:.85rem 1.6rem;border-radius:12px}
+  .row{display:flex;gap:.75rem;flex-wrap:wrap;justify-content:center}
+  .cta{background:#dc2626;color:#fff;text-decoration:none;font-weight:700;border:none;
+       padding:.85rem 1.6rem;border-radius:12px;font-size:1rem;cursor:pointer}
+  .ghost{color:#fff;text-decoration:none;border:1px solid #3a3f4b;font-weight:700;
+         padding:.85rem 1.6rem;border-radius:12px}
+  .social{display:flex;gap:.55rem;flex-wrap:wrap;justify-content:center}
+  .chip{width:46px;height:46px;border-radius:50%;display:flex;align-items:center;
+        justify-content:center;background:#1b1f27;color:#fff;text-decoration:none;
+        font-weight:700;border:1px solid #2a2f3a}
 </style>
 </head>
 <body>
   <h1>{$e($title)}</h1>
   <img src="{$e($img)}" alt="{$e($title)}">
-  <a class="cta" href="{$e($maker)}">🎨 Make your own sticker</a>
+  <div class="row">
+    <button class="cta" id="shareBtn" type="button">📤 Share</button>
+    <a class="ghost" href="{$e($maker)}">🎨 Make your own</a>
+  </div>
+  <div class="social">
+    <a class="chip" target="_blank" rel="noopener" title="Facebook" href="https://www.facebook.com/sharer/sharer.php?u={$u}">f</a>
+    <a class="chip" target="_blank" rel="noopener" title="X" href="https://twitter.com/intent/tweet?url={$u}&amp;text={$t}">𝕏</a>
+    <a class="chip" target="_blank" rel="noopener" title="WhatsApp" href="https://wa.me/?text={$t}%20{$u}">✆</a>
+    <a class="chip" target="_blank" rel="noopener" title="Telegram" href="https://t.me/share/url?url={$u}&amp;text={$t}">✈</a>
+  </div>
+  <script>
+  (function(){
+    var b=document.getElementById('shareBtn'),url=location.href,t={$tj};
+    b.addEventListener('click',function(){
+      if(navigator.share){navigator.share({title:t,text:t,url:url}).catch(function(){});}
+      else if(navigator.clipboard){navigator.clipboard.writeText(url);b.textContent='🔗 Link copied!';}
+    });
+  })();
+  </script>
 </body>
 </html>
 HTML;
@@ -114,8 +143,12 @@ HTML;
         $video = "{$base}/vi/{$jobId}";
         $img   = "{$base}/vp/{$jobId}";
         $desc  = 'Made with AI Virtual Church — create your own free music video!';
+        $page  = "{$base}/v/{$jobId}";
 
-        $e = fn ($s) => htmlspecialchars($s, ENT_QUOTES, 'UTF-8');
+        $e  = fn ($s) => htmlspecialchars($s, ENT_QUOTES, 'UTF-8');
+        $u  = rawurlencode($page);
+        $t  = rawurlencode($title);
+        $tj = json_encode($title, JSON_UNESCAPED_UNICODE);
         $html = <<<HTML
 <!doctype html>
 <html lang="en">
@@ -132,31 +165,51 @@ HTML;
 <meta property="og:video:type" content="video/mp4">
 <meta property="og:video:width" content="720">
 <meta property="og:video:height" content="1280">
-<meta property="og:url" content="{$e("{$base}/v/{$jobId}")}">
+<meta property="og:url" content="{$e($page)}">
 <meta name="twitter:card" content="player">
 <meta name="twitter:title" content="{$e($title)}">
 <meta name="twitter:image" content="{$e($img)}">
 <style>
   body{margin:0;min-height:100vh;display:flex;flex-direction:column;align-items:center;
-       justify-content:center;gap:1.25rem;background:#0f1115;color:#fff;
+       justify-content:center;gap:1.1rem;background:#0f1115;color:#fff;
        font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding:2rem}
   video{max-width:min(90vw,360px);height:auto;border-radius:14px;
         box-shadow:0 12px 30px rgba(0,0,0,.5);background:#000}
   h1{font-size:1.4rem;margin:0;text-align:center}
   .row{display:flex;gap:.75rem;flex-wrap:wrap;justify-content:center}
-  a.cta{background:#2563eb;color:#fff;text-decoration:none;font-weight:700;
-        padding:.85rem 1.6rem;border-radius:12px}
-  a.ghost{color:#fff;text-decoration:none;border:1px solid #3a3f4b;
-          padding:.85rem 1.6rem;border-radius:12px}
+  .cta{background:#2563eb;color:#fff;text-decoration:none;font-weight:700;border:none;
+       padding:.85rem 1.6rem;border-radius:12px;font-size:1rem;cursor:pointer}
+  .ghost{color:#fff;text-decoration:none;border:1px solid #3a3f4b;font-weight:700;
+         padding:.85rem 1.6rem;border-radius:12px}
+  .social{display:flex;gap:.55rem;flex-wrap:wrap;justify-content:center}
+  .chip{width:46px;height:46px;border-radius:50%;display:flex;align-items:center;
+        justify-content:center;background:#1b1f27;color:#fff;text-decoration:none;
+        font-weight:700;border:1px solid #2a2f3a}
 </style>
 </head>
 <body>
   <h1>{$e($title)}</h1>
   <video src="{$e($video)}" controls playsinline poster="{$e($img)}"></video>
   <div class="row">
-    <a class="cta" href="{$e($video)}" download>⬇ Download</a>
+    <button class="cta" id="shareBtn" type="button">📤 Share</button>
+    <a class="ghost" href="{$e($video)}" download>⬇ Download</a>
     <a class="ghost" href="{$e($maker)}">🎬 Make your own</a>
   </div>
+  <div class="social">
+    <a class="chip" target="_blank" rel="noopener" title="Facebook" href="https://www.facebook.com/sharer/sharer.php?u={$u}">f</a>
+    <a class="chip" target="_blank" rel="noopener" title="X" href="https://twitter.com/intent/tweet?url={$u}&amp;text={$t}">𝕏</a>
+    <a class="chip" target="_blank" rel="noopener" title="WhatsApp" href="https://wa.me/?text={$t}%20{$u}">✆</a>
+    <a class="chip" target="_blank" rel="noopener" title="Telegram" href="https://t.me/share/url?url={$u}&amp;text={$t}">✈</a>
+  </div>
+  <script>
+  (function(){
+    var b=document.getElementById('shareBtn'),url=location.href,t={$tj};
+    b.addEventListener('click',function(){
+      if(navigator.share){navigator.share({title:t,text:t,url:url}).catch(function(){});}
+      else if(navigator.clipboard){navigator.clipboard.writeText(url);b.textContent='🔗 Link copied!';}
+    });
+  })();
+  </script>
 </body>
 </html>
 HTML;

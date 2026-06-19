@@ -1067,6 +1067,16 @@ for one occasion and removed cleanly afterwards.
   workers/.venv-demucs/bin/pip install demucs diffq`.
 - **Rendering** runs on the existing Laravel `queue:work` worker via
   `RenderFathersDayJob` shelling out to `ffmpeg` — no new service or port.
+- **Sharing**: the visitor can share the finished MV. The button is
+  **duration-aware** to avoid Facebook auto-splitting a long file into many
+  spammy ~90s reels — clips **≤90s** are handed straight to
+  `navigator.share({files})` (native file share), while **longer** videos fall
+  back to sharing a clean **main-domain** `/v/<id>` link (served with
+  Open-Graph/Twitter-card meta; `SecurityHeaders` relaxes the CSP for `/v/*`
+  video+poster). When the **Web Share API is unavailable** (e.g. desktop
+  browsers) the button degrades gracefully to **copy-link / save-file** so the
+  tap always does something. (A full-song share builds the link directly rather
+  than reading blob metadata, which previously hung.)
 
 **Security**: uploads are validated by extension + size (≤8 MB/photo, ≤6 photos),
 then **re-encoded through ffmpeg**, which strips EXIF/GPS and neutralises
@@ -1143,8 +1153,12 @@ Isolated from the worship pipeline so it can be removed cleanly.
 
 **Security**: uploads validated by extension + size (≤12 MB), stored under
 server-generated names; job ids are UUIDs validated against path traversal;
-`detect`/`render` throttled (`20/min`); originals deleted after the render; stale
-job dirs pruned after 6h. The base storage dir is `setgid 02775` so the render
+`detect`/`render` throttled (`20/min`); originals deleted after the render.
+**Retention is split** so shared `/s/<id>` links don't die within hours:
+**finished** stickers (a `sticker_*.png` exists) are kept **~1 year**
+(`KEEP_SECS` = 365 days) so links stay alive, while **abandoned** uploads
+(photo detected but never rendered) are still pruned after **1h**
+(`ABANDON_SECS`) for privacy. The base storage dir is `setgid 02775` so the render
 worker (separate OS user in the `www-data` group) can read the queued job. The
 photo is sent to OpenRouter for the repaint — note this in any privacy copy.
 

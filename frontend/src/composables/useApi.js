@@ -453,12 +453,15 @@ export const api = {
   // Public page config (enabled flag, effects, copy).
   fdPublicConfig: () => request("/fathers-day/config"),
   // Public render: upload photo(s) + chosen effect. Multipart, so raw fetch.
-  fdRender: async (files, effect, songId) => {
+  fdRender: async (files, effect, songId, opts = {}) => {
     await ensureCsrf();      // CSRF cookie/token for the stateful SPA POST
     const fd = new FormData();
     files.forEach((f) => fd.append("photos[]", f, f.name));
     if (effect) fd.append("effect", effect);
     if (songId) fd.append("song_id", songId);
+    if (opts.full) fd.append("full", "1");
+    if (opts.clipStart != null) fd.append("clip_start", String(opts.clipStart));
+    if (opts.clipEnd != null) fd.append("clip_end", String(opts.clipEnd));
     const res = await fetch(`${BASE_URL}/fathers-day/render`, {
       method: "POST",
       credentials: "include",
@@ -471,6 +474,15 @@ export const api = {
   },
   fdJobStatus: (id) => request(`/fathers-day/job/${id}`),
   fdDownloadUrl: (id) => `${BASE_URL}/fathers-day/download/${id}`,
+  // Public song stream for the visitor's clip picker.
+  fdPublicSongBlob: async (songId) => {
+    const res = await fetch(`${BASE_URL}/fathers-day/song/${songId}/audio`, {
+      credentials: "include",
+      headers: { Accept: "audio/*" },
+    });
+    if (!res.ok) throw Object.assign(new Error("Could not load song"), { status: res.status });
+    return res.blob();
+  },
 
   // --- Live Sticker maker (SELF-CONTAINED & REMOVABLE) ------------------
   stickerConfig: () => request("/stickers/config"),

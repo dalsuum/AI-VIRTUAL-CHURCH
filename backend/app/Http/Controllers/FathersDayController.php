@@ -131,7 +131,15 @@ class FathersDayController extends Controller
     {
         $c = $this->config();
         $songs = array_values(array_map(
-            fn ($s) => ['id' => $s['id'], 'title' => $s['title']],
+            fn ($s) => [
+                'id'           => $s['id'],
+                'title'        => $s['title'],
+                // Admin-suggested chorus/hook clip — the visitor can use it, pick
+                // their own range, or choose the full song.
+                'clip_enabled' => (bool) ($s['clip_enabled'] ?? false),
+                'clip_start'   => (float) ($s['clip_start'] ?? 0.0),
+                'clip_end'     => (float) ($s['clip_end'] ?? 0.0),
+            ],
             array_filter($c['songs'], fn ($s) => ! empty($s['ext']))
         ));
 
@@ -155,10 +163,15 @@ class FathersDayController extends Controller
         }
 
         $validated = $request->validate([
-            'photos'   => ['required', 'array', 'min:1', 'max:' . self::MAX_PHOTOS],
-            'photos.*' => ['required', 'file', 'mimes:jpg,jpeg,png,webp', 'max:8192'],
-            'effect'   => ['nullable', 'in:' . implode(',', self::EFFECTS)],
-            'song_id'  => ['nullable', 'string'],
+            'photos'     => ['required', 'array', 'min:1', 'max:' . self::MAX_PHOTOS],
+            'photos.*'   => ['required', 'file', 'mimes:jpg,jpeg,png,webp', 'max:8192'],
+            'effect'     => ['nullable', 'in:' . implode(',', self::EFFECTS)],
+            'song_id'    => ['nullable', 'string'],
+            // Visitor's clip choice. full=1 forces the whole song; otherwise a
+            // clip_start/clip_end pair is used, falling back to the admin clip.
+            'full'       => ['nullable', 'boolean'],
+            'clip_start' => ['nullable', 'numeric', 'min:0', 'max:6000'],
+            'clip_end'   => ['nullable', 'numeric', 'min:0', 'max:6000'],
         ]);
 
         // Default to the first song when the client doesn't specify one.
@@ -168,6 +181,19 @@ class FathersDayController extends Controller
         }
 
         $effect = $validated['effect'] ?? $c['default_effect'];
+
+        // Resolve the clip range for this render: full song, the visitor's own
+        // pick, or the admin's suggested clip.
+        [$clipStart, $clipEnd] = [null, null];
+        if (! ($validated['full'] ?? false)) {
+            $us = $validated['clip_start'] ?? null;
+            $ue = $validated['clip_end'] ?? null;
+            if ($us !== null && $ue !== null && $ue - $us >= 1) {
+                [$clipStart, $clipEnd] = [(float) $us, (float) $ue];
+            } elseif (! empty($song['clip_enabled']) && (($song['clip_end'] ?? 0) - ($song['clip_start'] ?? 0)) >= 1) {
+                [$clipStart, $clipEnd] = [(float) $song['clip_start'], (float) $song['clip_end']];
+            }
+        }
         $jobId  = (string) Str::uuid();
         $jobDir = self::DIR . "/jobs/{$jobId}";
 
@@ -194,7 +220,7 @@ class FathersDayController extends Controller
         // must read the photos and rewrite the status — open the tree.
         $this->openPerms(Storage::path($jobDir));
 
-        RenderFathersDayJob::dispatch($jobId, $effect, $song['id']);
+        RenderFathersDayJob::dispatch($jobId, $effect, $song['id'], $clipStart, $clipEnd);
         $this->recordUse();
 
         return response()->json(['job_id' => $jobId, 'status' => 'queued']);
@@ -226,6 +252,27 @@ class FathersDayController extends Controller
 
         return response()->download(Storage::path($rel), 'fathers-day.mp4', [
             'Content-Type' => 'video/mp4',
+        ]);
+    }
+
+    /** Public stream of a library song, for the visitor's clip-picker player. */
+    public function publicSong(string $songId): BinaryFileResponse|JsonResponse
+    {
+        $c = $this->config();
+        if (! $c['enabled']) {
+            return response()->json(['message' => 'Not available'], 404);
+        }
+        $song = $this->findSong($c, $this->safeId($songId) ? $songId : null);
+        if (! $song || empty($song['ext'])) {
+            return response()->json(['message' => 'No song'], 404);
+        }
+        $rel = self::DIR . "/songs/{$songId}.{$song['ext']}";
+        if (! Storage::exists($rel)) {
+            return response()->json(['message' => 'No song'], 404);
+        }
+
+        return response()->file(Storage::path($rel), [
+            'Content-Type' => $song['ext'] === 'wav' ? 'audio/wav' : 'audio/mpeg',
         ]);
     }
 

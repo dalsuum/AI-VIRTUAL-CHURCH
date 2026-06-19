@@ -64,6 +64,8 @@ Route::post('/fathers-day/render', [\App\Http\Controllers\FathersDayController::
 Route::get('/fathers-day/job/{jobId}', [\App\Http\Controllers\FathersDayController::class, 'status'])
     ->middleware('throttle:120,1');
 Route::get('/fathers-day/download/{jobId}', [\App\Http\Controllers\FathersDayController::class, 'download']);
+Route::get('/fathers-day/song/{songId}/audio', [\App\Http\Controllers\FathersDayController::class, 'publicSong'])
+    ->middleware('throttle:60,1');
 
 // ===========================================================================
 // Live Sticker maker — SELF-CONTAINED & REMOVABLE.

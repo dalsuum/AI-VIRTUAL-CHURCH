@@ -5,7 +5,7 @@
   Remove by deleting this file + its #fathers-day route/nav-link in App.vue.
 -->
 <script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick } from "vue";
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from "vue";
 import Cropper from "cropperjs";
 import "cropperjs/dist/cropper.css";
 import AdCarousel from "./AdCarousel.vue";
@@ -38,6 +38,45 @@ const effectLabels = {
 };
 
 const songs       = computed(() => config.value?.songs ?? []);
+const selectedSong = computed(() => songs.value.find((s) => s.id === songId.value) || null);
+
+// ── Song length choice (full vs a clip the visitor picks) ────────────────────
+const songMode   = ref("full");   // 'full' | 'clip'
+const clipStartVal = ref(0);
+const clipEndVal   = ref(0);
+const clipAudio  = ref(null);
+const clipUrl    = ref("");
+const clipLoading = ref(false);
+
+// When the chosen song changes, default to the admin's suggested clip if any.
+watch(songId, async (id) => {
+  songMode.value = "full";
+  clipStartVal.value = 0; clipEndVal.value = 0;
+  const s = songs.value.find((x) => x.id === id);
+  if (s?.clip_enabled && s.clip_end - s.clip_start >= 1) {
+    songMode.value = "clip";
+    clipStartVal.value = s.clip_start;
+    clipEndVal.value = s.clip_end;
+  }
+  await loadClipAudio(id);
+});
+
+async function loadClipAudio(id) {
+  if (clipUrl.value) { URL.revokeObjectURL(clipUrl.value); clipUrl.value = ""; }
+  if (!id) return;
+  clipLoading.value = true;
+  try {
+    const blob = await api.fdPublicSongBlob(id);
+    clipUrl.value = URL.createObjectURL(blob);
+  } catch { /* clip picker just won't have audio */ }
+  finally { clipLoading.value = false; }
+}
+
+function setClipStart() { if (clipAudio.value) clipStartVal.value = Math.round(clipAudio.value.currentTime * 10) / 10; }
+function setClipEnd()   { if (clipAudio.value) clipEndVal.value = Math.round(clipAudio.value.currentTime * 10) / 10; }
+function previewClip()  { const a = clipAudio.value; if (a) { a.currentTime = clipStartVal.value; a.play(); } }
+const clipLen = computed(() => Math.max(0, clipEndVal.value - clipStartVal.value));
+
 const hasSpecialDayAd = computed(() =>
   ads.value.some((a) => a.status === "active" && (a.locations || []).includes("special_day"))
 );
@@ -66,6 +105,7 @@ onUnmounted(() => {
   pollTimer && clearInterval(pollTimer);
   easeTimer && clearInterval(easeTimer);
   destroyCropper();
+  if (clipUrl.value) URL.revokeObjectURL(clipUrl.value);
   previews.value.forEach((u) => URL.revokeObjectURL(u));
 });
 
@@ -177,7 +217,10 @@ async function generate() {
   stageLabel.value = "Starting…";
   startEasing();
   try {
-    const { job_id } = await api.fdRender(photos.value, effect.value, songId.value);
+    const opts = (songMode.value === "clip" && clipLen.value >= 1)
+      ? { clipStart: clipStartVal.value, clipEnd: clipEndVal.value }
+      : { full: true };
+    const { job_id } = await api.fdRender(photos.value, effect.value, songId.value, opts);
     jobId.value = job_id;
     pollTimer = setInterval(checkStatus, 2000);
     checkStatus();
@@ -264,6 +307,28 @@ function reset() {
             :class="{ active: songId === s.id }"
             @click="songId = s.id"
           >{{ s.title }}</button>
+        </div>
+      </div>
+
+      <!-- Length: full song or pick a part -->
+      <div v-if="songId" class="fd-songs">
+        <p class="fd-label">⏱ Song length</p>
+        <div class="fd-song-row">
+          <button class="fd-chip" :class="{ active: songMode === 'full' }" @click="songMode = 'full'">Full song</button>
+          <button class="fd-chip" :class="{ active: songMode === 'clip' }" @click="songMode = 'clip'">Pick a part</button>
+        </div>
+
+        <div v-if="songMode === 'clip'" class="fd-clip">
+          <p v-if="clipLoading" class="fd-muted small">Loading song…</p>
+          <audio v-show="clipUrl" ref="clipAudio" :src="clipUrl" controls style="width:100%"></audio>
+          <div class="fd-clip-row">
+            <button class="fd-btn ghost sm" @click="setClipStart">⏮ Set start</button>
+            <span class="fd-clip-t">{{ clipStartVal }}s</span>
+            <button class="fd-btn ghost sm" @click="setClipEnd">Set end ⏭</button>
+            <span class="fd-clip-t">{{ clipEndVal }}s</span>
+            <button class="fd-btn ghost sm" @click="previewClip">▶ Preview</button>
+          </div>
+          <p class="fd-muted small">Clip length: {{ clipLen.toFixed(1) }}s — play, then mark where your part starts and ends.</p>
         </div>
       </div>
 
@@ -399,6 +464,10 @@ function reset() {
 .fd-crop-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
 .fd-songs { margin-bottom: 1.25rem; }
 .fd-song-row { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.fd-clip { margin-top: 0.75rem; padding: 0.75rem; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.fd-clip-row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin: 0.6rem 0 0.3rem; }
+.fd-clip-t { font-family: monospace; font-size: 0.85rem; color: var(--text-muted); }
+.fd-btn.sm { padding: 0.4rem 0.7rem; font-size: 0.82rem; }
 .fd-effects { margin-top: 1.25rem; }
 .fd-label { font-size: 0.8rem; font-weight: 600; margin: 0 0 0.5rem; }
 .fd-effect-row { display: flex; gap: 0.5rem; flex-wrap: wrap; }

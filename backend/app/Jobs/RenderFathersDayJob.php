@@ -43,8 +43,13 @@ class RenderFathersDayJob implements ShouldQueue
 
     private float $clipOffset = 0.0;   // seconds trimmed from the song front (clip mode)
 
-    public function __construct(public string $jobId, public string $effect, public ?string $songId = null)
-    {
+    public function __construct(
+        public string $jobId,
+        public string $effect,
+        public ?string $songId = null,
+        public ?float $clipStart = null,   // per-render clip (visitor/admin choice); null = full song
+        public ?float $clipEnd = null,
+    ) {
         // Dedicated queue so heavy ffmpeg renders never block worship-service
         // dispatch on the shared 'default' worker. Served by aivc-fathersday-render@.
         $this->onQueue('fathersday');
@@ -483,12 +488,13 @@ class RenderFathersDayJob implements ShouldQueue
      */
     private function applyClip(string $song, string $work): string
     {
-        $s = $this->song();
-        if (empty($s['clip_enabled'])) {
+        // The clip range is resolved per render (visitor's choice overrides the
+        // admin default; null means full song).
+        if ($this->clipStart === null || $this->clipEnd === null) {
             return $song;
         }
-        $start = max(0.0, (float) ($s['clip_start'] ?? 0.0));
-        $end   = (float) ($s['clip_end'] ?? 0.0);
+        $start = max(0.0, (float) $this->clipStart);
+        $end   = (float) $this->clipEnd;
         $len   = $end - $start;
         if ($len < 1.0) {            // invalid/empty range → fall back to full song
             return $song;

@@ -47,7 +47,7 @@ class StickerController extends Controller
         $defaults = [
             'enabled'  => false,
             'title'    => 'Make a Live Sticker',
-            'subtitle' => 'Upload a photo — we\'ll turn it into a fun watercolor sticker.',
+            'subtitle' => 'Upload a photo — we\'ll turn it into a fun art sticker.',
         ];
         $data = Storage::exists(self::CONFIG)
             ? json_decode((string) Storage::get(self::CONFIG), true)
@@ -131,7 +131,7 @@ class StickerController extends Controller
         $c = $this->config();
         $c['enabled']  = (bool) $v['enabled'];
         $c['title']    = $v['title'] ?: 'Make a Live Sticker';
-        $c['subtitle'] = $v['subtitle'] ?: 'Upload a photo — we\'ll turn it into a fun watercolor sticker.';
+        $c['subtitle'] = $v['subtitle'] ?: 'Upload a photo — we\'ll turn it into a fun art sticker.';
         $c['updated_at'] = now()->toIso8601String();
 
         Storage::put(self::CONFIG, json_encode($c));

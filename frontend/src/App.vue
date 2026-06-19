@@ -306,7 +306,7 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
           <span class="sk-banner-emoji">🎨</span>
           <span class="sk-banner-text">
             <strong>{{ stickersTitle }}</strong>
-            Upload a photo → get a fun watercolor sticker →
+            Upload a photo → get a fun art sticker →
           </span>
         </a>
 

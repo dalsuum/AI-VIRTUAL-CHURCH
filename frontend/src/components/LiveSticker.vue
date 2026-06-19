@@ -48,7 +48,7 @@ const hasLyrics   = computed(() => hasSongs.value || suggestions.value.length > 
 const maxChars    = computed(() => config.value?.max_chars ?? 120);
 const enabled     = computed(() => config.value?.enabled !== false);
 const pageTitle   = computed(() => config.value?.title || "Live Sticker Maker");
-const pageSubtitle = computed(() => config.value?.subtitle || "Upload a photo — we'll turn it into a fun watercolor sticker.");
+const pageSubtitle = computed(() => config.value?.subtitle || "Upload a photo — we'll turn it into a fun art sticker.");
 
 const chosenText = computed(() =>
   source.value === "lyrics" ? lyricLine.value : manualText.value

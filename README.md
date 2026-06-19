@@ -1138,10 +1138,33 @@ job dirs pruned after 6h. The base storage dir is `setgid 02775` so the render
 worker (separate OS user in the `www-data` group) can read the queued job. The
 photo is sent to OpenRouter for the repaint — note this in any privacy copy.
 
+**Sharing**: the visitor's primary action is **📤 Share**, which hands the actual
+PNG file to `navigator.share({files})` — it lands straight in WhatsApp /
+Instagram / Messenger / Viber / X with **no hostname exposed**. For link-based
+shares (Facebook/X/Telegram/“Copy link”) the page builds a clean **main-domain**
+URL `https://aivirtual.church/s/<jobId>`, served by `ShareController` (registered
+in `routes/web.php`) with **Open-Graph/Twitter-card** meta so the preview shows
+the sticker on the public domain, never `api.*`. `og:image` is re-served at
+`/si/<jobId>/<n>`. `SecurityHeaders` relaxes the CSP only for `/s/*`.
+
+**nginx (main domain)**: map the share paths to php-fpm inside the
+`server_name aivirtual.church` block:
+```nginx
+location ^~ /s/  { root /opt/ai-church/backend/public; try_files $uri @sticker_share; }
+location ^~ /si/ { root /opt/ai-church/backend/public; try_files $uri @sticker_share; }
+location @sticker_share {
+    fastcgi_pass unix:/run/php/php8.3-fpm.sock;
+    include fastcgi_params;
+    fastcgi_param SCRIPT_FILENAME /opt/ai-church/backend/public/index.php;
+    fastcgi_param SCRIPT_NAME /index.php;
+}
+```
+
 **To remove the whole feature**, delete: `StickerController.php`,
-`app/Jobs/RenderStickerJob.php`, `workers/tools/sticker_render.py`, the
-*Live Sticker* route block in `routes/api.php`, `backend/storage/app/stickers/`,
-the frontend `LiveSticker.vue`, and its wiring in `App.vue` / `useApi.js`.
+`app/Jobs/RenderStickerJob.php`, `ShareController.php`, `workers/tools/sticker_render.py`,
+the *Live Sticker* route block in `routes/api.php`, the `routes/web.php` share block,
+the `/s//si` nginx locations, `backend/storage/app/stickers/`, the frontend
+`LiveSticker.vue`, and its wiring in `App.vue` / `useApi.js`.
 
 ---
 

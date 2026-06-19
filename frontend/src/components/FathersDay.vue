@@ -273,6 +273,10 @@ async function fetchVideoFile() {
 // single link (one post, tap to play) to avoid the multi-reel mess.
 const REEL_MAX_SEC = 90;
 
+// Web Share API isn't available in some in-app browsers (e.g. Facebook's) or on
+// desktop. There we can't open a native share sheet, so the button becomes Save.
+const canWebShare = typeof navigator !== "undefined" && typeof navigator.share === "function";
+
 function saveBlob(file) {
   const u = URL.createObjectURL(file);
   const a = document.createElement("a");
@@ -313,7 +317,9 @@ async function shareVideo() {
     }
   } catch (e) {
     if (e?.name !== "AbortError") {
-      shareNote.value = "Couldn't open the share menu. Try Save, or the link option below.";
+      // Make the tap still useful: hand them the file so they can post it.
+      try { saveBlob(await fetchVideoFile()); shareNote.value = "Saved the video — post it from your gallery."; }
+      catch { shareNote.value = "Couldn't share here. Try Save, or the link option below."; }
     }
   } finally {
     sharing.value = false;
@@ -489,9 +495,13 @@ function reset() {
 
       <div v-else-if="phase === 'done'" class="fd-done">
         <p class="fd-done-msg">🎉 Your video is ready!</p>
-        <button class="fd-btn primary big" :disabled="sharing" @click="shareVideo">📤 Share video</button>
-        <p class="fd-muted small">Short clips post as one video; longer ones post as a single link — never split into multiple posts.</p>
-        <button class="fd-btn ghost" @click="saveVideo">⬇ Save to device</button>
+        <button v-if="canWebShare" class="fd-btn primary big" :disabled="sharing" @click="shareVideo">📤 Share video</button>
+        <button v-else class="fd-btn primary big" @click="saveVideo">⬇ Save video</button>
+        <p class="fd-muted small">
+          <template v-if="canWebShare">Short clips post as one video; longer ones post as a single link — never split into multiple posts.</template>
+          <template v-else>Save the video, then post it from your gallery. (Tip: open this page in Chrome or Safari to share directly.)</template>
+        </p>
+        <button v-if="canWebShare" class="fd-btn ghost" @click="saveVideo">⬇ Save to device</button>
 
         <details class="fd-linkshare">
           <summary>Or share a link</summary>

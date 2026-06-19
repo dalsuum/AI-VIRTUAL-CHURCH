@@ -66,7 +66,10 @@ class StickerController extends Controller
         $c = $this->config();
         $observance = $c['enabled'] ? $resolver->currentPayload('en') : null;
 
-        $title    = $observance['title'] ?? $c['title'];
+        // The page title is admin-controlled (e.g. "Happy Father's Day") and is
+        // always burned onto the sticker as the static bottom title. The current
+        // observance only drives the art theme + caption suggestions.
+        $title    = $c['title'];
         $occasion = $observance['title'] ?? '';
         $suggestions = $this->suggestions($resolver, $observance);
 
@@ -214,8 +217,10 @@ class StickerController extends Controller
             'crop.h' => ['nullable', 'numeric', 'min:1'],
         ]);
 
-        // Theme the AI repaint after the current Special Sunday, if any.
+        // Theme the AI repaint after the current Special Sunday, if any. The
+        // admin page title is always burned onto the sticker as a static title.
         $occasion = $resolver->currentPayload('en')['title'] ?? '';
+        $title    = $this->config()['title'];
 
         $token  = $this->safeId($v['token']);
         $jobDir = self::DIR . "/jobs/{$token}";
@@ -243,6 +248,7 @@ class StickerController extends Controller
             'text'        => trim((string) ($v['text'] ?? '')),
             'source'      => $v['source'] ?? 'manual',
             'theme'       => $occasion,
+            'title'       => $title,
             'autocorrect' => true,
         ]));
         Storage::put("{$jobDir}/status.json", json_encode([

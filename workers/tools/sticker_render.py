@@ -352,50 +352,58 @@ def drop_unsupported(text, fpath):
     return "".join(ch for ch in text if ord(ch) in cm or ord(ch) in keep)
 
 
-def add_caption(canvas, text):
+def add_caption(canvas, text, bottom=28, sizes=(46, 40, 34, 28)):
+    """Draw a centred, stroked caption whose bottom edge sits `bottom` px from the
+    canvas bottom. Wraps on grapheme boundaries and auto-shrinks; never truncates.
+    Returns the total height drawn (0 if nothing)."""
     if not text:
-        return
+        return 0
     d = ImageDraw.Draw(canvas)
     fpath = MYANMAR_FONT if has_myanmar(text) and os.path.exists(MYANMAR_FONT) \
         else (LATIN_FONTS[0] if LATIN_FONTS else None)
     if not fpath:
-        return
+        return 0
 
     text = drop_unsupported(text, fpath).strip()
     if not text:
-        return
+        return 0
 
     max_w = SIZE - 56
-    # Pick the largest size where the whole caption fits in <=2 lines — never
-    # truncate (mid-cluster cuts produce broken Burmese glyphs).
-    lines, font, fsize = None, None, 28
-    for size in (46, 40, 34, 28):
+    lines, font, fsize = None, None, sizes[-1]
+    for size in sizes:
         f = ImageFont.truetype(fpath, size)
         wrapped, ok = wrap_clusters(d, text, f, max_w, 2)
         if ok:
             lines, font, fsize = wrapped, f, size
             break
     if lines is None:           # extremely long: keep 2 lines at the smallest size
-        font = ImageFont.truetype(fpath, 28)
+        font = ImageFont.truetype(fpath, sizes[-1])
         lines, _ = wrap_clusters(d, text, font, max_w, 2)
 
     line_h = fsize + 12
-    y = SIZE - 28 - line_h * len(lines)
+    block_h = line_h * len(lines)
+    y = SIZE - bottom - block_h
     for ln in lines:
         w = d.textlength(ln, font=font)
         d.text(((SIZE - w) / 2, y), ln, font=font, fill=(40, 40, 60, 255),
                stroke_width=6, stroke_fill=(255, 255, 255, 235))
         y += line_h
+    return block_h
 
 
-def build_sticker(base_square, style, caption, rng, occasion=""):
+def build_sticker(base_square, style, caption, rng, occasion="", title=""):
     art = openrouter_repaint(base_square, style, occasion)
     if art is None:
         art = base_square          # graceful fallback: cut out the real photo
     cut = cutout(art)
     canvas, mask = die_cut(cut)
     decorate(canvas, mask, rng, decor_for(occasion))
-    add_caption(canvas, caption)
+    # Always burn the page title at the very bottom (static). Any visitor-chosen
+    # words go just above it, slightly smaller, and only if different.
+    h = add_caption(canvas, title, bottom=28)
+    words = (caption or "").strip()
+    if words and words != (title or "").strip():
+        add_caption(canvas, words, bottom=28 + h + 10, sizes=(34, 30, 26, 22))
     return canvas
 
 
@@ -432,6 +440,7 @@ def cmd_render(job_dir):
     if caption and inp.get("autocorrect") and inp.get("source") == "manual" and not has_myanmar(caption):
         caption = autocorrect_en(caption)
     occasion = (inp.get("theme") or "").strip()
+    title = (inp.get("title") or "").strip()
 
     rng = random.Random(int.from_bytes(os.urandom(4), "big"))
     styles = STYLES[:]
@@ -440,7 +449,7 @@ def cmd_render(job_dir):
         pct = 8 + int(i * (90 / COUNT))
         set_status(job_dir, progress=pct,
                    stage="Painting your sticker" if COUNT == 1 else f"Painting sticker {i}/{COUNT}")
-        sticker = build_sticker(base, styles[(i - 1) % len(styles)], caption, rng, occasion)
+        sticker = build_sticker(base, styles[(i - 1) % len(styles)], caption, rng, occasion, title)
         sticker.save(os.path.join(job_dir, f"sticker_{i}.png"))
         try:
             os.chmod(os.path.join(job_dir, f"sticker_{i}.png"), 0o644)

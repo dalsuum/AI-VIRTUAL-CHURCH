@@ -356,17 +356,25 @@ function reset() {
             </div>
           </div>
         </div>
-        <p class="sk-tiny sk-center">Share to WhatsApp, Instagram, Messenger, Viber, X and more.</p>
+        <p class="sk-tiny sk-center">
+          <strong>Share</strong> or <strong>Save</strong> posts the actual image to your phone
+          and apps (WhatsApp, Instagram, Messenger, Viber, X…) — it becomes <em>yours to keep,
+          forever</em>, just like any photo you upload. It stays even if this site goes away.
+        </p>
 
-        <!-- Clean public link (main domain, Open-Graph preview). -->
-        <div class="sk-social">
-          <button class="sk-chip" title="Facebook"  @click="socialShare('facebook')">f</button>
-          <button class="sk-chip" title="X"         @click="socialShare('x')">𝕏</button>
-          <button class="sk-chip" title="WhatsApp"  @click="socialShare('whatsapp')">✆</button>
-          <button class="sk-chip" title="Telegram"  @click="socialShare('telegram')">✈</button>
-          <button class="sk-chip" title="Viber"     @click="socialShare('viber')">V</button>
-          <button class="sk-chip wide" @click="copyLink">🔗 Copy link</button>
-        </div>
+        <!-- Link share (server-hosted preview) — secondary, less permanent. -->
+        <details class="sk-linkshare">
+          <summary>Or share just a link</summary>
+          <p class="sk-tiny">A link shows a preview from our site; it may stop working later. To keep your sticker permanently, use <strong>Share</strong> or <strong>Save</strong> above.</p>
+          <div class="sk-social">
+            <button class="sk-chip" title="Facebook"  @click="socialShare('facebook')">f</button>
+            <button class="sk-chip" title="X"         @click="socialShare('x')">𝕏</button>
+            <button class="sk-chip" title="WhatsApp"  @click="socialShare('whatsapp')">✆</button>
+            <button class="sk-chip" title="Telegram"  @click="socialShare('telegram')">✈</button>
+            <button class="sk-chip" title="Viber"     @click="socialShare('viber')">V</button>
+            <button class="sk-chip wide" @click="copyLink">🔗 Copy link</button>
+          </div>
+        </details>
 
         <p v-if="shareNote" class="sk-tiny sk-center">{{ shareNote }}</p>
         <div class="sk-actions">
@@ -458,4 +466,7 @@ function reset() {
   background: transparent; color: inherit; cursor: pointer; font-size: 1.1rem; font-weight: 700; }
 .sk-chip.wide { width: auto; border-radius: 22px; padding: 0 1rem; font-size: .9rem; }
 .sk-chip:hover { background: rgba(220,38,38,.12); border-color: #dc2626; }
+.sk-linkshare { margin-top: .9rem; text-align: center; }
+.sk-linkshare summary { cursor: pointer; color: var(--muted, #888); font-size: .85rem; }
+.sk-linkshare .sk-social { margin-top: .6rem; }
 </style>

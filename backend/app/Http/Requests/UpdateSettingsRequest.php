@@ -28,9 +28,22 @@ class UpdateSettingsRequest extends FormRequest
             'narration_mode_td'  => ['sometimes', 'string', 'in:edge_tts,mms_tts,off'],
             // Online Bible reader "Listen" voice — same provider set as the live
             // service, per language. Unset inherits the service narration voice.
-            'bible_narration_mode_en' => ['sometimes', 'string', 'in:' . implode(',', Setting::NARRATION_MODES)],
-            'bible_narration_mode_my' => ['sometimes', 'string', 'in:edge_tts,mms_tts,off'],
-            'bible_narration_mode_td' => ['sometimes', 'string', 'in:edge_tts,mms_tts,off'],
+            // English & KJV (English text) support every provider; Myanmar & Tedim
+            // add the native local MMS-TTS voice; Hebrew uses its he-IL Edge voice;
+            // the Chin/Zo Bibles have no native voice so they read phonetically via
+            // the English Edge voice (edge_tts) or stay silent (off).
+            'bible_narration_mode_en'  => ['sometimes', 'string', 'in:' . implode(',', Setting::NARRATION_MODES)],
+            'bible_narration_mode_kjv' => ['sometimes', 'string', 'in:' . implode(',', Setting::NARRATION_MODES)],
+            'bible_narration_mode_my'  => ['sometimes', 'string', 'in:edge_tts,mms_tts,off'],
+            'bible_narration_mode_td'  => ['sometimes', 'string', 'in:edge_tts,mms_tts,off'],
+            'bible_narration_mode_he'  => ['sometimes', 'string', 'in:edge_tts,off'],
+            'bible_narration_mode_cfm' => ['sometimes', 'string', 'in:edge_tts,off'],
+            'bible_narration_mode_cnh' => ['sometimes', 'string', 'in:edge_tts,off'],
+            'bible_narration_mode_mrh' => ['sometimes', 'string', 'in:edge_tts,off'],
+            'bible_narration_mode_hlt' => ['sometimes', 'string', 'in:edge_tts,off'],
+            'bible_narration_mode_lus' => ['sometimes', 'string', 'in:edge_tts,off'],
+            'bible_narration_mode_pck' => ['sometimes', 'string', 'in:edge_tts,off'],
+            'bible_narration_mode_csy' => ['sometimes', 'string', 'in:edge_tts,off'],
             // Highlight verses in the Bible reader as narration plays.
             'bible_text_highlight_enabled' => ['sometimes', 'boolean'],
             // Background music behind Bible narration: off | static mp3 | AI-generated.

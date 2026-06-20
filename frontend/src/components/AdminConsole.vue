@@ -142,6 +142,34 @@ const narrationModesTD = [
   { value: "off",      label: "Off",                    hint: "Segments stay as silent text — nothing is read aloud." },
 ];
 
+// Compact per-version "Listen" voice rows for the Bible page. English & KJV get
+// the full English provider set; Myanmar & Tedim reuse their native-aware lists;
+// Hebrew uses its he-IL Edge voice; the Chin/Zo Bibles have no native voice so
+// they read phonetically via the English Edge voice (or Off).
+const bibleVoiceEN = narrationModes.filter((x) => x.value !== "browser");
+const bibleVoiceHE = [
+  { value: "edge_tts", label: "Edge TTS (cloud, free)", hint: "Microsoft he-IL neural voice (Avri / Hila) — native Hebrew, no server needed." },
+  { value: "off",      label: "Off",                    hint: "No narration for this translation." },
+];
+const bibleVoicePhonetic = [
+  { value: "edge_tts", label: "Edge TTS (cloud, free)", hint: "No native voice — reads the Latin-script text phonetically with the English Edge voice. Free, but the accent is English." },
+  { value: "off",      label: "Off",                    hint: "No narration for this translation." },
+];
+const bibleVoiceLangs = [
+  { code: "kjv", label: "KJV (English)",  modes: bibleVoiceEN },
+  { code: "en",  label: "English (BSB)",  modes: bibleVoiceEN },
+  { code: "he",  label: "Hebrew (עברית)", modes: bibleVoiceHE },
+  { code: "my",  label: "Burmese (ဗမာ)",  modes: narrationModesMY },
+  { code: "td",  label: "Tedim (Zolai)",  modes: narrationModesTD },
+  { code: "cfm", label: "Falam",          modes: bibleVoicePhonetic },
+  { code: "cnh", label: "Hakha",          modes: bibleVoicePhonetic },
+  { code: "mrh", label: "Mara",           modes: bibleVoicePhonetic },
+  { code: "hlt", label: "Matu",           modes: bibleVoicePhonetic },
+  { code: "lus", label: "Mizo",           modes: bibleVoicePhonetic },
+  { code: "pck", label: "Paite",          modes: bibleVoicePhonetic },
+  { code: "csy", label: "Sizang",         modes: bibleVoicePhonetic },
+];
+
 const serviceLanguages = [
   { key: "lang_en", label: "English", hint: "Show the English tab in the intake form. Keep at least one language on." },
   { key: "lang_my", label: "Myanmar (မြန်မာ)", hint: "Show the Myanmar/Burmese tab. Enable once the Burmese LLM is running." },
@@ -2370,64 +2398,34 @@ onUnmounted(() => {
           <h2>Bible reader voice</h2>
           <p class="setting-desc">
             The voice used by the online Bible reader's <strong>🔊 Listen</strong> button,
-            per language. Independent of the live-service narration above — pick a
-            calmer reading voice here if you like. English supports all providers;
-            Burmese &amp; Tedim use the native local MMS-TTS voice.
+            per translation. Independent of the live-service narration. English &amp;
+            KJV support every provider; Burmese &amp; Tedim add the native local
+            MMS-TTS voice; Hebrew uses its he-IL voice; the Chin/Zo Bibles have no
+            native voice, so they read phonetically with the English Edge voice — or
+            set any translation to <strong>Off</strong> to disable narration there.
+            Hover a button for details.
           </p>
           <template v-if="settings">
-            <!-- English -->
-            <p class="setting-desc" style="margin-top:1rem"><strong>English</strong></p>
-            <div class="choice-row">
-              <button
-                v-for="m in narrationModes.filter((x) => x.value !== 'browser')"
-                :key="m.value"
-                type="button"
-                class="choice"
-                :class="{ active: (settings.bible_narration_mode_en || 'edge_tts') === m.value }"
-                :disabled="savingSettings || settingsReadOnly"
-                @click="setBibleNarrationMode('en', m.value)"
-              >
-                <strong>{{ m.label }}</strong>
-                <span>{{ m.hint }}</span>
-              </button>
+            <div class="voice-rows">
+              <div v-for="l in bibleVoiceLangs" :key="l.code" class="voice-row">
+                <span class="voice-row-lang">{{ l.label }}</span>
+                <div class="voice-row-modes">
+                  <button
+                    v-for="m in l.modes"
+                    :key="m.value"
+                    type="button"
+                    class="voice-chip"
+                    :class="{ active: settings['bible_narration_mode_' + l.code] === m.value }"
+                    :disabled="savingSettings || settingsReadOnly"
+                    :title="m.hint"
+                    @click="setBibleNarrationMode(l.code, m.value)"
+                  >{{ m.label }}</button>
+                </div>
+              </div>
             </div>
-            <p class="setting-desc" style="margin-top:0.5rem">
-              English Edge / Voicebox voice follows the live-service voice picked above.
+            <p class="setting-desc" style="margin-top:0.6rem">
+              The English Edge / Voicebox voice follows the live-service voice picked in Settings.
             </p>
-
-            <!-- Myanmar -->
-            <p class="setting-desc" style="margin-top:1.5rem"><strong>Myanmar (မြန်မာ)</strong></p>
-            <div class="choice-row">
-              <button
-                v-for="m in narrationModesMY"
-                :key="m.value"
-                type="button"
-                class="choice"
-                :class="{ active: (settings.bible_narration_mode_my || 'mms_tts') === m.value }"
-                :disabled="savingSettings || settingsReadOnly"
-                @click="setBibleNarrationMode('my', m.value)"
-              >
-                <strong>{{ m.label }}</strong>
-                <span>{{ m.hint }}</span>
-              </button>
-            </div>
-
-            <!-- Tedim (Zolai) -->
-            <p class="setting-desc" style="margin-top:1.5rem"><strong>Tedim (Zolai)</strong></p>
-            <div class="choice-row">
-              <button
-                v-for="m in narrationModesTD"
-                :key="m.value"
-                type="button"
-                class="choice"
-                :class="{ active: (settings.bible_narration_mode_td || 'mms_tts') === m.value }"
-                :disabled="savingSettings || settingsReadOnly"
-                @click="setBibleNarrationMode('td', m.value)"
-              >
-                <strong>{{ m.label }}</strong>
-                <span>{{ m.hint }}</span>
-              </button>
-            </div>
 
             <!-- Highlight default -->
             <p class="setting-desc" style="margin-top:1.5rem"><strong>Verse highlighting default</strong></p>
@@ -3208,6 +3206,27 @@ onUnmounted(() => {
 .bm-toggle { display: inline-flex; cursor: pointer; }
 .bm-toggle input { width: 1.05rem; height: 1.05rem; cursor: pointer; accent-color: var(--primary); }
 .bm-toggle input:disabled { cursor: default; }
+
+/* Compact per-translation "Listen" voice rows: label + a wrap of mode chips. */
+.voice-rows { display: flex; flex-direction: column; gap: 0.4rem; margin-top: 0.6rem; }
+.voice-row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; padding: 0.35rem 0; border-bottom: 1px solid var(--border); }
+.voice-row-lang { flex: 0 0 140px; font-weight: 600; font-size: 0.88rem; }
+.voice-row-modes { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.voice-chip {
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.voice-chip:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
+.voice-chip.active { border-color: var(--primary); color: var(--primary); background: var(--primary-soft, rgba(99,179,237,0.12)); font-weight: 600; }
+.voice-chip:disabled { opacity: 0.6; cursor: default; }
+@media (max-width: 560px) { .voice-row-lang { flex-basis: 100%; } }
 .pool-lyrics { width: 100%; margin-top: 0.55rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); padding: 0.55rem 0.6rem; font: inherit; resize: vertical; }
 .pool-actions { display: flex; gap: 0.45rem; margin-top: 0.65rem; }
 

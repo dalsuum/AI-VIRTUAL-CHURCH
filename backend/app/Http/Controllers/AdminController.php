@@ -1068,7 +1068,8 @@ class AdminController extends Controller
         if (array_key_exists('text_highlight_enabled', $data)) {
             Setting::set('text_highlight_enabled', $data['text_highlight_enabled'] ? '1' : '0');
         }
-        foreach (['bible_narration_mode_en', 'bible_narration_mode_my', 'bible_narration_mode_td'] as $key) {
+        foreach (array_keys(Setting::BIBLE_VERSIONS) as $code) {
+            $key = 'bible_narration_mode_' . $code;
             if (array_key_exists($key, $data)) {
                 Setting::set($key, $data[$key]);
             }
@@ -1171,9 +1172,9 @@ class AdminController extends Controller
             'text_highlight_enabled' => Setting::get('text_highlight_enabled', '1') === '1',
             // Online Bible reader: per-language "Listen" voice (inherits the
             // service voice when unset) + verse highlight toggle.
-            'bible_narration_mode_en' => Setting::bibleNarrationMode('en'),
-            'bible_narration_mode_my' => Setting::bibleNarrationMode('my'),
-            'bible_narration_mode_td' => Setting::bibleNarrationMode('td'),
+            ...collect(array_keys(Setting::BIBLE_VERSIONS))
+                ->mapWithKeys(fn ($code) => ['bible_narration_mode_' . $code => Setting::bibleNarrationMode($code)])
+                ->all(),
             'bible_text_highlight_enabled' => Setting::bibleTextHighlightEnabled(),
             'bible_bg_music_mode' => Setting::bibleBgMusicMode(),
             'bible_bg_music_engine' => Setting::bibleBgMusicEngine(),

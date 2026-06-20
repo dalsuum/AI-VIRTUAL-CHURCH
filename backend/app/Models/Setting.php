@@ -69,6 +69,15 @@ class Setting extends Model
     public const FILTER_SCOPES = ['both', 'music', 'sermon'];
 
     /**
+     * Firewall-style category type:
+     *   'block' — keywords reject a matching YouTube result (default policy).
+     *   'allow' — keywords force-keep a matching result even if a block keyword
+     *             also matches. Allow takes priority over block (an explicit
+     *             exception to the blocklist).
+     */
+    public const FILTER_TYPES = ['block', 'allow'];
+
+    /**
      * Church-tailored content-filter taxonomy. Each category groups keywords
      * and declares WHERE it blocks: worship/music search, sermon search, or both.
      * Admin-editable via the Content Filter tab; falls back to these defaults.
@@ -120,6 +129,11 @@ class Setting extends Model
         [
             'id' => 'custom', 'label' => 'Custom', 'scope' => 'both',
             'description' => 'Your own terms. Added keywords land here unless you pick another category.',
+            'keywords' => [],
+        ],
+        [
+            'id' => 'allowlist', 'label' => 'Allowlist', 'scope' => 'both', 'type' => 'allow',
+            'description' => 'Trusted terms (channels, artists, ministries). A match here keeps a video even if a block keyword also matches — allow wins over block.',
             'keywords' => [],
         ],
     ];
@@ -261,6 +275,9 @@ class Setting extends Model
     {
         $words = [];
         foreach (static::filterCategories() as $cat) {
+            if (($cat['type'] ?? 'block') !== 'block') {
+                continue;
+            }
             foreach ($cat['keywords'] as $kw) {
                 $words[] = $kw;
             }
@@ -270,13 +287,16 @@ class Setting extends Model
     }
 
     /**
-     * Keywords that apply to a given search scope ('music' or 'sermon').
-     * A category tagged 'both' contributes to either scope.
+     * Keywords of a given type ('block'|'allow') that apply to a search scope
+     * ('music' or 'sermon'). A category tagged 'both' contributes to either scope.
      */
-    public static function filterKeywordsForScope(string $scope): array
+    public static function filterKeywordsForScope(string $scope, string $type = 'block'): array
     {
         $words = [];
         foreach (static::filterCategories() as $cat) {
+            if (($cat['type'] ?? 'block') !== $type) {
+                continue;
+            }
             if ($cat['scope'] === 'both' || $cat['scope'] === $scope) {
                 foreach ($cat['keywords'] as $kw) {
                     $words[] = $kw;
@@ -284,6 +304,14 @@ class Setting extends Model
             }
         }
         return array_values(array_unique(array_filter(array_map('trim', $words))));
+    }
+
+    /**
+     * Allowlist keywords for a scope — trusted terms that override the blocklist.
+     */
+    public static function allowKeywordsForScope(string $scope): array
+    {
+        return static::filterKeywordsForScope($scope, 'allow');
     }
 
     /**
@@ -372,6 +400,11 @@ class Setting extends Model
                 $scope = 'both';
             }
 
+            $type = (string) ($cat['type'] ?? 'block');
+            if (! in_array($type, self::FILTER_TYPES, true)) {
+                $type = 'block';
+            }
+
             $keywords = [];
             foreach ((array) ($cat['keywords'] ?? []) as $kw) {
                 $kw = mb_strtolower(trim((string) $kw));
@@ -385,6 +418,7 @@ class Setting extends Model
                 'label'       => mb_substr($label, 0, 80),
                 'description' => mb_substr(trim((string) ($cat['description'] ?? '')), 0, 200),
                 'scope'       => $scope,
+                'type'        => $type,
                 'keywords'    => $keywords,
             ];
         }

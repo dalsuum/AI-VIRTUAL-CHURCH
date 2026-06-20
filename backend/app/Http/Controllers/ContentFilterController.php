@@ -24,6 +24,7 @@ class ContentFilterController extends Controller
         return response()->json([
             'categories' => Setting::filterCategories(),
             'scopes'     => Setting::FILTER_SCOPES,
+            'types'      => Setting::FILTER_TYPES,
         ]);
     }
 
@@ -36,6 +37,7 @@ class ContentFilterController extends Controller
             'categories.*.label'        => ['required', 'string', 'max:80'],
             'categories.*.description'  => ['nullable', 'string', 'max:200'],
             'categories.*.scope'        => ['nullable', 'string', 'in:both,music,sermon'],
+            'categories.*.type'         => ['nullable', 'string', 'in:block,allow'],
             'categories.*.keywords'     => ['nullable', 'array'],
             'categories.*.keywords.*'   => ['string', 'max:100'],
         ]);
@@ -52,6 +54,7 @@ class ContentFilterController extends Controller
             'label'       => ['required', 'string', 'max:80'],
             'description' => ['nullable', 'string', 'max:200'],
             'scope'       => ['nullable', 'string', 'in:both,music,sermon'],
+            'type'        => ['nullable', 'string', 'in:block,allow'],
         ]);
 
         $categories = Setting::filterCategories();
@@ -59,6 +62,7 @@ class ContentFilterController extends Controller
             'label'       => $data['label'],
             'description' => $data['description'] ?? '',
             'scope'       => $data['scope'] ?? 'both',
+            'type'        => $data['type'] ?? 'block',
             'keywords'    => [],
         ];
 
@@ -72,6 +76,7 @@ class ContentFilterController extends Controller
             'label'       => ['sometimes', 'string', 'max:80'],
             'description' => ['sometimes', 'nullable', 'string', 'max:200'],
             'scope'       => ['sometimes', 'string', 'in:both,music,sermon'],
+            'type'        => ['sometimes', 'string', 'in:block,allow'],
         ]);
 
         $categories = Setting::filterCategories();
@@ -82,6 +87,7 @@ class ContentFilterController extends Controller
                 if (array_key_exists('label', $data))       $cat['label'] = $data['label'];
                 if (array_key_exists('description', $data))  $cat['description'] = (string) $data['description'];
                 if (array_key_exists('scope', $data))        $cat['scope'] = $data['scope'];
+                if (array_key_exists('type', $data))         $cat['type'] = $data['type'];
             }
         }
         unset($cat);
@@ -212,14 +218,15 @@ class ContentFilterController extends Controller
 
         return response()->streamDownload(function () use ($categories) {
             $out = fopen('php://output', 'w');
-            fputcsv($out, ['category', 'scope', 'keyword']);
+            fputcsv($out, ['category', 'type', 'scope', 'keyword']);
             foreach ($categories as $cat) {
+                $type = $cat['type'] ?? 'block';
                 if (empty($cat['keywords'])) {
-                    fputcsv($out, [$cat['label'], $cat['scope'], '']);
+                    fputcsv($out, [$cat['label'], $type, $cat['scope'], '']);
                     continue;
                 }
                 foreach ($cat['keywords'] as $kw) {
-                    fputcsv($out, [$cat['label'], $cat['scope'], $kw]);
+                    fputcsv($out, [$cat['label'], $type, $cat['scope'], $kw]);
                 }
             }
             fclose($out);

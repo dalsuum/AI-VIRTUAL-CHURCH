@@ -78,6 +78,8 @@ class ConfigController extends Controller
             'content_filter_keywords' => Setting::filterKeywords(),
             'content_filter_music'    => Setting::filterKeywordsForScope('music'),
             'content_filter_sermon'   => Setting::filterKeywordsForScope('sermon'),
+            'content_filter_allow_music'  => Setting::allowKeywordsForScope('music'),
+            'content_filter_allow_sermon' => Setting::allowKeywordsForScope('sermon'),
         ]);
     }
 

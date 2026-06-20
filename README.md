@@ -28,7 +28,7 @@ Redis queue so neither has to know the other's serializer.
 - [Music: four sources + a reuse pool](#music-four-sources--a-reuse-pool)
 - [Narration & avatar (optional enrichments)](#narration--avatar-optional-enrichments)
 - [Safety: the crisis intercept](#safety-the-crisis-intercept)
-- [Content filter (YouTube blocklist)](#content-filter-youtube-blocklist)
+- [Content filter (YouTube allow/block firewall)](#content-filter-youtube-allowblock-firewall)
 - [Offering & financial ledger](#offering--financial-ledger)
 - [Testimonies](#testimonies)
 - [Admin console](#admin-console)
@@ -745,12 +745,18 @@ dedicated classifier model.
 
 ---
 
-## Content filter (YouTube blocklist)
+## Content filter (YouTube allow/block firewall)
 
 A second, **admin-curated** safety layer keeps non-Christian or non-worship videos out of the
 worship-music and sermon segments. Keywords are grouped into **categories** (Other Religions,
 Occult / New Age, Profanity, Politics, Secular Music, Off-topic Channels, Sermon-exclude,
-Custom), each with a **scope** that decides where it blocks:
+Custom, Allowlist), each with a **scope** that decides where it applies and a **type** that
+decides whether it blocks or allows:
+
+| Type | Effect |
+|------|--------|
+| `block` | A title/channel match **rejects** the candidate (default policy). |
+| `allow` | A title/channel match **keeps** the candidate even if a block keyword also matches — **allow wins over block**. Use it for trusted channels, artists, or ministries. |
 
 | Scope | Worship/music search | Sermon search |
 |-------|:--------------------:|:-------------:|
@@ -759,18 +765,20 @@ Custom), each with a **scope** that decides where it blocks:
 | `sermon` | — | ✅ |
 
 Managed from **Admin Console → Content Filter** (its own tab, separate from Settings). Full CRUD
-on categories and keywords, plus **export to JSON/CSV** and **restore from JSON**. Storage lives
-in `Setting` (key `content_filter_categories`), kept in sync with the legacy flat
-`content_filter_keywords` for backward compatibility.
+on categories and keywords, per-category Block/Allow mode, plus **export to JSON/CSV** and
+**restore from JSON**. Storage lives in `Setting` (key `content_filter_categories`), kept in sync
+with the legacy flat `content_filter_keywords` (block keywords only) for backward compatibility.
 
 - **Backend:** [ContentFilterController.php](backend/app/Http/Controllers/ContentFilterController.php),
   taxonomy + accessors in [Setting.php](backend/app/Models/Setting.php) (`filterCategories()`,
-  `filterKeywordsForScope()`).
+  `filterKeywordsForScope()`, `allowKeywordsForScope()`).
 - **Delivery:** the public [`/config`](backend/app/Http/Controllers/ConfigController.php) endpoint
-  surfaces `content_filter_music` and `content_filter_sermon`.
+  surfaces `content_filter_music` / `content_filter_sermon` (block) and
+  `content_filter_allow_music` / `content_filter_allow_sermon` (allow).
 - **Enforcement:** [youtube_strategy.py](workers/strategies/youtube_strategy.py) fetches the
-  scoped lists (cached 5 min, fails open) and rejects any candidate whose title **or** channel
-  matches — applied as an extra gate on top of the hardcoded per-language reject lists.
+  scoped block + allow lists (cached 5 min, fails open). A candidate whose title **or** channel
+  matches a block keyword is rejected **unless** it also matches an allow keyword — applied as an
+  extra gate on top of the hardcoded per-language reject lists.
 
 Changes take effect within ~5 minutes for running workers (the cache TTL).
 

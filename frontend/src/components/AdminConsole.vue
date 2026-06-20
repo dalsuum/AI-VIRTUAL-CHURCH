@@ -166,13 +166,15 @@ const newMood = ref("");
 const newCountdownBanner = ref({ text: "", source: "" });
 
 // ── Content Filter tab state ──────────────────────────────────────────────────
-const cfCategories = ref([]);      // [{ id, label, description, scope, keywords }]
+const cfCategories = ref([]);      // [{ id, label, description, scope, type, keywords }]
 const cfScopes = ref(["both", "music", "sermon"]);
+const cfTypes = ref(["block", "allow"]);
 const cfBusy = ref(false);
 const cfNewKeyword = ref({});      // keyed by category id
-const cfNewCategory = ref({ label: "", scope: "both", description: "" });
+const cfNewCategory = ref({ label: "", scope: "both", type: "block", description: "" });
 const cfFileInput = ref(null);
 const cfScopeLabels = { both: "Worship + Sermon", music: "Worship only", sermon: "Sermon only" };
+const cfTypeLabels = { block: "Block", allow: "Allow" };
 const countdownSourceOptions = [
   { value: "all", label: "All sources", hint: "Rotate banners, approved testimonies, and mood-matched Scripture from the local Bible." },
   { value: "both", label: "Banners + testimonies", hint: "Rotate admin banners and approved testimonies." },
@@ -385,6 +387,7 @@ async function loadContentFilter() {
     const res = await api.cfList();
     cfCategories.value = res.categories || [];
     cfScopes.value = res.scopes || cfScopes.value;
+    cfTypes.value = res.types || cfTypes.value;
   } catch (e) {
     notice.value = e?.data?.message || "Could not load content filter.";
   }
@@ -416,14 +419,19 @@ function cfRemoveKeyword(cat, kw) {
 }
 
 function cfChangeScope(cat, scope) {
-  cfRun(() => api.cfUpdateCategory(cat.id, { scope }), `${cat.label} now blocks: ${cfScopeLabels[scope]}.`);
+  cfRun(() => api.cfUpdateCategory(cat.id, { scope }), `${cat.label} now applies to: ${cfScopeLabels[scope]}.`);
+}
+
+function cfChangeType(cat, type) {
+  cfRun(() => api.cfUpdateCategory(cat.id, { type }),
+    `${cat.label} is now an ${type === "allow" ? "allow (override)" : "block"} list.`);
 }
 
 function cfAddCategory() {
   const label = cfNewCategory.value.label.trim();
   if (!label) return;
   const payload = { ...cfNewCategory.value, label };
-  cfNewCategory.value = { label: "", scope: "both", description: "" };
+  cfNewCategory.value = { label: "", scope: "both", type: "block", description: "" };
   cfRun(() => api.cfAddCategory(payload), `Added category "${label}".`);
 }
 
@@ -2231,7 +2239,10 @@ onUnmounted(() => {
                 Keywords rejected from YouTube results so non-Christian or non-worship content stays
                 out of services (Baptist / Assemblies of God context). Any video whose <strong>title</strong>
                 or <strong>channel name</strong> contains a keyword is skipped — even if the search query
-                already says "Christian". Each category's <strong>scope</strong> controls whether it filters
+                already says "Christian". Works like a firewall: <strong>Block</strong> categories reject
+                matching videos, while <strong>Allow</strong> categories rescue a video even if a block
+                keyword also matches (allow wins over block — use it for trusted channels, artists, or
+                ministries). Each category's <strong>scope</strong> controls whether it applies to
                 the worship/music search, the sermon search, or both. Changes take effect within 5 minutes
                 for running workers.
               </p>
@@ -2246,15 +2257,25 @@ onUnmounted(() => {
 
           <p v-if="!cfCategories.length" class="setting-desc">Loading…</p>
 
-          <div v-for="cat in cfCategories" :key="cat.id" class="cf-category">
+          <div v-for="cat in cfCategories" :key="cat.id" class="cf-category"
+               :class="{ 'cf-allow': (cat.type || 'block') === 'allow' }">
             <div class="cf-cat-head">
               <div class="cf-cat-title">
                 <h3>{{ cat.label }}</h3>
+                <span class="cf-badge" :class="(cat.type || 'block') === 'allow' ? 'cf-badge-allow' : 'cf-badge-block'">
+                  {{ cfTypeLabels[cat.type || 'block'] }}
+                </span>
                 <span class="cf-count">{{ cat.keywords.length }}</span>
               </div>
               <div class="cf-cat-controls">
                 <label class="cf-scope">
-                  Blocks:
+                  Mode:
+                  <select :value="cat.type || 'block'" :disabled="cfBusy" @change="cfChangeType(cat, $event.target.value)">
+                    <option v-for="t in cfTypes" :key="t" :value="t">{{ cfTypeLabels[t] || t }}</option>
+                  </select>
+                </label>
+                <label class="cf-scope">
+                  Applies to:
                   <select :value="cat.scope" :disabled="cfBusy" @change="cfChangeScope(cat, $event.target.value)">
                     <option v-for="s in cfScopes" :key="s" :value="s">{{ cfScopeLabels[s] || s }}</option>
                   </select>
@@ -2266,7 +2287,8 @@ onUnmounted(() => {
             <p v-if="cat.description" class="setting-desc cf-cat-desc">{{ cat.description }}</p>
 
             <div class="mood-editor">
-              <span v-for="kw in cat.keywords" :key="kw" class="mood-chip filter-chip">
+              <span v-for="kw in cat.keywords" :key="kw" class="mood-chip"
+                    :class="(cat.type || 'block') === 'allow' ? 'allow-chip' : 'filter-chip'">
                 {{ kw }}
                 <button type="button" class="chip-x" :disabled="cfBusy"
                         aria-label="Remove keyword" @click="cfRemoveKeyword(cat, kw)">×</button>
@@ -2279,7 +2301,7 @@ onUnmounted(() => {
                 :value="cfNewKeyword[cat.id] || ''"
                 type="text"
                 class="mood-input"
-                placeholder="Add a keyword to reject (e.g. shaman)"
+                :placeholder="(cat.type || 'block') === 'allow' ? 'Add a trusted keyword to always allow (e.g. hillsong)' : 'Add a keyword to reject (e.g. shaman)'"
                 :disabled="cfBusy"
                 @input="cfNewKeyword = { ...cfNewKeyword, [cat.id]: $event.target.value }"
                 @keyup.enter="cfAddKeyword(cat)"
@@ -2295,6 +2317,9 @@ onUnmounted(() => {
             <div class="cf-new-row">
               <input v-model="cfNewCategory.label" type="text" class="mood-input"
                      placeholder="Category name (e.g. Profanity)" :disabled="cfBusy" />
+              <select v-model="cfNewCategory.type" :disabled="cfBusy" title="Block or Allow">
+                <option v-for="t in cfTypes" :key="t" :value="t">{{ cfTypeLabels[t] || t }}</option>
+              </select>
               <select v-model="cfNewCategory.scope" :disabled="cfBusy">
                 <option v-for="s in cfScopes" :key="s" :value="s">{{ cfScopeLabels[s] || s }}</option>
               </select>
@@ -2886,6 +2911,7 @@ onUnmounted(() => {
 .chip-x:hover:not(:disabled) { background: var(--primary); color: var(--on-primary); }
 .chip-x:disabled { opacity: 0.4; cursor: default; }
 .mood-chip.filter-chip { background: #fff0f0; color: #b00; }
+.mood-chip.allow-chip { background: #e9f7ec; color: #18794e; }
 .mood-add { display: flex; gap: 0.5rem; }
 
 /* Content Filter tab */
@@ -2898,6 +2924,10 @@ onUnmounted(() => {
 .cf-cat-title { display: flex; align-items: center; gap: 0.5rem; }
 .cf-cat-title h3 { margin: 0; }
 .cf-count { background: var(--primary-soft); color: var(--primary); border-radius: 999px; padding: 0.1rem 0.6rem; font-size: 0.8rem; }
+.cf-badge { border-radius: 999px; padding: 0.1rem 0.55rem; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
+.cf-badge-block { background: #fff0f0; color: #b00; }
+.cf-badge-allow { background: #e9f7ec; color: #18794e; }
+.cf-category.cf-allow { border-left: 3px solid #18794e; }
 .cf-cat-controls { display: flex; align-items: center; gap: 0.75rem; }
 .cf-scope { font-size: 0.85rem; color: var(--text-muted); display: flex; align-items: center; gap: 0.4rem; }
 .cf-scope select, .cf-new-row select { padding: 0.4rem 0.5rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font: inherit; }

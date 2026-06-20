@@ -21,6 +21,11 @@ const loadingChapter = ref(false);
 const error = ref("");
 const bookSearch = ref("");
 
+// Narration ("Listen") — synthesized on demand by the backend, then cached.
+const audioUrl = ref("");
+const loadingAudio = ref(false);
+const audioError = ref("");
+
 const filteredBooks = computed(() => {
   const q = bookSearch.value.trim().toLowerCase();
   if (!q) return books.value;
@@ -49,6 +54,7 @@ async function loadChapter() {
   if (!selectedBook.value) return;
   loadingChapter.value = true;
   error.value = "";
+  resetAudio();
   try {
     chapter.value = await api.bibleChapter(lang.value, selectedBook.value.num, chapterNum.value);
   } catch (e) {
@@ -73,7 +79,29 @@ function backToBooks() {
 function goChapter(n) {
   if (n < 1 || (selectedBook.value && n > selectedBook.value.chapters)) return;
   chapterNum.value = n;
+  resetAudio();
   loadChapter();
+}
+
+function resetAudio() {
+  audioUrl.value = "";
+  audioError.value = "";
+}
+
+async function listen() {
+  if (loadingAudio.value || !selectedBook.value) return;
+  loadingAudio.value = true;
+  audioError.value = "";
+  try {
+    const res = await api.bibleAudio(lang.value, selectedBook.value.num, chapterNum.value);
+    audioUrl.value = res.url || "";
+    if (!audioUrl.value) audioError.value = "Narration unavailable.";
+  } catch (e) {
+    audioError.value =
+      e?.status === 409 ? "Narration isn't enabled for this translation." : "Could not generate audio.";
+  } finally {
+    loadingAudio.value = false;
+  }
 }
 
 // Switching translation re-fetches the table of contents, then re-opens the
@@ -144,12 +172,23 @@ onMounted(loadBooks);
     <div v-else class="reader">
       <div class="reader-bar">
         <button class="link-btn" @click="backToBooks">&#8592; All books</button>
-        <select class="ch-select" :value="chapterNum" @change="goChapter(Number($event.target.value))">
-          <option v-for="n in chapterList" :key="n" :value="n">Chapter {{ n }}</option>
-        </select>
+        <div class="reader-bar-right">
+          <button class="listen-btn" :disabled="loadingAudio || loadingChapter" @click="listen">
+            <span v-if="loadingAudio">⏳ Preparing…</span>
+            <span v-else>🔊 Listen</span>
+          </button>
+          <select class="ch-select" :value="chapterNum" @change="goChapter(Number($event.target.value))">
+            <option v-for="n in chapterList" :key="n" :value="n">Chapter {{ n }}</option>
+          </select>
+        </div>
       </div>
 
       <h2 class="reader-heading">{{ chapter?.name || selectedBook.name }} {{ chapterNum }}</h2>
+
+      <div v-if="audioUrl" class="audio-wrap">
+        <audio :src="audioUrl" controls autoplay class="audio-player"></audio>
+      </div>
+      <p v-if="audioError" class="audio-error">{{ audioError }}</p>
 
       <p v-if="loadingChapter" class="muted">Loading…</p>
       <div v-else-if="chapter" class="verses" :class="{ mm: lang !== 'en' }">
@@ -278,7 +317,27 @@ onMounted(loadBooks);
   color: var(--text);
   font-size: 0.9rem;
 }
+.reader-bar-right { display: flex; align-items: center; gap: 0.6rem; }
+.listen-btn {
+  padding: 0.45rem 0.9rem;
+  border: 1px solid var(--primary);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--primary);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+.listen-btn:hover:not(:disabled) { background: var(--primary); color: #fff; }
+.listen-btn:disabled { opacity: 0.6; cursor: default; }
+
 .reader-heading { font-size: 1.3rem; margin: 0 0 1rem; }
+
+.audio-wrap { margin: 0 0 1.1rem; }
+.audio-player { width: 100%; height: 38px; }
+.audio-error { color: var(--danger); font-size: 0.85rem; margin: 0 0 1rem; }
 
 .verses { line-height: 1.85; font-size: 1.05rem; }
 .verses.mm { line-height: 2.1; font-size: 1.12rem; }

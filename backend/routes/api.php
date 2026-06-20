@@ -26,6 +26,8 @@ Route::get('/songs', [SongController::class, 'index']);
 // Online Bible reader — public, read-only (en BSB / my Judson 1835 / td Tedim 1932).
 Route::get('/bible/books', [BibleController::class, 'books'])->middleware('throttle:120,1');
 Route::get('/bible/chapter', [BibleController::class, 'chapter'])->middleware('throttle:120,1');
+// Chapter narration (text-to-speech) — heavier, so throttled tighter.
+Route::get('/bible/audio', [BibleController::class, 'audio'])->middleware('throttle:30,1');
 
 // Public special-Sunday highlight — the active observance (if any) for the
 // intake/home card, localized to ?language=en|my|td.

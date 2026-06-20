@@ -8,10 +8,17 @@ talks to this internal port directly.
 """
 
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
 import bible_api
+import narrator
+import storage
 
 router = APIRouter(prefix="/bible", tags=["bible"])
+
+# Narration modes that produce a stored, playable audio file (mirrors Laravel's
+# Setting::SERVER_NARRATION_MODES). 'off'/'browser' never reach this worker.
+_AUDIO_MODES = {"openai", "kokoro", "edge_tts", "mms_tts", "voicebox"}
 
 
 def _check_lang(lang: str) -> None:
@@ -42,3 +49,43 @@ async def chapter(lang: str = "en", book: int = 1, chapter: int = 1):
     if not data["verses"]:
         raise HTTPException(status_code=404, detail="Chapter not found")
     return {"lang": lang, **data}
+
+
+class NarrateRequest(BaseModel):
+    lang: str = "en"
+    book: int = 1
+    chapter: int = 1
+    mode: str = "edge_tts"
+    gender: str = "female"
+    voice: str = ""           # edge voice name or voicebox engine, resolved by Laravel
+    storage_backend: str = "" # 'local' | 's3' — matches the service narration backend
+
+
+@router.post("/narrate")
+def narrate(req: NarrateRequest):  # sync: TTS calls block, and Edge TTS runs its own event loop
+    """Read a chapter aloud (cached). Laravel resolves the provider from settings
+    and proxies here; the audio is synthesized once and re-presigned thereafter."""
+    _check_lang(req.lang)
+    if req.mode not in _AUDIO_MODES:
+        raise HTTPException(status_code=422, detail=f"Unsupported narration mode '{req.mode}'")
+    if not (1 <= req.book <= 66) or req.chapter < 1:
+        raise HTTPException(status_code=422, detail="Invalid book or chapter")
+
+    data = bible_api.chapter(req.lang, req.book, req.chapter)
+    if not data["verses"]:
+        raise HTTPException(status_code=404, detail="Chapter not found")
+
+    if req.storage_backend:
+        storage.set_backend(req.storage_backend)
+
+    # Read the verse text only — verse numbers would be voiced as stray numerals.
+    script = " ".join(v["text"] for v in data["verses"] if v["text"])
+    try:
+        url = narrator.narrate_bible(
+            req.lang, req.book, req.chapter, script,
+            mode=req.mode, voice=req.voice, gender=req.gender,
+        )
+    except Exception as exc:  # noqa: BLE001 — surface a clean 502 to Laravel
+        raise HTTPException(status_code=502, detail=f"Narration failed: {exc}") from exc
+
+    return {"url": url, "name": data["name"], "chapter": data["chapter"]}

@@ -212,6 +212,9 @@ export const api = {
     request(`/bible/books?lang=${encodeURIComponent(lang)}`),
   bibleChapter: (lang, book, chapter) =>
     request(`/bible/chapter?lang=${encodeURIComponent(lang)}&book=${book}&chapter=${chapter}`),
+  // Chapter narration (TTS). Returns { url }. Synthesized once, then cached.
+  bibleAudio: (lang, book, chapter) =>
+    request(`/bible/audio?lang=${encodeURIComponent(lang)}&book=${book}&chapter=${chapter}`),
 
   updateGuestEmail: (email) =>
     request("/me/email", { method: "PATCH", body: { email } }),

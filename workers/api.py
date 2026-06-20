@@ -28,6 +28,7 @@ from bible_router import router as bible_router
 from burmese_router import router as burmese_router
 from mms_tts_service import router as mms_tts_router
 from tedim_router import router as tedim_router
+from chin_router import ROUTERS as chin_routers
 
 app = FastAPI(
     title="AI Church — Language LLM + Speech API",
@@ -36,6 +37,10 @@ app = FastAPI(
 )
 
 app.include_router(tedim_router)
+# Falam (/falam), Hakha (/hakha), Mizo (/mizo), Paite (/paite) — each backed by
+# its own Ollama model; see chin_router.py.
+for _chin_router in chin_routers:
+    app.include_router(_chin_router)
 app.include_router(bible_router)
 app.include_router(burmese_router)
 app.include_router(mms_tts_router)

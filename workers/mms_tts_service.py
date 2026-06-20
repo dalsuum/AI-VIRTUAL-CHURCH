@@ -29,6 +29,10 @@ VOICE_STUDIO_BASE_DIR = "/opt/ai-church/backend/storage/app/voice-studio"
 DEFAULT_MODELS = {
     "tedim": os.getenv("MMS_TTS_MODEL_TD", "facebook/mms-tts-ctd"),
     "burmese": os.getenv("MMS_TTS_MODEL_MY", "facebook/mms-tts-mya"),
+    # Meta MMS-TTS narrator voices for the Lai languages. Mizo (lus) and Paite
+    # (pck) have no MMS-TTS repo upstream, so they remain text-only (LLM + Bible).
+    "falam": os.getenv("MMS_TTS_MODEL_CFM", "facebook/mms-tts-cfm"),
+    "hakha": os.getenv("MMS_TTS_MODEL_CNH", "facebook/mms-tts-cnh"),
 }
 
 _cache: dict[str, tuple[Any, Any]] = {}

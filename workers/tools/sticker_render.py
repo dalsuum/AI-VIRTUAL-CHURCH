@@ -68,11 +68,13 @@ BORDER = 16                # white die-cut outline thickness, px
 MAX_PIXELS = 60_000_000
 
 # --- OpenRouter image model -------------------------------------------------
-# OpenAI's gpt-image-1 preserves facial likeness noticeably better than Gemini
-# flash for img2img portraits, so it's the default. Override with STICKER_MODEL
-# in workers/.env (e.g. google/gemini-2.5-flash-image) to fall back. Resolved at
-# call time so a workers/.env override (loaded later) is honoured.
-DEFAULT_MODEL = "openai/gpt-image-1"
+# OpenAI's gpt-5-image models preserve facial likeness noticeably better than
+# Gemini flash for img2img portraits, so they're the default. The "-mini"
+# variant is ~$0.044/image (≈ old Gemini cost); use openai/gpt-5-image (~$0.19)
+# for top quality, or google/gemini-2.5-flash-image to fall back. Override via
+# STICKER_MODEL in workers/.env. Resolved at call time so the override (loaded
+# after import) is honoured. NB: OpenRouter has no "openai/gpt-image-1".
+DEFAULT_MODEL = "openai/gpt-5-image-mini"
 OR_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 
@@ -98,8 +100,9 @@ PROMPT = (
     "glasses, hairstyle and expression so they remain clearly recognisable as "
     "the same individual. Apply the artistic style ONLY to rendering/texture, "
     "never change facial features, proportions or who the person is. Keep the "
-    "same clothing and pose; head and shoulders. Plain solid white background. "
-    "No text, no border. Friendly and warm."
+    "same clothing, pose and framing, and keep any visible hands, arms and "
+    "raised gestures fully in frame — do not crop them out. Plain solid white "
+    "background. No text, no border. Friendly and warm."
 )
 
 DECOR = ["❤️", "\U0001f49b", "✨", "⭐", "\U0001f31f", "\U0001fa77"]

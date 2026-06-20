@@ -412,6 +412,16 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
 @media (max-width: 640px) {
   .nav-label-full { display: none; }
   .nav-label-short { display: inline; }
+  /* Logo-only brand to free up width for the nav + theme toggle. */
+  .brand-name { display: none; }
+  .topbar { gap: 0.5rem; padding: 0.7rem 0.85rem; }
+  /* Keep the nav from squeezing the theme toggle off-screen: let it scroll. */
+  .topbar-right { gap: 0.5rem; min-width: 0; }
+  .topbar-nav { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .topbar-nav::-webkit-scrollbar { display: none; }
+  .nav-link { flex: 0 0 auto; }
+  /* The theme toggle must always stay visible. */
+  .theme-toggle, .topbar-right > :last-child { flex: 0 0 auto; }
 }
 .brand { display: inline-flex; align-items: center; gap: 0.55rem; text-decoration: none; color: var(--text); font-weight: 600; }
 .brand-mark {

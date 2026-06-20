@@ -315,16 +315,6 @@ function saveBlob(file) {
   setTimeout(() => URL.revokeObjectURL(u), 5000);
 }
 
-async function shareNativeLink() {
-  // Single post: hand the social app a URL (one feed post + tap-to-play card).
-  if (navigator.share) {
-    await navigator.share({ title: shareTitle.value, text: shareTitle.value, url: shareUrl.value });
-  } else {
-    await copyLink();
-    shareNote.value = "Link copied — paste it to post once (it won't be split).";
-  }
-}
-
 // Is the rendered video longer than one reel? Decided from the visitor's choice
 // (full song, or a clip over the limit) — no need to download the file to measure.
 const isLongShare = computed(() => songMode.value === "full" || clipLen.value > REEL_MAX_SEC);
@@ -332,18 +322,17 @@ const isLongShare = computed(() => songMode.value === "full" || clipLen.value > 
 async function shareVideo() {
   shareNote.value = ""; sharing.value = true;
   try {
-    // Long video → share as ONE link so Facebook can't split it into many reels.
-    if (isLongShare.value) {
-      await shareNativeLink();
-      return;
-    }
-    // Short clip → native upload = one clean reel that plays in the feed.
+    // Always hand over the actual video FILE — the brand audio tag makes the full
+    // song identifiably ours, so it's meant to be posted directly (not as a link).
+    // The "Or share a link" option below stays as a fallback.
     const file = await fetchVideoFile();
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
       await navigator.share({ files: [file], title: shareTitle.value, text: shareTitle.value });
+      // A full song posted as a Reel can be split by Facebook; Feed video won't.
+      if (isLongShare.value) shareNote.value = "Tip: post it as a Feed video (not a Reel) so it stays one post.";
     } else {
       saveBlob(file);
-      shareNote.value = "Saved the video — attach it in your app to share.";
+      shareNote.value = "Saved the video — post it from your gallery (as a Feed video).";
     }
   } catch (e) {
     if (e?.name !== "AbortError") {

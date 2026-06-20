@@ -31,6 +31,7 @@ class PermissionService
         'settings.view',
         'music_pool.view',
         'lyrics.manage',
+        'vocabulary.manage',
         'voice_training.view',
         'permissions.view',
         'language_review.view',

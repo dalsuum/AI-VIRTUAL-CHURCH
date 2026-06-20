@@ -9,6 +9,7 @@ import VoiceStudio from "./VoiceStudio.vue";
 import PermissionsMatrix from "./PermissionsMatrix.vue";
 import AdsManager from "./AdsManager.vue";
 import AdminLyricsManager from "./AdminLyricsManager.vue";
+import VocabularyManager from "./VocabularyManager.vue";
 import SpecialSundaysManager from "./SpecialSundaysManager.vue";
 import FathersDayManager from "./FathersDayManager.vue";
 import StickerManager from "./StickerManager.vue";
@@ -38,6 +39,7 @@ const TABS = [
   { name: "testimonies",    label: "Testimonies",      can: () => can("testimonies.view"),     load: loadTestimonies },
   { name: "users",          label: "Users",            can: () => can("users.view"),           load: loadUsers },
   { name: "lyrics",         label: "Lyrics",           can: () => can("lyrics.manage"),        load: null },
+  { name: "vocabulary",     label: "Vocabulary",       can: () => can("vocabulary.manage"),    load: null },
   { name: "prayer",         label: "Prayer Requests",  can: () => can("prayer_requests.view"), load: loadPrayerRequests },
   { name: "settings",       label: "Settings",         can: () => can("settings.view"),        load: loadSettings },
   { name: "content-filter", label: "Content Filter",   can: () => isAdminUser.value,           load: loadContentFilter },
@@ -1515,6 +1517,11 @@ onUnmounted(() => {
       <!-- Lyrics Manager -->
       <section v-else-if="tab === 'lyrics' && can('lyrics.manage')">
         <AdminLyricsManager />
+      </section>
+
+      <!-- Vocabulary Manager -->
+      <section v-else-if="tab === 'vocabulary' && can('vocabulary.manage')">
+        <VocabularyManager />
       </section>
 
       <!-- Prayer Requests -->

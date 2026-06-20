@@ -285,7 +285,7 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
         <nav class="topbar-nav">
           <a href="#lyrics" class="nav-link" :class="{ active: isLyricsRoute }">🎵 သီချင်း</a>
           <a href="#bible" class="nav-link" :class="{ active: isBibleRoute }">📖 Bible</a>
-          <a href="#vocabulary" class="nav-link" :class="{ active: isVocabRoute }">📖 Zolai</a>
+          <a href="#vocabulary" class="nav-link" :class="{ active: isVocabRoute }">📖 Vocabulary</a>
           <a v-if="fathersDayEnabled" href="#fathers-day" class="nav-link" :class="{ active: isFathersDayRoute }">💙 <span class="nav-label-full">{{ fdTitle }}</span><span class="nav-label-short">MV</span></a>
           <a v-if="stickersEnabled" href="#stickers" class="nav-link" :class="{ active: isStickerRoute }">🎨 Stickers</a>
         </nav>

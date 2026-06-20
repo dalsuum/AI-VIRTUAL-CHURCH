@@ -207,6 +207,16 @@ export const api = {
     return request(`/songs${q ? `?${q}` : ""}`);
   },
 
+  // Zolai ↔ Burmese ↔ English vocabulary reference (public read for #vocabulary).
+  getVocabulary: () => request("/vocabulary"),
+  // Admin CRUD (vocabulary.manage).
+  adminCreateVocabulary: (payload) =>
+    request("/admin/vocabulary", { method: "POST", body: payload }),
+  adminUpdateVocabulary: (id, payload) =>
+    request(`/admin/vocabulary/${id}`, { method: "PATCH", body: payload }),
+  adminDeleteVocabulary: (id) =>
+    request(`/admin/vocabulary/${id}`, { method: "DELETE" }),
+
   // Online Bible reader (public, read-only). lang = en | my | td.
   bibleConfig: () => request("/bible/config"),
   bibleBooks: (lang = "en") =>

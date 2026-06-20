@@ -11,6 +11,7 @@ use App\Http\Controllers\SongController;
 use App\Http\Controllers\SpecialSundayController;
 use App\Http\Controllers\TestimonyController;
 use App\Http\Controllers\UpdateController;
+use App\Http\Controllers\VocabularyController;
 use App\Http\Controllers\VoiceboxController;
 use App\Http\Controllers\VoiceStudioController;
 use App\Http\Controllers\VoiceTrainingController;
@@ -22,6 +23,9 @@ Route::get('/config', [ConfigController::class, 'show']);
 
 // Public worship song library — feeds the front song panel (my/td).
 Route::get('/songs', [SongController::class, 'index']);
+
+// Public Zolai ↔ Burmese ↔ English vocabulary reference (#vocabulary page).
+Route::get('/vocabulary', [VocabularyController::class, 'index']);
 
 // Online Bible reader — public, read-only (en BSB / my Judson 1835 / td Tedim 1932).
 Route::get('/bible/config', [BibleController::class, 'config'])->middleware('throttle:120,1');
@@ -163,6 +167,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/songs',          [SongController::class, 'store']);
         Route::patch('/songs/{song}',  [SongController::class, 'update']);
         Route::delete('/songs/{song}', [SongController::class, 'destroy']);
+
+        // Vocabulary CRUD — each method enforces the `vocabulary.manage` permission.
+        Route::post('/vocabulary',                [VocabularyController::class, 'store']);
+        Route::patch('/vocabulary/{vocabulary}',  [VocabularyController::class, 'update']);
+        Route::delete('/vocabulary/{vocabulary}', [VocabularyController::class, 'destroy']);
 
         // Ads — reads available to staff with ads.view permission.
         Route::get('/ads',           [AdController::class, 'index']);

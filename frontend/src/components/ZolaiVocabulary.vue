@@ -1,18 +1,34 @@
 <script setup>
-import { ref, computed } from "vue";
-import vocab from "../data/zolai_vocabulary.json";
+import { ref, computed, onMounted } from "vue";
+import { api } from "../composables/useApi.js";
+
+// Vocabulary is served from the DB (admin-editable) — see VocabularyManager.
+const vocab = ref([]);
+const loading = ref(true);
+const loadError = ref("");
 
 const search = ref("");
 const activeCategory = ref("All");
 
+onMounted(async () => {
+  try {
+    const res = await api.getVocabulary();
+    vocab.value = res.vocabulary || [];
+  } catch (e) {
+    loadError.value = "Could not load the vocabulary list.";
+  } finally {
+    loading.value = false;
+  }
+});
+
 const categories = computed(() => {
-  const cats = [...new Set(vocab.map((w) => w.category))];
+  const cats = [...new Set(vocab.value.map((w) => w.category).filter(Boolean))];
   return ["All", ...cats];
 });
 
 const filtered = computed(() => {
   const q = search.value.trim().toLowerCase();
-  return vocab.filter((w) => {
+  return vocab.value.filter((w) => {
     const catOk = activeCategory.value === "All" || w.category === activeCategory.value;
     if (!catOk) return false;
     if (!q) return true;
@@ -20,7 +36,7 @@ const filtered = computed(() => {
       w.zolai.toLowerCase().includes(q) ||
       (w.burmese || "").toLowerCase().includes(q) ||
       w.english.toLowerCase().includes(q) ||
-      w.notes.toLowerCase().includes(q)
+      (w.notes || "").toLowerCase().includes(q)
     );
   });
 });
@@ -77,7 +93,9 @@ function catColor(cat) {
       </div>
     </div>
 
-    <p v-if="filtered.length === 0" class="empty">No matches found.</p>
+    <p v-if="loading" class="empty">Loading…</p>
+    <p v-else-if="loadError" class="empty">{{ loadError }}</p>
+    <p v-else-if="filtered.length === 0" class="empty">No matches found.</p>
 
     <div v-else class="table-wrap">
       <table class="vocab-table">

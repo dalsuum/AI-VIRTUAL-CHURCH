@@ -8,6 +8,9 @@ Two languages are served, both from bundled public-domain data (no key, no netwo
          `judson1835.json` as data/judson1835.json (BIBLE_DATA_FILE_MY).
   'td' — Lai Siangtho (Tedim, 1932), public domain. Vendored from dalsuum/bible's
          `tedim1932.json` as data/tedim1932.json (BIBLE_DATA_FILE_TD).
+  'he' — Hebrew Tanakh (Westminster Leningrad Codex), public domain. Vendored
+         from dalsuum/bible as data/wlc.json (BIBLE_DATA_FILE_HE). Old Testament
+         only (books 1-39); right-to-left script.
 
 The LLM always emits ENGLISH references ("John 3:16") regardless of service
 language — references are part of the worker contract, not the worshipper-facing
@@ -34,10 +37,19 @@ DATA_FILE = os.getenv("BIBLE_DATA_FILE", os.path.join(_DATA_DIR, "bsb.json"))
 BOOKS_EN_FILE = os.path.join(_DATA_DIR, "books_en.json")
 
 # Non-English translations (all dalsuum/bible schema, canonical 1-66 numbering).
+# 'he' is the Hebrew Tanakh (Westminster Leningrad Codex) — Old Testament only,
+# so its file holds books 1-39; the reader pads the New Testament (40-66) as
+# greyed/unavailable entries (see list_books).
 _LANG_FILES = {
     "my": os.getenv("BIBLE_DATA_FILE_MY", os.path.join(_DATA_DIR, "judson1835.json")),
     "td": os.getenv("BIBLE_DATA_FILE_TD", os.path.join(_DATA_DIR, "tedim1932.json")),
+    "he": os.getenv("BIBLE_DATA_FILE_HE", os.path.join(_DATA_DIR, "wlc.json")),
 }
+
+# Translations covering only part of the canon: book number -> last book present.
+# Their reader table of contents is padded out to the full 66 with the missing
+# books shown greyed (available=False). Hebrew Tanakh = Old Testament (1-39).
+_PARTIAL_CANON = {"he": 39}
 
 # Book-name variants the model emits that don't match the data file's `name` field.
 _ALIASES = {
@@ -65,9 +77,14 @@ def _norm(s: str) -> str:
     return re.sub(r"\s+", " ", s.replace(".", "").strip().lower())
 
 
-@functools.lru_cache(maxsize=4)
+@functools.lru_cache(maxsize=8)
 def _bible(lang: str = "en") -> dict:
     path = _LANG_FILES.get(lang, DATA_FILE)
+    # A translation file may not be vendored yet (e.g. Hebrew WLC is committed to
+    # dalsuum/bible separately). Degrade to an empty canon rather than 500-ing so
+    # the reader still renders its table of contents (padded/greyed) and books.
+    if not os.path.exists(path):
+        return {"book": {}}
     with open(path, encoding="utf-8") as fh:
         return json.load(fh)
 
@@ -150,7 +167,7 @@ def book_title(reference: str, lang: str = "en") -> str:
 # pipeline. The ones below expose the whole vendored text for a reader UI:
 # list books, count chapters, fetch a chapter's verses — in any served language.
 
-_LANGS = ("en", "my", "td")
+_LANGS = ("en", "my", "td", "he")
 
 
 def languages() -> list[str]:
@@ -158,12 +175,16 @@ def languages() -> list[str]:
     return list(_LANGS)
 
 
-@functools.lru_cache(maxsize=4)
+@functools.lru_cache(maxsize=8)
 def list_books(lang: str = "en") -> list[dict]:
-    """Every book in `lang`: [{'num', 'name', 'chapters'}], in canonical order.
+    """Every book in `lang`: [{'num', 'name', 'chapters', 'available'}], canonical order.
 
     `name` is the book's heading in the translation's own language so the
     reader's table of contents reads natively (Genesis / ကမ္ဘာဦးကျမ်း / Piancilna).
+    `available` is False for books a partial-canon translation doesn't cover
+    (e.g. the New Testament under the Hebrew Tanakh): those are padded in with
+    their canonical English name so the reader can grey them out rather than
+    hide the rest of the canon.
     """
     books = _bible(lang).get("book", {})
     out: list[dict] = []
@@ -174,7 +195,27 @@ def list_books(lang: str = "en") -> list[dict]:
             "num": int(num),
             "name": name,
             "chapters": len(book.get("chapter", {})),
+            "available": True,
         })
+
+    # Pad a partial-canon translation out to the full 66 with greyed placeholders
+    # so the table of contents still shows the whole Bible. Missing books take
+    # their canonical English name (the translation has none of its own for them).
+    if lang in _PARTIAL_CANON:
+        present = {b["num"] for b in out}
+        with open(BOOKS_EN_FILE, encoding="utf-8") as fh:
+            canon = json.load(fh)
+        for num_str, info in canon.items():
+            num = int(num_str)
+            if num in present:
+                continue
+            out.append({
+                "num": num,
+                "name": info.get("name", "") or f"Book {num}",
+                "chapters": 0,
+                "available": False,
+            })
+        out.sort(key=lambda b: b["num"])
     return out
 
 

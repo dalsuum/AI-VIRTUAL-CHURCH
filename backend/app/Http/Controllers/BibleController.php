@@ -10,14 +10,14 @@ use Illuminate\Support\Facades\Http;
 /**
  * Online Bible reader — public, read-only proxy to the local FastAPI worker
  * (workers/bible_router.py), which serves the vendored public-domain
- * translations (en BSB, my Judson 1835, td Tedim 1932) it already keeps in
- * memory. Laravel adds a long-lived cache layer so the SPA's book list and
+ * translations (en BSB, my Judson 1835, td Tedim 1932, he Hebrew WLC — Old
+ * Testament only, right-to-left) it already keeps in memory. Laravel adds a long-lived cache layer so the SPA's book list and
  * chapter fetches are instant and never re-hit the worker for the same page.
  */
 class BibleController extends Controller
 {
     /** Translations the reader exposes — also the validation allow-list. */
-    private const LANGS = ['en', 'my', 'td'];
+    private const LANGS = ['en', 'my', 'td', 'he'];
 
     private function base(): string
     {
@@ -191,6 +191,7 @@ class BibleController extends Controller
         return match ($lang) {
             'my'    => $gender === 'male' ? 'my-MM-ThihaNeural' : 'my-MM-NilarNeural',
             'td'    => $gender === 'male' ? 'en-US-GuyNeural' : 'en-US-AriaNeural',
+            'he'    => $gender === 'male' ? 'he-IL-AvriNeural' : 'he-IL-HilaNeural',
             default => Setting::get('edge_tts_voice', 'en-US-AriaNeural'),
         };
     }

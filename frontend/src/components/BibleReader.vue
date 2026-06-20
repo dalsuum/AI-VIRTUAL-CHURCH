@@ -9,9 +9,16 @@ const LANGS = [
   { code: "en", label: "English", note: "Berean Standard Bible (2020)" },
   { code: "my", label: "ဗမာ", note: "Judson 1835" },
   { code: "td", label: "Tedim", note: "Lai Siangtho 1932" },
+  // Hebrew Tanakh (Westminster Leningrad Codex) — Old Testament only, RTL.
+  { code: "he", label: "עברית", note: "Westminster Leningrad Codex (Tanakh)" },
 ];
 
+// Right-to-left scripts (Hebrew) need the reader heading and verse body laid out
+// RTL. Kept as a set so future RTL translations are a one-line addition.
+const RTL_LANGS = new Set(["he"]);
+
 const lang = ref("en");
+const isRtl = computed(() => RTL_LANGS.has(lang.value));
 // Version/year label for the currently selected translation (shown beneath
 // the language tabs so readers know which edition they're reading).
 const activeNote = computed(() => LANGS.find((l) => l.code === lang.value)?.note || "");
@@ -150,8 +157,13 @@ async function continueNarration() {
     chapterNum.value += 1;
   } else {
     const idx = books.value.findIndex((b) => b.num === selectedBook.value.num);
-    const next = idx >= 0 ? books.value[idx + 1] : null;
-    if (!next) return; // reached the end of the whole Bible — stop.
+    // Roll on to the next readable book, skipping greyed placeholders (e.g. the
+    // NT under the Hebrew Tanakh) so continuous reading stops cleanly at the end
+    // of the available canon rather than on an empty book.
+    const next = idx >= 0
+      ? books.value.slice(idx + 1).find((b) => b.available !== false)
+      : null;
+    if (!next) return; // reached the end of the available canon — stop.
     selectedBook.value = next;
     chapterNum.value = 1;
   }
@@ -365,6 +377,9 @@ async function loadChapter() {
 }
 
 function openBook(book) {
+  // Greyed books (a partial-canon translation's missing books, e.g. the NT under
+  // the Hebrew Tanakh) aren't readable — ignore taps on them.
+  if (book.available === false) return;
   selectedBook.value = book;
   chapterNum.value = 1;
   loadChapter();
@@ -417,7 +432,7 @@ watch(lang, async () => {
   await loadBooks();
   if (keepNum) {
     const same = books.value.find((b) => b.num === keepNum);
-    if (same) {
+    if (same && same.available !== false) {
       selectedBook.value = same;
       chapterNum.value = Math.min(keepCh, same.chapters);
       loadChapter();
@@ -441,7 +456,7 @@ onMounted(() => {
       <a href="#" class="back-link">&#8592; Back to worship</a>
       <div class="bible-title-block">
         <h1 class="bible-title">📖 Online Bible</h1>
-        <p class="bible-sub">Read Scripture in English (Berean Standard Bible, 2020), Burmese (Judson, 1835) &amp; Tedim (Lai Siangtho, 1932) — public-domain translations.</p>
+        <p class="bible-sub">Read Scripture in English (Berean Standard Bible, 2020), Burmese (Judson, 1835), Tedim (Lai Siangtho, 1932) &amp; Hebrew (Westminster Leningrad Codex — Tanakh) — public-domain translations.</p>
       </div>
       <div class="lang-tabs" role="group" aria-label="Translation">
         <button
@@ -471,9 +486,17 @@ onMounted(() => {
       />
       <p v-if="loadingBooks" class="muted">Loading…</p>
       <div v-else class="book-grid">
-        <button v-for="b in filteredBooks" :key="b.num" class="book-card" @click="openBook(b)">
+        <button
+          v-for="b in filteredBooks"
+          :key="b.num"
+          class="book-card"
+          :class="{ unavailable: b.available === false }"
+          :disabled="b.available === false"
+          :title="b.available === false ? 'Not in this translation' : b.name"
+          @click="openBook(b)"
+        >
           <span class="book-name">{{ b.name }}</span>
-          <span class="book-ch">{{ b.chapters }} ch.</span>
+          <span class="book-ch">{{ b.available === false ? '—' : b.chapters + ' ch.' }}</span>
         </button>
       </div>
       <p v-if="!loadingBooks && filteredBooks.length === 0" class="muted">No books found.</p>
@@ -488,7 +511,7 @@ onMounted(() => {
         <button class="link-btn" @click="backToBooks" aria-label="All books" title="All books">
           <span aria-hidden="true">&#8592;</span><span class="btn-label"> All books</span>
         </button>
-        <h2 class="reader-heading">{{ chapter?.name || selectedBook.name }} {{ chapterNum }}</h2>
+        <h2 class="reader-heading" :dir="isRtl ? 'rtl' : 'ltr'">{{ chapter?.name || selectedBook.name }} {{ chapterNum }}</h2>
         <button
           type="button"
           class="collapse-btn"
@@ -639,7 +662,12 @@ onMounted(() => {
            Prev/Next footer stay frozen (Excel-style freeze panes). -->
       <div class="verses-scroll" :style="readingStyle">
         <p v-if="loadingChapter" class="muted">Loading…</p>
-        <div v-else-if="chapter" class="verses" :class="{ mm: lang !== 'en', selecting: selectMode }">
+        <div
+          v-else-if="chapter"
+          class="verses"
+          :class="{ mm: lang !== 'en', rtl: isRtl, selecting: selectMode }"
+          :dir="isRtl ? 'rtl' : 'ltr'"
+        >
           <p
             v-for="(v, i) in chapter.verses"
             :key="v.num"
@@ -795,6 +823,15 @@ onMounted(() => {
 }
 .book-card:hover { border-color: var(--primary); }
 .book-card:active { transform: scale(0.98); }
+/* Greyed placeholder for books a translation doesn't cover (e.g. the New
+   Testament under the Hebrew Tanakh): visible for context, but not selectable. */
+.book-card.unavailable {
+  opacity: 0.4;
+  cursor: not-allowed;
+  filter: grayscale(1);
+}
+.book-card.unavailable:hover { border-color: var(--border); }
+.book-card.unavailable:active { transform: none; }
 .book-name { font-weight: 600; font-size: 0.95rem; }
 .book-ch { font-size: 0.75rem; color: var(--text-muted); }
 
@@ -946,6 +983,10 @@ onMounted(() => {
 
 .verses { line-height: 1.85; font-size: calc(1.05rem * var(--verse-scale, 1)); overflow-wrap: break-word; }
 .verses.mm { line-height: 2.1; font-size: calc(1.12rem * var(--verse-scale, 1)); }
+/* Right-to-left scripts (Hebrew): flow verses RTL and give the larger pointed
+   text room to breathe. The verse number sits to the right of the text. */
+.verses.rtl { line-height: 2.2; font-size: calc(1.18rem * var(--verse-scale, 1)); text-align: right; }
+.verses.rtl .vnum { margin-right: 0; margin-left: 0.3rem; }
 .verse { margin: 0 0 0.6rem; padding: 0.1rem 0.35rem; border-radius: 6px; transition: background 0.25s; }
 .verse.highlight { background: rgba(99, 179, 237, 0.30); box-shadow: 0 0 0 6px rgba(99, 179, 237, 0.30); }
 /* Select mode: tappable verses + a clear "picked" state for copying. */

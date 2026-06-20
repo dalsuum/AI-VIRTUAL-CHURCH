@@ -2,8 +2,8 @@
 """
 Live Sticker engine — SELF-CONTAINED & REMOVABLE.
 
-Pipeline (render): photo -> face-detect square crop -> AI watercolor repaint
-(OpenRouter / Gemini image, img2img) -> background removal (rembg) -> die-cut
+Pipeline (render): photo -> face-detect square crop -> AI repaint
+(OpenRouter / gpt-image-1, img2img) -> background removal (rembg) -> die-cut
 white sticker border + soft shadow -> scattered colour-emoji decorations -> PNG.
 Five stickers per job, each with a slightly different painterly style.
 
@@ -68,8 +68,16 @@ BORDER = 16                # white die-cut outline thickness, px
 MAX_PIXELS = 60_000_000
 
 # --- OpenRouter image model -------------------------------------------------
-OR_MODEL = "google/gemini-2.5-flash-image"
+# OpenAI's gpt-image-1 preserves facial likeness noticeably better than Gemini
+# flash for img2img portraits, so it's the default. Override with STICKER_MODEL
+# in workers/.env (e.g. google/gemini-2.5-flash-image) to fall back. Resolved at
+# call time so a workers/.env override (loaded later) is honoured.
+DEFAULT_MODEL = "openai/gpt-image-1"
 OR_URL = "https://openrouter.ai/api/v1/chat/completions"
+
+
+def sticker_model():
+    return os.environ.get("STICKER_MODEL", "").strip() or DEFAULT_MODEL
 
 # Visually DISTINCT art styles, picked at random per render so consecutive
 # users get different-looking stickers (not just watercolor variants).
@@ -196,7 +204,7 @@ def openrouter_repaint(pil_square, style, occasion=""):
     pil_square.convert("RGB").save(buf, "JPEG", quality=90)
     b64 = base64.b64encode(buf.getvalue()).decode()
     body = {
-        "model": OR_MODEL,
+        "model": sticker_model(),
         "modalities": ["image", "text"],
         "messages": [{"role": "user", "content": [
             {"type": "text", "text": PROMPT.format(style=style, occasion=occ)},

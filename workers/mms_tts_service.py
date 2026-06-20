@@ -41,6 +41,41 @@ class TTSIn(BaseModel):
     seed: int = 42
 
 
+# Max characters fed to a single VITS forward pass. The whole input used to be
+# synthesised at once, which on a small (2GB) host OOM-kills the worker mid-request
+# for long inputs like a full Bible chapter ("Remote end closed connection"). We
+# split on sentence boundaries and concatenate the waveforms instead, bounding peak
+# memory per pass while keeping the audio gapless.
+_MMS_MAX_CHARS = int(os.getenv("MMS_TTS_MAX_CHARS", "280"))
+
+# Sentence terminators: Latin (Tedim) plus Burmese section/comma marks (။ ၊).
+_SENTENCE_SPLIT = re.compile(r"(?<=[.!?။၊])\s+|(?<=[။၊])")
+
+
+def _chunk_text(text: str, max_chars: int = _MMS_MAX_CHARS) -> list[str]:
+    """Split text into <= max_chars pieces on sentence boundaries, never mid-word."""
+    pieces: list[str] = []
+    for sentence in _SENTENCE_SPLIT.split(text):
+        sentence = sentence.strip()
+        if not sentence:
+            continue
+        if len(sentence) <= max_chars:
+            pieces.append(sentence)
+            continue
+        # A single oversized sentence: fall back to word-boundary packing.
+        cur = ""
+        for word in sentence.split():
+            candidate = f"{cur} {word}".strip()
+            if len(candidate) > max_chars and cur:
+                pieces.append(cur)
+                cur = word
+            else:
+                cur = candidate
+        if cur:
+            pieces.append(cur)
+    return pieces or ([text] if text else [])
+
+
 @router.get("/languages")
 async def languages() -> dict:
     return {"models": {lang: _model_name(lang) for lang in DEFAULT_MODELS}}
@@ -128,16 +163,22 @@ async def speak(body: TTSIn) -> Response:
     except ImportError as exc:
         raise _missing_dependency(exc) from exc
 
-    model, tokenizer = _load(body.lang)
-    inputs = tokenizer(text, return_tensors="pt")
+    import numpy as np
 
-    def _generate():
+    model, tokenizer = _load(body.lang)
+    chunks = _chunk_text(text)
+
+    def _generate(chunk: str):
+        inputs = tokenizer(chunk, return_tensors="pt")
         with torch.no_grad():
             return model(**inputs).waveform[0].cpu().numpy()
 
     async with _lock:
         torch.manual_seed(body.seed)
-        wav = await asyncio.to_thread(_generate)
+        segments = []
+        for chunk in chunks:
+            segments.append(await asyncio.to_thread(_generate, chunk))
+    wav = np.concatenate(segments) if len(segments) > 1 else segments[0]
 
     buf = io.BytesIO()
     scipy.io.wavfile.write(buf, rate=model.config.sampling_rate, data=wav)

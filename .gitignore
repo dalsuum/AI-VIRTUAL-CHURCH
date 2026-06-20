@@ -25,6 +25,7 @@ venv/
 
 # Large seeded data files (generated at deploy from public repos/tools)
 workers/data/bsb.json
+workers/data/kjv.json
 workers/data/judson1835.json
 workers/data/tedim1932.json
 workers/data/wlc.json

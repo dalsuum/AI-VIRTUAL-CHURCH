@@ -44,6 +44,7 @@ class VocabularySeeder extends Seeder
                 ['zolai' => $zolai, 'english' => $english, 'category' => $category],
                 [
                     'burmese' => isset($row['burmese']) ? trim((string) $row['burmese']) : null,
+                    'hebrew'  => isset($row['hebrew']) && $row['hebrew'] !== '' ? trim((string) $row['hebrew']) : null,
                     'notes'   => isset($row['notes']) && $row['notes'] !== '' ? trim((string) $row['notes']) : null,
                     'source'  => 'reference',
                 ],

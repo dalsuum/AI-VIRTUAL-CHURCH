@@ -67,7 +67,7 @@ function catColor(cat) {
       <div class="vocab-title-block">
         <h1 class="vocab-title">Vocabulary</h1>
         <p class="vocab-sub">
-          Zolai (Tedim Chin) ↔ Burmese ↔ English reference — {{ vocab.length }} words &amp; phrases.
+          Zolai (Tedim Chin) ↔ Burmese ↔ Hebrew ↔ English reference — {{ vocab.length }} words &amp; phrases.
         </p>
       </div>
     </header>

@@ -1,12 +1,14 @@
 <script setup>
 // Online Bible reader. Browses the vendored public-domain translations served
-// by the backend (/api/bible/*): English (Berean Standard Bible), Burmese
-// (Judson 1835) and Tedim (Lai Siangtho 1932). Read-only, no auth required.
+// by the backend (/api/bible/*): English (Berean Standard Bible & King James
+// Version), Burmese (Judson 1835) and Tedim (Lai Siangtho 1932). Read-only,
+// no auth required.
 import { ref, computed, watch, onMounted } from "vue";
 import { api } from "../composables/useApi.js";
 
 const LANGS = [
   { code: "en", label: "English", note: "Berean Standard Bible (2020)" },
+  { code: "kjv", label: "KJV", note: "King James Version" },
   { code: "my", label: "ဗမာ", note: "Judson 1835" },
   { code: "td", label: "Tedim", note: "Lai Siangtho 1932" },
   // Hebrew Tanakh (Westminster Leningrad Codex) — Old Testament only, RTL.
@@ -16,6 +18,10 @@ const LANGS = [
 // Right-to-left scripts (Hebrew) need the reader heading and verse body laid out
 // RTL. Kept as a set so future RTL translations are a one-line addition.
 const RTL_LANGS = new Set(["he"]);
+
+// Latin-script translations (both English editions) use the default typography;
+// the `mm` class only suits the larger Myanmar/Tedim/Hebrew scripts.
+const LATIN_LANGS = new Set(["en", "kjv"]);
 
 const lang = ref("en");
 const isRtl = computed(() => RTL_LANGS.has(lang.value));
@@ -456,7 +462,7 @@ onMounted(() => {
       <a href="#" class="back-link">&#8592; Back to worship</a>
       <div class="bible-title-block">
         <h1 class="bible-title">📖 Online Bible</h1>
-        <p class="bible-sub">Read Scripture in English (Berean Standard Bible, 2020), Burmese (Judson, 1835), Tedim (Lai Siangtho, 1932) &amp; Hebrew (Westminster Leningrad Codex — Tanakh) — public-domain translations.</p>
+        <p class="bible-sub">Read Scripture in English (Berean Standard Bible, 2020 &amp; King James Version), Burmese (Judson, 1835), Tedim (Lai Siangtho, 1932) &amp; Hebrew (Westminster Leningrad Codex — Tanakh) — public-domain translations.</p>
       </div>
       <div class="lang-tabs" role="group" aria-label="Translation">
         <button
@@ -665,7 +671,7 @@ onMounted(() => {
         <div
           v-else-if="chapter"
           class="verses"
-          :class="{ mm: lang !== 'en', rtl: isRtl, selecting: selectMode }"
+          :class="{ mm: !LATIN_LANGS.has(lang), rtl: isRtl, selecting: selectMode }"
           :dir="isRtl ? 'rtl' : 'ltr'"
         >
           <p

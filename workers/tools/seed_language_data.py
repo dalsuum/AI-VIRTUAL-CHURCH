@@ -9,6 +9,9 @@ this once per machine (before first service, alongside seed_hymns.py):
 
 It produces four files, all from dalsuum-owned public repos:
 
+    data/kjv.json          Authorized (King James) Version — from
+                           dalsuum/bible if present, else built from getbible.net
+                           by build_kjv_bible.py (full 66-book canon)
     data/judson1835.json   သမ္မာကျမ်း (Judson, 1835)  — github.com/dalsuum/bible
     data/tedim1932.json    Lai Siangtho (Tedim, 1932) — github.com/dalsuum/bible
     data/wlc.json          Hebrew Tanakh (Westminster Leningrad Codex) — from
@@ -89,6 +92,33 @@ def _seed_hebrew(force: bool) -> None:
     print(f"  wlc.json: {len(payload['book'])} books ✓ (built from getbible.net)")
 
 
+def _seed_kjv(force: bool) -> None:
+    """English Authorized (King James) Version -> data/kjv.json.
+
+    A second English edition alongside bsb.json. Prefer a committed
+    dalsuum/bible/json/kjv.json (same path as the other translations); if it
+    isn't there yet, fall back to building it from the public-domain getbible.net
+    kjv module via build_kjv_bible.
+    """
+    out = os.path.join(DATA_DIR, "kjv.json")
+    if os.path.exists(out) and not force:
+        print("  kjv.json: already present, skipping")
+        return
+    try:
+        data = _fetch(BIBLE_RAW + "/json/kjv.json")
+        json.loads(data)  # fail loudly on a bad download, before writing
+        open(out, "wb").write(data)
+        print(f"  kjv.json: {len(data) / 1e6:.1f} MB ✓ (from dalsuum/bible)")
+        return
+    except requests.HTTPError:
+        print("  kjv.json: not in dalsuum/bible yet — building from getbible.net…")
+    import build_kjv_bible  # noqa: PLC0415 — sibling tool, path set above
+
+    payload = build_kjv_bible.build()
+    json.dump(payload, open(out, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    print(f"  kjv.json: {len(payload['book'])} books ✓ (built from getbible.net)")
+
+
 def _seed_books_index(force: bool) -> None:
     out = os.path.join(DATA_DIR, "books_en.json")
     if os.path.exists(out) and not force:
@@ -134,6 +164,8 @@ def main() -> None:
     os.makedirs(DATA_DIR, exist_ok=True)
     print("Seeding Bible translations (dalsuum/bible)…")
     _seed_bibles(args.force)
+    print("Seeding English KJV…")
+    _seed_kjv(args.force)
     print("Seeding Hebrew Tanakh (WLC)…")
     _seed_hebrew(args.force)
     print("Seeding canonical book index…")

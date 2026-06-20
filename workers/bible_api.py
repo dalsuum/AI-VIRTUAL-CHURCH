@@ -2,8 +2,13 @@
 
 Two languages are served, both from bundled public-domain data (no key, no network):
 
-  'en' — Berean Standard Bible (BSB), the existing behavior. Data file from
+  'en'  — Berean Standard Bible (BSB), the existing behavior. Data file from
          dalsuum/bible's `3034.json`, vendored as data/bsb.json (BIBLE_DATA_FILE).
+  'kjv' — Authorized (King James) Version, public domain. Second English edition,
+         vendored as data/kjv.json (BIBLE_DATA_FILE_KJV); built by
+         tools/build_kjv_bible.py from getbible.net's `kjv` module (full 66-book
+         canon, canonical 1-66 numbering). English book names, so it indexes the
+         same canonical English book list as the non-English files.
   'my' — သမ္မာကျမ်း (Judson, 1835), public domain. Vendored from dalsuum/bible's
          `judson1835.json` as data/judson1835.json (BIBLE_DATA_FILE_MY).
   'td' — Lai Siangtho (Tedim, 1932), public domain. Vendored from dalsuum/bible's
@@ -36,11 +41,15 @@ _DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 DATA_FILE = os.getenv("BIBLE_DATA_FILE", os.path.join(_DATA_DIR, "bsb.json"))
 BOOKS_EN_FILE = os.path.join(_DATA_DIR, "books_en.json")
 
-# Non-English translations (all dalsuum/bible schema, canonical 1-66 numbering).
+# Translations resolved against the canonical English book index (canonical 1-66
+# numbering), rather than against the default BSB file's own numbering.
+# 'kjv' is a second English edition — its book names are English too, but it uses
+# the same canonical index path so adding it stays "one line" (see _book_index).
 # 'he' is the Hebrew Tanakh (Westminster Leningrad Codex) — Old Testament only,
 # so its file holds books 1-39; the reader pads the New Testament (40-66) as
 # greyed/unavailable entries (see list_books).
 _LANG_FILES = {
+    "kjv": os.getenv("BIBLE_DATA_FILE_KJV", os.path.join(_DATA_DIR, "kjv.json")),
     "my": os.getenv("BIBLE_DATA_FILE_MY", os.path.join(_DATA_DIR, "judson1835.json")),
     "td": os.getenv("BIBLE_DATA_FILE_TD", os.path.join(_DATA_DIR, "tedim1932.json")),
     "he": os.getenv("BIBLE_DATA_FILE_HE", os.path.join(_DATA_DIR, "wlc.json")),
@@ -167,7 +176,7 @@ def book_title(reference: str, lang: str = "en") -> str:
 # pipeline. The ones below expose the whole vendored text for a reader UI:
 # list books, count chapters, fetch a chapter's verses — in any served language.
 
-_LANGS = ("en", "my", "td", "he")
+_LANGS = ("en", "kjv", "my", "td", "he")
 
 
 def languages() -> list[str]:
@@ -240,8 +249,8 @@ def chapter(lang: str, book: int | str, chapter_num: int | str) -> dict:
 def resolve(reference: str, lang: str = "en") -> str:
     """Return the verse text for a reference like 'Psalm 23:1-4' or 'John 3:16'.
 
-    `lang` selects the translation ('en' BSB, 'my' Judson 1835, 'td' Tedim
-    1932); the reference
+    `lang` selects the translation ('en' BSB, 'kjv' King James Version, 'my'
+    Judson 1835, 'td' Tedim 1932); the reference
     itself is always English. Whole-chapter references ('Psalm 23') return the
     full chapter. Returns "" if the reference can't be parsed or isn't present —
     the caller degrades to showing the bare reference rather than aborting."""

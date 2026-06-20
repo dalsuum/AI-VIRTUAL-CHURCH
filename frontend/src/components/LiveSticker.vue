@@ -365,7 +365,7 @@ function reset() {
         <!-- Link share (server-hosted preview) — secondary, less permanent. -->
         <details class="sk-linkshare">
           <summary>Or share just a link</summary>
-          <p class="sk-tiny">A link shows a preview from our site; it may stop working later. To keep your sticker permanently, use <strong>Share</strong> or <strong>Save</strong> above.</p>
+          <p class="sk-tiny">A link shows a preview from our site. The link works for 1 year, then expires. To keep your sticker permanently, use <strong>Share</strong> or <strong>Save</strong> above.</p>
           <div class="sk-social">
             <button class="sk-chip" title="Facebook"  @click="socialShare('facebook')">f</button>
             <button class="sk-chip" title="X"         @click="socialShare('x')">𝕏</button>

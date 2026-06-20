@@ -322,17 +322,22 @@ const isLongShare = computed(() => songMode.value === "full" || clipLen.value > 
 async function shareVideo() {
   shareNote.value = ""; sharing.value = true;
   try {
-    // Always hand over the actual video FILE — the brand audio tag makes the full
-    // song identifiably ours, so it's meant to be posted directly (not as a link).
-    // The "Or share a link" option below stays as a fallback.
     const file = await fetchVideoFile();
+    // LONG video (full song / clip > one reel): handing it to the OS share sheet
+    // makes Facebook auto-convert it into Reels and SPLIT it into part 1, 2, 3…
+    // To keep it as ONE post we must NOT use the share sheet — save the file to
+    // the gallery and let the user post it once as a Feed video.
+    if (isLongShare.value) {
+      saveBlob(file);
+      shareNote.value = "Saved to your gallery. Open Facebook → Create post → add this video → post as a Feed video (one post, not a Reel).";
+      return;
+    }
+    // SHORT clip (≤90s): safe to native-share — Facebook makes one clean reel.
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
       await navigator.share({ files: [file], title: shareTitle.value, text: shareTitle.value });
-      // A full song posted as a Reel can be split by Facebook; Feed video won't.
-      if (isLongShare.value) shareNote.value = "Tip: post it as a Feed video (not a Reel) so it stays one post.";
     } else {
       saveBlob(file);
-      shareNote.value = "Saved the video — post it from your gallery (as a Feed video).";
+      shareNote.value = "Saved the video — post it from your gallery.";
     }
   } catch (e) {
     if (e?.name !== "AbortError") {
@@ -555,7 +560,7 @@ function reset() {
         <button v-if="canWebShare" class="fd-btn primary big" :disabled="sharing" @click="shareVideo">📤 Share video</button>
         <button v-else class="fd-btn primary big" @click="saveVideo">⬇ Save video</button>
         <p class="fd-muted small">
-          <template v-if="canWebShare">Short clips post as one video; longer ones post as a single link — never split into multiple posts.</template>
+          <template v-if="canWebShare">Short clips share straight to one video post. Full songs save to your gallery — post them once as a Facebook Feed video (never split into multiple reels).</template>
           <template v-else>Save the video, then post it from your gallery. (Tip: open this page in Chrome or Safari to share directly.)</template>
         </p>
         <button v-if="canWebShare" class="fd-btn ghost" @click="saveVideo">⬇ Save to device</button>

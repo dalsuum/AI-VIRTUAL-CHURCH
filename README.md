@@ -1100,12 +1100,13 @@ for one occasion and removed cleanly afterwards.
   copyrighted *melody* can still be flagged regardless; this protects your own
   originals and public-domain hymns, it is not a way to disguise commercial
   tracks.) Because the tag makes the full song postable, the visitor **📤 Share
-  video** button always hands over the actual **video file** (native file share,
-  or *Save* when the browser has no share sheet) — including full-song MVs — so
-  it can be posted directly to Facebook/Instagram rather than only as a link.
-  The *Or share a link* option remains as a fallback. For full songs, post as a
-  **Feed video** (not a Reel) so Facebook keeps it as one post instead of
-  splitting it into multiple reels.
+  video** button hands over the actual **video file**. **Short clips (≤90s)** go
+  straight to the native share sheet (one clean post/reel). **Full songs / long
+  clips are *not* sent to the share sheet** — doing so makes Facebook
+  auto-convert them into Reels and **split them into part 1, 2, 3…**; instead the
+  file is **saved to the gallery** so the user posts it **once** as a Facebook
+  **Feed video** (not a Reel). The *Or share a link* option remains as a
+  fallback.
 - **Lyrics**: `[mm:ss.xx]` LRC tags drive the time-synced highlight; otherwise
   lines are split evenly across the song length. Section markers like
   `[Verse 1]` / `[Chorus]` / `[Bridge]` are recognised and **not** shown on the

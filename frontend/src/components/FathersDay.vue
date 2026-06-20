@@ -322,14 +322,19 @@ const isLongShare = computed(() => songMode.value === "full" || clipLen.value > 
 async function shareVideo() {
   shareNote.value = ""; sharing.value = true;
   try {
-    // Share the actual video FILE directly — full songs included. Facebook posts
-    // the full video as one feed item. NOTE: any extra "part 1, 2, 3…" reels are
-    // Facebook AUTO-GENERATING clips after upload (an account setting), not us —
-    // turn off "Auto-generated clips/Reels" in Facebook settings to stop it.
+    // FULL SONG / long clip: the OS share sheet hands the video to Facebook's
+    // Stories/Reels quick-flow, which ALWAYS chops a long video into 15–20s
+    // segments (the "part 1, 2, 3…" mess) — no website can override that. The
+    // only guaranteed single post is a manual Feed upload, so we save the file
+    // and tell the user the 3 steps. Short clips can still one-tap share below.
+    if (isLongShare.value) {
+      saveBlob(await fetchVideoFile());
+      shareNote.value = "Saved to your gallery. To post it as ONE video: open Facebook → tap “What's on your mind / Create post” (not Stories or Reels) → Photo/Video → pick this video → Post.";
+      return;
+    }
     const file = await fetchVideoFile();
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
       await navigator.share({ files: [file], title: shareTitle.value, text: shareTitle.value });
-      if (isLongShare.value) shareNote.value = "Posting the full video. If Facebook also makes short clips, turn off Settings → Videos → 'Auto-generated clips/Reels' once.";
     } else {
       saveBlob(file);
       shareNote.value = "Saved the video — post it from your gallery.";
@@ -555,7 +560,7 @@ function reset() {
         <button v-if="canWebShare" class="fd-btn primary big" :disabled="sharing" @click="shareVideo">📤 Share video</button>
         <button v-else class="fd-btn primary big" @click="saveVideo">⬇ Save video</button>
         <p class="fd-muted small">
-          <template v-if="canWebShare">Shares the full video straight to Facebook & other apps. (If Facebook makes extra short clips, turn off its "Auto-generated clips/Reels" setting once.)</template>
+          <template v-if="canWebShare">Short clips share straight to Facebook & other apps. Full songs save to your gallery — post them once via Facebook → Create post → Photo/Video (not Stories/Reels), so they stay one video.</template>
           <template v-else>Save the video, then post it from your gallery. (Tip: open this page in Chrome or Safari to share directly.)</template>
         </p>
         <button v-if="canWebShare" class="fd-btn ghost" @click="saveVideo">⬇ Save to device</button>

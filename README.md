@@ -1101,17 +1101,16 @@ for one occasion and removed cleanly afterwards.
   community-original songs pass Facebook/Instagram checks. (A genuinely
   copyrighted *melody* can still be flagged regardless; this protects your own
   originals and public-domain hymns, it is not a way to disguise commercial
-  tracks.) **Sharing** (the visitor **📤 Share video** button) hands the actual
-  **video file** to the OS share sheet — full songs included — so the real video
-  posts to Facebook/Instagram/etc. (one tap; **⬇ Save to device** + the *Or share
-  a link* `/v/{jobId}` page remain as fallbacks). **About "part 1, 2, 3…"
-  splitting:** that is **Facebook auto-generating clips/Reels from the uploaded
-  video** (an account setting applied *after* upload), **not** the app — the full
-  video still posts. To stop it, the user turns off *Settings → Videos/Reels →
-  "Auto-generated clips/Reels"* once, or declines the "create a reel" prompt and
-  posts as a **Feed video**. (No website can post a video to a personal Facebook
-  timeline programmatically — FB removed `publish_actions` in 2018 — so sharing
-  always goes through Facebook's own composer.)
+  tracks.) **Sharing** (the visitor **📤 Share video** button): **short clips
+  (≤90s)** native-share the actual **video file** in one tap (one clean post).
+  **Full songs / long clips are saved to the gallery** instead, with on-screen
+  steps to post them **once** via Facebook → *Create post* → *Photo/Video* (not
+  Stories/Reels). This is deliberate: handing a long video to the OS share sheet
+  sends it into Facebook's **Stories/Reels** quick-flow, which **always chops it
+  into 15–20s segments** ("part 1, 2, 3…") — no website can override that, and FB
+  removed programmatic video posting to personal timelines (`publish_actions`,
+  2018). A manual **Feed** upload is the only guaranteed single post. The *Or
+  share a link* `/v/{jobId}` page remains as a fallback.
 - **Lyrics**: `[mm:ss.xx]` LRC tags drive the time-synced highlight; otherwise
   lines are split evenly across the song length. Section markers like
   `[Verse 1]` / `[Chorus]` / `[Bridge]` are recognised and **not** shown on the

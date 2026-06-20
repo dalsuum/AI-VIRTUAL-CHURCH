@@ -10,12 +10,14 @@ import ZolaiVocabulary from "./components/ZolaiVocabulary.vue";
 import MyanmarLyrics from "./components/MyanmarLyrics.vue";
 import FathersDay from "./components/FathersDay.vue";
 import LiveSticker from "./components/LiveSticker.vue";
+import BibleReader from "./components/BibleReader.vue";
 import { api } from "./composables/useApi";
 
 // The admin console lives at #admin so it never collides with the worship flow.
 const isAdminRoute  = ref(window.location.hash === "#admin");
 const isVocabRoute  = ref(window.location.hash === "#vocabulary");
 const isLyricsRoute = ref(window.location.hash === "#lyrics");
+const isBibleRoute  = ref(window.location.hash === "#bible");
 // Father's Day (Special Day) MV — standalone, removable page.
 const isFathersDayRoute = ref(window.location.hash === "#fathers-day");
 const fathersDayEnabled = ref(false);
@@ -39,6 +41,7 @@ window.addEventListener("hashchange", () => {
   isAdminRoute.value  = window.location.hash === "#admin";
   isVocabRoute.value  = window.location.hash === "#vocabulary";
   isLyricsRoute.value = window.location.hash === "#lyrics";
+  isBibleRoute.value  = window.location.hash === "#bible";
   isFathersDayRoute.value = window.location.hash === "#fathers-day";
   isStickerRoute.value = window.location.hash === "#stickers";
 });
@@ -270,6 +273,7 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
   <MyanmarLyrics v-else-if="isLyricsRoute" />
   <FathersDay v-else-if="isFathersDayRoute" />
   <LiveSticker v-else-if="isStickerRoute" />
+  <BibleReader v-else-if="isBibleRoute" />
 
   <div v-else class="page">
     <header class="topbar">
@@ -280,8 +284,9 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
       <div class="topbar-right">
         <nav class="topbar-nav">
           <a href="#lyrics" class="nav-link" :class="{ active: isLyricsRoute }">🎵 သီချင်း</a>
+          <a href="#bible" class="nav-link" :class="{ active: isBibleRoute }">📖 Bible</a>
           <a href="#vocabulary" class="nav-link" :class="{ active: isVocabRoute }">📖 Zolai</a>
-          <a v-if="fathersDayEnabled" href="#fathers-day" class="nav-link" :class="{ active: isFathersDayRoute }">💙 {{ fdTitle }}</a>
+          <a v-if="fathersDayEnabled" href="#fathers-day" class="nav-link" :class="{ active: isFathersDayRoute }">💙 <span class="nav-label-full">{{ fdTitle }}</span><span class="nav-label-short">MV</span></a>
           <a v-if="stickersEnabled" href="#stickers" class="nav-link" :class="{ active: isStickerRoute }">🎨 Stickers</a>
         </nav>
         <ThemeToggle />
@@ -403,6 +408,11 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
 }
 .nav-link:hover { color: var(--primary); border-color: var(--border); }
 .nav-link.active { color: var(--primary); background: var(--primary-soft); border-color: var(--primary); font-weight: 600; }
+.nav-label-short { display: none; }
+@media (max-width: 640px) {
+  .nav-label-full { display: none; }
+  .nav-label-short { display: inline; }
+}
 .brand { display: inline-flex; align-items: center; gap: 0.55rem; text-decoration: none; color: var(--text); font-weight: 600; }
 .brand-mark {
   display: inline-flex; align-items: center; justify-content: center;

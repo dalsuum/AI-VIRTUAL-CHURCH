@@ -145,6 +145,57 @@ def book_title(reference: str, lang: str = "en") -> str:
     return f"{name}{suffix}"
 
 
+# --- Browsable online-Bible helpers --------------------------------------
+# The functions above resolve a single English reference for the service
+# pipeline. The ones below expose the whole vendored text for a reader UI:
+# list books, count chapters, fetch a chapter's verses — in any served language.
+
+_LANGS = ("en", "my", "td")
+
+
+def languages() -> list[str]:
+    """Translations available to the reader, in display order."""
+    return list(_LANGS)
+
+
+@functools.lru_cache(maxsize=4)
+def list_books(lang: str = "en") -> list[dict]:
+    """Every book in `lang`: [{'num', 'name', 'chapters'}], in canonical order.
+
+    `name` is the book's heading in the translation's own language so the
+    reader's table of contents reads natively (Genesis / ကမ္ဘာဦးကျမ်း / Piancilna).
+    """
+    books = _bible(lang).get("book", {})
+    out: list[dict] = []
+    for num in sorted(books, key=int):
+        book = books[num]
+        name = book.get("info", {}).get("name", "") or f"Book {num}"
+        out.append({
+            "num": int(num),
+            "name": name,
+            "chapters": len(book.get("chapter", {})),
+        })
+    return out
+
+
+def chapter(lang: str, book: int | str, chapter_num: int | str) -> dict:
+    """A single chapter: {'book', 'name', 'chapter', 'verses': [{'num','text'}]}.
+
+    Returns empty `verses` when the book or chapter isn't present rather than
+    raising, so the caller can render a graceful "not found" state.
+    """
+    book = str(book)
+    chapter_num = str(chapter_num)
+    b = _bible(lang).get("book", {}).get(book, {})
+    name = b.get("info", {}).get("name", "")
+    verse_map = b.get("chapter", {}).get(chapter_num, {}).get("verse", {})
+    verses = [
+        {"num": int(n), "text": (verse_map[n].get("text") or "").strip()}
+        for n in sorted(verse_map, key=int)
+    ]
+    return {"book": int(book), "name": name, "chapter": int(chapter_num), "verses": verses}
+
+
 def resolve(reference: str, lang: str = "en") -> str:
     """Return the verse text for a reference like 'Psalm 23:1-4' or 'John 3:16'.
 

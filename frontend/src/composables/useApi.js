@@ -207,6 +207,12 @@ export const api = {
     return request(`/songs${q ? `?${q}` : ""}`);
   },
 
+  // Online Bible reader (public, read-only). lang = en | my | td.
+  bibleBooks: (lang = "en") =>
+    request(`/bible/books?lang=${encodeURIComponent(lang)}`),
+  bibleChapter: (lang, book, chapter) =>
+    request(`/bible/chapter?lang=${encodeURIComponent(lang)}&book=${book}&chapter=${chapter}`),
+
   updateGuestEmail: (email) =>
     request("/me/email", { method: "PATCH", body: { email } }),
 

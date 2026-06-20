@@ -192,6 +192,105 @@ function toggleControls() {
   localStorage.setItem(CONTROLS_KEY, controlsOpen.value ? "1" : "0");
 }
 
+// --- Reading comfort: text size (for older eyes) -------------------------
+// A scale factor applied to the verse font-size, remembered per-device.
+const SIZE_KEY = "bible_text_size";
+const TEXT_SIZES = [
+  { id: "normal", label: "Normal", scale: 1 },
+  { id: "medium", label: "Medium", scale: 1.2 },
+  { id: "large",  label: "Large",  scale: 1.45 },
+];
+const _storedSize = localStorage.getItem(SIZE_KEY);
+const textSize = ref(TEXT_SIZES.some((s) => s.id === _storedSize) ? _storedSize : "normal");
+const verseScale = computed(() => TEXT_SIZES.find((s) => s.id === textSize.value)?.scale ?? 1);
+function setTextSize(id) {
+  textSize.value = id;
+  localStorage.setItem(SIZE_KEY, id);
+}
+
+// --- Reading background ("peaceful" reading themes) ----------------------
+// Each preset is a self-contained {bg, text} pair so contrast stays readable
+// regardless of the app's dark/light mode. 'default' follows the app theme.
+const BG_KEY = "bible_bg_theme";
+const BG_THEMES = [
+  { id: "default", label: "Default", bg: "",        text: "",        swatch: "" },
+  { id: "sepia",   label: "Sepia",   bg: "#f4ecd8", text: "#5b4636", swatch: "#f4ecd8" },
+  { id: "cream",   label: "Cream",   bg: "#faf3e0", text: "#4a4032", swatch: "#faf3e0" },
+  { id: "mint",    label: "Mint",    bg: "#e7f1ea", text: "#27392f", swatch: "#e7f1ea" },
+  { id: "sky",     label: "Sky",     bg: "#e9f0f7", text: "#26323f", swatch: "#e9f0f7" },
+  { id: "night",   label: "Night",   bg: "#0f1722", text: "#c7d2dc", swatch: "#0f1722" },
+];
+const _storedBg = localStorage.getItem(BG_KEY);
+const bgTheme = ref(BG_THEMES.some((t) => t.id === _storedBg) ? _storedBg : "default");
+function setBgTheme(id) {
+  bgTheme.value = id;
+  localStorage.setItem(BG_KEY, id);
+}
+// Inline style applied to the scrollable verse region: the chosen bg + text
+// colour, plus the text-size scale variable consumed by .verses font-size.
+const readingStyle = computed(() => {
+  const t = BG_THEMES.find((x) => x.id === bgTheme.value) || BG_THEMES[0];
+  const style = { "--verse-scale": String(verseScale.value) };
+  if (t.bg) { style.background = t.bg; style.color = t.text; }
+  return style;
+});
+
+// --- Verse selection + copy (for notes / social / sharing) ---------------
+// Tap verses to (de)select; a floating bar offers Copy/Clear. Off by default so
+// taps don't interfere with reading until the reader enters select mode.
+const selectMode = ref(false);
+const selectedVerses = ref(new Set());
+function toggleSelectMode() {
+  selectMode.value = !selectMode.value;
+  if (!selectMode.value) selectedVerses.value = new Set();
+}
+function toggleVerse(num) {
+  if (!selectMode.value) return;
+  const next = new Set(selectedVerses.value);
+  next.has(num) ? next.delete(num) : next.add(num);
+  selectedVerses.value = next;
+}
+function clearSelection() {
+  selectedVerses.value = new Set();
+}
+const selectedCount = computed(() => selectedVerses.value.size);
+
+// Build a "Genesis 1:1-3, 5 (Berean Standard Bible)" style reference for the
+// current selection, collapsing consecutive verse numbers into ranges.
+function selectionReference() {
+  const nums = [...selectedVerses.value].sort((a, b) => a - b);
+  if (!nums.length) return "";
+  const parts = [];
+  let start = nums[0], prev = nums[0];
+  for (let i = 1; i <= nums.length; i++) {
+    if (nums[i] === prev + 1) { prev = nums[i]; continue; }
+    parts.push(start === prev ? `${start}` : `${start}-${prev}`);
+    start = prev = nums[i];
+  }
+  const book = chapter.value?.name || selectedBook.value?.name || "";
+  const ref = `${book} ${chapterNum.value}:${parts.join(", ")}`;
+  return activeNote.value ? `${ref} (${activeNote.value})` : ref;
+}
+
+const copyStatus = ref("");
+async function copySelection() {
+  const verses = chapter.value?.verses || [];
+  const picked = verses.filter((v) => selectedVerses.value.has(v.num));
+  if (!picked.length) return;
+  const body = picked.map((v) => `${v.num} ${v.text}`).join("\n");
+  const text = `${selectionReference()}\n\n${body}`;
+  try {
+    await navigator.clipboard.writeText(text);
+    copyStatus.value = `Copied ${picked.length} verse${picked.length > 1 ? "s" : ""}`;
+  } catch {
+    copyStatus.value = "Copy failed — long-press to select instead";
+  }
+  setTimeout(() => { copyStatus.value = ""; }, 2500);
+}
+
+// Leaving a chapter clears any in-progress selection so it doesn't carry over.
+watch([selectedBook, chapterNum, lang], () => { selectedVerses.value = new Set(); });
+
 // Verse highlighting: with no per-verse timings, map the audio's playback
 // position proportionally across the chapter, weighted by each verse's length
 // (longer verses take longer to read). Mirrors the service player's approach.
@@ -451,9 +550,46 @@ onMounted(() => {
           >
             <span aria-hidden="true">🎵</span><span class="btn-label"> Music: {{ bgMusicPref ? 'On' : 'Off' }}</span>
           </button>
+          <button
+            type="button"
+            class="icon-toggle"
+            :class="{ active: selectMode }"
+            :aria-pressed="selectMode"
+            :aria-label="`Select verses to copy ${selectMode ? 'on' : 'off'}`"
+            :title="`Select verses to copy ${selectMode ? 'on' : 'off'}`"
+            @click="toggleSelectMode"
+          >
+            <span aria-hidden="true">📋</span><span class="btn-label"> Select: {{ selectMode ? 'On' : 'Off' }}</span>
+          </button>
           <select class="ch-select" :value="chapterNum" aria-label="Chapter" @change="goChapter(Number($event.target.value))">
             <option v-for="n in chapterList" :key="n" :value="n">Chapter {{ n }}</option>
           </select>
+        </div>
+
+        <!-- Reading comfort: text size + peaceful background colour. -->
+        <div class="reader-prefs">
+          <span class="prefs-label" aria-hidden="true">Aa</span>
+          <button
+            v-for="s in TEXT_SIZES"
+            :key="s.id"
+            type="button"
+            class="pref-chip"
+            :class="{ active: textSize === s.id }"
+            @click="setTextSize(s.id)"
+          >{{ s.label }}</button>
+          <span class="prefs-sep" aria-hidden="true">·</span>
+          <span class="prefs-label">Color</span>
+          <button
+            v-for="t in BG_THEMES"
+            :key="t.id"
+            type="button"
+            class="swatch"
+            :class="{ active: bgTheme === t.id, 'swatch-default': t.id === 'default' }"
+            :style="t.swatch ? { background: t.swatch } : {}"
+            :aria-label="`Reading background ${t.label}`"
+            :title="t.label"
+            @click="setBgTheme(t.id)"
+          >{{ t.id === 'default' ? 'A' : '' }}</button>
         </div>
       </div>
       <!-- /reader-collapsible -->
@@ -501,19 +637,31 @@ onMounted(() => {
 
       <!-- The only scrolling region: verses scroll while the top bar and the
            Prev/Next footer stay frozen (Excel-style freeze panes). -->
-      <div class="verses-scroll">
+      <div class="verses-scroll" :style="readingStyle">
         <p v-if="loadingChapter" class="muted">Loading…</p>
-        <div v-else-if="chapter" class="verses" :class="{ mm: lang !== 'en' }">
+        <div v-else-if="chapter" class="verses" :class="{ mm: lang !== 'en', selecting: selectMode }">
           <p
             v-for="(v, i) in chapter.verses"
             :key="v.num"
             :id="`verse-${i}`"
             class="verse"
-            :class="{ highlight: highlightEnabled && i === highlightedVerse }"
+            :class="{
+              highlight: highlightEnabled && i === highlightedVerse,
+              selected: selectedVerses.has(v.num),
+            }"
+            @click="toggleVerse(v.num)"
           >
             <sup class="vnum">{{ v.num }}</sup>{{ v.text }}
           </p>
         </div>
+      </div>
+
+      <!-- Selection action bar: copy the picked verses (with reference) to share. -->
+      <div v-if="selectMode && selectedCount > 0" class="copy-bar">
+        <span class="copy-count">{{ selectedCount }} selected</span>
+        <span v-if="copyStatus" class="copy-status">{{ copyStatus }}</span>
+        <button type="button" class="copy-clear" @click="clearSelection">Clear</button>
+        <button type="button" class="copy-btn" @click="copySelection">📋 Copy</button>
       </div>
 
       <div class="reader-nav">
@@ -571,7 +719,10 @@ onMounted(() => {
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
   padding-top: 0.75rem;
+  transition: background 0.25s, color 0.25s;
 }
+/* A chosen reading background bleeds to the full reader width + bottom. */
+.verses-scroll[style*="background"] { margin: 0 -1.5rem; padding-left: 1.5rem; padding-right: 1.5rem; }
 .bible-header {
   padding: 1.25rem 1.5rem 1rem;
   border-bottom: 1px solid var(--border);
@@ -793,16 +944,89 @@ onMounted(() => {
 }
 .speed-btn.active { border-color: var(--primary); color: var(--primary); font-weight: 600; }
 
-.verses { line-height: 1.85; font-size: 1.05rem; overflow-wrap: break-word; }
-.verses.mm { line-height: 2.1; font-size: 1.12rem; }
-.verse { margin: 0 0 0.6rem; border-radius: 6px; transition: background 0.25s; }
+.verses { line-height: 1.85; font-size: calc(1.05rem * var(--verse-scale, 1)); overflow-wrap: break-word; }
+.verses.mm { line-height: 2.1; font-size: calc(1.12rem * var(--verse-scale, 1)); }
+.verse { margin: 0 0 0.6rem; padding: 0.1rem 0.35rem; border-radius: 6px; transition: background 0.25s; }
 .verse.highlight { background: rgba(99, 179, 237, 0.30); box-shadow: 0 0 0 6px rgba(99, 179, 237, 0.30); }
+/* Select mode: tappable verses + a clear "picked" state for copying. */
+.verses.selecting .verse { cursor: pointer; }
+.verses.selecting .verse:hover { background: rgba(99, 179, 237, 0.12); }
+.verse.selected { background: rgba(99, 179, 237, 0.22); box-shadow: inset 3px 0 0 var(--primary); }
 .vnum {
   color: var(--primary);
   font-weight: 700;
   font-size: 0.7em;
   margin-right: 0.3rem;
   vertical-align: super;
+}
+
+/* Reading-comfort row: text size chips + background-colour swatches. */
+.reader-prefs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+}
+.prefs-label { font-size: 0.78rem; color: var(--text-muted); }
+.prefs-sep { color: var(--text-muted); margin: 0 0.15rem; }
+.pref-chip {
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.pref-chip.active { border-color: var(--primary); color: var(--primary); font-weight: 600; }
+.swatch {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  padding: 0;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.swatch.swatch-default { background: var(--surface); }
+.swatch.active { outline: 2px solid var(--primary); outline-offset: 1px; border-color: var(--primary); }
+
+/* Floating selection action bar (above the Prev/Next footer). */
+.copy-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0 -1.5rem;
+  padding: 0.5rem 1.5rem;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+}
+.copy-count { font-size: 0.85rem; font-weight: 600; }
+.copy-status { font-size: 0.8rem; color: var(--primary); }
+.copy-clear {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.copy-btn {
+  padding: 0.4rem 0.9rem;
+  border: 1px solid var(--primary);
+  border-radius: 999px;
+  background: var(--primary);
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
 }
 
 /* Frozen footer: Previous/Next stay pinned to the bottom of the viewport so

@@ -2018,8 +2018,13 @@ onUnmounted(() => {
               </button>
             </div>
 
-            <!-- Highlight toggle -->
-            <p class="setting-desc" style="margin-top:1.5rem"><strong>Verse highlighting</strong></p>
+            <!-- Highlight default -->
+            <p class="setting-desc" style="margin-top:1.5rem"><strong>Verse highlighting default</strong></p>
+            <p class="setting-desc">
+              The starting value for verse highlighting. Each reader can flip it
+              with the <strong>✨ Highlight</strong> switch in the Bible reader —
+              their choice is remembered on their own device and overrides this default.
+            </p>
             <div class="choice-row">
               <button
                 type="button"
@@ -2028,8 +2033,8 @@ onUnmounted(() => {
                 :disabled="savingSettings || settingsReadOnly"
                 @click="setBibleTextHighlight(true)"
               >
-                <strong>Enabled</strong>
-                <span>Highlight each verse as the chapter is read aloud.</span>
+                <strong>On by default</strong>
+                <span>New readers see verses highlighted as the chapter is read aloud.</span>
               </button>
               <button
                 type="button"
@@ -2038,8 +2043,8 @@ onUnmounted(() => {
                 :disabled="savingSettings || settingsReadOnly"
                 @click="setBibleTextHighlight(false)"
               >
-                <strong>Off</strong>
-                <span>Play audio without highlighting.</span>
+                <strong>Off by default</strong>
+                <span>New readers start without highlighting (they can still turn it on).</span>
               </button>
             </div>
 

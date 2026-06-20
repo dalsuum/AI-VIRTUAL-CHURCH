@@ -53,7 +53,22 @@ function syncBgMusic(action) {
   }
 }
 const canNarrate = computed(() => config.value.narratable?.[lang.value] !== false);
-const highlightEnabled = computed(() => config.value.text_highlight !== false);
+
+// Verse highlighting is a personal reading preference: the admin setting
+// (config.text_highlight) is only the default a first-time reader sees; once a
+// reader flips the switch their choice is remembered per-device and wins.
+const HL_PREF_KEY = "bible_highlight";
+const _storedHl = localStorage.getItem(HL_PREF_KEY);
+const highlightPref = ref(_storedHl === null ? null : _storedHl === "1");
+const highlightEnabled = computed(() =>
+  highlightPref.value === null ? config.value.text_highlight !== false : highlightPref.value
+);
+function toggleHighlight() {
+  const next = !highlightEnabled.value;
+  highlightPref.value = next;
+  localStorage.setItem(HL_PREF_KEY, next ? "1" : "0");
+  if (!next) highlightedVerse.value = -1;
+}
 
 // Verse highlighting: with no per-verse timings, map the audio's playback
 // position proportionally across the chapter, weighted by each verse's length
@@ -250,6 +265,16 @@ onMounted(() => {
             <span v-if="loadingAudio">⏳ Preparing…</span>
             <span v-else>🔊 Listen</span>
           </button>
+          <button
+            type="button"
+            class="hl-toggle"
+            :class="{ active: highlightEnabled }"
+            :aria-pressed="highlightEnabled"
+            title="Highlight each verse as it is read aloud"
+            @click="toggleHighlight"
+          >
+            ✨ Highlight: {{ highlightEnabled ? 'On' : 'Off' }}
+          </button>
           <select class="ch-select" :value="chapterNum" @change="goChapter(Number($event.target.value))">
             <option v-for="n in chapterList" :key="n" :value="n">Chapter {{ n }}</option>
           </select>
@@ -429,6 +454,20 @@ onMounted(() => {
 }
 .listen-btn:hover:not(:disabled) { background: var(--primary); color: #fff; }
 .listen-btn:disabled { opacity: 0.6; cursor: default; }
+
+.hl-toggle {
+  padding: 0.45rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.15s, color 0.15s;
+}
+.hl-toggle.active { border-color: var(--primary); color: var(--primary); }
 
 .reader-heading { font-size: 1.3rem; margin: 0 0 1rem; }
 

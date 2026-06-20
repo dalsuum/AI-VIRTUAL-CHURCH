@@ -68,13 +68,13 @@ BORDER = 16                # white die-cut outline thickness, px
 MAX_PIXELS = 60_000_000
 
 # --- OpenRouter image model -------------------------------------------------
-# OpenAI's gpt-5-image models preserve facial likeness noticeably better than
-# Gemini flash for img2img portraits, so they're the default. The "-mini"
-# variant is ~$0.044/image (≈ old Gemini cost); use openai/gpt-5-image (~$0.19)
-# for top quality, or google/gemini-2.5-flash-image to fall back. Override via
-# STICKER_MODEL in workers/.env. Resolved at call time so the override (loaded
+# google/gemini-2.5-flash-image is the default: it gives the best watercolor
+# portraits and keeps the full head/pose in frame, while OpenAI's gpt-5-image
+# variants tend to crop the top of the head and cost more. Override via
+# STICKER_MODEL in workers/.env (e.g. openai/gpt-5-image-mini ~$0.044, or
+# openai/gpt-5-image ~$0.19). Resolved at call time so the override (loaded
 # after import) is honoured. NB: OpenRouter has no "openai/gpt-image-1".
-DEFAULT_MODEL = "openai/gpt-5-image-mini"
+DEFAULT_MODEL = "google/gemini-2.5-flash-image"
 OR_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 

@@ -1134,12 +1134,13 @@ Isolated from the worship pipeline so it can be removed cleanly.
   Both `/stickers/detect` and `/stickers/render` return **404 when the feature
   is disabled**, so no upload/CPU work happens unless an admin has turned it on.
 - **AI repaint (img2img)**: the sticker is repainted via **OpenRouter** using
-  OpenAI's **`openai/gpt-5-image-mini`** model (~$0.044/image, better facial-
-  likeness preservation than Gemini flash), driven by the existing
+  Google's **`google/gemini-2.5-flash-image`** model (best watercolor portraits,
+  keeps the full head/pose in frame, cheapest), driven by the existing
   `OPENROUTER_API_KEY` (`workers/.env`). Override with **`STICKER_MODEL`** in
-  `workers/.env` — e.g. `openai/gpt-5-image` (~$0.19, top quality) or
-  `google/gemini-2.5-flash-image` (cheapest fallback). **Note:** OpenRouter has
-  no `openai/gpt-image-1`. The prompt **rotates through a set of
+  `workers/.env` — e.g. `openai/gpt-5-image-mini` (~$0.044) or `openai/gpt-5-image`
+  (~$0.19), though the OpenAI variants tend to crop the top of the head and may
+  burn unwanted text into the image. **Note:** OpenRouter has no
+  `openai/gpt-image-1`. The prompt **rotates through a set of
   distinct art styles** (`STYLES`) so consecutive renders look different, while
   **strongly preserving each person's facial identity/likeness** (face shape,
   eyes, nose, mouth, skin tone, glasses, hairstyle, expression) — style is

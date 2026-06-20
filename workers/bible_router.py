@@ -1,7 +1,8 @@
 """Read-only HTTP routes for the online Bible reader.
 
-Serves the vendored public-domain translations (en BSB, my Judson 1835,
-td Tedim 1932) that bible_api.py already loads and caches in memory, so a
+Serves the vendored public-domain translations (en BSB, kjv King James Version,
+my Judson 1835, td Tedim 1932, he Hebrew WLC) that bible_api.py already loads and
+caches in memory, so a
 browser-facing reader can list books and fetch chapters without touching the
 service pipeline. Laravel proxies these under /api/bible so the SPA never
 talks to this internal port directly.

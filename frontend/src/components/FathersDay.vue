@@ -519,7 +519,7 @@ function reset() {
 
         <details class="fd-linkshare">
           <summary>Or share a link</summary>
-          <p class="fd-muted small">A link shows a preview card that opens the video on tap (not a native upload).</p>
+          <p class="fd-muted small">A link shows a preview card that opens the video on tap (not a native upload). The link works for 30 days, then expires — for a permanent post, Save the video and upload it.</p>
           <div class="fd-social">
             <button class="fd-soc" title="Facebook" @click="socialShare('facebook')">f</button>
             <button class="fd-soc" title="X" @click="socialShare('x')">𝕏</button>

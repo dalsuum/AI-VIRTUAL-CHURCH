@@ -63,3 +63,4 @@ workers/nllb-200-distilled-600M/
 /gemini.md
 .ai/
 .claude/settings.json
+partner-activities/

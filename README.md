@@ -1099,18 +1099,17 @@ for one occasion and removed cleanly afterwards.
   community-original songs pass Facebook/Instagram checks. (A genuinely
   copyrighted *melody* can still be flagged regardless; this protects your own
   originals and public-domain hymns, it is not a way to disguise commercial
-  tracks.) **Sharing** (the visitor **📤 Share to Facebook & more** button): one
-  tap, **never split into multiple posts**. **Short clips (≤90s)** native-share
-  the actual **video file** (one clean post/reel). **Full songs / long clips
-  share a LINK** (the `/v/{jobId}` Open-Graph page) — *not* the file — because
-  handing a long file to the OS share sheet makes Facebook auto-convert it to
-  Reels and **split it into part 1, 2, 3…**. A link posts as **one** feed item
-  with a branded playable preview card + "Make your own — AI Virtual Church" CTA
-  (good for user-to-user advertising). A secondary **⬇ Save video to post
-  manually** button saves the MP4 for anyone who wants a true native upload (then
-  Facebook → Create post → Feed video). Note: no website can post a video to a
-  personal Facebook timeline directly — FB removed that (`publish_actions`,
-  2018) — so the one-tap path goes through Facebook's own share sheet.
+  tracks.) **Sharing** (the visitor **📤 Share video** button) hands the actual
+  **video file** to the OS share sheet — full songs included — so the real video
+  posts to Facebook/Instagram/etc. (one tap; **⬇ Save to device** + the *Or share
+  a link* `/v/{jobId}` page remain as fallbacks). **About "part 1, 2, 3…"
+  splitting:** that is **Facebook auto-generating clips/Reels from the uploaded
+  video** (an account setting applied *after* upload), **not** the app — the full
+  video still posts. To stop it, the user turns off *Settings → Videos/Reels →
+  "Auto-generated clips/Reels"* once, or declines the "create a reel" prompt and
+  posts as a **Feed video**. (No website can post a video to a personal Facebook
+  timeline programmatically — FB removed `publish_actions` in 2018 — so sharing
+  always goes through Facebook's own composer.)
 - **Lyrics**: `[mm:ss.xx]` LRC tags drive the time-synced highlight; otherwise
   lines are split evenly across the song length. Section markers like
   `[Verse 1]` / `[Chorus]` / `[Bridge]` are recognised and **not** shown on the

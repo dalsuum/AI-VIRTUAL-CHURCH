@@ -44,9 +44,43 @@ from . import MusicResult, MusicStrategy
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
 YOUTUBE_API_URL = "https://www.googleapis.com/youtube/v3/search"
 
+# Admin-curated content filter, fetched from the backend /config endpoint.
+CHURCH_API_URL = os.getenv("CHURCH_API_URL", "https://api.aivirtual.church/api").rstrip("/")
+_ADMIN_FILTER_TTL = 300  # seconds; matches the "changes take effect within 5 minutes" promise
+_admin_filter_cache: dict[str, tuple[float, list[str]]] = {}
+
 
 def is_enabled() -> bool:
     return bool(YOUTUBE_API_KEY)
+
+
+def _admin_reject_keywords(scope: str) -> list[str]:
+    """Return the admin-curated blocklist for a search scope ('music'|'sermon').
+
+    Cached for a few minutes so every candidate scan doesn't hit the API. Fails
+    open (returns []) so a backend hiccup never blocks service generation — the
+    hardcoded per-language gates still apply.
+    """
+    cached = _admin_filter_cache.get(scope)
+    now = time.time()
+    if cached and now - cached[0] < _ADMIN_FILTER_TTL:
+        return cached[1]
+
+    key = "content_filter_sermon" if scope == "sermon" else "content_filter_music"
+    keywords: list[str] = []
+    try:
+        resp = requests.get(f"{CHURCH_API_URL}/config", timeout=8)
+        resp.raise_for_status()
+        data = resp.json()
+        raw = data.get(key) or data.get("content_filter_keywords") or []
+        keywords = [str(k).strip().lower() for k in raw if str(k).strip()]
+    except Exception as exc:  # noqa: BLE001 — fail open, keep stale value if any
+        print(f"[content-filter] fetch failed for {scope!r}: {exc}", flush=True)
+        if cached:
+            return cached[1]
+
+    _admin_filter_cache[scope] = (now, keywords)
+    return keywords
 
 
 # ── per-language configuration ─────────────────────────────────────────────────
@@ -313,6 +347,7 @@ class YouTubeStrategy(MusicStrategy):
         music_require: list[str] = lang_conf.get("music_title_require_any", [])
         music_reject: list[str] = lang_conf.get("music_title_reject_any", [])
         channel_reject: list[str] = lang_conf.get("channel_reject_any", [])
+        admin_reject: list[str] = _admin_reject_keywords("music")
         mood_keywords: list[str] = lang_conf.get("music_mood_keywords", {}).get(mood, [])
         query_terms = set(re.findall(r'\w+', query.lower())) if query else set()
 
@@ -350,6 +385,9 @@ class YouTubeStrategy(MusicStrategy):
                     continue
                 # Gate 3: reject off-topic channels.
                 if any(kw in channel for kw in channel_reject):
+                    continue
+                # Gate 4: admin-curated content filter (title or channel).
+                if any(_keyword_hit(kw, title) or _keyword_hit(kw, channel) for kw in admin_reject):
                     continue
 
                 # Score by mood relevance; title matches outweigh description.
@@ -441,6 +479,7 @@ def find_sermon_video(
     require: list[str] = lang_conf.get("sermon_title_require_any", [])
     reject: list[str] = lang_conf.get("sermon_title_reject_any", [])
     channel_reject: list[str] = lang_conf.get("channel_reject_any", [])
+    admin_reject: list[str] = _admin_reject_keywords("sermon")
     search_params = {}
     if language == "my":
         search_params = {"relevanceLanguage": "my", "regionCode": "MM"}
@@ -490,6 +529,9 @@ def find_sermon_video(
                 continue
             # Gate 3: reject off-topic channels.
             if any(kw in channel for kw in channel_reject):
+                continue
+            # Gate 4: admin-curated content filter (title or channel).
+            if any(_keyword_hit(kw, title) or _keyword_hit(kw, channel) for kw in admin_reject):
                 continue
 
             score = sum(3 if kw in title else (1 if kw in desc else 0) for kw in mood_keywords)

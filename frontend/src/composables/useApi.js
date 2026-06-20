@@ -127,6 +127,17 @@ async function adminExport(type) {
   return res.blob();
 }
 
+// Generic authenticated download — returns a Blob for the caller to save.
+async function adminDownload(path, accept) {
+  await ensureCsrf();
+  const res = await fetch(`${BASE_URL}${path}`, {
+    credentials: "include",
+    headers: { Accept: accept },
+  });
+  if (!res.ok) throw Object.assign(new Error("Download failed"), { status: res.status });
+  return res.blob();
+}
+
 export const api = {
   // hasToken kept for component compatibility; now checks the session flag.
   hasToken: () => sessionEstablished,
@@ -266,6 +277,25 @@ export const api = {
   adminSettings: () => request("/admin/settings"),
   adminUpdateSettings: (payload) =>
     request("/admin/settings", { method: "PATCH", body: payload }),
+
+  // Content filter — categorized YouTube blocklist (CRUD + import/export).
+  cfList: () => request("/admin/content-filter"),
+  cfReplace: (categories) =>
+    request("/admin/content-filter", { method: "PUT", body: { categories } }),
+  cfAddCategory: (payload) =>
+    request("/admin/content-filter/categories", { method: "POST", body: payload }),
+  cfUpdateCategory: (id, payload) =>
+    request(`/admin/content-filter/categories/${encodeURIComponent(id)}`, { method: "PATCH", body: payload }),
+  cfDeleteCategory: (id) =>
+    request(`/admin/content-filter/categories/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  cfAddKeyword: (id, keyword) =>
+    request(`/admin/content-filter/categories/${encodeURIComponent(id)}/keywords`, { method: "POST", body: { keyword } }),
+  cfUpdateKeyword: (id, from, to) =>
+    request(`/admin/content-filter/categories/${encodeURIComponent(id)}/keywords`, { method: "PATCH", body: { from, to } }),
+  cfDeleteKeyword: (id, keyword) =>
+    request(`/admin/content-filter/categories/${encodeURIComponent(id)}/keywords`, { method: "DELETE", body: { keyword } }),
+  cfExportJson: () => adminDownload("/admin/content-filter/export.json", "application/json"),
+  cfExportCsv: () => adminDownload("/admin/content-filter/export.csv", "text/csv"),
   adminMusicTracks: (params = {}) => {
     const qs = new URLSearchParams();
     if (params.mood) qs.set("mood", params.mood);

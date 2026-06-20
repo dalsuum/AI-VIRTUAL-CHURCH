@@ -188,6 +188,18 @@ Route::middleware('auth:sanctum')->group(function () {
         // Settings write
         Route::patch('/settings', [AdminController::class, 'updateSettings']);
 
+        // Content filter — categorized YouTube blocklist (CRUD + import/export).
+        Route::get('/content-filter',                      [\App\Http\Controllers\ContentFilterController::class, 'index']);
+        Route::put('/content-filter',                      [\App\Http\Controllers\ContentFilterController::class, 'replace']);
+        Route::get('/content-filter/export.json',          [\App\Http\Controllers\ContentFilterController::class, 'exportJson']);
+        Route::get('/content-filter/export.csv',           [\App\Http\Controllers\ContentFilterController::class, 'exportCsv']);
+        Route::post('/content-filter/categories',          [\App\Http\Controllers\ContentFilterController::class, 'addCategory']);
+        Route::patch('/content-filter/categories/{id}',    [\App\Http\Controllers\ContentFilterController::class, 'updateCategory']);
+        Route::delete('/content-filter/categories/{id}',   [\App\Http\Controllers\ContentFilterController::class, 'deleteCategory']);
+        Route::post('/content-filter/categories/{id}/keywords',   [\App\Http\Controllers\ContentFilterController::class, 'addKeyword']);
+        Route::patch('/content-filter/categories/{id}/keywords',  [\App\Http\Controllers\ContentFilterController::class, 'updateKeyword']);
+        Route::delete('/content-filter/categories/{id}/keywords', [\App\Http\Controllers\ContentFilterController::class, 'deleteKeyword']);
+
         // CSV export
         Route::get('/export/{type}', [AdminController::class, 'export']);
 

@@ -40,6 +40,7 @@ const TABS = [
   { name: "lyrics",         label: "Lyrics",           can: () => can("lyrics.manage"),        load: null },
   { name: "prayer",         label: "Prayer Requests",  can: () => can("prayer_requests.view"), load: loadPrayerRequests },
   { name: "settings",       label: "Settings",         can: () => can("settings.view"),        load: loadSettings },
+  { name: "content-filter", label: "Content Filter",   can: () => isAdminUser.value,           load: loadContentFilter },
   { name: "music-pool",     label: "AI Music Pool",    can: () => can("music_pool.view"),      load: loadMusicTracks },
   { name: "voice-studio",   label: "Voice Studio",     can: () => can("voice_studio.view"),    load: null },
   { name: "voice-training", label: "Voice Training",   can: () => can("voice_training.view"),  load: () => { loadVoiceTrainingStatus(); scheduleVoiceTrainingPoll(); } },
@@ -162,8 +163,16 @@ const musicSourceOptions = [
 ];
 
 const newMood = ref("");
-const newFilterKeyword = ref("");
 const newCountdownBanner = ref({ text: "", source: "" });
+
+// ── Content Filter tab state ──────────────────────────────────────────────────
+const cfCategories = ref([]);      // [{ id, label, description, scope, keywords }]
+const cfScopes = ref(["both", "music", "sermon"]);
+const cfBusy = ref(false);
+const cfNewKeyword = ref({});      // keyed by category id
+const cfNewCategory = ref({ label: "", scope: "both", description: "" });
+const cfFileInput = ref(null);
+const cfScopeLabels = { both: "Worship + Sermon", music: "Worship only", sermon: "Sermon only" };
 const countdownSourceOptions = [
   { value: "all", label: "All sources", hint: "Rotate banners, approved testimonies, and mood-matched Scripture from the local Bible." },
   { value: "both", label: "Banners + testimonies", hint: "Rotate admin banners and approved testimonies." },
@@ -370,31 +379,96 @@ function removeMood(m) {
   saveListSetting("moods", settings.value.moods.filter((x) => x !== m), `Removed mood "${m}".`);
 }
 
-function addFilterKeyword() {
-  const kw = newFilterKeyword.value.trim().toLowerCase();
-  if (!kw || !settings.value) return;
-  const current = Array.isArray(settings.value.content_filter_keywords)
-    ? settings.value.content_filter_keywords
-    : [];
-  if (current.includes(kw)) {
-    notice.value = `"${kw}" is already in the filter list.`;
-    newFilterKeyword.value = "";
-    return;
+// ── Content Filter tab ────────────────────────────────────────────────────────
+async function loadContentFilter() {
+  try {
+    const res = await api.cfList();
+    cfCategories.value = res.categories || [];
+    cfScopes.value = res.scopes || cfScopes.value;
+  } catch (e) {
+    notice.value = e?.data?.message || "Could not load content filter.";
   }
-  saveListSetting("content_filter_keywords", [...current, kw], `Added filter keyword "${kw}".`);
-  newFilterKeyword.value = "";
 }
 
-function removeFilterKeyword(kw) {
-  if (!settings.value) return;
-  const current = Array.isArray(settings.value.content_filter_keywords)
-    ? settings.value.content_filter_keywords
-    : [];
-  saveListSetting(
-    "content_filter_keywords",
-    current.filter((x) => x !== kw),
-    `Removed filter keyword "${kw}".`,
-  );
+// Wrap a content-filter mutation: run it, refresh state from the response, surface a notice.
+async function cfRun(fn, ok) {
+  cfBusy.value = true;
+  try {
+    const res = await fn();
+    if (res?.categories) cfCategories.value = res.categories;
+    notice.value = ok;
+  } catch (e) {
+    notice.value = e?.data?.message || "Content filter update failed.";
+  } finally {
+    cfBusy.value = false;
+  }
+}
+
+function cfAddKeyword(cat) {
+  const kw = (cfNewKeyword.value[cat.id] || "").trim().toLowerCase();
+  if (!kw) return;
+  cfNewKeyword.value = { ...cfNewKeyword.value, [cat.id]: "" };
+  cfRun(() => api.cfAddKeyword(cat.id, kw), `Added "${kw}" to ${cat.label}.`);
+}
+
+function cfRemoveKeyword(cat, kw) {
+  cfRun(() => api.cfDeleteKeyword(cat.id, kw), `Removed "${kw}" from ${cat.label}.`);
+}
+
+function cfChangeScope(cat, scope) {
+  cfRun(() => api.cfUpdateCategory(cat.id, { scope }), `${cat.label} now blocks: ${cfScopeLabels[scope]}.`);
+}
+
+function cfAddCategory() {
+  const label = cfNewCategory.value.label.trim();
+  if (!label) return;
+  const payload = { ...cfNewCategory.value, label };
+  cfNewCategory.value = { label: "", scope: "both", description: "" };
+  cfRun(() => api.cfAddCategory(payload), `Added category "${label}".`);
+}
+
+function cfDeleteCategory(cat) {
+  if (!window.confirm(`Delete the "${cat.label}" category and its ${cat.keywords.length} keyword(s)?`)) return;
+  cfRun(() => api.cfDeleteCategory(cat.id), `Deleted category "${cat.label}".`);
+}
+
+function cfDownload(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function cfExport(format) {
+  try {
+    const stamp = new Date().toISOString().slice(0, 10);
+    if (format === "csv") {
+      cfDownload(await api.cfExportCsv(), `content-filter-${stamp}.csv`);
+    } else {
+      cfDownload(await api.cfExportJson(), `content-filter-${stamp}.json`);
+    }
+    notice.value = `Exported content filter as ${format.toUpperCase()}.`;
+  } catch (e) {
+    notice.value = e?.data?.message || "Export failed.";
+  }
+}
+
+async function cfImport(event) {
+  const file = event.target.files?.[0];
+  event.target.value = "";  // allow re-importing the same file
+  if (!file) return;
+  if (!window.confirm("Restore from this JSON file? This REPLACES the entire current filter.")) return;
+  try {
+    const text = await file.text();
+    const parsed = JSON.parse(text);
+    const categories = Array.isArray(parsed) ? parsed : parsed.categories;
+    if (!Array.isArray(categories)) throw new Error("No categories array found in file.");
+    await cfRun(() => api.cfReplace(categories), "Content filter restored from file.");
+  } catch (e) {
+    notice.value = e?.message ? `Import failed: ${e.message}` : "Import failed.";
+  }
 }
 
 function addCountdownBanner() {
@@ -1735,47 +1809,11 @@ onUnmounted(() => {
         <div class="setting-block">
           <h2>Content Filter</h2>
           <p class="setting-desc">
-            Keywords rejected from YouTube search results to keep non-Christian religious
-            content out of services (Baptist / Assemblies of God context). Any video whose
-            title or channel name contains one of these words is skipped — even if the
-            search query already says "Christian". Add terms like <em>buddhism</em>,
-            <em>monk</em>, or <em>allah</em>; remove any that are too aggressive for your
-            congregation's content needs. Changes take effect within 5 minutes for running
-            workers.
+            The YouTube content filter now has its own
+            <button type="button" class="link-btn" @click="show('content-filter')">Content Filter</button>
+            tab, where keywords are grouped into categories (Other Religions, Occult, Secular Music,
+            Sermon-exclude, …) and you can export/import the whole list.
           </p>
-          <div v-if="settings" class="mood-editor">
-            <span
-              v-for="kw in settings.content_filter_keywords"
-              :key="kw"
-              class="mood-chip filter-chip"
-            >
-              {{ kw }}
-              <button
-                type="button"
-                class="chip-x"
-                :disabled="savingSettings || settingsReadOnly"
-                aria-label="Remove keyword"
-                @click="removeFilterKeyword(kw)"
-              >×</button>
-            </span>
-          </div>
-          <div v-if="settings" class="mood-add">
-            <input
-              v-model="newFilterKeyword"
-              type="text"
-              class="mood-input"
-              placeholder="Add a keyword to reject (e.g. shaman)"
-              :disabled="savingSettings || settingsReadOnly"
-              @keyup.enter="addFilterKeyword"
-            />
-            <button
-              type="button"
-              class="primary add-btn"
-              :disabled="savingSettings || settingsReadOnly || !newFilterKeyword.trim()"
-              @click="addFilterKeyword"
-            >Add</button>
-          </div>
-          <p v-else class="setting-desc">Loading…</p>
         </div>
 
         <div class="setting-block">
@@ -2180,6 +2218,91 @@ onUnmounted(() => {
             <button class="primary pw-btn" :disabled="pwSaving || !pwCurrent || !pwNew || !pwConfirm" @click="changePassword">
               {{ pwSaving ? "Saving…" : "Update password" }}
             </button>
+          </div>
+        </div>
+      </section>
+
+      <section v-else-if="tab === 'content-filter'" class="settings">
+        <div class="setting-block">
+          <div class="cf-head">
+            <div>
+              <h2>Content Filter</h2>
+              <p class="setting-desc">
+                Keywords rejected from YouTube results so non-Christian or non-worship content stays
+                out of services (Baptist / Assemblies of God context). Any video whose <strong>title</strong>
+                or <strong>channel name</strong> contains a keyword is skipped — even if the search query
+                already says "Christian". Each category's <strong>scope</strong> controls whether it filters
+                the worship/music search, the sermon search, or both. Changes take effect within 5 minutes
+                for running workers.
+              </p>
+            </div>
+            <div class="cf-actions">
+              <button type="button" class="chip" :disabled="cfBusy" @click="cfExport('json')">Export JSON</button>
+              <button type="button" class="chip" :disabled="cfBusy" @click="cfExport('csv')">Export CSV</button>
+              <button type="button" class="chip" :disabled="cfBusy" @click="cfFileInput?.click()">Restore JSON…</button>
+              <input ref="cfFileInput" type="file" accept="application/json,.json" class="cf-file" @change="cfImport" />
+            </div>
+          </div>
+
+          <p v-if="!cfCategories.length" class="setting-desc">Loading…</p>
+
+          <div v-for="cat in cfCategories" :key="cat.id" class="cf-category">
+            <div class="cf-cat-head">
+              <div class="cf-cat-title">
+                <h3>{{ cat.label }}</h3>
+                <span class="cf-count">{{ cat.keywords.length }}</span>
+              </div>
+              <div class="cf-cat-controls">
+                <label class="cf-scope">
+                  Blocks:
+                  <select :value="cat.scope" :disabled="cfBusy" @change="cfChangeScope(cat, $event.target.value)">
+                    <option v-for="s in cfScopes" :key="s" :value="s">{{ cfScopeLabels[s] || s }}</option>
+                  </select>
+                </label>
+                <button type="button" class="chip-x cf-del-cat" :disabled="cfBusy"
+                        title="Delete category" @click="cfDeleteCategory(cat)">Delete</button>
+              </div>
+            </div>
+            <p v-if="cat.description" class="setting-desc cf-cat-desc">{{ cat.description }}</p>
+
+            <div class="mood-editor">
+              <span v-for="kw in cat.keywords" :key="kw" class="mood-chip filter-chip">
+                {{ kw }}
+                <button type="button" class="chip-x" :disabled="cfBusy"
+                        aria-label="Remove keyword" @click="cfRemoveKeyword(cat, kw)">×</button>
+              </span>
+              <span v-if="!cat.keywords.length" class="cf-empty">No keywords yet.</span>
+            </div>
+
+            <div class="mood-add">
+              <input
+                :value="cfNewKeyword[cat.id] || ''"
+                type="text"
+                class="mood-input"
+                placeholder="Add a keyword to reject (e.g. shaman)"
+                :disabled="cfBusy"
+                @input="cfNewKeyword = { ...cfNewKeyword, [cat.id]: $event.target.value }"
+                @keyup.enter="cfAddKeyword(cat)"
+              />
+              <button type="button" class="primary add-btn"
+                      :disabled="cfBusy || !(cfNewKeyword[cat.id] || '').trim()"
+                      @click="cfAddKeyword(cat)">Add</button>
+            </div>
+          </div>
+
+          <div class="cf-new-category">
+            <h3>Add a category</h3>
+            <div class="cf-new-row">
+              <input v-model="cfNewCategory.label" type="text" class="mood-input"
+                     placeholder="Category name (e.g. Profanity)" :disabled="cfBusy" />
+              <select v-model="cfNewCategory.scope" :disabled="cfBusy">
+                <option v-for="s in cfScopes" :key="s" :value="s">{{ cfScopeLabels[s] || s }}</option>
+              </select>
+              <button type="button" class="primary add-btn"
+                      :disabled="cfBusy || !cfNewCategory.label.trim()" @click="cfAddCategory">Add category</button>
+            </div>
+            <input v-model="cfNewCategory.description" type="text" class="mood-input cf-desc-input"
+                   placeholder="Optional description" :disabled="cfBusy" />
           </div>
         </div>
       </section>
@@ -2764,6 +2887,27 @@ onUnmounted(() => {
 .chip-x:disabled { opacity: 0.4; cursor: default; }
 .mood-chip.filter-chip { background: #fff0f0; color: #b00; }
 .mood-add { display: flex; gap: 0.5rem; }
+
+/* Content Filter tab */
+.link-btn { border: 0; background: transparent; color: var(--primary); cursor: pointer; font: inherit; padding: 0; text-decoration: underline; }
+.cf-head { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; flex-wrap: wrap; }
+.cf-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.cf-file { display: none; }
+.cf-category { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 1rem; margin-top: 1rem; }
+.cf-cat-head { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+.cf-cat-title { display: flex; align-items: center; gap: 0.5rem; }
+.cf-cat-title h3 { margin: 0; }
+.cf-count { background: var(--primary-soft); color: var(--primary); border-radius: 999px; padding: 0.1rem 0.6rem; font-size: 0.8rem; }
+.cf-cat-controls { display: flex; align-items: center; gap: 0.75rem; }
+.cf-scope { font-size: 0.85rem; color: var(--text-muted); display: flex; align-items: center; gap: 0.4rem; }
+.cf-scope select, .cf-new-row select { padding: 0.4rem 0.5rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font: inherit; }
+.cf-del-cat { color: #b00; font-size: 0.8rem; }
+.cf-cat-desc { margin: 0.4rem 0 0.6rem; }
+.cf-empty { color: var(--text-muted); font-size: 0.85rem; }
+.cf-new-category { margin-top: 1.5rem; padding-top: 1rem; border-top: 1px dashed var(--border); }
+.cf-new-category h3 { margin: 0 0 0.6rem; }
+.cf-new-row { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.cf-desc-input { margin-top: 0.5rem; }
 .banner-list { display: flex; flex-direction: column; gap: 0.75rem; }
 .banner-row, .banner-add { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0.75rem; background: var(--surface-2); }
 .banner-add { margin-top: 0.8rem; }

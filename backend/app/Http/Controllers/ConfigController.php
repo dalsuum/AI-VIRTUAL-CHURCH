@@ -76,6 +76,8 @@ class ConfigController extends Controller
             'enabled_languages'       => Setting::enabledLanguages(),
             'countdown_cards'         => $this->countdownCards($mood, $language),
             'content_filter_keywords' => Setting::filterKeywords(),
+            'content_filter_music'    => Setting::filterKeywordsForScope('music'),
+            'content_filter_sermon'   => Setting::filterKeywordsForScope('sermon'),
         ]);
     }
 

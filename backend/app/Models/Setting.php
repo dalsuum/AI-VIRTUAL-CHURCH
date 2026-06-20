@@ -65,6 +65,65 @@ class Setting extends Model
         'mindfulness', 'chakra', 'reincarnation',
     ];
 
+    /** Where a filter category applies when blocking YouTube results. */
+    public const FILTER_SCOPES = ['both', 'music', 'sermon'];
+
+    /**
+     * Church-tailored content-filter taxonomy. Each category groups keywords
+     * and declares WHERE it blocks: worship/music search, sermon search, or both.
+     * Admin-editable via the Content Filter tab; falls back to these defaults.
+     * Keywords are matched (case-insensitive) against YouTube result titles and
+     * channel names — any hit skips the result.
+     */
+    public const DEFAULT_FILTER_CATEGORIES = [
+        [
+            'id' => 'other_religions', 'label' => 'Other Religions', 'scope' => 'both',
+            'description' => 'Non-Christian faith traditions (Baptist / Assemblies of God context).',
+            'keywords' => [
+                'buddhism', 'buddhist', 'buddha', 'dharma', 'sangha',
+                'monk', 'monks', 'monastery', 'zen',
+                'hindu', 'hinduism', 'vedic',
+                'islam', 'islamic', 'muslim', 'quran', 'quranic', 'allah', 'mosque',
+                'rabbi', 'synagogue', 'jewish', 'judaism', 'torah',
+            ],
+        ],
+        [
+            'id' => 'occult_newage', 'label' => 'Occult / New Age', 'scope' => 'both',
+            'description' => 'Esoteric, occult, and new-age spirituality.',
+            'keywords' => ['new age', 'wicca', 'pagan', 'occult', 'astrology', 'mindfulness', 'chakra', 'reincarnation'],
+        ],
+        [
+            'id' => 'profanity', 'label' => 'Profanity / Explicit', 'scope' => 'both',
+            'description' => 'Explicit or profane terms unsuitable for worship.',
+            'keywords' => [],
+        ],
+        [
+            'id' => 'politics', 'label' => 'Politics', 'scope' => 'both',
+            'description' => 'Partisan or political content.',
+            'keywords' => [],
+        ],
+        [
+            'id' => 'secular_music', 'label' => 'Secular Music', 'scope' => 'music',
+            'description' => 'Non-worship music formats (only filters the worship/music search).',
+            'keywords' => ['remix', 'reaction', 'karaoke', 'mashup', 'nightcore', 'lyric video reaction'],
+        ],
+        [
+            'id' => 'off_topic_channels', 'label' => 'Off-topic Channels', 'scope' => 'both',
+            'description' => 'Channels/titles that signal non-worship content.',
+            'keywords' => ['movie clips', 'gaming', 'trailer', 'news'],
+        ],
+        [
+            'id' => 'sermon_exclude', 'label' => 'Sermon-exclude', 'scope' => 'sermon',
+            'description' => 'Music/event terms that should never appear in a sermon result.',
+            'keywords' => ['concert', 'choir', 'music video', 'instrumental'],
+        ],
+        [
+            'id' => 'custom', 'label' => 'Custom', 'scope' => 'both',
+            'description' => 'Your own terms. Added keywords land here unless you pick another category.',
+            'keywords' => [],
+        ],
+    ];
+
     /** Admin-curated cards shown while the service is preparing. */
     public const DEFAULT_COUNTDOWN_BANNERS = [
         ['text' => 'Take a quiet breath. God meets us with mercy before we have the right words.', 'source' => 'Pastoral encouragement'],
@@ -200,8 +259,136 @@ class Setting extends Model
      */
     public static function filterKeywords(): array
     {
-        $list = static::getList('content_filter_keywords', self::DEFAULT_FILTER_KEYWORDS);
-        $clean = array_values(array_unique(array_filter(array_map('trim', $list))));
+        $words = [];
+        foreach (static::filterCategories() as $cat) {
+            foreach ($cat['keywords'] as $kw) {
+                $words[] = $kw;
+            }
+        }
+        $clean = array_values(array_unique(array_filter(array_map('trim', $words))));
         return $clean ?: self::DEFAULT_FILTER_KEYWORDS;
+    }
+
+    /**
+     * Keywords that apply to a given search scope ('music' or 'sermon').
+     * A category tagged 'both' contributes to either scope.
+     */
+    public static function filterKeywordsForScope(string $scope): array
+    {
+        $words = [];
+        foreach (static::filterCategories() as $cat) {
+            if ($cat['scope'] === 'both' || $cat['scope'] === $scope) {
+                foreach ($cat['keywords'] as $kw) {
+                    $words[] = $kw;
+                }
+            }
+        }
+        return array_values(array_unique(array_filter(array_map('trim', $words))));
+    }
+
+    /**
+     * The full categorized content filter. Falls back to the built-in taxonomy,
+     * and one-time migrates any legacy flat `content_filter_keywords` the admin
+     * previously added (words not in a default category) into the Custom group.
+     */
+    public static function filterCategories(): array
+    {
+        $raw = static::get('content_filter_categories');
+        if ($raw !== null) {
+            $decoded = json_decode($raw, true);
+            if (is_array($decoded)) {
+                return static::normalizeCategories($decoded);
+            }
+        }
+
+        // No categorized data yet — seed from defaults and fold in legacy keywords.
+        $cats = static::normalizeCategories(self::DEFAULT_FILTER_CATEGORIES);
+
+        $legacy = static::getList('content_filter_keywords', []);
+        if ($legacy) {
+            $known = [];
+            foreach ($cats as $cat) {
+                foreach ($cat['keywords'] as $kw) {
+                    $known[$kw] = true;
+                }
+            }
+            $extra = [];
+            foreach ($legacy as $kw) {
+                $kw = mb_strtolower(trim((string) $kw));
+                if ($kw !== '' && ! isset($known[$kw]) && ! in_array($kw, $extra, true)) {
+                    $extra[] = $kw;
+                }
+            }
+            if ($extra) {
+                foreach ($cats as &$cat) {
+                    if ($cat['id'] === 'custom') {
+                        $cat['keywords'] = array_values(array_unique([...$cat['keywords'], ...$extra]));
+                    }
+                }
+                unset($cat);
+            }
+        }
+
+        return $cats;
+    }
+
+    /** Validate, clean, and persist the categorized content filter. */
+    public static function setCategories(array $categories): array
+    {
+        $clean = static::normalizeCategories($categories);
+        static::set('content_filter_categories', json_encode($clean));
+        // Keep the flat key in sync so older readers (e.g. /config consumers) work.
+        static::setList('content_filter_keywords', static::filterKeywords());
+        return $clean;
+    }
+
+    /** Coerce arbitrary input into the canonical category shape. */
+    public static function normalizeCategories(array $categories): array
+    {
+        $clean = [];
+        $seenIds = [];
+
+        foreach ($categories as $cat) {
+            if (! is_array($cat)) {
+                continue;
+            }
+            $label = trim((string) ($cat['label'] ?? ''));
+            if ($label === '') {
+                continue;
+            }
+
+            $id = trim((string) ($cat['id'] ?? ''));
+            if ($id === '') {
+                $id = preg_replace('/[^a-z0-9]+/', '_', mb_strtolower($label));
+                $id = trim($id, '_');
+            }
+            if ($id === '' || isset($seenIds[$id])) {
+                $id = $id . '_' . substr(md5($label . count($clean)), 0, 6);
+            }
+            $seenIds[$id] = true;
+
+            $scope = (string) ($cat['scope'] ?? 'both');
+            if (! in_array($scope, self::FILTER_SCOPES, true)) {
+                $scope = 'both';
+            }
+
+            $keywords = [];
+            foreach ((array) ($cat['keywords'] ?? []) as $kw) {
+                $kw = mb_strtolower(trim((string) $kw));
+                if ($kw !== '' && mb_strlen($kw) <= 100 && ! in_array($kw, $keywords, true)) {
+                    $keywords[] = $kw;
+                }
+            }
+
+            $clean[] = [
+                'id'          => mb_substr($id, 0, 60),
+                'label'       => mb_substr($label, 0, 80),
+                'description' => mb_substr(trim((string) ($cat['description'] ?? '')), 0, 200),
+                'scope'       => $scope,
+                'keywords'    => $keywords,
+            ];
+        }
+
+        return $clean;
     }
 }

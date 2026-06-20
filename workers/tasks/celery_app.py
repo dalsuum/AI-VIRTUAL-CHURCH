@@ -31,6 +31,9 @@ app.conf.update(
         "tasks.generate_text_segments": {"queue": "ai:sermon"},
         "tasks.generate_welcome": {"queue": "ai:sermon"},
         "tasks.generate_music": {"queue": "ai:music"},
+        # AI background music for the online Bible reader — shares the music
+        # worker pool and its MusicGen Redis lock so generations never overlap.
+        "tasks.generate_bible_bg": {"queue": "ai:music"},
         "tasks.render_avatar": {"queue": "ai:avatar"},
         "tasks.narrate": {"queue": "ai:narration"},
         "tasks.repair_missing_narration": {"queue": "ai:narration"},

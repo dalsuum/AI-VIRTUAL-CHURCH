@@ -790,3 +790,22 @@ def narrate(
     # Enrich the existing segment row with its narration; the webhook keeps the
     # segment's text (and any avatar video) intact and just fills in audio_key.
     _post_asset(session_token, segment, audio_key=audio_url)
+
+
+@app.task(name="tasks.generate_bible_bg", time_limit=1800, soft_time_limit=1500)
+def generate_bible_bg(theme: str, tod: str, engine: str = "musicgen", storage_backend: str = "") -> None:
+    """Generate (once) the AI background-music loop for a Bible (theme, tod) bucket.
+
+    Offloaded from the Bible API process so MusicGen never blocks narration. The
+    deterministic storage key makes this idempotent: if the track already exists
+    (another reader triggered it first) the task is a cheap no-op.
+    """
+    import bible_bg  # noqa: PLC0415 — heavy deps, import lazily on the worker
+
+    if storage_backend:
+        storage.set_backend(storage_backend)
+    try:
+        url = bible_bg.generate_track(theme, tod, engine=engine)
+        print(f"[bible-bg] ready {theme}/{tod}: {url}", flush=True)
+    except Exception as exc:  # noqa: BLE001 — best-effort; reader falls back to silence
+        print(f"[bible-bg] generation failed for {theme}/{tod}: {exc}", flush=True)

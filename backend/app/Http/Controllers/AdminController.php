@@ -1047,6 +1047,12 @@ class AdminController extends Controller
         if (array_key_exists('bible_text_highlight_enabled', $data)) {
             Setting::set('bible_text_highlight_enabled', $data['bible_text_highlight_enabled'] ? '1' : '0');
         }
+        if (array_key_exists('bible_bg_music_mode', $data)) {
+            Setting::set('bible_bg_music_mode', $data['bible_bg_music_mode']);
+        }
+        if (array_key_exists('bible_bg_music_engine', $data)) {
+            Setting::set('bible_bg_music_engine', $data['bible_bg_music_engine']);
+        }
         if (array_key_exists('bible_bg_music_url', $data)) {
             Setting::set('bible_bg_music_url', trim((string) $data['bible_bg_music_url']));
         }
@@ -1137,6 +1143,8 @@ class AdminController extends Controller
             'bible_narration_mode_my' => Setting::bibleNarrationMode('my'),
             'bible_narration_mode_td' => Setting::bibleNarrationMode('td'),
             'bible_text_highlight_enabled' => Setting::bibleTextHighlightEnabled(),
+            'bible_bg_music_mode' => Setting::bibleBgMusicMode(),
+            'bible_bg_music_engine' => Setting::bibleBgMusicEngine(),
             'bible_bg_music_url' => Setting::bibleBgMusicUrl(),
             'bible_bg_music_volume' => Setting::bibleBgMusicVolume(),
             'runpod_enabled'     => Setting::get('runpod_enabled', '0') === '1',

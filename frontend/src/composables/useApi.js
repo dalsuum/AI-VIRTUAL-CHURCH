@@ -216,6 +216,10 @@ export const api = {
   // Chapter narration (TTS). Returns { url }. Synthesized once, then cached.
   bibleAudio: (lang, book, chapter) =>
     request(`/bible/audio?lang=${encodeURIComponent(lang)}&book=${book}&chapter=${chapter}`),
+  // AI background-music loop for a chapter + reader-local hour (0-23). Returns
+  // { url, theme, tod, generating }. url is null while it's still generating.
+  bibleBgMusic: (lang, book, chapter, hour) =>
+    request(`/bible/bg-music?lang=${encodeURIComponent(lang)}&book=${book}&chapter=${chapter}&hour=${hour}`),
 
   updateGuestEmail: (email) =>
     request("/me/email", { method: "PATCH", body: { email } }),

@@ -109,49 +109,10 @@ class MusicGenStrategy(MusicStrategy):
         return result
 
     def _generate(self, text: str, full_prompt: str) -> MusicResult:
-        from transformers import pipeline as hf_pipeline
-
         marker = "\n\nLyrics:\n"
         lyrics = full_prompt.split(marker, 1)[1].strip() if marker in full_prompt else None
 
-        device = _resolve_device()
-
-        # float16 halves VRAM usage and speeds up inference on CUDA; CPU needs float32.
-        pipeline_kwargs: dict = {"model": _MODEL, "device": device}
-        try:
-            import torch
-            pipeline_kwargs["torch_dtype"] = torch.float16 if "cuda" in device else torch.float32
-        except ImportError:
-            pass
-
-        print(f"[musicgen] loading {_MODEL!r} on {device}…", flush=True)
-        t0 = time.time()
-        pipeline = hf_pipeline("text-to-audio", **pipeline_kwargs)
-        print(f"[musicgen] model ready in {time.time() - t0:.1f}s", flush=True)
-
-        try:
-            t1 = time.time()
-            result = pipeline(
-                text,
-                forward_params={"do_sample": True, "max_new_tokens": _MAX_TOKENS},
-            )
-            print(f"[musicgen] generated in {time.time() - t1:.1f}s", flush=True)
-
-            item = result[0] if isinstance(result, list) else result
-            audio = np.asarray(item["audio"])
-            sr = int(item["sampling_rate"])
-            audio_bytes, ext, content_type = _encode_audio(audio, sr)
-        finally:
-            # Explicitly release the model and PyTorch tensors so the memory is
-            # returned to the OS before the next task runs.
-            del pipeline
-            try:
-                import torch
-                torch.cuda.empty_cache()
-            except Exception:
-                pass
-            import gc
-            gc.collect()
+        audio_bytes, ext, content_type = generate_instrumental(text, max_tokens=_MAX_TOKENS)
 
         key = f"worship/musicgen_{int(time.time())}.{ext}"
         storage.upload_bytes(key, audio_bytes, content_type)
@@ -175,6 +136,55 @@ class MusicGenStrategy(MusicStrategy):
             mood.lower(),
             f"Christian worship music, {mood}, piano, choir, peaceful",
         )
+
+
+def generate_instrumental(text: str, *, max_tokens: int = _MAX_TOKENS) -> tuple[bytes, str, str]:
+    """Run MusicGen on a text prompt and return (audio_bytes, ext, content_type).
+
+    Shared by the worship MusicGenStrategy and the Bible background-music task so
+    there is a single generation/encoding/memory-release code path. Callers are
+    responsible for any concurrency lock and for storing the returned bytes.
+    """
+    from transformers import pipeline as hf_pipeline
+
+    device = _resolve_device()
+
+    # float16 halves VRAM usage and speeds up inference on CUDA; CPU needs float32.
+    pipeline_kwargs: dict = {"model": _MODEL, "device": device}
+    try:
+        import torch
+        pipeline_kwargs["torch_dtype"] = torch.float16 if "cuda" in device else torch.float32
+    except ImportError:
+        pass
+
+    print(f"[musicgen] loading {_MODEL!r} on {device}…", flush=True)
+    t0 = time.time()
+    pipeline = hf_pipeline("text-to-audio", **pipeline_kwargs)
+    print(f"[musicgen] model ready in {time.time() - t0:.1f}s", flush=True)
+
+    try:
+        t1 = time.time()
+        result = pipeline(
+            text,
+            forward_params={"do_sample": True, "max_new_tokens": max_tokens},
+        )
+        print(f"[musicgen] generated in {time.time() - t1:.1f}s", flush=True)
+
+        item = result[0] if isinstance(result, list) else result
+        audio = np.asarray(item["audio"])
+        sr = int(item["sampling_rate"])
+        return _encode_audio(audio, sr)
+    finally:
+        # Explicitly release the model and PyTorch tensors so the memory is
+        # returned to the OS before the next task runs.
+        del pipeline
+        try:
+            import torch
+            torch.cuda.empty_cache()
+        except Exception:
+            pass
+        import gc
+        gc.collect()
 
 
 def _encode_audio(audio: np.ndarray, sample_rate: int) -> tuple[bytes, str, str]:

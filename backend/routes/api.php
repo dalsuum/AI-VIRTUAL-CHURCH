@@ -29,6 +29,8 @@ Route::get('/bible/books', [BibleController::class, 'books'])->middleware('throt
 Route::get('/bible/chapter', [BibleController::class, 'chapter'])->middleware('throttle:120,1');
 // Chapter narration (text-to-speech) — heavier, so throttled tighter.
 Route::get('/bible/audio', [BibleController::class, 'audio'])->middleware('throttle:30,1');
+// AI background-music loop for a chapter + reader time-of-day (cached/generated).
+Route::get('/bible/bg-music', [BibleController::class, 'bgMusic'])->middleware('throttle:60,1');
 
 // Public special-Sunday highlight — the active observance (if any) for the
 // intake/home card, localized to ?language=en|my|td.

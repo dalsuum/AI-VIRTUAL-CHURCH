@@ -28,10 +28,58 @@ const audioError = ref("");
 const audioEl = ref(null);
 const bgMusicEl = ref(null);
 
+// Playback speed for the narration, remembered per-device. Highlighting stays
+// in sync automatically: it maps currentTime/duration, and a faster rate only
+// advances currentTime faster while duration is unchanged.
+const SPEED_KEY = "bible_speed";
+const SPEEDS = [0.75, 1, 1.25, 1.5];
+const _storedSpeed = Number(localStorage.getItem(SPEED_KEY));
+const playbackRate = ref(SPEEDS.includes(_storedSpeed) ? _storedSpeed : 1);
+function applyRate() {
+  if (audioEl.value) audioEl.value.playbackRate = playbackRate.value;
+}
+function setSpeed(rate) {
+  playbackRate.value = rate;
+  localStorage.setItem(SPEED_KEY, String(rate));
+  applyRate();
+}
+
 // Reader config from admin: which languages can be narrated + highlight toggle
 // + optional looping background music played softly behind the narration.
-const config = ref({ narratable: {}, text_highlight: true, bg_music_url: "", bg_music_volume: 0.15 });
-const bgMusicUrl = computed(() => config.value.bg_music_url || "");
+// bg_music_mode: 'off' | 'static' (admin mp3 URL) | 'ai' (generated per chapter
+// theme + the reader's local time of day).
+const config = ref({
+  narratable: {},
+  text_highlight: true,
+  bg_music_mode: "off",
+  bg_music_url: "",
+  bg_music_volume: 0.15,
+});
+// In AI mode the loop URL is resolved per chapter from the backend (cached or
+// freshly generated); in static mode it's the admin's fixed URL.
+const aiMusicUrl = ref("");
+const bgMusicUrl = computed(() => {
+  const mode = config.value.bg_music_mode || "off";
+  if (mode === "ai") return aiMusicUrl.value || "";
+  if (mode === "static") return config.value.bg_music_url || "";
+  return "";
+});
+
+// AI mode: ask the backend for this chapter's loop (keyed by theme + the
+// reader's local time of day). Returns a cached URL instantly, or null while
+// it's still generating — in which case this visit simply plays no music.
+async function resolveAiBgMusic() {
+  aiMusicUrl.value = "";
+  if (config.value.bg_music_mode !== "ai" || !selectedBook.value) return;
+  try {
+    const res = await api.bibleBgMusic(
+      lang.value, selectedBook.value.num, chapterNum.value, new Date().getHours()
+    );
+    aiMusicUrl.value = res?.url || "";
+  } catch (e) {
+    aiMusicUrl.value = "";
+  }
+}
 const bgMusicVolume = computed(() => {
   const v = Number(config.value.bg_music_volume);
   return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0.15;
@@ -164,6 +212,7 @@ function goChapter(n) {
 function resetAudio() {
   audioUrl.value = "";
   audioError.value = "";
+  aiMusicUrl.value = "";
   highlightedVerse.value = -1;
   syncBgMusic("stop");
 }
@@ -172,6 +221,9 @@ async function listen() {
   if (loadingAudio.value || !selectedBook.value) return;
   loadingAudio.value = true;
   audioError.value = "";
+  // Resolve the AI background loop alongside the narration so it's ready to
+  // start the moment the spoken audio plays (no-op in 'off'/'static' modes).
+  resolveAiBgMusic();
   try {
     const res = await api.bibleAudio(lang.value, selectedBook.value.num, chapterNum.value);
     audioUrl.value = res.url || "";
@@ -290,6 +342,7 @@ onMounted(() => {
           controls
           autoplay
           class="audio-player"
+          @loadedmetadata="applyRate"
           @timeupdate="onAudioTime"
           @play="syncBgMusic('play')"
           @pause="syncBgMusic('pause')"
@@ -303,6 +356,19 @@ onMounted(() => {
           preload="auto"
           aria-hidden="true"
         ></audio>
+        <div class="speed-row" role="group" aria-label="Playback speed">
+          <span class="speed-label">Speed</span>
+          <button
+            v-for="s in SPEEDS"
+            :key="s"
+            type="button"
+            class="speed-btn"
+            :class="{ active: playbackRate === s }"
+            @click="setSpeed(s)"
+          >
+            {{ s === 1 ? 'Normal' : s + '×' }}
+          </button>
+        </div>
       </div>
       <p v-if="audioError" class="audio-error">{{ audioError }}</p>
 
@@ -474,6 +540,26 @@ onMounted(() => {
 .audio-wrap { margin: 0 0 1.1rem; }
 .audio-player { width: 100%; height: 38px; }
 .audio-error { color: var(--danger); font-size: 0.85rem; margin: 0 0 1rem; }
+
+.speed-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+  flex-wrap: wrap;
+}
+.speed-label { font-size: 0.78rem; color: var(--text-muted); margin-right: 0.15rem; }
+.speed-btn {
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.speed-btn.active { border-color: var(--primary); color: var(--primary); font-weight: 600; }
 
 .verses { line-height: 1.85; font-size: 1.05rem; }
 .verses.mm { line-height: 2.1; font-size: 1.12rem; }

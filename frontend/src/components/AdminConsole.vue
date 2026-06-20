@@ -337,6 +337,8 @@ const setTextHighlightEnabled = (on) => saveSetting("text_highlight_enabled", on
 // Online Bible reader ("Listen" button) — its own per-language voice + highlight.
 const setBibleNarrationMode = (lang, mode) => saveSetting(`bible_narration_mode_${lang}`, mode, "Bible narration voice updated.");
 const setBibleTextHighlight = (on) => saveSetting("bible_text_highlight_enabled", on, "Bible highlighting updated.");
+const setBibleBgMusicMode = (mode) => saveSetting("bible_bg_music_mode", mode, "Bible background music mode updated.");
+const setBibleBgMusicEngine = (engine) => saveSetting("bible_bg_music_engine", engine, "Bible AI music engine updated.");
 const saveBibleBgMusicUrl = () =>
   saveSetting("bible_bg_music_url", (settings.value.bible_bg_music_url || "").trim(), "Bible background music updated.");
 const setBibleBgMusicVolume = (v) =>
@@ -2051,28 +2053,105 @@ onUnmounted(() => {
             <!-- Background music during narration -->
             <p class="setting-desc" style="margin-top:1.5rem"><strong>Background music</strong></p>
             <p class="setting-desc">
-              Optional instrumental track looped softly behind the spoken narration.
-              Paste a direct audio URL (.mp3/.ogg); leave blank to play voice only.
+              Play a soft instrumental track behind the spoken narration. Choose a
+              fixed uploaded track, or let AI compose one per chapter — matched to
+              the passage's mood and the reader's time of day (morning/evening/night).
             </p>
-            <div class="bgm-row">
-              <input
-                v-model="settings.bible_bg_music_url"
-                type="url"
-                class="pool-input"
-                placeholder="https://example.com/ambient.mp3"
-                :disabled="savingSettings || settingsReadOnly"
-                @keyup.enter="saveBibleBgMusicUrl"
-              />
+            <div class="choice-row">
               <button
                 type="button"
-                class="choice bgm-save"
+                class="choice"
+                :class="{ active: (settings.bible_bg_music_mode || 'off') === 'off' }"
                 :disabled="savingSettings || settingsReadOnly"
-                @click="saveBibleBgMusicUrl"
+                @click="setBibleBgMusicMode('off')"
               >
-                Save
+                <strong>Off</strong>
+                <span>Voice only — no background music.</span>
+              </button>
+              <button
+                type="button"
+                class="choice"
+                :class="{ active: settings.bible_bg_music_mode === 'static' }"
+                :disabled="savingSettings || settingsReadOnly"
+                @click="setBibleBgMusicMode('static')"
+              >
+                <strong>Static MP3</strong>
+                <span>Loop one fixed track you provide below.</span>
+              </button>
+              <button
+                type="button"
+                class="choice"
+                :class="{ active: settings.bible_bg_music_mode === 'ai' }"
+                :disabled="savingSettings || settingsReadOnly"
+                @click="setBibleBgMusicMode('ai')"
+              >
+                <strong>AI generated</strong>
+                <span>Compose per chapter mood + time of day.</span>
               </button>
             </div>
-            <label class="setting-desc" style="display:block;margin-top:0.75rem">
+
+            <!-- Static mode: the fixed track URL -->
+            <template v-if="settings.bible_bg_music_mode === 'static'">
+              <p class="setting-desc" style="margin-top:1rem">
+                Direct audio URL (.mp3/.ogg) served over HTTPS with CORS allowed.
+              </p>
+              <div class="bgm-row">
+                <input
+                  v-model="settings.bible_bg_music_url"
+                  type="url"
+                  class="pool-input"
+                  placeholder="https://example.com/ambient.mp3"
+                  :disabled="savingSettings || settingsReadOnly"
+                  @keyup.enter="saveBibleBgMusicUrl"
+                />
+                <button
+                  type="button"
+                  class="choice bgm-save"
+                  :disabled="savingSettings || settingsReadOnly"
+                  @click="saveBibleBgMusicUrl"
+                >
+                  Save
+                </button>
+              </div>
+            </template>
+
+            <!-- AI mode: which engine generates the loop -->
+            <template v-if="settings.bible_bg_music_mode === 'ai'">
+              <p class="setting-desc" style="margin-top:1rem">
+                The first reader to open a chapter at a given time of day triggers a
+                one-off generation (a few minutes on CPU); it's cached and reused for
+                everyone after that, so they hear music on a later visit.
+              </p>
+              <div class="choice-row">
+                <button
+                  type="button"
+                  class="choice"
+                  :class="{ active: (settings.bible_bg_music_engine || 'musicgen') === 'musicgen' }"
+                  :disabled="savingSettings || settingsReadOnly"
+                  @click="setBibleBgMusicEngine('musicgen')"
+                >
+                  <strong>MusicGen (CPU)</strong>
+                  <span>Local, free. Slower on a small box.</span>
+                </button>
+                <button
+                  type="button"
+                  class="choice"
+                  :class="{ active: settings.bible_bg_music_engine === 'local_ai' }"
+                  :disabled="savingSettings || settingsReadOnly"
+                  @click="setBibleBgMusicEngine('local_ai')"
+                >
+                  <strong>Local AI (GPU)</strong>
+                  <span>Same model, uses CUDA when available.</span>
+                </button>
+              </div>
+            </template>
+
+            <!-- Volume applies to both static and AI modes -->
+            <label
+              v-if="settings.bible_bg_music_mode && settings.bible_bg_music_mode !== 'off'"
+              class="setting-desc"
+              style="display:block;margin-top:0.75rem"
+            >
               Volume: {{ Math.round((settings.bible_bg_music_volume ?? 0.15) * 100) }}%
               <input
                 type="range"
@@ -2081,7 +2160,7 @@ onUnmounted(() => {
                 step="0.05"
                 style="width:100%"
                 :value="settings.bible_bg_music_volume ?? 0.15"
-                :disabled="savingSettings || settingsReadOnly || !settings.bible_bg_music_url"
+                :disabled="savingSettings || settingsReadOnly"
                 @change="setBibleBgMusicVolume($event.target.value)"
               />
             </label>

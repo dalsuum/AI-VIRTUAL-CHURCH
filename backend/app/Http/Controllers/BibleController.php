@@ -42,9 +42,46 @@ class BibleController extends Controller
         return [
             'narratable'      => $narratable,
             'text_highlight'  => Setting::bibleTextHighlightEnabled(),
+            'bg_music_mode'   => Setting::bibleBgMusicMode(),
             'bg_music_url'    => Setting::bibleBgMusicUrl(),
             'bg_music_volume' => Setting::bibleBgMusicVolume(),
         ];
+    }
+
+    /**
+     * Resolve the AI background-music loop for a chapter + the reader's local
+     * time of day. Proxies to the worker, which derives a coarse theme from the
+     * chapter text, returns a cached track when one exists, or enqueues a one-off
+     * MusicGen generation and reports generating=true. Only valid in 'ai' mode.
+     */
+    public function bgMusic(Request $request)
+    {
+        $data = $request->validate([
+            'lang'    => ['nullable', 'in:' . implode(',', self::LANGS)],
+            'book'    => ['required', 'integer', 'between:1,66'],
+            'chapter' => ['required', 'integer', 'min:1'],
+            'hour'    => ['nullable', 'integer', 'between:0,23'],
+        ]);
+
+        if (Setting::bibleBgMusicMode() !== 'ai') {
+            abort(409, 'AI background music is not enabled.');
+        }
+
+        $resp = Http::timeout(15)->post("{$this->base()}/bible/bg-music", [
+            'lang'            => $data['lang'] ?? 'en',
+            'book'            => (int) $data['book'],
+            'chapter'         => (int) $data['chapter'],
+            'hour'            => (int) ($data['hour'] ?? 12),
+            'engine'          => Setting::bibleBgMusicEngine(),
+            'storage_backend' => (string) Setting::get('storage_backend', 'local'),
+        ]);
+
+        if ($resp->status() === 404) {
+            abort(404, 'Chapter not found');
+        }
+        abort_unless($resp->successful(), 502, 'Background music service unavailable');
+
+        return $resp->json();
     }
 
     /** Table of contents (book numbers, native names, chapter counts) for a translation. */

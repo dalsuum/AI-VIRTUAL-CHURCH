@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 import bible_api
+import bible_bg
 import narrator
 import storage
 
@@ -89,3 +90,53 @@ def narrate(req: NarrateRequest):  # sync: TTS calls block, and Edge TTS runs it
         raise HTTPException(status_code=502, detail=f"Narration failed: {exc}") from exc
 
     return {"url": url, "name": data["name"], "chapter": data["chapter"]}
+
+
+class BgMusicRequest(BaseModel):
+    lang: str = "en"
+    book: int = 1
+    chapter: int = 1
+    hour: int = 12            # reader's local hour (0-23) → time-of-day bucket
+    engine: str = "musicgen"  # musicgen | local_ai
+    storage_backend: str = "" # 'local' | 's3'
+
+
+@router.post("/bg-music")
+def bg_music(req: BgMusicRequest):
+    """Resolve the AI background-music loop for a chapter + reader time-of-day.
+
+    Returns the cached track's URL when it exists; otherwise enqueues a one-off
+    MusicGen generation on the music worker and reports ``generating: true`` so
+    the reader can fall back to silence (or the admin's static track) this time
+    and play the AI loop on a later visit once it's cached."""
+    _check_lang(req.lang)
+    if not (1 <= req.book <= 66) or req.chapter < 1:
+        raise HTTPException(status_code=422, detail="Invalid book or chapter")
+
+    data = bible_api.chapter(req.lang, req.book, req.chapter)
+    if not data["verses"]:
+        raise HTTPException(status_code=404, detail="Chapter not found")
+
+    if req.storage_backend:
+        storage.set_backend(req.storage_backend)
+
+    text = " ".join(v["text"] for v in data["verses"] if v["text"])
+    theme = bible_bg.classify_theme(text)
+    tod = bible_bg.tod_from_hour(req.hour)
+
+    url = bible_bg.existing_url(theme, tod)
+    if url:
+        return {"url": url, "theme": theme, "tod": tod, "generating": False}
+
+    engine = req.engine if req.engine in bible_bg.ENGINES else "musicgen"
+    try:
+        from tasks.celery_app import app as celery_app
+        celery_app.send_task(
+            "tasks.generate_bible_bg",
+            args=[theme, tod, engine, req.storage_backend],
+            queue="ai:music",
+        )
+    except Exception as exc:  # noqa: BLE001 — broker down: reader just gets no music
+        raise HTTPException(status_code=502, detail=f"Could not queue music: {exc}") from exc
+
+    return {"url": None, "theme": theme, "tod": tod, "generating": True}

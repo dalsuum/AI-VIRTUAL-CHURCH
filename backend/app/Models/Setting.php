@@ -194,9 +194,27 @@ class Setting extends Model
         return static::get('bible_text_highlight_enabled', '1') === '1';
     }
 
+    /** Background-music mode for the Bible reader: 'off' | 'static' | 'ai'. */
+    public const BIBLE_BG_MUSIC_MODES = ['off', 'static', 'ai'];
+
+    /** Engines that can generate the AI background loop (matches workers/bible_bg.py). */
+    public const BIBLE_BG_MUSIC_ENGINES = ['musicgen', 'local_ai'];
+
+    public static function bibleBgMusicMode(): string
+    {
+        $mode = (string) static::get('bible_bg_music_mode', 'off');
+        return in_array($mode, self::BIBLE_BG_MUSIC_MODES, true) ? $mode : 'off';
+    }
+
+    public static function bibleBgMusicEngine(): string
+    {
+        $engine = (string) static::get('bible_bg_music_engine', 'musicgen');
+        return in_array($engine, self::BIBLE_BG_MUSIC_ENGINES, true) ? $engine : 'musicgen';
+    }
+
     /**
      * Optional looping background music played softly behind Bible narration.
-     * Empty string disables the feature (the default).
+     * Empty string disables the static track (the default).
      */
     public static function bibleBgMusicUrl(): string
     {

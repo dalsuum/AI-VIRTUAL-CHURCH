@@ -291,6 +291,10 @@ export const api = {
   adminSettings: () => request("/admin/settings"),
   adminUpdateSettings: (payload) =>
     request("/admin/settings", { method: "PATCH", body: payload }),
+  // Bible AI background-music matrix: status (cached/total) + queue generation.
+  adminBibleBgMusicStatus: () => request("/admin/bible/bg-music/status"),
+  adminBibleBgMusicPregenerate: () =>
+    request("/admin/bible/bg-music/pregenerate", { method: "POST" }),
 
   // Content filter — categorized YouTube blocklist (CRUD + import/export).
   cfList: () => request("/admin/content-filter"),

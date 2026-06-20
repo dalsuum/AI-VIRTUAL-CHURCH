@@ -140,3 +140,47 @@ def bg_music(req: BgMusicRequest):
         raise HTTPException(status_code=502, detail=f"Could not queue music: {exc}") from exc
 
     return {"url": None, "theme": theme, "tod": tod, "generating": True}
+
+
+class PregenRequest(BaseModel):
+    engine: str = "musicgen"  # musicgen | local_ai
+    storage_backend: str = "" # 'local' | 's3'
+
+
+@router.post("/bg-music/pregenerate")
+def bg_music_pregenerate(req: PregenRequest):
+    """Queue generation of every uncached (theme, tod) loop so readers never wait.
+
+    Idempotent: buckets that already exist are skipped, and each queued task
+    re-checks under the shared MusicGen lock, so this is safe to click repeatedly.
+    Returns how many tracks are ready and how many were queued this call."""
+    if req.storage_backend:
+        storage.set_backend(req.storage_backend)
+
+    engine = req.engine if req.engine in bible_bg.ENGINES else "musicgen"
+
+    queued = 0
+    try:
+        from tasks.celery_app import app as celery_app
+        for theme, tod in bible_bg.all_buckets():
+            if bible_bg.existing_url(theme, tod):
+                continue
+            celery_app.send_task(
+                "tasks.generate_bible_bg",
+                args=[theme, tod, engine, req.storage_backend],
+                queue="ai:music",
+            )
+            queued += 1
+    except Exception as exc:  # noqa: BLE001 — broker down
+        raise HTTPException(status_code=502, detail=f"Could not queue music: {exc}") from exc
+
+    status = bible_bg.matrix_status()
+    return {"queued": queued, **status}
+
+
+@router.get("/bg-music/status")
+def bg_music_status(storage_backend: str = ""):
+    """How many of the theme x tod matrix are generated (for the admin panel)."""
+    if storage_backend:
+        storage.set_backend(storage_backend)
+    return bible_bg.matrix_status()

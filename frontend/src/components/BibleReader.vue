@@ -6,12 +6,15 @@ import { ref, computed, watch, onMounted } from "vue";
 import { api } from "../composables/useApi.js";
 
 const LANGS = [
-  { code: "en", label: "English", note: "Berean Standard Bible" },
+  { code: "en", label: "English", note: "Berean Standard Bible (2020)" },
   { code: "my", label: "ဗမာ", note: "Judson 1835" },
   { code: "td", label: "Tedim", note: "Lai Siangtho 1932" },
 ];
 
 const lang = ref("en");
+// Version/year label for the currently selected translation (shown beneath
+// the language tabs so readers know which edition they're reading).
+const activeNote = computed(() => LANGS.find((l) => l.code === lang.value)?.note || "");
 const books = ref([]);
 const selectedBook = ref(null); // { num, name, chapters }
 const chapterNum = ref(1);
@@ -288,12 +291,12 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="bible-page">
+  <div class="bible-page" :class="{ reading: selectedBook }">
     <header class="bible-header">
       <a href="#" class="back-link">&#8592; Back to worship</a>
       <div class="bible-title-block">
         <h1 class="bible-title">📖 Online Bible</h1>
-        <p class="bible-sub">Read Scripture in English, Burmese &amp; Tedim — public-domain translations.</p>
+        <p class="bible-sub">Read Scripture in English (Berean Standard Bible, 2020), Burmese (Judson, 1835) &amp; Tedim (Lai Siangtho, 1932) — public-domain translations.</p>
       </div>
       <div class="lang-tabs" role="group" aria-label="Translation">
         <button
@@ -307,6 +310,7 @@ onMounted(() => {
           {{ l.label }}
         </button>
       </div>
+      <p class="bible-version">{{ activeNote }}</p>
     </header>
 
     <p v-if="error" class="bible-error">{{ error }}</p>
@@ -415,17 +419,21 @@ onMounted(() => {
       </div>
       <!-- /reader-top -->
 
-      <p v-if="loadingChapter" class="muted">Loading…</p>
-      <div v-else-if="chapter" class="verses" :class="{ mm: lang !== 'en' }">
-        <p
-          v-for="(v, i) in chapter.verses"
-          :key="v.num"
-          :id="`verse-${i}`"
-          class="verse"
-          :class="{ highlight: highlightEnabled && i === highlightedVerse }"
-        >
-          <sup class="vnum">{{ v.num }}</sup>{{ v.text }}
-        </p>
+      <!-- The only scrolling region: verses scroll while the top bar and the
+           Prev/Next footer stay frozen (Excel-style freeze panes). -->
+      <div class="verses-scroll">
+        <p v-if="loadingChapter" class="muted">Loading…</p>
+        <div v-else-if="chapter" class="verses" :class="{ mm: lang !== 'en' }">
+          <p
+            v-for="(v, i) in chapter.verses"
+            :key="v.num"
+            :id="`verse-${i}`"
+            class="verse"
+            :class="{ highlight: highlightEnabled && i === highlightedVerse }"
+          >
+            <sup class="vnum">{{ v.num }}</sup>{{ v.text }}
+          </p>
+        </div>
       </div>
 
       <div class="reader-nav">
@@ -451,6 +459,38 @@ onMounted(() => {
   background: var(--bg);
   color: var(--text);
 }
+
+/* Reading a chapter: turn the page into a fixed-height flex column so the top
+   bar and Prev/Next footer stay frozen and ONLY the verse list scrolls — a real
+   Excel-style freeze-panes layout that doesn't depend on position:sticky. */
+.bible-page.reading {
+  height: 100vh;          /* fallback for browsers without dvh */
+  height: 100dvh;
+  min-height: 0;
+  padding-bottom: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.bible-page.reading .bible-header { flex: 0 0 auto; padding-bottom: 0.6rem; }
+.bible-page.reading .bible-title-block { margin-bottom: 0.5rem; }
+.bible-page.reading .bible-sub { display: none; } /* reclaim vertical space */
+.bible-page.reading .reader {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding-top: 0.75rem;
+  padding-bottom: 0;
+}
+/* The one scrollable region. */
+.verses-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-top: 0.75rem;
+}
 .bible-header {
   padding: 1.25rem 1.5rem 1rem;
   border-bottom: 1px solid var(--border);
@@ -468,6 +508,7 @@ onMounted(() => {
 .bible-title-block { margin-bottom: 0.85rem; }
 .bible-title { font-size: 1.5rem; margin: 0 0 0.25rem; }
 .bible-sub { margin: 0; color: var(--text-muted); font-size: 0.9rem; }
+.bible-version { margin: 0.4rem 0 0; color: var(--text-muted); font-size: 0.8rem; font-style: italic; }
 
 .lang-tabs { display: flex; gap: 0.5rem; flex-wrap: wrap; }
 .lang-btn {
@@ -528,15 +569,14 @@ onMounted(() => {
 /* Frozen header: controls + title + player pin to the top of the viewport
    while the verses scroll beneath. Negative margins let its background span
    the full reader width; the inner padding restores the original spacing. */
+/* Frozen top panel — a non-shrinking flex row at the top of the reader column
+   (see .bible-page.reading). It never scrolls; only .verses-scroll does. */
 .reader-top {
-  position: sticky;
-  top: 0;
-  z-index: 20;
+  flex: 0 0 auto;
   background: var(--bg);
-  margin: -1.25rem -1.5rem 1rem;
-  padding: 0.85rem 1.5rem 0.5rem;
+  margin: 0 -1.5rem;
+  padding: 0.6rem 1.5rem 0.5rem;
   border-bottom: 1px solid var(--border);
-  box-shadow: 0 6px 12px -10px rgba(0, 0, 0, 0.5);
 }
 .reader-top .reader-heading { margin-bottom: 0.6rem; }
 .reader-top .audio-wrap { margin-bottom: 0.4rem; }
@@ -635,17 +675,14 @@ onMounted(() => {
 /* Frozen footer: Previous/Next stay pinned to the bottom of the viewport so
    chapter navigation is always reachable without scrolling to the end. */
 .reader-nav {
-  position: sticky;
-  bottom: 0;
-  z-index: 20;
+  flex: 0 0 auto;
   display: flex;
   justify-content: space-between;
   gap: 1rem;
-  margin: 1.5rem -1.5rem 0;
+  margin: 0 -1.5rem;
   padding: 0.7rem 1.5rem;
   background: var(--bg);
   border-top: 1px solid var(--border);
-  box-shadow: 0 -6px 12px -10px rgba(0, 0, 0, 0.5);
 }
 .nav-btn {
   padding: 0.55rem 1.1rem;

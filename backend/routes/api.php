@@ -150,6 +150,8 @@ Route::middleware('auth:sanctum')->group(function () {
         // Configurable-permission reads — each method checks its own permission.
         Route::get('/users',        [AdminController::class, 'users']);
         Route::get('/settings',     [AdminController::class, 'settings']);
+        // Bible AI background-music matrix status (read — staff may view).
+        Route::get('/bible/bg-music/status', [AdminController::class, 'bibleBgMusicStatus']);
         Route::get('/music-tracks', [AdminController::class, 'musicTracks']);
         Route::get('/permissions',  [AdminController::class, 'getPermissions']);
         Route::get('/grammar-review',  [AdminController::class, 'grammarReview']);
@@ -197,6 +199,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
         // Settings write
         Route::patch('/settings', [AdminController::class, 'updateSettings']);
+        // Queue AI background-music generation for the whole theme x tod matrix.
+        Route::post('/bible/bg-music/pregenerate', [AdminController::class, 'bibleBgMusicPregenerate']);
 
         // Content filter — categorized YouTube blocklist (CRUD + import/export).
         Route::get('/content-filter',                      [\App\Http\Controllers\ContentFilterController::class, 'index']);

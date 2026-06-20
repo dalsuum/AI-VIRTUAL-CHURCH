@@ -20,6 +20,8 @@ cached permanently.
 
 from __future__ import annotations
 
+import os
+
 import storage
 
 # Coarse moods → MusicGen style fragments. Kept small on purpose: theme x tod is
@@ -62,8 +64,27 @@ _THEME_KEYWORDS: dict[str, tuple[str, ...]] = {
 ENGINES = {"musicgen", "local_ai"}
 _DEFAULT_ENGINE = "musicgen"
 
-# Shorter than worship tracks: a loop only needs ~20 s before it repeats.
-_BG_MAX_TOKENS = 1000
+# A seamless loop only needs to be short — it repeats under the narration. Kept
+# deliberately small (~10 s) so each generation finishes in a few minutes even on
+# a swapping CPU box. 50 tokens ≈ 1 second.
+_BG_MAX_TOKENS = int(os.getenv("BIBLE_BG_MAX_TOKENS", "500"))
+
+# Public enumerations of the cache matrix (themes x times-of-day), used by the
+# admin "pre-generate all" action so every reader gets instant music.
+THEMES: tuple[str, ...] = ("comfort", "praise", "lament", "hope", "peace", "wisdom")
+TODS: tuple[str, ...] = ("morning", "afternoon", "evening", "night")
+
+
+def all_buckets() -> list[tuple[str, str]]:
+    """Every (theme, tod) pair in the cache matrix."""
+    return [(t, d) for t in THEMES for d in TODS]
+
+
+def matrix_status() -> dict:
+    """How many of the full theme x tod matrix are already generated/cached."""
+    buckets = all_buckets()
+    ready = sum(1 for theme, tod in buckets if _resolve_existing_key(theme, tod))
+    return {"total": len(buckets), "ready": ready}
 
 
 def normalize_tod(tod: str) -> str:
@@ -137,8 +158,6 @@ def generate_track(theme: str, tod: str, engine: str = _DEFAULT_ENGINE) -> str |
     produced it. Concurrency is bounded by the shared MusicGen Redis lock so a
     2 GB box never runs two generations at once.
     """
-    import os
-
     from strategies import musicgen_strategy as mg
 
     theme = theme if theme in _THEME_PROMPTS else _DEFAULT_THEME

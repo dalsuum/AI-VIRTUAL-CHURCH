@@ -15,6 +15,7 @@ use App\Http\Requests\UpdateSettingsRequest;
 use App\Services\PermissionService;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Facades\Storage;
@@ -990,6 +991,34 @@ class AdminController extends Controller
     {
         PermissionService::require(request()->user(), 'settings.view');
         return response()->json($this->settingsPayload());
+    }
+
+    /** Worker base URL for the Bible/TTS FastAPI service (same as BibleController). */
+    private function bibleWorkerBase(): string
+    {
+        return rtrim((string) config('services.tedim_llm.url', 'http://127.0.0.1:8001'), '/');
+    }
+
+    /** How many of the AI background-music theme x time-of-day matrix are cached. */
+    public function bibleBgMusicStatus(): JsonResponse
+    {
+        PermissionService::require(request()->user(), 'settings.view');
+        $resp = Http::timeout(10)->get("{$this->bibleWorkerBase()}/bible/bg-music/status", [
+            'storage_backend' => (string) Setting::get('storage_backend', 'local'),
+        ]);
+        abort_unless($resp->successful(), 502, 'Background music service unavailable');
+        return response()->json($resp->json());
+    }
+
+    /** Queue generation of every uncached AI background-music loop. (admin-only route) */
+    public function bibleBgMusicPregenerate(): JsonResponse
+    {
+        $resp = Http::timeout(15)->post("{$this->bibleWorkerBase()}/bible/bg-music/pregenerate", [
+            'engine'          => Setting::bibleBgMusicEngine(),
+            'storage_backend' => (string) Setting::get('storage_backend', 'local'),
+        ]);
+        abort_unless($resp->successful(), 502, 'Background music service unavailable');
+        return response()->json($resp->json());
     }
 
     public function updateSettings(UpdateSettingsRequest $request): JsonResponse

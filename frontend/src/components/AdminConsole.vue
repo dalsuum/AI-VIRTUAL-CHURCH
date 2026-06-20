@@ -339,6 +339,30 @@ const setBibleNarrationMode = (lang, mode) => saveSetting(`bible_narration_mode_
 const setBibleTextHighlight = (on) => saveSetting("bible_text_highlight_enabled", on, "Bible highlighting updated.");
 const setBibleBgMusicMode = (mode) => saveSetting("bible_bg_music_mode", mode, "Bible background music mode updated.");
 const setBibleBgMusicEngine = (engine) => saveSetting("bible_bg_music_engine", engine, "Bible AI music engine updated.");
+const bibleBgStatus = ref(null);   // { ready, total } of the theme x tod matrix
+const bibleBgPregenLoading = ref(false);
+const refreshBibleBgStatus = async () => {
+  try { bibleBgStatus.value = await api.adminBibleBgMusicStatus(); }
+  catch (e) { bibleBgStatus.value = null; }
+};
+// Load the matrix status whenever the admin views/enables AI background mode.
+watch(
+  () => settings.value?.bible_bg_music_mode,
+  (mode) => { if (mode === "ai" && !bibleBgStatus.value) refreshBibleBgStatus(); }
+);
+const pregenerateBibleBg = async () => {
+  if (bibleBgPregenLoading.value) return;
+  bibleBgPregenLoading.value = true;
+  try {
+    const res = await api.adminBibleBgMusicPregenerate();
+    bibleBgStatus.value = { ready: res.ready, total: res.total };
+    notice.value = `Queued ${res.queued} track(s). ${res.ready}/${res.total} ready — generation runs in the background.`;
+  } catch (e) {
+    notice.value = e?.data?.message || "Could not queue background music.";
+  } finally {
+    bibleBgPregenLoading.value = false;
+  }
+};
 const saveBibleBgMusicUrl = () =>
   saveSetting("bible_bg_music_url", (settings.value.bible_bg_music_url || "").trim(), "Bible background music updated.");
 const setBibleBgMusicVolume = (v) =>
@@ -2142,6 +2166,34 @@ onUnmounted(() => {
                 >
                   <strong>Local AI (GPU)</strong>
                   <span>Same model, uses CUDA when available.</span>
+                </button>
+              </div>
+
+              <!-- Pre-generate the whole matrix so readers never wait -->
+              <p class="setting-desc" style="margin-top:1rem">
+                Generate every track ahead of time (6 moods × 4 times of day) so
+                readers always hear music instantly instead of waiting for the
+                first on-demand build.
+                <template v-if="bibleBgStatus">
+                  <strong>{{ bibleBgStatus.ready }}/{{ bibleBgStatus.total }} ready.</strong>
+                </template>
+              </p>
+              <div class="bgm-row">
+                <button
+                  type="button"
+                  class="choice bgm-save"
+                  :disabled="bibleBgPregenLoading || settingsReadOnly"
+                  @click="pregenerateBibleBg"
+                >
+                  {{ bibleBgPregenLoading ? "Queuing…" : "Generate all tracks" }}
+                </button>
+                <button
+                  type="button"
+                  class="choice bgm-save"
+                  :disabled="bibleBgPregenLoading"
+                  @click="refreshBibleBgStatus"
+                >
+                  Refresh status
                 </button>
               </div>
             </template>

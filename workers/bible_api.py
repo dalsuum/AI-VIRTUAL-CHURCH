@@ -17,6 +17,13 @@ Two languages are served, both from bundled public-domain data (no key, no netwo
          from dalsuum/bible as data/wlc.json (BIBLE_DATA_FILE_HE). Old Testament
          only (books 1-39); right-to-left script.
 
+  Chin/Zo language Bibles from the Bible Society of Myanmar, all vendored from
+  dalsuum/bible in the same shared schema (Latin script, full 66-book canon):
+  'cfm' Falam (falam1973.json), 'cnh' Hakha (hakha1920.json),
+  'lus' Mizo (mizo1917.json), 'mizocl' Mizo Common Language (mcl2005.json),
+  'pck' Paite (paite1971.json), 'csy' Sizang (sizang1932.json),
+  'mrh' Mara (mara2011.json), 'hlt' Matu (matu2009.json).
+
 The LLM always emits ENGLISH references ("John 3:16") regardless of service
 language — references are part of the worker contract, not the worshipper-facing
 text. The non-English files' book names are in their own language (ရှင်ယောဟန် /
@@ -53,7 +60,23 @@ _LANG_FILES = {
     "my": os.getenv("BIBLE_DATA_FILE_MY", os.path.join(_DATA_DIR, "judson1835.json")),
     "td": os.getenv("BIBLE_DATA_FILE_TD", os.path.join(_DATA_DIR, "tedim1932.json")),
     "he": os.getenv("BIBLE_DATA_FILE_HE", os.path.join(_DATA_DIR, "wlc.json")),
+    # Chin/Zo language Bibles from the Bible Society of Myanmar (dalsuum/bible),
+    # all in the shared schema with canonical 1-66 numbering. Latin script.
+    "cfm": os.getenv("BIBLE_DATA_FILE_CFM", os.path.join(_DATA_DIR, "falam1973.json")),
+    "cnh": os.getenv("BIBLE_DATA_FILE_CNH", os.path.join(_DATA_DIR, "hakha1920.json")),
+    "lus": os.getenv("BIBLE_DATA_FILE_LUS", os.path.join(_DATA_DIR, "mizo1917.json")),
+    "mizocl": os.getenv("BIBLE_DATA_FILE_MIZOCL", os.path.join(_DATA_DIR, "mcl2005.json")),
+    "pck": os.getenv("BIBLE_DATA_FILE_PCK", os.path.join(_DATA_DIR, "paite1971.json")),
+    "csy": os.getenv("BIBLE_DATA_FILE_CSY", os.path.join(_DATA_DIR, "sizang1932.json")),
+    "mrh": os.getenv("BIBLE_DATA_FILE_MRH", os.path.join(_DATA_DIR, "mara2011.json")),
+    "hlt": os.getenv("BIBLE_DATA_FILE_HLT", os.path.join(_DATA_DIR, "matu2009.json")),
 }
+
+# Translations whose source file has correct, canonically-positioned verse
+# content but unreliable native book-name metadata (e.g. Matu's names are shifted
+# by its appended deuterocanon). For these the table of contents falls back to
+# the canonical English book names rather than showing the file's wrong labels.
+_BOOK_NAMES_FROM_CANON = {"hlt"}
 
 # Translations covering only part of the canon: book number -> last book present.
 # Their reader table of contents is padded out to the full 66 with the missing
@@ -86,7 +109,7 @@ def _norm(s: str) -> str:
     return re.sub(r"\s+", " ", s.replace(".", "").strip().lower())
 
 
-@functools.lru_cache(maxsize=8)
+@functools.lru_cache(maxsize=32)
 def _bible(lang: str = "en") -> dict:
     path = _LANG_FILES.get(lang, DATA_FILE)
     # A translation file may not be vendored yet (e.g. Hebrew WLC is committed to
@@ -98,7 +121,7 @@ def _bible(lang: str = "en") -> dict:
         return json.load(fh)
 
 
-@functools.lru_cache(maxsize=4)
+@functools.lru_cache(maxsize=32)
 def _book_index(lang: str = "en") -> dict[str, str]:
     """Map every normalized English name/shortname/abbr to a book number.
 
@@ -176,7 +199,10 @@ def book_title(reference: str, lang: str = "en") -> str:
 # pipeline. The ones below expose the whole vendored text for a reader UI:
 # list books, count chapters, fetch a chapter's verses — in any served language.
 
-_LANGS = ("en", "kjv", "my", "td", "he")
+_LANGS = (
+    "en", "kjv", "my", "td", "he",
+    "cfm", "cnh", "lus", "mizocl", "pck", "csy", "mrh", "hlt",
+)
 
 
 def languages() -> list[str]:
@@ -184,7 +210,7 @@ def languages() -> list[str]:
     return list(_LANGS)
 
 
-@functools.lru_cache(maxsize=8)
+@functools.lru_cache(maxsize=32)
 def list_books(lang: str = "en") -> list[dict]:
     """Every book in `lang`: [{'num', 'name', 'chapters', 'available'}], canonical order.
 
@@ -196,10 +222,23 @@ def list_books(lang: str = "en") -> list[dict]:
     hide the rest of the canon.
     """
     books = _bible(lang).get("book", {})
+    canon_names: dict[str, dict] = {}
+    if lang in _BOOK_NAMES_FROM_CANON:
+        with open(BOOKS_EN_FILE, encoding="utf-8") as fh:
+            canon_names = json.load(fh)
     out: list[dict] = []
     for num in sorted(books, key=int):
+        # Canonical-indexed translations use the 1-66 Protestant canon; some
+        # source files append deuterocanonical books (e.g. Matu has 67-72). Drop
+        # those so the table of contents matches the reference contract. 'en'
+        # keeps its own numbering (it may legitimately include the Apocrypha).
+        if lang in _LANG_FILES and int(num) > 66:
+            continue
         book = books[num]
-        name = book.get("info", {}).get("name", "") or f"Book {num}"
+        if lang in _BOOK_NAMES_FROM_CANON:
+            name = canon_names.get(num, {}).get("name", "") or f"Book {num}"
+        else:
+            name = book.get("info", {}).get("name", "") or f"Book {num}"
         out.append({
             "num": int(num),
             "name": name,
@@ -237,7 +276,11 @@ def chapter(lang: str, book: int | str, chapter_num: int | str) -> dict:
     book = str(book)
     chapter_num = str(chapter_num)
     b = _bible(lang).get("book", {}).get(book, {})
-    name = b.get("info", {}).get("name", "")
+    if lang in _BOOK_NAMES_FROM_CANON:
+        with open(BOOKS_EN_FILE, encoding="utf-8") as fh:
+            name = json.load(fh).get(book, {}).get("name", "")
+    else:
+        name = b.get("info", {}).get("name", "")
     verse_map = b.get("chapter", {}).get(chapter_num, {}).get("verse", {})
     verses = [
         {"num": int(n), "text": (verse_map[n].get("text") or "").strip()}

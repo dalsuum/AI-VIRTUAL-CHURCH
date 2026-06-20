@@ -29,6 +29,15 @@ workers/data/kjv.json
 workers/data/judson1835.json
 workers/data/tedim1932.json
 workers/data/wlc.json
+# Chin/Zo language Bibles from the Bible Society of Myanmar (dalsuum/bible)
+workers/data/falam1973.json
+workers/data/hakha1920.json
+workers/data/mizo1917.json
+workers/data/mcl2005.json
+workers/data/paite1971.json
+workers/data/sizang1932.json
+workers/data/mara2011.json
+workers/data/matu2009.json
 workers/data/hymns_my.json
 workers/data/books_en.json
 workers/data/burmese_church_vocab.json

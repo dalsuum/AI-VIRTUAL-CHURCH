@@ -45,7 +45,20 @@ DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data"
 BIBLE_RAW = os.getenv("DALSUUM_BIBLE_RAW", "https://raw.githubusercontent.com/dalsuum/bible/master")
 HYMNS_RAW = os.getenv("DALSUUM_HYMNS_RAW", "https://raw.githubusercontent.com/dalsuum/myanmar-hymns/master")
 
-BIBLES = {"judson1835.json": "/json/judson1835.json", "tedim1932.json": "/json/tedim1932.json"}
+BIBLES = {
+    "judson1835.json": "/json/judson1835.json",
+    "tedim1932.json": "/json/tedim1932.json",
+    # Chin/Zo language Bibles from the Bible Society of Myanmar (dalsuum/bible),
+    # same schema as the others. See workers/bible_api.py _LANG_FILES.
+    "falam1973.json": "/json/falam1973.json",
+    "hakha1920.json": "/json/hakha1920.json",
+    "mizo1917.json": "/json/mizo1917.json",
+    "mcl2005.json": "/json/mcl2005.json",
+    "paite1971.json": "/json/paite1971.json",
+    "sizang1932.json": "/json/sizang1932.json",
+    "mara2011.json": "/json/mara2011.json",
+    "matu2009.json": "/json/matu2009.json",
+}
 
 
 def _fetch(url: str) -> bytes:

@@ -11,6 +11,9 @@ It produces four files, all from dalsuum-owned public repos:
 
     data/judson1835.json   သမ္မာကျမ်း (Judson, 1835)  — github.com/dalsuum/bible
     data/tedim1932.json    Lai Siangtho (Tedim, 1932) — github.com/dalsuum/bible
+    data/wlc.json          Hebrew Tanakh (Westminster Leningrad Codex) — from
+                           dalsuum/bible if present, else built from getbible.net
+                           by build_hebrew_bible.py (Old Testament only, RTL)
     data/books_en.json     canonical 66-book English index, extracted from the
                            same repo's category.json (name/abbr -> book number)
     data/hymns_my.json     852 Burmese songs, built from
@@ -60,6 +63,32 @@ def _seed_bibles(force: bool) -> None:
         print(f"  {name}: {len(data) / 1e6:.1f} MB ✓")
 
 
+def _seed_hebrew(force: bool) -> None:
+    """Hebrew Tanakh (WLC) -> data/wlc.json.
+
+    Prefer a committed dalsuum/bible/json/wlc.json (same path as the other
+    translations); if it isn't there yet, fall back to building it from the
+    public-domain getbible.net WLC via build_hebrew_bible.
+    """
+    out = os.path.join(DATA_DIR, "wlc.json")
+    if os.path.exists(out) and not force:
+        print("  wlc.json: already present, skipping")
+        return
+    try:
+        data = _fetch(BIBLE_RAW + "/json/wlc.json")
+        json.loads(data)  # fail loudly on a bad download, before writing
+        open(out, "wb").write(data)
+        print(f"  wlc.json: {len(data) / 1e6:.1f} MB ✓ (from dalsuum/bible)")
+        return
+    except requests.HTTPError:
+        print("  wlc.json: not in dalsuum/bible yet — building from getbible.net…")
+    import build_hebrew_bible  # noqa: PLC0415 — sibling tool, path set above
+
+    payload = build_hebrew_bible.build()
+    json.dump(payload, open(out, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    print(f"  wlc.json: {len(payload['book'])} books ✓ (built from getbible.net)")
+
+
 def _seed_books_index(force: bool) -> None:
     out = os.path.join(DATA_DIR, "books_en.json")
     if os.path.exists(out) and not force:
@@ -105,6 +134,8 @@ def main() -> None:
     os.makedirs(DATA_DIR, exist_ok=True)
     print("Seeding Bible translations (dalsuum/bible)…")
     _seed_bibles(args.force)
+    print("Seeding Hebrew Tanakh (WLC)…")
+    _seed_hebrew(args.force)
     print("Seeding canonical book index…")
     _seed_books_index(args.force)
     print("Seeding Myanmar hymn library (dalsuum/myanmar-hymns)…")

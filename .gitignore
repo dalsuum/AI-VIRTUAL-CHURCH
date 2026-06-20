@@ -27,6 +27,7 @@ venv/
 workers/data/bsb.json
 workers/data/judson1835.json
 workers/data/tedim1932.json
+workers/data/wlc.json
 workers/data/hymns_my.json
 workers/data/books_en.json
 workers/data/burmese_church_vocab.json

@@ -183,6 +183,15 @@ function toggleHighlight() {
   if (!next) highlightedVerse.value = -1;
 }
 
+// The frozen control panel can be collapsed to a slim handle (back · title ·
+// toggle) so the verse area gets the whole screen; remembered per-device.
+const CONTROLS_KEY = "bible_controls_open";
+const controlsOpen = ref(localStorage.getItem(CONTROLS_KEY) !== "0");
+function toggleControls() {
+  controlsOpen.value = !controlsOpen.value;
+  localStorage.setItem(CONTROLS_KEY, controlsOpen.value ? "1" : "0");
+}
+
 // Verse highlighting: with no per-verse timings, map the audio's playback
 // position proportionally across the chapter, weighted by each verse's length
 // (longer verses take longer to read). Mirrors the service player's approach.
@@ -327,7 +336,9 @@ onMounted(() => {
 
 <template>
   <div class="bible-page" :class="{ reading: selectedBook }">
-    <header class="bible-header">
+    <!-- While reading, the app header folds away with the controls so a
+         collapsed panel leaves only the slim handle bar above the verses. -->
+    <header v-show="!selectedBook || controlsOpen" class="bible-header">
       <a href="#" class="back-link">&#8592; Back to worship</a>
       <div class="bible-title-block">
         <h1 class="bible-title">📖 Online Bible</h1>
@@ -374,10 +385,25 @@ onMounted(() => {
       <!-- Frozen top panel: controls + chapter title + player stay pinned while
            only the verses scroll (like Excel freeze panes). -->
       <div class="reader-top">
-      <div class="reader-bar">
+      <div class="reader-handle">
         <button class="link-btn" @click="backToBooks" aria-label="All books" title="All books">
           <span aria-hidden="true">&#8592;</span><span class="btn-label"> All books</span>
         </button>
+        <h2 class="reader-heading">{{ chapter?.name || selectedBook.name }} {{ chapterNum }}</h2>
+        <button
+          type="button"
+          class="collapse-btn"
+          :aria-expanded="controlsOpen"
+          :aria-label="controlsOpen ? 'Hide controls' : 'Show controls'"
+          :title="controlsOpen ? 'Hide controls' : 'Show controls'"
+          @click="toggleControls"
+        >
+          <span aria-hidden="true">{{ controlsOpen ? '▴' : '▾' }}</span>
+          <span class="btn-label"> {{ controlsOpen ? 'Hide' : 'Controls' }}</span>
+        </button>
+      </div>
+
+      <div v-show="controlsOpen" class="reader-collapsible">
         <div class="reader-bar-right">
           <button
             v-if="canNarrate"
@@ -430,9 +456,10 @@ onMounted(() => {
           </select>
         </div>
       </div>
+      <!-- /reader-collapsible -->
 
-      <h2 class="reader-heading">{{ chapter?.name || selectedBook.name }} {{ chapterNum }}</h2>
-
+      <!-- Player + speed stay visible whenever narration is loaded, even with
+           the controls collapsed, so you can read with the panel folded away. -->
       <div v-if="audioUrl" class="audio-wrap">
         <audio
           ref="audioEl"
@@ -632,8 +659,40 @@ onMounted(() => {
   padding: 0.6rem 1.5rem 0.5rem;
   border-bottom: 1px solid var(--border);
 }
-.reader-top .reader-heading { margin-bottom: 0.6rem; }
 .reader-top .audio-wrap { margin-bottom: 0.4rem; }
+
+/* Slim always-visible handle: back · chapter title · collapse toggle. The body
+   below it (controls + player + speed) collapses to give verses the screen. */
+.reader-handle {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.5rem;
+}
+.reader-handle .reader-heading {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: 1.15rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.collapse-btn {
+  flex: 0 0 auto;
+  padding: 0.4rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.15s, color 0.15s;
+}
+.collapse-btn:hover { border-color: var(--primary); color: var(--primary); }
+.reader-collapsible .reader-bar-right { margin-bottom: 0.5rem; }
 
 /* Controls wrap instead of overflowing the phone width (which was clipping the
    verses and player off the right edge). */

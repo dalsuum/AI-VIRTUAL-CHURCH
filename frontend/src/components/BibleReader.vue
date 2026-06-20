@@ -45,13 +45,9 @@ function setSpeed(rate) {
   playbackRate.value = rate;
   localStorage.setItem(SPEED_KEY, String(rate));
   applyRate();
-  // Background music is a fixed-tempo loop, so it only fits at normal speed.
-  // Off-normal: stop it. Back to normal while narration is still playing: resume.
-  if (rate !== 1) {
-    syncBgMusic("stop");
-  } else if (audioEl.value && !audioEl.value.paused) {
-    syncBgMusic("play");
-  }
+  // The speed control only retimes the narration (audioEl.playbackRate). The
+  // background music is a separate element left at its own natural tempo, so it
+  // keeps looping smoothly underneath at any narration speed — no stop/resume.
 }
 
 // Reader config from admin: which languages can be narrated + highlight toggle
@@ -119,8 +115,9 @@ function syncBgMusic(action) {
   const bg = bgMusicEl.value;
   if (!bg || !bgMusicUrl.value) return;
   if (action === "play") {
-    if (!bgMusicPref.value) return;       // reader muted the background music
-    if (playbackRate.value !== 1) return; // music only fits at normal speed
+    if (!bgMusicPref.value) return; // reader muted the background music
+    // Note: narration speed never gates the music — the loop plays at its own
+    // natural tempo regardless of how fast/slow the voice is set.
     bg.volume = bgMusicVolume.value;
     bg.play().catch(() => {});
   } else if (action === "pause") {
@@ -340,39 +337,45 @@ onMounted(() => {
            only the verses scroll (like Excel freeze panes). -->
       <div class="reader-top">
       <div class="reader-bar">
-        <button class="link-btn" @click="backToBooks">&#8592; All books</button>
+        <button class="link-btn" @click="backToBooks" aria-label="All books" title="All books">
+          <span aria-hidden="true">&#8592;</span><span class="btn-label"> All books</span>
+        </button>
         <div class="reader-bar-right">
           <button
             v-if="canNarrate"
             class="listen-btn"
             :disabled="loadingAudio || loadingChapter"
+            :aria-label="loadingAudio ? 'Preparing audio' : 'Listen'"
+            :title="loadingAudio ? 'Preparing audio' : 'Listen'"
             @click="listen"
           >
-            <span v-if="loadingAudio">⏳ Preparing…</span>
-            <span v-else>🔊 Listen</span>
+            <span aria-hidden="true">{{ loadingAudio ? '⏳' : '🔊' }}</span>
+            <span class="btn-label"> {{ loadingAudio ? 'Preparing…' : 'Listen' }}</span>
           </button>
           <button
             type="button"
-            class="hl-toggle"
+            class="icon-toggle"
             :class="{ active: highlightEnabled }"
             :aria-pressed="highlightEnabled"
-            title="Highlight each verse as it is read aloud"
+            :aria-label="`Verse highlighting ${highlightEnabled ? 'on' : 'off'}`"
+            :title="`Verse highlighting ${highlightEnabled ? 'on' : 'off'}`"
             @click="toggleHighlight"
           >
-            ✨ Highlight: {{ highlightEnabled ? 'On' : 'Off' }}
+            <span aria-hidden="true">✨</span><span class="btn-label"> Highlight: {{ highlightEnabled ? 'On' : 'Off' }}</span>
           </button>
           <button
             v-if="musicAvailable"
             type="button"
-            class="hl-toggle"
+            class="icon-toggle"
             :class="{ active: bgMusicPref }"
             :aria-pressed="bgMusicPref"
-            title="Play soft background music behind the narration"
+            :aria-label="`Background music ${bgMusicPref ? 'on' : 'off'}`"
+            :title="`Background music ${bgMusicPref ? 'on' : 'off'}`"
             @click="toggleBgMusic"
           >
-            🎵 Music: {{ bgMusicPref ? 'On' : 'Off' }}
+            <span aria-hidden="true">🎵</span><span class="btn-label"> Music: {{ bgMusicPref ? 'On' : 'Off' }}</span>
           </button>
-          <select class="ch-select" :value="chapterNum" @change="goChapter(Number($event.target.value))">
+          <select class="ch-select" :value="chapterNum" aria-label="Chapter" @change="goChapter(Number($event.target.value))">
             <option v-for="n in chapterList" :key="n" :value="n">Chapter {{ n }}</option>
           </select>
         </div>
@@ -488,6 +491,7 @@ onMounted(() => {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
   padding-top: 0.75rem;
 }
@@ -581,11 +585,14 @@ onMounted(() => {
 .reader-top .reader-heading { margin-bottom: 0.6rem; }
 .reader-top .audio-wrap { margin-bottom: 0.4rem; }
 
+/* Controls wrap instead of overflowing the phone width (which was clipping the
+   verses and player off the right edge). */
 .reader-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: 0.5rem 0.75rem;
+  flex-wrap: wrap;
   margin-bottom: 0.75rem;
 }
 .link-btn {
@@ -594,7 +601,8 @@ onMounted(() => {
   color: var(--primary);
   cursor: pointer;
   font-size: 0.9rem;
-  padding: 0;
+  padding: 0.3rem 0;
+  white-space: nowrap;
 }
 .ch-select {
   padding: 0.45rem 0.7rem;
@@ -604,7 +612,12 @@ onMounted(() => {
   color: var(--text);
   font-size: 0.9rem;
 }
-.reader-bar-right { display: flex; align-items: center; gap: 0.6rem; }
+.reader-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
 .listen-btn {
   padding: 0.45rem 0.9rem;
   border: 1px solid var(--primary);
@@ -620,8 +633,8 @@ onMounted(() => {
 .listen-btn:hover:not(:disabled) { background: var(--primary); color: #fff; }
 .listen-btn:disabled { opacity: 0.6; cursor: default; }
 
-.hl-toggle {
-  padding: 0.45rem 0.85rem;
+.icon-toggle {
+  padding: 0.45rem 0.8rem;
   border: 1px solid var(--border);
   border-radius: 999px;
   background: var(--surface);
@@ -630,14 +643,25 @@ onMounted(() => {
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
-  transition: border-color 0.15s, color 0.15s;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
 }
-.hl-toggle.active { border-color: var(--primary); color: var(--primary); }
+.icon-toggle.active { border-color: var(--primary); color: var(--primary); background: var(--primary-soft, rgba(99,179,237,0.12)); }
+
+/* Phones: collapse the action/toggle buttons to icon-only so the whole bar
+   fits without horizontal scroll. Labels return on wider screens. */
+@media (max-width: 560px) {
+  .listen-btn .btn-label,
+  .icon-toggle .btn-label,
+  .link-btn .btn-label { display: none; }
+  .listen-btn,
+  .icon-toggle { padding: 0.45rem 0.7rem; font-size: 1rem; }
+  .link-btn { font-size: 1.1rem; }
+}
 
 .reader-heading { font-size: 1.3rem; margin: 0 0 1rem; }
 
 .audio-wrap { margin: 0 0 1.1rem; }
-.audio-player { width: 100%; height: 38px; }
+.audio-player { width: 100%; max-width: 100%; height: 38px; }
 .audio-error { color: var(--danger); font-size: 0.85rem; margin: 0 0 1rem; }
 
 .speed-row {
@@ -660,7 +684,7 @@ onMounted(() => {
 }
 .speed-btn.active { border-color: var(--primary); color: var(--primary); font-weight: 600; }
 
-.verses { line-height: 1.85; font-size: 1.05rem; }
+.verses { line-height: 1.85; font-size: 1.05rem; overflow-wrap: break-word; }
 .verses.mm { line-height: 2.1; font-size: 1.12rem; }
 .verse { margin: 0 0 0.6rem; border-radius: 6px; transition: background 0.25s; }
 .verse.highlight { background: rgba(99, 179, 237, 0.30); box-shadow: 0 0 0 6px rgba(99, 179, 237, 0.30); }

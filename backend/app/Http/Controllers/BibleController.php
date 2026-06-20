@@ -31,6 +31,20 @@ class BibleController extends Controller
         return in_array($lang, self::LANGS, true) ? $lang : 'en';
     }
 
+    /** Public reader config — which languages can be narrated + highlight toggle. */
+    public function config()
+    {
+        $narratable = [];
+        foreach (self::LANGS as $l) {
+            $narratable[$l] = in_array(Setting::bibleNarrationMode($l), Setting::SERVER_NARRATION_MODES, true);
+        }
+
+        return [
+            'narratable'     => $narratable,
+            'text_highlight' => Setting::bibleTextHighlightEnabled(),
+        ];
+    }
+
     /** Table of contents (book numbers, native names, chapter counts) for a translation. */
     public function books(Request $request)
     {
@@ -91,8 +105,8 @@ class BibleController extends Controller
         $chapter = (int) $data['chapter'];
         $gender  = $data['gender'] ?? 'female';
 
-        // Reuse the same provider the service narration uses for this language.
-        $mode = Setting::narrationMode($lang);
+        // Bible-specific voice (falls back to the service voice when unset).
+        $mode = Setting::bibleNarrationMode($lang);
         if (! in_array($mode, Setting::SERVER_NARRATION_MODES, true)) {
             abort(409, 'Voice narration is not available for this translation.');
         }

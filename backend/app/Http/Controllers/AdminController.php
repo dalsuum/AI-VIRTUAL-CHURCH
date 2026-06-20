@@ -1039,6 +1039,14 @@ class AdminController extends Controller
         if (array_key_exists('text_highlight_enabled', $data)) {
             Setting::set('text_highlight_enabled', $data['text_highlight_enabled'] ? '1' : '0');
         }
+        foreach (['bible_narration_mode_en', 'bible_narration_mode_my', 'bible_narration_mode_td'] as $key) {
+            if (array_key_exists($key, $data)) {
+                Setting::set($key, $data[$key]);
+            }
+        }
+        if (array_key_exists('bible_text_highlight_enabled', $data)) {
+            Setting::set('bible_text_highlight_enabled', $data['bible_text_highlight_enabled'] ? '1' : '0');
+        }
         foreach (['narration_en', 'narration_my', 'narration_td'] as $key) {
             if (array_key_exists($key, $data)) {
                 Setting::set($key, $data[$key] ? '1' : '0');
@@ -1117,6 +1125,12 @@ class AdminController extends Controller
             'avatar_enabled'     => Setting::get('avatar_enabled', '1') === '1',
             'local_avatar_enabled' => Setting::get('local_avatar_enabled', '0') === '1',
             'text_highlight_enabled' => Setting::get('text_highlight_enabled', '1') === '1',
+            // Online Bible reader: per-language "Listen" voice (inherits the
+            // service voice when unset) + verse highlight toggle.
+            'bible_narration_mode_en' => Setting::bibleNarrationMode('en'),
+            'bible_narration_mode_my' => Setting::bibleNarrationMode('my'),
+            'bible_narration_mode_td' => Setting::bibleNarrationMode('td'),
+            'bible_text_highlight_enabled' => Setting::bibleTextHighlightEnabled(),
             'runpod_enabled'     => Setting::get('runpod_enabled', '0') === '1',
             // Per-language narration: all on by default.
             // Myanmar/Tedim: edge_tts = Microsoft cloud; mms_tts = local MMS-TTS.

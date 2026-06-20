@@ -26,6 +26,13 @@ class UpdateSettingsRequest extends FormRequest
             'narration_mode_en'  => ['sometimes', 'string', 'in:' . implode(',', Setting::NARRATION_MODES)],
             'narration_mode_my'  => ['sometimes', 'string', 'in:edge_tts,mms_tts,off'],
             'narration_mode_td'  => ['sometimes', 'string', 'in:edge_tts,mms_tts,off'],
+            // Online Bible reader "Listen" voice — same provider set as the live
+            // service, per language. Unset inherits the service narration voice.
+            'bible_narration_mode_en' => ['sometimes', 'string', 'in:' . implode(',', Setting::NARRATION_MODES)],
+            'bible_narration_mode_my' => ['sometimes', 'string', 'in:edge_tts,mms_tts,off'],
+            'bible_narration_mode_td' => ['sometimes', 'string', 'in:edge_tts,mms_tts,off'],
+            // Highlight verses in the Bible reader as narration plays.
+            'bible_text_highlight_enabled' => ['sometimes', 'boolean'],
             // When on, a worshipper new to a mood is served a random song already
             // composed for it instead of generating (and paying for) a fresh one.
             'music_reuse'     => ['sometimes', 'boolean'],

@@ -208,6 +208,7 @@ export const api = {
   },
 
   // Online Bible reader (public, read-only). lang = en | my | td.
+  bibleConfig: () => request("/bible/config"),
   bibleBooks: (lang = "en") =>
     request(`/bible/books?lang=${encodeURIComponent(lang)}`),
   bibleChapter: (lang, book, chapter) =>

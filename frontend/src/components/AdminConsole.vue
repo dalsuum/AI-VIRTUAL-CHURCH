@@ -333,6 +333,10 @@ const setLocalAvatarEnabled = (on) => saveSetting("local_avatar_enabled", on, "L
 const setOrchestrationMode = (mode) => saveSetting("orchestration_mode", mode, "Orchestration mode updated.");
 const setAgentProvider = (provider) => saveSetting("agent_provider", provider, "Agent provider updated.");
 const setTextHighlightEnabled = (on) => saveSetting("text_highlight_enabled", on, "Text highlighting updated.");
+
+// Online Bible reader ("Listen" button) — its own per-language voice + highlight.
+const setBibleNarrationMode = (lang, mode) => saveSetting(`bible_narration_mode_${lang}`, mode, "Bible narration voice updated.");
+const setBibleTextHighlight = (on) => saveSetting("bible_text_highlight_enabled", on, "Bible highlighting updated.");
 const setRunpodEnabled = (on) => saveSetting("runpod_enabled", on ? "1" : "0", "Premium GPU usage updated.");
 const setStorageBackend = (backend) => saveSetting("storage_backend", backend, "Storage backend updated.");
 const setAiChordsEnabled = (on) => saveSetting("ai_chords_enabled", on, "AI chord detection updated.");
@@ -1941,6 +1945,97 @@ onUnmounted(() => {
               >
                 <strong>{{ m.label }}</strong>
                 <span>{{ m.hint }}</span>
+              </button>
+            </div>
+          </template>
+          <p v-else class="setting-desc">Loading…</p>
+        </div>
+
+        <div class="setting-block">
+          <h2>Bible reader voice</h2>
+          <p class="setting-desc">
+            The voice used by the online Bible reader's <strong>🔊 Listen</strong> button,
+            per language. Independent of the live-service narration above — pick a
+            calmer reading voice here if you like. English supports all providers;
+            Burmese &amp; Tedim use the native local MMS-TTS voice.
+          </p>
+          <template v-if="settings">
+            <!-- English -->
+            <p class="setting-desc" style="margin-top:1rem"><strong>English</strong></p>
+            <div class="choice-row">
+              <button
+                v-for="m in narrationModes.filter((x) => x.value !== 'browser')"
+                :key="m.value"
+                type="button"
+                class="choice"
+                :class="{ active: (settings.bible_narration_mode_en || 'edge_tts') === m.value }"
+                :disabled="savingSettings || settingsReadOnly"
+                @click="setBibleNarrationMode('en', m.value)"
+              >
+                <strong>{{ m.label }}</strong>
+                <span>{{ m.hint }}</span>
+              </button>
+            </div>
+            <p class="setting-desc" style="margin-top:0.5rem">
+              English Edge / Voicebox voice follows the live-service voice picked above.
+            </p>
+
+            <!-- Myanmar -->
+            <p class="setting-desc" style="margin-top:1.5rem"><strong>Myanmar (မြန်မာ)</strong></p>
+            <div class="choice-row">
+              <button
+                v-for="m in narrationModesMY"
+                :key="m.value"
+                type="button"
+                class="choice"
+                :class="{ active: (settings.bible_narration_mode_my || 'mms_tts') === m.value }"
+                :disabled="savingSettings || settingsReadOnly"
+                @click="setBibleNarrationMode('my', m.value)"
+              >
+                <strong>{{ m.label }}</strong>
+                <span>{{ m.hint }}</span>
+              </button>
+            </div>
+
+            <!-- Tedim (Zolai) -->
+            <p class="setting-desc" style="margin-top:1.5rem"><strong>Tedim (Zolai)</strong></p>
+            <div class="choice-row">
+              <button
+                v-for="m in narrationModesTD"
+                :key="m.value"
+                type="button"
+                class="choice"
+                :class="{ active: (settings.bible_narration_mode_td || 'mms_tts') === m.value }"
+                :disabled="savingSettings || settingsReadOnly"
+                @click="setBibleNarrationMode('td', m.value)"
+              >
+                <strong>{{ m.label }}</strong>
+                <span>{{ m.hint }}</span>
+              </button>
+            </div>
+
+            <!-- Highlight toggle -->
+            <p class="setting-desc" style="margin-top:1.5rem"><strong>Verse highlighting</strong></p>
+            <div class="choice-row">
+              <button
+                type="button"
+                class="choice"
+                :class="{ active: settings.bible_text_highlight_enabled === true }"
+                :disabled="savingSettings || settingsReadOnly"
+                @click="setBibleTextHighlight(true)"
+              >
+                <strong>Enabled</strong>
+                <span>Highlight each verse as the chapter is read aloud.</span>
+              </button>
+              <button
+                type="button"
+                class="choice"
+                :class="{ active: settings.bible_text_highlight_enabled === false }"
+                :disabled="savingSettings || settingsReadOnly"
+                @click="setBibleTextHighlight(false)"
+              >
+                <strong>Off</strong>
+                <span>Play audio without highlighting.</span>
               </button>
             </div>
           </template>

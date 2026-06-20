@@ -25,6 +25,46 @@ const bookSearch = ref("");
 const audioUrl = ref("");
 const loadingAudio = ref(false);
 const audioError = ref("");
+const audioEl = ref(null);
+
+// Reader config from admin: which languages can be narrated + highlight toggle.
+const config = ref({ narratable: {}, text_highlight: true });
+const canNarrate = computed(() => config.value.narratable?.[lang.value] !== false);
+const highlightEnabled = computed(() => config.value.text_highlight !== false);
+
+// Verse highlighting: with no per-verse timings, map the audio's playback
+// position proportionally across the chapter, weighted by each verse's length
+// (longer verses take longer to read). Mirrors the service player's approach.
+const highlightedVerse = ref(-1);
+const verseBounds = computed(() => {
+  const verses = chapter.value?.verses || [];
+  const bounds = [];
+  let total = 0;
+  for (const v of verses) {
+    total += (v.text || "").length + 1; // +1 so empty verses still advance
+    bounds.push(total);
+  }
+  return { bounds, total };
+});
+
+function onAudioTime(ev) {
+  if (!highlightEnabled.value) return;
+  const el = ev.target;
+  const { bounds, total } = verseBounds.value;
+  if (!el.duration || !total || !bounds.length) return;
+  const pos = (el.currentTime / el.duration) * total;
+  let i = bounds.findIndex((b) => pos < b);
+  if (i === -1) i = bounds.length - 1;
+  if (i !== highlightedVerse.value) {
+    highlightedVerse.value = i;
+    scrollVerseIntoView(i);
+  }
+}
+
+function scrollVerseIntoView(i) {
+  const node = document.getElementById(`verse-${i}`);
+  if (node) node.scrollIntoView({ block: "center", behavior: "smooth" });
+}
 
 const filteredBooks = computed(() => {
   const q = bookSearch.value.trim().toLowerCase();
@@ -86,6 +126,7 @@ function goChapter(n) {
 function resetAudio() {
   audioUrl.value = "";
   audioError.value = "";
+  highlightedVerse.value = -1;
 }
 
 async function listen() {
@@ -122,7 +163,10 @@ watch(lang, async () => {
   }
 });
 
-onMounted(loadBooks);
+onMounted(() => {
+  loadBooks();
+  api.bibleConfig().then((c) => { config.value = c; }).catch(() => {});
+});
 </script>
 
 <template>
@@ -173,7 +217,12 @@ onMounted(loadBooks);
       <div class="reader-bar">
         <button class="link-btn" @click="backToBooks">&#8592; All books</button>
         <div class="reader-bar-right">
-          <button class="listen-btn" :disabled="loadingAudio || loadingChapter" @click="listen">
+          <button
+            v-if="canNarrate"
+            class="listen-btn"
+            :disabled="loadingAudio || loadingChapter"
+            @click="listen"
+          >
             <span v-if="loadingAudio">⏳ Preparing…</span>
             <span v-else>🔊 Listen</span>
           </button>
@@ -186,13 +235,27 @@ onMounted(loadBooks);
       <h2 class="reader-heading">{{ chapter?.name || selectedBook.name }} {{ chapterNum }}</h2>
 
       <div v-if="audioUrl" class="audio-wrap">
-        <audio :src="audioUrl" controls autoplay class="audio-player"></audio>
+        <audio
+          ref="audioEl"
+          :src="audioUrl"
+          controls
+          autoplay
+          class="audio-player"
+          @timeupdate="onAudioTime"
+          @ended="highlightedVerse = -1"
+        ></audio>
       </div>
       <p v-if="audioError" class="audio-error">{{ audioError }}</p>
 
       <p v-if="loadingChapter" class="muted">Loading…</p>
       <div v-else-if="chapter" class="verses" :class="{ mm: lang !== 'en' }">
-        <p v-for="v in chapter.verses" :key="v.num" class="verse">
+        <p
+          v-for="(v, i) in chapter.verses"
+          :key="v.num"
+          :id="`verse-${i}`"
+          class="verse"
+          :class="{ highlight: highlightEnabled && i === highlightedVerse }"
+        >
           <sup class="vnum">{{ v.num }}</sup>{{ v.text }}
         </p>
       </div>
@@ -341,7 +404,8 @@ onMounted(loadBooks);
 
 .verses { line-height: 1.85; font-size: 1.05rem; }
 .verses.mm { line-height: 2.1; font-size: 1.12rem; }
-.verse { margin: 0 0 0.6rem; }
+.verse { margin: 0 0 0.6rem; border-radius: 6px; transition: background 0.25s; }
+.verse.highlight { background: rgba(99, 179, 237, 0.30); box-shadow: 0 0 0 6px rgba(99, 179, 237, 0.30); }
 .vnum {
   color: var(--primary);
   font-weight: 700;

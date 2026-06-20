@@ -174,6 +174,26 @@ class Setting extends Model
         return static::get('narration_' . $language, '1') === '1';
     }
 
+    /**
+     * Voice provider for the online Bible reader's "Listen" button. Admins can
+     * pick a Bible-specific voice; when unset it inherits the live-service
+     * narration voice for that language so existing behavior is preserved.
+     */
+    public static function bibleNarrationMode(string $language): string
+    {
+        $mode = static::get('bible_narration_mode_' . $language);
+        if ($mode !== null && in_array($mode, self::NARRATION_MODES, true)) {
+            return $mode;
+        }
+        return static::narrationMode($language);
+    }
+
+    /** Whether the Bible reader highlights verses as narration plays. */
+    public static function bibleTextHighlightEnabled(): bool
+    {
+        return static::get('bible_text_highlight_enabled', '1') === '1';
+    }
+
     /** Read a JSON-encoded list setting, falling back to $default when unset/garbled. */
     public static function getList(string $key, array $default = []): array
     {

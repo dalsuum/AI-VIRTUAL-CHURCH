@@ -18,6 +18,7 @@ const filtered = computed(() => {
     if (!q) return true;
     return (
       w.zolai.toLowerCase().includes(q) ||
+      (w.burmese || "").toLowerCase().includes(q) ||
       w.english.toLowerCase().includes(q) ||
       w.notes.toLowerCase().includes(q)
     );
@@ -43,13 +44,13 @@ function catColor(cat) {
 <template>
   <div class="vocab-page">
     <header class="vocab-header">
-      <a href="#" class="back-link">&#8592; Back to worship</a>
+      <a href="#" class="back-link" aria-label="Back to worship">
+        <span class="back-icon">&#8592;</span><span class="back-text">&nbsp;Back to worship</span>
+      </a>
       <div class="vocab-title-block">
-        <h1 class="vocab-title">Zolai ↔ English Vocabulary</h1>
+        <h1 class="vocab-title">Vocabulary</h1>
         <p class="vocab-sub">
-          Tedim Chin (Zolai / Zomi pau) reference — {{ vocab.length }} words &amp; phrases.
-          Correct any word below and update
-          <code>frontend/src/data/zolai_vocabulary.json</code>.
+          Zolai (Tedim Chin) ↔ Burmese ↔ English reference — {{ vocab.length }} words &amp; phrases.
         </p>
       </div>
     </header>
@@ -59,7 +60,7 @@ function catColor(cat) {
         v-model="search"
         class="search-input"
         type="search"
-        placeholder="Search Zolai or English…"
+        placeholder="Search Zolai, Burmese or English…"
         aria-label="Search vocabulary"
       />
       <div class="cat-filters" role="group" aria-label="Filter by category">
@@ -83,6 +84,7 @@ function catColor(cat) {
         <thead>
           <tr>
             <th>Zolai (Tedim)</th>
+            <th>Burmese</th>
             <th>English</th>
             <th>Category</th>
             <th>Notes</th>
@@ -91,6 +93,7 @@ function catColor(cat) {
         <tbody>
           <tr v-for="(word, i) in filtered" :key="i">
             <td class="zolai-word">{{ word.zolai }}</td>
+            <td class="burmese-word">{{ word.burmese }}</td>
             <td>{{ word.english }}</td>
             <td>
               <span class="cat-badge" :style="{ color: catColor(word.category), borderColor: catColor(word.category) }">
@@ -253,6 +256,12 @@ function catColor(cat) {
   color: var(--text);
 }
 
+.burmese-word {
+  font-size: 0.95rem;
+  color: var(--text);
+  white-space: nowrap;
+}
+
 .cat-badge {
   display: inline-block;
   font-size: 0.72rem;
@@ -280,5 +289,7 @@ function catColor(cat) {
   .vocab-header, .controls, .table-wrap { padding-left: 1rem; padding-right: 1rem; }
   .vocab-title { font-size: 1.2rem; }
   .vocab-table { font-size: 0.8rem; }
+  .back-text { display: none; }
+  .back-icon { font-size: 1.1rem; }
 }
 </style>

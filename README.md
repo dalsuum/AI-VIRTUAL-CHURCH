@@ -1099,14 +1099,18 @@ for one occasion and removed cleanly afterwards.
   community-original songs pass Facebook/Instagram checks. (A genuinely
   copyrighted *melody* can still be flagged regardless; this protects your own
   originals and public-domain hymns, it is not a way to disguise commercial
-  tracks.) Because the tag makes the full song postable, the visitor **📤 Share
-  video** button hands over the actual **video file**. **Short clips (≤90s)** go
-  straight to the native share sheet (one clean post/reel). **Full songs / long
-  clips are *not* sent to the share sheet** — doing so makes Facebook
-  auto-convert them into Reels and **split them into part 1, 2, 3…**; instead the
-  file is **saved to the gallery** so the user posts it **once** as a Facebook
-  **Feed video** (not a Reel). The *Or share a link* option remains as a
-  fallback.
+  tracks.) **Sharing** (the visitor **📤 Share to Facebook & more** button): one
+  tap, **never split into multiple posts**. **Short clips (≤90s)** native-share
+  the actual **video file** (one clean post/reel). **Full songs / long clips
+  share a LINK** (the `/v/{jobId}` Open-Graph page) — *not* the file — because
+  handing a long file to the OS share sheet makes Facebook auto-convert it to
+  Reels and **split it into part 1, 2, 3…**. A link posts as **one** feed item
+  with a branded playable preview card + "Make your own — AI Virtual Church" CTA
+  (good for user-to-user advertising). A secondary **⬇ Save video to post
+  manually** button saves the MP4 for anyone who wants a true native upload (then
+  Facebook → Create post → Feed video). Note: no website can post a video to a
+  personal Facebook timeline directly — FB removed that (`publish_actions`,
+  2018) — so the one-tap path goes through Facebook's own share sheet.
 - **Lyrics**: `[mm:ss.xx]` LRC tags drive the time-synced highlight; otherwise
   lines are split evenly across the song length. Section markers like
   `[Verse 1]` / `[Chorus]` / `[Bridge]` are recognised and **not** shown on the

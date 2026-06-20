@@ -322,17 +322,22 @@ const isLongShare = computed(() => songMode.value === "full" || clipLen.value > 
 async function shareVideo() {
   shareNote.value = ""; sharing.value = true;
   try {
-    const file = await fetchVideoFile();
-    // LONG video (full song / clip > one reel): handing it to the OS share sheet
-    // makes Facebook auto-convert it into Reels and SPLIT it into part 1, 2, 3…
-    // To keep it as ONE post we must NOT use the share sheet — save the file to
-    // the gallery and let the user post it once as a Feed video.
+    // LONG video (full song / clip > one reel): never hand the FILE to the share
+    // sheet — Facebook auto-converts it to Reels and SPLITS it into part 1, 2, 3…
+    // Sharing the LINK instead gives ONE feed post (branded preview card, tap to
+    // play), which also advertises the app. The "Save video to post manually"
+    // button below stays for anyone who wants a true native upload.
     if (isLongShare.value) {
-      saveBlob(file);
-      shareNote.value = "Saved to your gallery. Open Facebook → Create post → add this video → post as a Feed video (one post, not a Reel).";
+      if (navigator.share) {
+        await navigator.share({ title: shareTitle.value, text: shareTitle.value, url: shareUrl.value });
+      } else {
+        await copyLink();
+        shareNote.value = "Link copied — paste it into Facebook for one post (it won't split).";
+      }
       return;
     }
-    // SHORT clip (≤90s): safe to native-share — Facebook makes one clean reel.
+    // SHORT clip (≤90s): safe to native-share the FILE — Facebook makes one clean reel.
+    const file = await fetchVideoFile();
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
       await navigator.share({ files: [file], title: shareTitle.value, text: shareTitle.value });
     } else {
@@ -341,8 +346,7 @@ async function shareVideo() {
     }
   } catch (e) {
     if (e?.name !== "AbortError") {
-      // Make the tap still useful: hand them the file so they can post it.
-      try { saveBlob(await fetchVideoFile()); shareNote.value = "Saved the video — post it from your gallery."; }
+      try { await copyLink(); shareNote.value = "Link copied — paste it to share."; }
       catch { shareNote.value = "Couldn't share here. Try Save, or the link option below."; }
     }
   } finally {
@@ -557,13 +561,13 @@ function reset() {
 
       <div v-else-if="phase === 'done'" class="fd-done">
         <p class="fd-done-msg">🎉 Your video is ready!</p>
-        <button v-if="canWebShare" class="fd-btn primary big" :disabled="sharing" @click="shareVideo">📤 Share video</button>
+        <button v-if="canWebShare" class="fd-btn primary big" :disabled="sharing" @click="shareVideo">📤 Share to Facebook & more</button>
         <button v-else class="fd-btn primary big" @click="saveVideo">⬇ Save video</button>
         <p class="fd-muted small">
-          <template v-if="canWebShare">Short clips share straight to one video post. Full songs save to your gallery — post them once as a Facebook Feed video (never split into multiple reels).</template>
+          <template v-if="canWebShare">One tap → posts once, never split. (Short clips post as a native video; full songs post as a single playable card that also invites friends to make their own.)</template>
           <template v-else>Save the video, then post it from your gallery. (Tip: open this page in Chrome or Safari to share directly.)</template>
         </p>
-        <button v-if="canWebShare" class="fd-btn ghost" @click="saveVideo">⬇ Save to device</button>
+        <button v-if="canWebShare" class="fd-btn ghost" @click="saveVideo">⬇ Save video to post manually</button>
 
         <details class="fd-linkshare">
           <summary>Or share a link</summary>

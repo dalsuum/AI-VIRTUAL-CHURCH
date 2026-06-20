@@ -286,7 +286,6 @@ async function checkStatus() {
 
 // ── Sharing (mirrors the Live Sticker feature) ───────────────────────────────
 const shareNote = ref("");
-const sharing   = ref(false);
 // Clean public share link on the MAIN domain (Open-Graph video preview, no api.*).
 const shareUrl = computed(() => (jobId.value ? `${window.location.origin}/v/${jobId.value}` : ""));
 const shareTitle = computed(() => config.value?.title || "My Father's Day video");
@@ -298,56 +297,12 @@ async function fetchVideoFile() {
   return new File([blob], "fathers-day.mp4", { type: blob.type || "video/mp4" });
 }
 
-// Facebook (and others) split an uploaded video longer than ~90s into multiple
-// Reels. So we only NATIVE-share files at/under this; longer videos share as a
-// single link (one post, tap to play) to avoid the multi-reel mess.
-const REEL_MAX_SEC = 90;
-
-// Web Share API isn't available in some in-app browsers (e.g. Facebook's) or on
-// desktop. There we can't open a native share sheet, so the button becomes Save.
-const canWebShare = typeof navigator !== "undefined" && typeof navigator.share === "function";
-
 function saveBlob(file) {
   const u = URL.createObjectURL(file);
   const a = document.createElement("a");
   a.href = u; a.download = file.name;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(u), 5000);
-}
-
-// Is the rendered video longer than one reel? Decided from the visitor's choice
-// (full song, or a clip over the limit) — no need to download the file to measure.
-const isLongShare = computed(() => songMode.value === "full" || clipLen.value > REEL_MAX_SEC);
-
-async function shareVideo() {
-  shareNote.value = ""; sharing.value = true;
-  try {
-    // FULL SONG / long clip: the OS share sheet hands the video to Facebook's
-    // Stories/Reels quick-flow, which ALWAYS chops a long video into 15–20s
-    // segments (the "part 1, 2, 3…" mess) — no website can override that. The
-    // only guaranteed single post is a manual Feed upload, so we save the file
-    // and tell the user the 3 steps. Short clips can still one-tap share below.
-    if (isLongShare.value) {
-      saveBlob(await fetchVideoFile());
-      shareNote.value = "Saved to your gallery. To post it as ONE video: open Facebook → tap “What's on your mind / Create post” (not Stories or Reels) → Photo/Video → pick this video → Post.";
-      return;
-    }
-    const file = await fetchVideoFile();
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      await navigator.share({ files: [file], title: shareTitle.value, text: shareTitle.value });
-    } else {
-      saveBlob(file);
-      shareNote.value = "Saved the video — post it from your gallery.";
-    }
-  } catch (e) {
-    if (e?.name !== "AbortError") {
-      // Make the tap still useful: hand them the file so they can post it.
-      try { saveBlob(await fetchVideoFile()); shareNote.value = "Saved the video — post it from your gallery."; }
-      catch { shareNote.value = "Couldn't share here. Try Save, or the link option below."; }
-    }
-  } finally {
-    sharing.value = false;
-  }
 }
 
 async function saveVideo() {
@@ -557,13 +512,10 @@ function reset() {
 
       <div v-else-if="phase === 'done'" class="fd-done">
         <p class="fd-done-msg">🎉 Your video is ready!</p>
-        <button v-if="canWebShare" class="fd-btn primary big" :disabled="sharing" @click="shareVideo">📤 Share video</button>
-        <button v-else class="fd-btn primary big" @click="saveVideo">⬇ Save video</button>
+        <button class="fd-btn primary big" @click="saveVideo">⬇ Save video</button>
         <p class="fd-muted small">
-          <template v-if="canWebShare">Short clips share straight to Facebook & other apps. Full songs save to your gallery — post them once via Facebook → Create post → Photo/Video (not Stories/Reels), so they stay one video.</template>
-          <template v-else>Save the video, then post it from your gallery. (Tip: open this page in Chrome or Safari to share directly.)</template>
+          Saved to your gallery. To post it as ONE video on Facebook: Create post → Photo/Video (not Stories/Reels) → pick this video → Post.
         </p>
-        <button v-if="canWebShare" class="fd-btn ghost" @click="saveVideo">⬇ Save to device</button>
 
         <details class="fd-linkshare">
           <summary>Or share a link</summary>

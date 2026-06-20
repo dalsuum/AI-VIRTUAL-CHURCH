@@ -1101,16 +1101,16 @@ for one occasion and removed cleanly afterwards.
   community-original songs pass Facebook/Instagram checks. (A genuinely
   copyrighted *melody* can still be flagged regardless; this protects your own
   originals and public-domain hymns, it is not a way to disguise commercial
-  tracks.) **Sharing** (the visitor **📤 Share video** button): **short clips
-  (≤90s)** native-share the actual **video file** in one tap (one clean post).
-  **Full songs / long clips are saved to the gallery** instead, with on-screen
-  steps to post them **once** via Facebook → *Create post* → *Photo/Video* (not
-  Stories/Reels). This is deliberate: handing a long video to the OS share sheet
-  sends it into Facebook's **Stories/Reels** quick-flow, which **always chops it
-  into 15–20s segments** ("part 1, 2, 3…") — no website can override that, and FB
-  removed programmatic video posting to personal timelines (`publish_actions`,
-  2018). A manual **Feed** upload is the only guaranteed single post. The *Or
-  share a link* `/v/{jobId}` page remains as a fallback.
+  tracks.) **Sharing**: the done screen has a single **⬇ Save video** button —
+  it downloads the MP4 to the gallery, with on-screen steps to post it **once**
+  via Facebook → *Create post* → *Photo/Video* (not Stories/Reels). There is no
+  "Share video" button: handing a video to the OS share sheet sends it into
+  Facebook's **Stories/Reels** quick-flow, which **chops it into 15–20s
+  segments** ("part 1, 2, 3…") — no website can override that, and FB removed
+  programmatic video posting to personal timelines (`publish_actions`, 2018), so
+  every share path just resolved to a download anyway. A manual **Feed** upload
+  is the only guaranteed single post. The *Or share a link* `/v/{jobId}` page
+  remains as a fallback for sharing a preview-card link.
 - **Lyrics**: `[mm:ss.xx]` LRC tags drive the time-synced highlight; otherwise
   lines are split evenly across the song length. Section markers like
   `[Verse 1]` / `[Chorus]` / `[Bridge]` are recognised and **not** shown on the

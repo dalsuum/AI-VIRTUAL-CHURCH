@@ -129,6 +129,44 @@ function syncBgMusic(action) {
 }
 const canNarrate = computed(() => config.value.narratable?.[lang.value] !== false);
 
+// Continuous reading: when on, the narration doesn't stop at the end of the
+// chapter — it rolls into the next chapter, and on through the next book
+// (across both testaments) until the very end of the Bible. It's a personal
+// preference, remembered per-device and OFF by default; readers opt in.
+const CONTINUOUS_KEY = "bible_continuous";
+const continuousRead = ref(localStorage.getItem(CONTINUOUS_KEY) === "1");
+function toggleContinuous() {
+  continuousRead.value = !continuousRead.value;
+  localStorage.setItem(CONTINUOUS_KEY, continuousRead.value ? "1" : "0");
+}
+
+// Move to the next chapter for continuous playback: next chapter in the same
+// book, else chapter 1 of the next book in the table of contents. Returns false
+// when there's nothing after the current spot (the end of the Bible), so the
+// caller can simply stop. Awaits the chapter load before auto-narrating.
+async function continueNarration() {
+  if (!continuousRead.value || !selectedBook.value) return;
+  if (chapterNum.value < selectedBook.value.chapters) {
+    chapterNum.value += 1;
+  } else {
+    const idx = books.value.findIndex((b) => b.num === selectedBook.value.num);
+    const next = idx >= 0 ? books.value[idx + 1] : null;
+    if (!next) return; // reached the end of the whole Bible — stop.
+    selectedBook.value = next;
+    chapterNum.value = 1;
+  }
+  await loadChapter();
+  await listen();
+}
+
+// Called when the narration audio finishes. Clears the highlight and stops the
+// background loop, then (in continuous mode) rolls into the next chapter.
+function onNarrationEnded() {
+  highlightedVerse.value = -1;
+  syncBgMusic("stop");
+  continueNarration();
+}
+
 // Verse highlighting is a personal reading preference: the admin setting
 // (config.text_highlight) is only the default a first-time reader sees; once a
 // reader flips the switch their choice is remembered per-device and wins.
@@ -364,6 +402,18 @@ onMounted(() => {
             <span aria-hidden="true">✨</span><span class="btn-label"> Highlight: {{ highlightEnabled ? 'On' : 'Off' }}</span>
           </button>
           <button
+            v-if="canNarrate"
+            type="button"
+            class="icon-toggle"
+            :class="{ active: continuousRead }"
+            :aria-pressed="continuousRead"
+            :aria-label="`Read whole Bible continuously ${continuousRead ? 'on' : 'off'}`"
+            :title="`Read whole Bible continuously ${continuousRead ? 'on' : 'off'}`"
+            @click="toggleContinuous"
+          >
+            <span aria-hidden="true">📖</span><span class="btn-label"> Continuous: {{ continuousRead ? 'On' : 'Off' }}</span>
+          </button>
+          <button
             v-if="musicAvailable"
             type="button"
             class="icon-toggle"
@@ -394,7 +444,7 @@ onMounted(() => {
           @timeupdate="onAudioTime"
           @play="syncBgMusic('play')"
           @pause="syncBgMusic('pause')"
-          @ended="highlightedVerse = -1; syncBgMusic('stop')"
+          @ended="onNarrationEnded"
         ></audio>
         <audio
           v-if="bgMusicUrl"

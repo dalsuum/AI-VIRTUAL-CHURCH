@@ -192,7 +192,7 @@ HTML;
   <video src="{$e($video)}" controls playsinline poster="{$e($img)}"></video>
   <div class="row">
     <button class="cta" id="shareBtn" type="button">📤 Share</button>
-    <a class="ghost" href="{$e($video)}" download>⬇ Download</a>
+    <a class="ghost" href="{$e($video)}?dl=1" download>⬇ Download</a>
     <a class="ghost" href="{$e($maker)}">🎬 Make your own</a>
   </div>
   <div class="social">
@@ -226,10 +226,23 @@ HTML;
             return response('', 404);
         }
 
-        return response()->file(Storage::path($rel), [
+        $response = response()->file(Storage::path($rel), [
             'Content-Type'  => 'video/mp4',
             'Cache-Control' => 'public, max-age=86400',
         ]);
+
+        // When the share page's Download button is used (?dl=1) force a real
+        // file download. The anchor `download` attribute is ignored by mobile
+        // and in-app (Messenger/Facebook) webviews, which otherwise just open
+        // the MP4 inline in a player — so we set Content-Disposition here.
+        if (request()->boolean('dl')) {
+            $response->setContentDisposition(
+                'attachment',
+                'AI-Virtual-Church-video.mp4'
+            );
+        }
+
+        return $response;
     }
 
     /** Re-serve the MV poster frame on the main domain (for og:image). */

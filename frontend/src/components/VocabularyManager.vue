@@ -25,6 +25,7 @@ const filtered = computed(() => {
     return (
       w.zolai.toLowerCase().includes(q) ||
       (w.burmese || "").toLowerCase().includes(q) ||
+      (w.hebrew || "").includes(q) ||
       w.english.toLowerCase().includes(q) ||
       (w.notes || "").toLowerCase().includes(q)
     );
@@ -51,7 +52,7 @@ const saving  = ref(false);
 const form    = ref(blank());
 
 function blank() {
-  return { id: null, zolai: "", burmese: "", english: "", category: "Theology", notes: "" };
+  return { id: null, zolai: "", burmese: "", hebrew: "", english: "", category: "Theology", notes: "" };
 }
 
 function newWord() {
@@ -64,6 +65,7 @@ function editWord(w) {
     id: w.id,
     zolai: w.zolai,
     burmese: w.burmese || "",
+    hebrew: w.hebrew || "",
     english: w.english,
     category: w.category || "Theology",
     notes: w.notes || "",
@@ -92,6 +94,7 @@ async function save() {
   const payload = {
     zolai: f.zolai.trim(),
     burmese: f.burmese.trim() || null,
+    hebrew: f.hebrew.trim() || null,
     english: f.english.trim(),
     category: f.category || null,
     notes: f.notes.trim() || null,
@@ -138,7 +141,7 @@ async function remove(w) {
       </div>
 
       <div class="filters">
-        <input v-model="search" class="inp" type="search" placeholder="Search Zolai, Burmese, English or notes…" />
+        <input v-model="search" class="inp" type="search" placeholder="Search Zolai, Burmese, Hebrew, English or notes…" />
         <div class="cat-tabs">
           <button class="tab" :class="{ active: filterCat === 'All' }" @click="filterCat = 'All'">All</button>
           <button v-for="c in CATEGORIES" :key="c" class="tab"
@@ -153,12 +156,13 @@ async function remove(w) {
 
       <table v-else class="tbl">
         <thead>
-          <tr><th>Zolai</th><th>Burmese</th><th>English</th><th>Category</th><th>Notes</th><th></th></tr>
+          <tr><th>Zolai</th><th>Burmese</th><th>Hebrew</th><th>English</th><th>Category</th><th>Notes</th><th></th></tr>
         </thead>
         <tbody>
           <tr v-for="w in filtered" :key="w.id">
             <td class="t-zolai">{{ w.zolai }}</td>
             <td>{{ w.burmese || "—" }}</td>
+            <td class="t-hebrew" dir="rtl" lang="he">{{ w.hebrew || "—" }}</td>
             <td>{{ w.english }}</td>
             <td>{{ w.category || "—" }}</td>
             <td class="t-notes">{{ w.notes || "" }}</td>
@@ -186,6 +190,9 @@ async function remove(w) {
         </label>
         <label>Burmese
           <input v-model="form.burmese" class="inp" type="text" maxlength="255" />
+        </label>
+        <label>Hebrew
+          <input v-model="form.hebrew" class="inp" type="text" maxlength="255" dir="rtl" lang="he" />
         </label>
         <label>English *
           <input v-model="form.english" class="inp" type="text" maxlength="255" />
@@ -241,6 +248,7 @@ async function remove(w) {
           letter-spacing: 0.04em; color: var(--text-muted); border-bottom: 2px solid var(--border); }
 .tbl td { padding: 0.5rem; border-bottom: 1px solid var(--border); vertical-align: top; }
 .t-zolai { font-weight: 600; }
+.t-hebrew { text-align: right; direction: rtl; font-size: 1.05rem; }
 .t-notes { color: var(--text-muted); font-style: italic; font-size: 0.82rem; }
 .t-actions { white-space: nowrap; text-align: right; }
 .t-actions .btn { margin-left: 0.35rem; }

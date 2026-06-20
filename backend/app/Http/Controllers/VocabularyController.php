@@ -32,12 +32,13 @@ class VocabularyController extends Controller
             $q->where(function ($sub) use ($search) {
                 $sub->where('zolai', 'like', "%{$search}%")
                     ->orWhere('burmese', 'like', "%{$search}%")
+                    ->orWhere('hebrew', 'like', "%{$search}%")
                     ->orWhere('english', 'like', "%{$search}%")
                     ->orWhere('notes', 'like', "%{$search}%");
             });
         }
 
-        $words = $q->get(['id', 'zolai', 'burmese', 'english', 'category', 'notes']);
+        $words = $q->get(['id', 'zolai', 'burmese', 'hebrew', 'english', 'category', 'notes']);
 
         return response()->json(['vocabulary' => $words]);
     }
@@ -78,12 +79,13 @@ class VocabularyController extends Controller
         $data = $request->validate([
             'zolai'    => [$required, 'string', 'max:255'],
             'burmese'  => ['nullable', 'string', 'max:255'],
+            'hebrew'   => ['nullable', 'string', 'max:255'],
             'english'  => [$required, 'string', 'max:255'],
             'category' => ['nullable', 'string', 'max:100'],
             'notes'    => ['nullable', 'string', 'max:500'],
         ]);
 
-        foreach (['zolai', 'burmese', 'english', 'category', 'notes'] as $field) {
+        foreach (['zolai', 'burmese', 'hebrew', 'english', 'category', 'notes'] as $field) {
             if (array_key_exists($field, $data)) {
                 $data[$field] = $data[$field] !== null ? trim($data[$field]) : null;
             }

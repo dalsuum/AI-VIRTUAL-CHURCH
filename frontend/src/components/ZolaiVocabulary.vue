@@ -35,6 +35,7 @@ const filtered = computed(() => {
     return (
       w.zolai.toLowerCase().includes(q) ||
       (w.burmese || "").toLowerCase().includes(q) ||
+      (w.hebrew || "").includes(q) ||
       w.english.toLowerCase().includes(q) ||
       (w.notes || "").toLowerCase().includes(q)
     );
@@ -76,7 +77,7 @@ function catColor(cat) {
         v-model="search"
         class="search-input"
         type="search"
-        placeholder="Search Zolai, Burmese or English…"
+        placeholder="Search Zolai, Burmese, Hebrew or English…"
         aria-label="Search vocabulary"
       />
       <div class="cat-filters" role="group" aria-label="Filter by category">
@@ -103,6 +104,7 @@ function catColor(cat) {
           <tr>
             <th>Zolai (Tedim)</th>
             <th>Burmese</th>
+            <th>Hebrew</th>
             <th>English</th>
             <th>Category</th>
             <th>Notes</th>
@@ -112,6 +114,7 @@ function catColor(cat) {
           <tr v-for="(word, i) in filtered" :key="i">
             <td class="zolai-word">{{ word.zolai }}</td>
             <td class="burmese-word">{{ word.burmese }}</td>
+            <td class="hebrew-word" dir="rtl" lang="he">{{ word.hebrew }}</td>
             <td>{{ word.english }}</td>
             <td>
               <span class="cat-badge" :style="{ color: catColor(word.category), borderColor: catColor(word.category) }">
@@ -278,6 +281,14 @@ function catColor(cat) {
   font-size: 0.95rem;
   color: var(--text);
   white-space: nowrap;
+}
+
+.hebrew-word {
+  font-size: 1.05rem;
+  color: var(--text);
+  white-space: nowrap;
+  text-align: right;
+  direction: rtl;
 }
 
 .cat-badge {

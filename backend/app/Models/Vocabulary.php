@@ -13,5 +13,5 @@ class Vocabulary extends Model
     /** Laravel would guess "vocabularys"; pin the correct plural. */
     protected $table = 'vocabularies';
 
-    protected $fillable = ['zolai', 'burmese', 'english', 'category', 'notes', 'source'];
+    protected $fillable = ['zolai', 'burmese', 'hebrew', 'english', 'category', 'notes', 'source'];
 }

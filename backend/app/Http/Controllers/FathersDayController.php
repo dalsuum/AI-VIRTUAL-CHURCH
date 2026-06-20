@@ -51,6 +51,10 @@ class FathersDayController extends Controller
     {
         $defaults = [
             'enabled'        => false,
+            // Auto YouTube mode: play the active Special Sunday's curated YouTube
+            // song(s) with a share button only (no MV creation). Mutually
+            // exclusive with the manual MV library above — only one is ever on.
+            'auto_youtube_enabled' => false,
             'title'          => 'Happy Father\'s Day',
             'subtitle'       => 'Make a music video for your father',
             'default_effect' => 'slide',
@@ -138,8 +142,58 @@ class FathersDayController extends Controller
 
     // ---- Public ------------------------------------------------------------
 
-    /** What the public page needs: enabled flag, effects, and the song menu. */
-    public function publicConfig(): JsonResponse
+    /**
+     * Resolve the curated YouTube songs for the CURRENTLY active Special Sunday
+     * (or null when no observance window is open). Reads the hardcoded
+     * config/special_day_songs.php map keyed by observance key, dropping entries
+     * without a valid 11-char YouTube id.
+     *
+     * @return array{occasion: string, songs: array<int, array{title: string, youtube_id: string, watch_url: string}>}|null
+     */
+    private function autoYoutubePayload(\App\Services\SpecialSundayResolver $resolver): ?array
+    {
+        $observance = $resolver->currentPayload('en');
+        if (! $observance || empty($observance['key'])) {
+            return null;
+        }
+
+        $map  = config('special_day_songs', []);
+        $list = is_array($map[$observance['key']] ?? null) ? $map[$observance['key']] : [];
+
+        $songs = [];
+        foreach ($list as $entry) {
+            $id = (string) ($entry['youtube_id'] ?? '');
+            // Accept only a plausible YouTube id so a typo can't yield a broken iframe.
+            if (! preg_match('/^[A-Za-z0-9_-]{11}$/', $id)) {
+                continue;
+            }
+            $songs[] = [
+                'title'      => (string) ($entry['title'] ?? 'Song'),
+                'youtube_id' => $id,
+                'watch_url'  => "https://www.youtube.com/watch?v={$id}",
+            ];
+        }
+
+        if ($songs === []) {
+            return null;
+        }
+
+        return ['occasion' => (string) ($observance['title'] ?? ''), 'songs' => $songs];
+    }
+
+    /** A short, warm invitation appended to the YouTube link when sharing. */
+    private function shareInvite(string $occasion): string
+    {
+        $occasion = trim($occasion);
+        $lead = $occasion !== ''
+            ? "🎵 A song for {$occasion} — listen and be blessed."
+            : '🎵 Listen to this song and be blessed.';
+
+        return "{$lead} Come worship with us at aivirtual.church 🙏";
+    }
+
+    /** What the public page needs: mode flag, and either the MV menu or auto songs. */
+    public function publicConfig(\App\Services\SpecialSundayResolver $resolver): JsonResponse
     {
         $c = $this->config();
         $songs = array_values(array_map(
@@ -155,14 +209,29 @@ class FathersDayController extends Controller
             array_filter($c['songs'], fn ($s) => ! empty($s['ext']))
         ));
 
+        $manualOn = (bool) $c['enabled'] && count($songs) > 0;
+        // Auto only when manual is off (mutually exclusive) and the active day has songs.
+        $auto = (! $manualOn && (bool) ($c['auto_youtube_enabled'] ?? false))
+            ? $this->autoYoutubePayload($resolver)
+            : null;
+
+        $mode = $manualOn ? 'manual' : ($auto !== null ? 'auto' : 'off');
+
         return response()->json([
-            'enabled'        => (bool) $c['enabled'] && count($songs) > 0,
+            'mode'           => $mode,
+            // Back-compat: existing clients gate the page on `enabled`.
+            'enabled'        => $manualOn,
             'title'          => $c['title'],
             'subtitle'       => $c['subtitle'],
             'default_effect' => in_array($c['default_effect'], self::EFFECTS, true) ? $c['default_effect'] : 'slide',
             'effects'        => self::EFFECTS,
             'max_photos'     => self::MAX_PHOTOS,
             'songs'          => $songs,
+            'auto'           => $auto === null ? null : [
+                'occasion'    => $auto['occasion'],
+                'songs'       => $auto['songs'],
+                'share_invite' => $this->shareInvite($auto['occasion']),
+            ],
         ]);
     }
 
@@ -313,12 +382,22 @@ class FathersDayController extends Controller
 
     // ---- Admin: global settings -------------------------------------------
 
-    public function adminShow(): JsonResponse
+    public function adminShow(?\App\Services\SpecialSundayResolver $resolver = null): JsonResponse
     {
         $c = $this->config();
+        $auto = $this->autoYoutubePayload($resolver ?? app(\App\Services\SpecialSundayResolver::class));
 
         return response()->json([
             'enabled'        => (bool) $c['enabled'],
+            'auto_youtube_enabled' => (bool) ($c['auto_youtube_enabled'] ?? false),
+            // Read-only preview of what Auto mode would play right now (today's
+            // active Special Sunday + its curated YouTube songs from config).
+            'auto_preview'   => $auto === null
+                ? null
+                : ['occasion' => $auto['occasion'], 'songs' => array_map(
+                    fn ($s) => ['title' => $s['title'], 'youtube_id' => $s['youtube_id']],
+                    $auto['songs']
+                )],
             'title'          => $c['title'],
             'subtitle'       => $c['subtitle'],
             'default_effect' => $c['default_effect'],
@@ -368,14 +447,24 @@ class FathersDayController extends Controller
     {
         $validated = $request->validate([
             'enabled'        => ['required', 'boolean'],
+            'auto_youtube_enabled' => ['sometimes', 'boolean'],
             'title'          => ['nullable', 'string', 'max:120'],
             'subtitle'       => ['nullable', 'string', 'max:200'],
             'default_effect' => ['required', 'in:' . implode(',', self::EFFECTS)],
             'brand_tag_enabled' => ['sometimes', 'boolean'],
         ]);
 
+        // The two delivery modes are mutually exclusive — only one can be on.
+        $autoEnabled = (bool) ($validated['auto_youtube_enabled'] ?? false);
+        if ($validated['enabled'] && $autoEnabled) {
+            return response()->json([
+                'message' => 'Only one mode can be active at a time. Turn off Auto YouTube before enabling the manual MV library (or vice-versa).',
+            ], 422);
+        }
+
         $c = $this->config();
         $c['enabled']        = $validated['enabled'];
+        $c['auto_youtube_enabled'] = $autoEnabled;
         $c['title']          = $validated['title'] ?: 'Happy Father\'s Day';
         $c['subtitle']       = $validated['subtitle'] ?: 'Make a music video for your father';
         $c['default_effect'] = $validated['default_effect'];

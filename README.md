@@ -1063,8 +1063,24 @@ father and download a vertical **1080×1920 MP4** set to an admin-provided song 
 lyrics. It is deliberately isolated from the worship pipeline so it can be added
 for one occasion and removed cleanly afterwards.
 
+**Two delivery modes (mutually exclusive — only one runs at a time)**
+- **Manual MV library** (the original): visitors upload photos and build a video
+  from your uploaded songs (below).
+- **Auto YouTube song**: the system plays the **currently active Special Sunday's**
+  curated YouTube song (no video creation) with a **share button only**. Songs are
+  a hardcoded catalog in `backend/config/special_day_songs.php`, keyed by the same
+  observance `key` as `config/special_sundays.php` (`fathers_day`, `easter_sunday`,
+  …); each entry is `['title' => …, 'youtube_id' => …]`. The resolver picks today's
+  active day, the page embeds its song(s), and Share hands out the raw YouTube
+  watch URL plus an *aivirtual.church* invitation. Entries with no valid 11-char
+  `youtube_id` are skipped; a day with no usable songs shows "not available".
+  The admin panel previews exactly what Auto mode would play right now.
+- Enabling one mode forces the other off (enforced in both the UI and
+  `adminSave`); you cannot have both on.
+
 **How it works**
-- **Admin** (`#admin` → *Special Day MV* tab, admin role only): manage a **song
+- **Admin** (`#admin` → *Special Day MV* tab, admin role only): choose the mode
+  (Manual MV library or Auto YouTube), and for manual, manage a **song
   library** — add multiple songs (MP3/WAV), each with its own lyrics, sync mode,
   detected vocal-onset and tap-to-sync. Set the default effect and **enable** the
   page. Config + assets live as plain files in `backend/storage/app/fathersday/`

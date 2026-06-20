@@ -40,6 +40,36 @@ const effectLabels = {
 const songs       = computed(() => config.value?.songs ?? []);
 const selectedSong = computed(() => songs.value.find((s) => s.id === songId.value) || null);
 
+// ── Auto YouTube mode (play a curated special-day song, share only) ──────────
+const isAuto      = computed(() => config.value?.mode === "auto");
+const autoSongs   = computed(() => config.value?.auto?.songs ?? []);
+const autoIdx     = ref(0);
+const autoSong    = computed(() => autoSongs.value[autoIdx.value] || null);
+const autoEmbedUrl = computed(() =>
+  autoSong.value ? `https://www.youtube-nocookie.com/embed/${autoSong.value.youtube_id}?rel=0` : ""
+);
+
+async function shareAuto() {
+  shareNote.value = "";
+  const s = autoSong.value;
+  if (!s) return;
+  const text = config.value?.auto?.share_invite || "Listen and be blessed. aivirtual.church";
+  const url = s.watch_url;
+  try {
+    if (navigator.share) {
+      await navigator.share({ title: s.title, text, url });
+    } else {
+      await navigator.clipboard.writeText(`${text} ${url}`);
+      shareNote.value = "Link copied — paste it to share.";
+    }
+  } catch (e) {
+    if (e?.name !== "AbortError") {
+      try { await navigator.clipboard.writeText(`${text} ${url}`); shareNote.value = "Link copied — paste it to share."; }
+      catch { shareNote.value = `${text} ${url}`; }
+    }
+  }
+}
+
 // ── Song length choice (full vs a clip the visitor picks) ────────────────────
 const songMode   = ref("full");   // 'full' | 'clip'
 const clipStartVal = ref(0);
@@ -380,10 +410,48 @@ function reset() {
 
     <div v-if="loading" class="fd-card fd-center"><p>Loading…</p></div>
 
-    <div v-else-if="!config.enabled" class="fd-card fd-center">
+    <div v-else-if="!config.enabled && !isAuto" class="fd-card fd-center">
       <div class="fd-hero-mark">🎬</div>
       <h1>Not available right now</h1>
       <p class="fd-muted">This special-day video maker isn't open at the moment. Please check back later.</p>
+    </div>
+
+    <!-- Auto YouTube mode: play today's special-day song + share only -->
+    <div v-else-if="isAuto" class="fd-card">
+      <header class="fd-head">
+        <div class="fd-hero-mark">🎶</div>
+        <h1>{{ config.title }}</h1>
+        <p class="fd-muted">{{ config.auto.occasion || config.subtitle }}</p>
+      </header>
+
+      <div v-if="autoSongs.length > 1" class="fd-songs">
+        <p class="fd-label">🎵 Choose a song</p>
+        <div class="fd-song-row">
+          <button
+            v-for="(s, i) in autoSongs"
+            :key="s.youtube_id"
+            class="fd-chip"
+            :class="{ active: autoIdx === i }"
+            @click="autoIdx = i"
+          >{{ s.title }}</button>
+        </div>
+      </div>
+
+      <div v-if="autoSong" class="fd-yt">
+        <div class="fd-yt-frame">
+          <iframe
+            :src="autoEmbedUrl"
+            title="YouTube player"
+            frameborder="0"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowfullscreen
+          ></iframe>
+        </div>
+        <p class="fd-yt-title">{{ autoSong.title }}</p>
+        <button class="fd-btn primary big" @click="shareAuto">📤 Share this song</button>
+        <p v-if="shareNote" class="fd-muted small">{{ shareNote }}</p>
+        <p class="fd-muted small fd-foot">Worship with us at aivirtual.church 🙏</p>
+      </div>
     </div>
 
     <div v-else class="fd-card">
@@ -632,6 +700,10 @@ function reset() {
 }
 .fd-soc:hover { border-color: var(--primary); color: var(--primary); }
 .fd-soc.wide { width: auto; border-radius: 999px; padding: 0 0.9rem; font-size: 0.85rem; }
+.fd-yt { margin-top: 0.5rem; text-align: center; }
+.fd-yt-frame { position: relative; width: 100%; padding-top: 56.25%; border-radius: var(--radius-sm); overflow: hidden; background: #000; }
+.fd-yt-frame iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.fd-yt-title { font-weight: 600; margin: 0.9rem 0 0.25rem; }
 .fd-done { text-align: center; margin-top: 1.5rem; display: flex; flex-direction: column; gap: 0.6rem; align-items: center; }
 .fd-done-msg { font-size: 1.05rem; font-weight: 600; }
 .fd-foot { text-align: center; margin-top: 1.25rem; }

@@ -62,11 +62,27 @@ function watchDetection() {
   }, 5000);
 }
 
+// The two delivery modes are mutually exclusive — turning one on forces the
+// other off (the backend enforces this too, but this keeps the UI honest).
+function onToggleManual() {
+  if (cfg.value.enabled && cfg.value.auto_youtube_enabled) {
+    cfg.value.auto_youtube_enabled = false;
+    msg.value = "Auto YouTube turned off — only one mode can be active at a time.";
+  }
+}
+function onToggleAuto() {
+  if (cfg.value.auto_youtube_enabled && cfg.value.enabled) {
+    cfg.value.enabled = false;
+    msg.value = "Manual MV library turned off — only one mode can be active at a time.";
+  }
+}
+
 async function saveSettings() {
   saving.value = true; msg.value = ""; err.value = "";
   try {
     const r = await api.fdAdminSave({
       enabled: !!cfg.value.enabled,
+      auto_youtube_enabled: !!cfg.value.auto_youtube_enabled,
       title: cfg.value.title || "",
       subtitle: cfg.value.subtitle || "",
       default_effect: cfg.value.default_effect || "slide",
@@ -303,9 +319,34 @@ function closeClip() {
     <div v-else-if="cfg" class="fdm-grid">
       <!-- Global settings -->
       <label class="toggle">
-        <input type="checkbox" v-model="cfg.enabled" />
-        <span><strong>Enabled</strong> — show the page to visitors</span>
+        <input type="checkbox" v-model="cfg.enabled" @change="onToggleManual" />
+        <span><strong>Manual MV library</strong> — visitors upload photos &amp; build a video from your songs</span>
       </label>
+
+      <!-- Auto YouTube mode (mutually exclusive with the manual library) -->
+      <div class="field" style="gap:0.5rem">
+        <label class="toggle">
+          <input type="checkbox" v-model="cfg.auto_youtube_enabled" @change="onToggleAuto" />
+          <span><strong>Auto YouTube song</strong> — system plays the active special day's curated YouTube song with a share button (no video creation)</span>
+        </label>
+        <p class="hint small">
+          Only <strong>one</strong> mode runs at a time. When this is on and a special day is active,
+          visitors at <code>#fathers-day</code> see today's song from the catalog
+          (<code>config/special_day_songs.php</code>) and can share its YouTube link with an aivirtual.church invitation.
+        </p>
+        <div v-if="cfg.auto_youtube_enabled" class="auto-preview">
+          <template v-if="cfg.auto_preview && cfg.auto_preview.songs.length">
+            <p class="hint small"><strong>Active now:</strong> {{ cfg.auto_preview.occasion }}</p>
+            <ul class="auto-list">
+              <li v-for="s in cfg.auto_preview.songs" :key="s.youtube_id">🎵 {{ s.title }}</li>
+            </ul>
+          </template>
+          <p v-else class="bad small">
+            ⚠ No special day is active today, or its songs have no valid YouTube id in
+            <code>config/special_day_songs.php</code>. The page will show "not available" until a day with curated songs is active.
+          </p>
+        </div>
+      </div>
       <div class="field">
         <label>Page title</label>
         <input type="text" v-model="cfg.title" maxlength="120" placeholder="Happy Father's Day" />
@@ -524,6 +565,8 @@ hr { border: 0; border-top: 1px solid var(--border); width: 100%; margin: 0.5rem
 .btn.ghost { background: transparent; }
 .btn.danger { color: var(--danger); border-color: var(--danger); }
 .btn.big { width: 100%; padding: 0.8rem; font-size: 1rem; }
+.auto-preview { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0.6rem 0.8rem; background: var(--bg); }
+.auto-list { margin: 0.3rem 0 0; padding-left: 1.1rem; font-size: 0.85rem; }
 .ok { color: var(--success, green); font-size: 0.85rem; }
 .bad { color: var(--danger); font-size: 0.85rem; }
 code { background: var(--primary-soft); padding: 0 0.25rem; border-radius: 4px; }

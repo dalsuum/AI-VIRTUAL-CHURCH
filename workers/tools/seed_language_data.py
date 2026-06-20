@@ -53,7 +53,6 @@ BIBLES = {
     "falam1973.json": "/json/falam1973.json",
     "hakha1920.json": "/json/hakha1920.json",
     "mizo1917.json": "/json/mizo1917.json",
-    "mcl2005.json": "/json/mcl2005.json",
     "paite1971.json": "/json/paite1971.json",
     "sizang1932.json": "/json/sizang1932.json",
     "mara2011.json": "/json/mara2011.json",

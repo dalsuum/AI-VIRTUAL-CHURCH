@@ -13,8 +13,7 @@ use Illuminate\Support\Facades\Http;
  * translations (en BSB, kjv King James Version, my Judson 1835, td Tedim 1932,
  * he Hebrew WLC — Old Testament only, right-to-left — plus the Chin/Zo language
  * Bibles from the Bible Society of Myanmar: cfm Falam, cnh Hakha, lus Mizo,
- * mizocl Mizo Common Language, pck Paite, csy Sizang, mrh Mara, hlt Matu) it
- * already keeps in memory. Laravel adds a long-lived cache layer so the SPA's
+ * pck Paite, csy Sizang, mrh Mara, hlt Matu) it already keeps in memory. Laravel adds a long-lived cache layer so the SPA's
  * book list and chapter fetches are instant and never re-hit the worker for the
  * same page.
  */
@@ -23,7 +22,7 @@ class BibleController extends Controller
     /** Translations the reader exposes — also the validation allow-list. */
     private const LANGS = [
         'en', 'kjv', 'my', 'td', 'he',
-        'cfm', 'cnh', 'lus', 'mizocl', 'pck', 'csy', 'mrh', 'hlt',
+        'cfm', 'cnh', 'lus', 'pck', 'csy', 'mrh', 'hlt',
     ];
 
     private function base(): string

@@ -18,7 +18,6 @@ const LANGS = [
   { code: "cfm", label: "Falam", note: "Baibal Thianghlim (Falam, 1973)" },
   { code: "cnh", label: "Hakha", note: "Baibal Thiang (Hakha, 1920)" },
   { code: "lus", label: "Mizo", note: "Pathian Lehkhabu Thianghlim (Mizo, 1917)" },
-  { code: "mizocl", label: "Mizo CL", note: "Common Language Bible (Mizo)" },
   { code: "pck", label: "Paite", note: "Paite Bible (1971)" },
   { code: "csy", label: "Sizang", note: "Lai Siangtho (Sizang, 1932)" },
   { code: "mrh", label: "Mara", note: "Khazopa Chabu Pathaipa (Mara, 2011)" },
@@ -33,8 +32,7 @@ const RTL_LANGS = new Set(["he"]);
 // the `mm` class only suits the larger Myanmar/Tedim/Hebrew scripts.
 const LATIN_LANGS = new Set([
   "en", "kjv",
-  // Most Chin/Zo Bibles are written in Latin script. (The Mizo Common Language
-  // edition, "mizocl", is set in Myanmar script, so it uses the `mm` typography.)
+  // The Chin/Zo Bibles are written in Latin script.
   "cfm", "cnh", "lus", "pck", "csy", "mrh", "hlt",
 ]);
 

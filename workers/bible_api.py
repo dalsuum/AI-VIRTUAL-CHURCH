@@ -20,8 +20,8 @@ Two languages are served, both from bundled public-domain data (no key, no netwo
   Chin/Zo language Bibles from the Bible Society of Myanmar, all vendored from
   dalsuum/bible in the same shared schema (Latin script, full 66-book canon):
   'cfm' Falam (falam1973.json), 'cnh' Hakha (hakha1920.json),
-  'lus' Mizo (mizo1917.json), 'mizocl' Mizo Common Language (mcl2005.json),
-  'pck' Paite (paite1971.json), 'csy' Sizang (sizang1932.json),
+  'lus' Mizo (mizo1917.json), 'pck' Paite (paite1971.json),
+  'csy' Sizang (sizang1932.json),
   'mrh' Mara (mara2011.json), 'hlt' Matu (matu2009.json).
 
 The LLM always emits ENGLISH references ("John 3:16") regardless of service
@@ -65,7 +65,6 @@ _LANG_FILES = {
     "cfm": os.getenv("BIBLE_DATA_FILE_CFM", os.path.join(_DATA_DIR, "falam1973.json")),
     "cnh": os.getenv("BIBLE_DATA_FILE_CNH", os.path.join(_DATA_DIR, "hakha1920.json")),
     "lus": os.getenv("BIBLE_DATA_FILE_LUS", os.path.join(_DATA_DIR, "mizo1917.json")),
-    "mizocl": os.getenv("BIBLE_DATA_FILE_MIZOCL", os.path.join(_DATA_DIR, "mcl2005.json")),
     "pck": os.getenv("BIBLE_DATA_FILE_PCK", os.path.join(_DATA_DIR, "paite1971.json")),
     "csy": os.getenv("BIBLE_DATA_FILE_CSY", os.path.join(_DATA_DIR, "sizang1932.json")),
     "mrh": os.getenv("BIBLE_DATA_FILE_MRH", os.path.join(_DATA_DIR, "mara2011.json")),
@@ -201,7 +200,7 @@ def book_title(reference: str, lang: str = "en") -> str:
 
 _LANGS = (
     "en", "kjv", "my", "td", "he",
-    "cfm", "cnh", "lus", "mizocl", "pck", "csy", "mrh", "hlt",
+    "cfm", "cnh", "lus", "pck", "csy", "mrh", "hlt",
 )
 
 

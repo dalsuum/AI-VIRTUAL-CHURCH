@@ -38,6 +38,12 @@ class UpdateSettingsRequest extends FormRequest
             'bible_bg_music_engine' => ['sometimes', 'string', 'in:' . implode(',', Setting::BIBLE_BG_MUSIC_ENGINES)],
             'bible_bg_music_url'    => ['sometimes', 'nullable', 'string', 'url', 'max:2048'],
             'bible_bg_music_volume' => ['sometimes', 'numeric', 'min:0', 'max:1'],
+            // Per-version reader feature matrix (show/hide tab + enable/disable each
+            // feature button). Setting::setBibleFeatures() is the authoritative
+            // whitelist of codes/feature keys, so unknown keys are dropped safely.
+            'bible_features'        => ['sometimes', 'array'],
+            'bible_features.*'      => ['array'],
+            'bible_features.*.*'    => ['boolean'],
             // When on, a worshipper new to a mood is served a random song already
             // composed for it instead of generating (and paying for) a fresh one.
             'music_reuse'     => ['sometimes', 'boolean'],

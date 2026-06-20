@@ -231,6 +231,101 @@ class Setting extends Model
         return max(0.0, min(1.0, $vol));
     }
 
+    /**
+     * Online Bible reader translations the admin can show/hide and tune, in tab
+     * order. Kept in sync with BibleController::LANGS (the API allow-list) and the
+     * LANGS array in frontend/src/components/BibleReader.vue.
+     */
+    public const BIBLE_VERSIONS = [
+        'kjv' => 'KJV',
+        'en'  => 'English (BSB)',
+        'he'  => 'Hebrew (עברית)',
+        'my'  => 'Burmese (ဗမာ)',
+        'cfm' => 'Falam',
+        'cnh' => 'Hakha',
+        'mrh' => 'Mara',
+        'hlt' => 'Matu',
+        'lus' => 'Mizo',
+        'pck' => 'Paite',
+        'csy' => 'Sizang',
+        'td'  => 'Tedim',
+    ];
+
+    /**
+     * Per-version reader feature buttons the admin can enable/disable. These
+     * mirror the controls in BibleReader.vue; 'enabled' (handled separately)
+     * shows/hides the whole translation tab.
+     */
+    public const BIBLE_FEATURES = ['listen', 'highlight', 'continuous', 'music', 'select', 'speed', 'textsize', 'color'];
+
+    /**
+     * The full per-version feature matrix for the Bible reader. Every version
+     * gets an 'enabled' flag (show its tab) plus a boolean per BIBLE_FEATURES.
+     * Defaults everything to true so a fresh install behaves exactly as before;
+     * stored admin overrides are merged over that default and validated here.
+     */
+    public static function bibleFeatureMatrix(): array
+    {
+        $stored = [];
+        $raw = static::get('bible_features');
+        if ($raw !== null) {
+            $decoded = json_decode($raw, true);
+            if (is_array($decoded)) {
+                $stored = $decoded;
+            }
+        }
+
+        $matrix = [];
+        foreach (array_keys(self::BIBLE_VERSIONS) as $code) {
+            $row = is_array($stored[$code] ?? null) ? $stored[$code] : [];
+            $clean = ['enabled' => ($row['enabled'] ?? true) !== false];
+            foreach (self::BIBLE_FEATURES as $feature) {
+                $clean[$feature] = ($row[$feature] ?? true) !== false;
+            }
+            $matrix[$code] = $clean;
+        }
+
+        return $matrix;
+    }
+
+    /** Whether a translation's tab is shown in the reader. Unknown codes are off. */
+    public static function bibleVersionEnabled(string $code): bool
+    {
+        return static::bibleFeatureMatrix()[$code]['enabled'] ?? false;
+    }
+
+    /** Whether a given reader feature button is enabled for a translation. */
+    public static function bibleFeatureEnabled(string $code, string $feature): bool
+    {
+        return static::bibleFeatureMatrix()[$code][$feature] ?? false;
+    }
+
+    /** Codes of the translations whose tab is currently shown, in canonical order. */
+    public static function enabledBibleVersions(): array
+    {
+        return array_values(array_filter(
+            array_keys(self::BIBLE_VERSIONS),
+            fn ($code) => static::bibleVersionEnabled($code),
+        ));
+    }
+
+    /** Validate, clean, and persist the per-version Bible feature matrix. */
+    public static function setBibleFeatures(array $matrix): array
+    {
+        $clean = [];
+        foreach (array_keys(self::BIBLE_VERSIONS) as $code) {
+            $row = is_array($matrix[$code] ?? null) ? $matrix[$code] : [];
+            $entry = ['enabled' => ($row['enabled'] ?? true) !== false];
+            foreach (self::BIBLE_FEATURES as $feature) {
+                $entry[$feature] = ($row[$feature] ?? true) !== false;
+            }
+            $clean[$code] = $entry;
+        }
+        static::set('bible_features', json_encode($clean));
+
+        return $clean;
+    }
+
     /** Read a JSON-encoded list setting, falling back to $default when unset/garbled. */
     public static function getList(string $key, array $default = []): array
     {

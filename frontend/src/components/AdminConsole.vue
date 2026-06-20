@@ -42,6 +42,7 @@ const TABS = [
   { name: "vocabulary",     label: "Vocabulary",       can: () => can("vocabulary.manage"),    load: null },
   { name: "prayer",         label: "Prayer Requests",  can: () => can("prayer_requests.view"), load: loadPrayerRequests },
   { name: "settings",       label: "Settings",         can: () => can("settings.view"),        load: loadSettings },
+  { name: "bible",          label: "Bible",            can: () => can("settings.view"),        load: loadSettings },
   { name: "content-filter", label: "Content Filter",   can: () => isAdminUser.value,           load: loadContentFilter },
   { name: "music-pool",     label: "AI Music Pool",    can: () => can("music_pool.view"),      load: loadMusicTracks },
   { name: "voice-studio",   label: "Voice Studio",     can: () => can("voice_studio.view"),    load: null },
@@ -369,6 +370,57 @@ const saveBibleBgMusicUrl = () =>
   saveSetting("bible_bg_music_url", (settings.value.bible_bg_music_url || "").trim(), "Bible background music updated.");
 const setBibleBgMusicVolume = (v) =>
   saveSetting("bible_bg_music_volume", Number(v), "Bible background music volume updated.");
+
+// Per-version Bible reader feature matrix (show/hide a translation tab + enable
+// or disable each reader feature button). Mirrors Setting::BIBLE_VERSIONS /
+// BIBLE_FEATURES and the controls in BibleReader.vue.
+const BIBLE_VERSIONS = [
+  { code: "kjv", label: "KJV" },
+  { code: "en",  label: "English (BSB)" },
+  { code: "he",  label: "Hebrew (עברית)" },
+  { code: "my",  label: "Burmese (ဗမာ)" },
+  { code: "cfm", label: "Falam" },
+  { code: "cnh", label: "Hakha" },
+  { code: "mrh", label: "Mara" },
+  { code: "hlt", label: "Matu" },
+  { code: "lus", label: "Mizo" },
+  { code: "pck", label: "Paite" },
+  { code: "csy", label: "Sizang" },
+  { code: "td",  label: "Tedim" },
+];
+const BIBLE_FEATURE_COLS = [
+  { key: "enabled",    label: "Show tab" },
+  { key: "listen",     label: "Listen" },
+  { key: "highlight",  label: "Highlight" },
+  { key: "continuous", label: "Continuous" },
+  { key: "music",      label: "Music" },
+  { key: "select",     label: "Select" },
+  { key: "speed",      label: "Speed" },
+  { key: "textsize",   label: "Size" },
+  { key: "color",      label: "Color" },
+];
+// Read a cell, defaulting to enabled when the matrix hasn't loaded a value yet.
+const bibleFeature = (code, key) => settings.value?.bible_features?.[code]?.[key] !== false;
+// Toggle one cell and persist the whole matrix (objects don't suit saveSetting's
+// value-equality check), with optimistic update + rollback on failure.
+async function toggleBibleFeature(code, key) {
+  if (!settings.value || settingsReadOnly.value || savingSettings.value) return;
+  const prev = settings.value.bible_features || {};
+  const next = JSON.parse(JSON.stringify(prev));
+  next[code] = next[code] || {};
+  next[code][key] = !(next[code][key] !== false);
+  settings.value.bible_features = next; // optimistic
+  savingSettings.value = true;
+  try {
+    await api.adminUpdateSettings({ bible_features: next });
+    notice.value = "Bible feature updated.";
+  } catch (e) {
+    settings.value.bible_features = prev; // roll back
+    notice.value = e?.data?.message || "Could not update setting.";
+  } finally {
+    savingSettings.value = false;
+  }
+}
 const setRunpodEnabled = (on) => saveSetting("runpod_enabled", on ? "1" : "0", "Premium GPU usage updated.");
 const setStorageBackend = (backend) => saveSetting("storage_backend", backend, "Storage backend updated.");
 const setAiChordsEnabled = (on) => saveSetting("ai_chords_enabled", on, "AI chord detection updated.");
@@ -1989,245 +2041,6 @@ onUnmounted(() => {
         </div>
 
         <div class="setting-block">
-          <h2>Bible reader voice</h2>
-          <p class="setting-desc">
-            The voice used by the online Bible reader's <strong>🔊 Listen</strong> button,
-            per language. Independent of the live-service narration above — pick a
-            calmer reading voice here if you like. English supports all providers;
-            Burmese &amp; Tedim use the native local MMS-TTS voice.
-          </p>
-          <template v-if="settings">
-            <!-- English -->
-            <p class="setting-desc" style="margin-top:1rem"><strong>English</strong></p>
-            <div class="choice-row">
-              <button
-                v-for="m in narrationModes.filter((x) => x.value !== 'browser')"
-                :key="m.value"
-                type="button"
-                class="choice"
-                :class="{ active: (settings.bible_narration_mode_en || 'edge_tts') === m.value }"
-                :disabled="savingSettings || settingsReadOnly"
-                @click="setBibleNarrationMode('en', m.value)"
-              >
-                <strong>{{ m.label }}</strong>
-                <span>{{ m.hint }}</span>
-              </button>
-            </div>
-            <p class="setting-desc" style="margin-top:0.5rem">
-              English Edge / Voicebox voice follows the live-service voice picked above.
-            </p>
-
-            <!-- Myanmar -->
-            <p class="setting-desc" style="margin-top:1.5rem"><strong>Myanmar (မြန်မာ)</strong></p>
-            <div class="choice-row">
-              <button
-                v-for="m in narrationModesMY"
-                :key="m.value"
-                type="button"
-                class="choice"
-                :class="{ active: (settings.bible_narration_mode_my || 'mms_tts') === m.value }"
-                :disabled="savingSettings || settingsReadOnly"
-                @click="setBibleNarrationMode('my', m.value)"
-              >
-                <strong>{{ m.label }}</strong>
-                <span>{{ m.hint }}</span>
-              </button>
-            </div>
-
-            <!-- Tedim (Zolai) -->
-            <p class="setting-desc" style="margin-top:1.5rem"><strong>Tedim (Zolai)</strong></p>
-            <div class="choice-row">
-              <button
-                v-for="m in narrationModesTD"
-                :key="m.value"
-                type="button"
-                class="choice"
-                :class="{ active: (settings.bible_narration_mode_td || 'mms_tts') === m.value }"
-                :disabled="savingSettings || settingsReadOnly"
-                @click="setBibleNarrationMode('td', m.value)"
-              >
-                <strong>{{ m.label }}</strong>
-                <span>{{ m.hint }}</span>
-              </button>
-            </div>
-
-            <!-- Highlight default -->
-            <p class="setting-desc" style="margin-top:1.5rem"><strong>Verse highlighting default</strong></p>
-            <p class="setting-desc">
-              The starting value for verse highlighting. Each reader can flip it
-              with the <strong>✨ Highlight</strong> switch in the Bible reader —
-              their choice is remembered on their own device and overrides this default.
-            </p>
-            <div class="choice-row">
-              <button
-                type="button"
-                class="choice"
-                :class="{ active: settings.bible_text_highlight_enabled === true }"
-                :disabled="savingSettings || settingsReadOnly"
-                @click="setBibleTextHighlight(true)"
-              >
-                <strong>On by default</strong>
-                <span>New readers see verses highlighted as the chapter is read aloud.</span>
-              </button>
-              <button
-                type="button"
-                class="choice"
-                :class="{ active: settings.bible_text_highlight_enabled === false }"
-                :disabled="savingSettings || settingsReadOnly"
-                @click="setBibleTextHighlight(false)"
-              >
-                <strong>Off by default</strong>
-                <span>New readers start without highlighting (they can still turn it on).</span>
-              </button>
-            </div>
-
-            <!-- Background music during narration -->
-            <p class="setting-desc" style="margin-top:1.5rem"><strong>Background music</strong></p>
-            <p class="setting-desc">
-              Play a soft instrumental track behind the spoken narration. Choose a
-              fixed uploaded track, or let AI compose one per chapter — matched to
-              the passage's mood and the reader's time of day (morning/evening/night).
-            </p>
-            <div class="choice-row">
-              <button
-                type="button"
-                class="choice"
-                :class="{ active: (settings.bible_bg_music_mode || 'off') === 'off' }"
-                :disabled="savingSettings || settingsReadOnly"
-                @click="setBibleBgMusicMode('off')"
-              >
-                <strong>Off</strong>
-                <span>Voice only — no background music.</span>
-              </button>
-              <button
-                type="button"
-                class="choice"
-                :class="{ active: settings.bible_bg_music_mode === 'static' }"
-                :disabled="savingSettings || settingsReadOnly"
-                @click="setBibleBgMusicMode('static')"
-              >
-                <strong>Static MP3</strong>
-                <span>Loop one fixed track you provide below.</span>
-              </button>
-              <button
-                type="button"
-                class="choice"
-                :class="{ active: settings.bible_bg_music_mode === 'ai' }"
-                :disabled="savingSettings || settingsReadOnly"
-                @click="setBibleBgMusicMode('ai')"
-              >
-                <strong>AI generated</strong>
-                <span>Compose per chapter mood + time of day.</span>
-              </button>
-            </div>
-
-            <!-- Static mode: the fixed track URL -->
-            <template v-if="settings.bible_bg_music_mode === 'static'">
-              <p class="setting-desc" style="margin-top:1rem">
-                Direct audio URL (.mp3/.ogg) served over HTTPS with CORS allowed.
-              </p>
-              <div class="bgm-row">
-                <input
-                  v-model="settings.bible_bg_music_url"
-                  type="url"
-                  class="pool-input"
-                  placeholder="https://example.com/ambient.mp3"
-                  :disabled="savingSettings || settingsReadOnly"
-                  @keyup.enter="saveBibleBgMusicUrl"
-                />
-                <button
-                  type="button"
-                  class="choice bgm-save"
-                  :disabled="savingSettings || settingsReadOnly"
-                  @click="saveBibleBgMusicUrl"
-                >
-                  Save
-                </button>
-              </div>
-            </template>
-
-            <!-- AI mode: which engine generates the loop -->
-            <template v-if="settings.bible_bg_music_mode === 'ai'">
-              <p class="setting-desc" style="margin-top:1rem">
-                The first reader to open a chapter at a given time of day triggers a
-                one-off generation (a few minutes on CPU); it's cached and reused for
-                everyone after that, so they hear music on a later visit.
-              </p>
-              <div class="choice-row">
-                <button
-                  type="button"
-                  class="choice"
-                  :class="{ active: (settings.bible_bg_music_engine || 'musicgen') === 'musicgen' }"
-                  :disabled="savingSettings || settingsReadOnly"
-                  @click="setBibleBgMusicEngine('musicgen')"
-                >
-                  <strong>MusicGen (CPU)</strong>
-                  <span>Local, free. Slower on a small box.</span>
-                </button>
-                <button
-                  type="button"
-                  class="choice"
-                  :class="{ active: settings.bible_bg_music_engine === 'local_ai' }"
-                  :disabled="savingSettings || settingsReadOnly"
-                  @click="setBibleBgMusicEngine('local_ai')"
-                >
-                  <strong>Local AI (GPU)</strong>
-                  <span>Same model, uses CUDA when available.</span>
-                </button>
-              </div>
-
-              <!-- Pre-generate the whole matrix so readers never wait -->
-              <p class="setting-desc" style="margin-top:1rem">
-                Generate every track ahead of time (6 moods × 4 times of day) so
-                readers always hear music instantly instead of waiting for the
-                first on-demand build.
-                <template v-if="bibleBgStatus">
-                  <strong>{{ bibleBgStatus.ready }}/{{ bibleBgStatus.total }} ready.</strong>
-                </template>
-              </p>
-              <div class="bgm-row">
-                <button
-                  type="button"
-                  class="choice bgm-save"
-                  :disabled="bibleBgPregenLoading || settingsReadOnly"
-                  @click="pregenerateBibleBg"
-                >
-                  {{ bibleBgPregenLoading ? "Queuing…" : "Generate all tracks" }}
-                </button>
-                <button
-                  type="button"
-                  class="choice bgm-save"
-                  :disabled="bibleBgPregenLoading"
-                  @click="refreshBibleBgStatus"
-                >
-                  Refresh status
-                </button>
-              </div>
-            </template>
-
-            <!-- Volume applies to both static and AI modes -->
-            <label
-              v-if="settings.bible_bg_music_mode && settings.bible_bg_music_mode !== 'off'"
-              class="setting-desc"
-              style="display:block;margin-top:0.75rem"
-            >
-              Volume: {{ Math.round((settings.bible_bg_music_volume ?? 0.15) * 100) }}%
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.05"
-                style="width:100%"
-                :value="settings.bible_bg_music_volume ?? 0.15"
-                :disabled="savingSettings || settingsReadOnly"
-                @change="setBibleBgMusicVolume($event.target.value)"
-              />
-            </label>
-          </template>
-          <p v-else class="setting-desc">Loading…</p>
-        </div>
-
-        <div class="setting-block">
           <h2>Music reuse</h2>
           <p class="setting-desc">
             When on, a worshipper who is new to a mood hears a song already composed
@@ -2507,6 +2320,289 @@ onUnmounted(() => {
               {{ pwSaving ? "Saving…" : "Update password" }}
             </button>
           </div>
+        </div>
+      </section>
+
+      <!-- Dedicated Bible page: every Online Bible reader setting in one place —
+           the per-version feature matrix (show/hide tabs + enable/disable each
+           feature button) plus the reader voice / highlight / background music. -->
+      <section v-else-if="tab === 'bible'" class="settings">
+        <div class="setting-block">
+          <h2>Bible reader features</h2>
+          <p class="setting-desc">
+            Control the online Bible reader per translation. <strong>Show tab</strong>
+            removes a version from the reader entirely (and blocks its API access);
+            the remaining columns enable or disable each feature button —
+            🔊 Listen, ✨ Highlight, 📖 Continuous, 🎵 Music, 📋 Select, playback
+            Speed, Aa text Size and Color themes. Everything is on by default.
+          </p>
+          <template v-if="settings && settings.bible_features">
+            <div class="bible-matrix-wrap">
+              <table class="bible-matrix">
+                <thead>
+                  <tr>
+                    <th class="bm-ver">Version</th>
+                    <th v-for="c in BIBLE_FEATURE_COLS" :key="c.key">{{ c.label }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="v in BIBLE_VERSIONS" :key="v.code">
+                    <th class="bm-ver" scope="row">{{ v.label }}</th>
+                    <td v-for="c in BIBLE_FEATURE_COLS" :key="c.key">
+                      <label class="bm-toggle" :title="`${v.label} — ${c.label}`">
+                        <input
+                          type="checkbox"
+                          :checked="bibleFeature(v.code, c.key)"
+                          :disabled="savingSettings || settingsReadOnly"
+                          @change="toggleBibleFeature(v.code, c.key)"
+                        />
+                      </label>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </template>
+          <p v-else class="setting-desc">Loading…</p>
+        </div>
+
+        <div class="setting-block">
+          <h2>Bible reader voice</h2>
+          <p class="setting-desc">
+            The voice used by the online Bible reader's <strong>🔊 Listen</strong> button,
+            per language. Independent of the live-service narration above — pick a
+            calmer reading voice here if you like. English supports all providers;
+            Burmese &amp; Tedim use the native local MMS-TTS voice.
+          </p>
+          <template v-if="settings">
+            <!-- English -->
+            <p class="setting-desc" style="margin-top:1rem"><strong>English</strong></p>
+            <div class="choice-row">
+              <button
+                v-for="m in narrationModes.filter((x) => x.value !== 'browser')"
+                :key="m.value"
+                type="button"
+                class="choice"
+                :class="{ active: (settings.bible_narration_mode_en || 'edge_tts') === m.value }"
+                :disabled="savingSettings || settingsReadOnly"
+                @click="setBibleNarrationMode('en', m.value)"
+              >
+                <strong>{{ m.label }}</strong>
+                <span>{{ m.hint }}</span>
+              </button>
+            </div>
+            <p class="setting-desc" style="margin-top:0.5rem">
+              English Edge / Voicebox voice follows the live-service voice picked above.
+            </p>
+
+            <!-- Myanmar -->
+            <p class="setting-desc" style="margin-top:1.5rem"><strong>Myanmar (မြန်မာ)</strong></p>
+            <div class="choice-row">
+              <button
+                v-for="m in narrationModesMY"
+                :key="m.value"
+                type="button"
+                class="choice"
+                :class="{ active: (settings.bible_narration_mode_my || 'mms_tts') === m.value }"
+                :disabled="savingSettings || settingsReadOnly"
+                @click="setBibleNarrationMode('my', m.value)"
+              >
+                <strong>{{ m.label }}</strong>
+                <span>{{ m.hint }}</span>
+              </button>
+            </div>
+
+            <!-- Tedim (Zolai) -->
+            <p class="setting-desc" style="margin-top:1.5rem"><strong>Tedim (Zolai)</strong></p>
+            <div class="choice-row">
+              <button
+                v-for="m in narrationModesTD"
+                :key="m.value"
+                type="button"
+                class="choice"
+                :class="{ active: (settings.bible_narration_mode_td || 'mms_tts') === m.value }"
+                :disabled="savingSettings || settingsReadOnly"
+                @click="setBibleNarrationMode('td', m.value)"
+              >
+                <strong>{{ m.label }}</strong>
+                <span>{{ m.hint }}</span>
+              </button>
+            </div>
+
+            <!-- Highlight default -->
+            <p class="setting-desc" style="margin-top:1.5rem"><strong>Verse highlighting default</strong></p>
+            <p class="setting-desc">
+              The starting value for verse highlighting. Each reader can flip it
+              with the <strong>✨ Highlight</strong> switch in the Bible reader —
+              their choice is remembered on their own device and overrides this default.
+            </p>
+            <div class="choice-row">
+              <button
+                type="button"
+                class="choice"
+                :class="{ active: settings.bible_text_highlight_enabled === true }"
+                :disabled="savingSettings || settingsReadOnly"
+                @click="setBibleTextHighlight(true)"
+              >
+                <strong>On by default</strong>
+                <span>New readers see verses highlighted as the chapter is read aloud.</span>
+              </button>
+              <button
+                type="button"
+                class="choice"
+                :class="{ active: settings.bible_text_highlight_enabled === false }"
+                :disabled="savingSettings || settingsReadOnly"
+                @click="setBibleTextHighlight(false)"
+              >
+                <strong>Off by default</strong>
+                <span>New readers start without highlighting (they can still turn it on).</span>
+              </button>
+            </div>
+
+            <!-- Background music during narration -->
+            <p class="setting-desc" style="margin-top:1.5rem"><strong>Background music</strong></p>
+            <p class="setting-desc">
+              Play a soft instrumental track behind the spoken narration. Choose a
+              fixed uploaded track, or let AI compose one per chapter — matched to
+              the passage's mood and the reader's time of day (morning/evening/night).
+            </p>
+            <div class="choice-row">
+              <button
+                type="button"
+                class="choice"
+                :class="{ active: (settings.bible_bg_music_mode || 'off') === 'off' }"
+                :disabled="savingSettings || settingsReadOnly"
+                @click="setBibleBgMusicMode('off')"
+              >
+                <strong>Off</strong>
+                <span>Voice only — no background music.</span>
+              </button>
+              <button
+                type="button"
+                class="choice"
+                :class="{ active: settings.bible_bg_music_mode === 'static' }"
+                :disabled="savingSettings || settingsReadOnly"
+                @click="setBibleBgMusicMode('static')"
+              >
+                <strong>Static MP3</strong>
+                <span>Loop one fixed track you provide below.</span>
+              </button>
+              <button
+                type="button"
+                class="choice"
+                :class="{ active: settings.bible_bg_music_mode === 'ai' }"
+                :disabled="savingSettings || settingsReadOnly"
+                @click="setBibleBgMusicMode('ai')"
+              >
+                <strong>AI generated</strong>
+                <span>Compose per chapter mood + time of day.</span>
+              </button>
+            </div>
+
+            <!-- Static mode: the fixed track URL -->
+            <template v-if="settings.bible_bg_music_mode === 'static'">
+              <p class="setting-desc" style="margin-top:1rem">
+                Direct audio URL (.mp3/.ogg) served over HTTPS with CORS allowed.
+              </p>
+              <div class="bgm-row">
+                <input
+                  v-model="settings.bible_bg_music_url"
+                  type="url"
+                  class="pool-input"
+                  placeholder="https://example.com/ambient.mp3"
+                  :disabled="savingSettings || settingsReadOnly"
+                  @keyup.enter="saveBibleBgMusicUrl"
+                />
+                <button
+                  type="button"
+                  class="choice bgm-save"
+                  :disabled="savingSettings || settingsReadOnly"
+                  @click="saveBibleBgMusicUrl"
+                >
+                  Save
+                </button>
+              </div>
+            </template>
+
+            <!-- AI mode: which engine generates the loop -->
+            <template v-if="settings.bible_bg_music_mode === 'ai'">
+              <p class="setting-desc" style="margin-top:1rem">
+                The first reader to open a chapter at a given time of day triggers a
+                one-off generation (a few minutes on CPU); it's cached and reused for
+                everyone after that, so they hear music on a later visit.
+              </p>
+              <div class="choice-row">
+                <button
+                  type="button"
+                  class="choice"
+                  :class="{ active: (settings.bible_bg_music_engine || 'musicgen') === 'musicgen' }"
+                  :disabled="savingSettings || settingsReadOnly"
+                  @click="setBibleBgMusicEngine('musicgen')"
+                >
+                  <strong>MusicGen (CPU)</strong>
+                  <span>Local, free. Slower on a small box.</span>
+                </button>
+                <button
+                  type="button"
+                  class="choice"
+                  :class="{ active: settings.bible_bg_music_engine === 'local_ai' }"
+                  :disabled="savingSettings || settingsReadOnly"
+                  @click="setBibleBgMusicEngine('local_ai')"
+                >
+                  <strong>Local AI (GPU)</strong>
+                  <span>Same model, uses CUDA when available.</span>
+                </button>
+              </div>
+
+              <!-- Pre-generate the whole matrix so readers never wait -->
+              <p class="setting-desc" style="margin-top:1rem">
+                Generate every track ahead of time (6 moods × 4 times of day) so
+                readers always hear music instantly instead of waiting for the
+                first on-demand build.
+                <template v-if="bibleBgStatus">
+                  <strong>{{ bibleBgStatus.ready }}/{{ bibleBgStatus.total }} ready.</strong>
+                </template>
+              </p>
+              <div class="bgm-row">
+                <button
+                  type="button"
+                  class="choice bgm-save"
+                  :disabled="bibleBgPregenLoading || settingsReadOnly"
+                  @click="pregenerateBibleBg"
+                >
+                  {{ bibleBgPregenLoading ? "Queuing…" : "Generate all tracks" }}
+                </button>
+                <button
+                  type="button"
+                  class="choice bgm-save"
+                  :disabled="bibleBgPregenLoading"
+                  @click="refreshBibleBgStatus"
+                >
+                  Refresh status
+                </button>
+              </div>
+            </template>
+
+            <!-- Volume applies to both static and AI modes -->
+            <label
+              v-if="settings.bible_bg_music_mode && settings.bible_bg_music_mode !== 'off'"
+              class="setting-desc"
+              style="display:block;margin-top:0.75rem"
+            >
+              Volume: {{ Math.round((settings.bible_bg_music_volume ?? 0.15) * 100) }}%
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                style="width:100%"
+                :value="settings.bible_bg_music_volume ?? 0.15"
+                :disabled="savingSettings || settingsReadOnly"
+                @change="setBibleBgMusicVolume($event.target.value)"
+              />
+            </label>
+          </template>
+          <p v-else class="setting-desc">Loading…</p>
         </div>
       </section>
 
@@ -3101,6 +3197,17 @@ onUnmounted(() => {
 .bgm-row { display: flex; gap: 0.5rem; align-items: stretch; }
 .bgm-row .pool-input { flex: 1; }
 .bgm-save { flex: 0 0 auto; padding: 0.45rem 1.1rem; cursor: pointer; }
+
+/* Per-version Bible feature matrix: a scrollable grid of show/enable checkboxes. */
+.bible-matrix-wrap { overflow-x: auto; margin-top: 0.5rem; }
+.bible-matrix { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
+.bible-matrix th, .bible-matrix td { padding: 0.4rem 0.6rem; text-align: center; border-bottom: 1px solid var(--border); }
+.bible-matrix thead th { font-weight: 600; color: var(--text-muted); white-space: nowrap; }
+.bible-matrix th.bm-ver { text-align: left; white-space: nowrap; font-weight: 600; }
+.bible-matrix tbody tr:hover { background: var(--surface); }
+.bm-toggle { display: inline-flex; cursor: pointer; }
+.bm-toggle input { width: 1.05rem; height: 1.05rem; cursor: pointer; accent-color: var(--primary); }
+.bm-toggle input:disabled { cursor: default; }
 .pool-lyrics { width: 100%; margin-top: 0.55rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); padding: 0.55rem 0.6rem; font: inherit; resize: vertical; }
 .pool-actions { display: flex; gap: 0.45rem; margin-top: 0.65rem; }
 

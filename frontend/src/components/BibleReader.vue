@@ -88,7 +88,25 @@ const config = ref({
   bg_music_mode: "off",
   bg_music_url: "",
   bg_music_volume: 0.15,
+  // Admin-controlled: which translation tabs are shown, and the per-version
+  // feature-button matrix. Empty/missing means "show everything" (pre-config).
+  versions: [],
+  features: {},
 });
+
+// Translation tabs the admin has left enabled. When the admin hasn't saved a
+// version list yet (fresh install) every tab is shown, preserving old behavior.
+const visibleLangs = computed(() => {
+  const allowed = config.value.versions;
+  if (!Array.isArray(allowed) || allowed.length === 0) return LANGS;
+  return LANGS.filter((l) => allowed.includes(l.code));
+});
+
+// Whether a given reader feature button is enabled for the active translation.
+// Defaults to on when the admin hasn't configured the matrix for this version.
+function feat(name) {
+  return config.value.features?.[lang.value]?.[name] !== false;
+}
 // In AI mode the loop URL is resolved per chapter from the backend (cached or
 // freshly generated); in static mode it's the admin's fixed URL.
 const aiMusicUrl = ref("");
@@ -464,8 +482,16 @@ watch(lang, async () => {
 });
 
 onMounted(() => {
-  loadBooks();
-  api.bibleConfig().then((c) => { config.value = c; }).catch(() => {});
+  api.bibleConfig().then((c) => {
+    config.value = c;
+    // If the admin has hidden the default translation, fall back to the first
+    // visible one before (re)loading its table of contents.
+    if (!visibleLangs.value.some((l) => l.code === lang.value) && visibleLangs.value.length) {
+      lang.value = visibleLangs.value[0].code; // triggers the lang watcher → loadBooks()
+    } else {
+      loadBooks();
+    }
+  }).catch(() => { loadBooks(); });
 });
 </script>
 
@@ -481,7 +507,7 @@ onMounted(() => {
       </div>
       <div class="lang-tabs" role="group" aria-label="Translation">
         <button
-          v-for="l in LANGS"
+          v-for="l in visibleLangs"
           :key="l.code"
           class="lang-btn"
           :class="{ active: lang === l.code }"
@@ -549,7 +575,7 @@ onMounted(() => {
       <div v-show="controlsOpen" class="reader-collapsible">
         <div class="reader-bar-right">
           <button
-            v-if="canNarrate"
+            v-if="canNarrate && feat('listen')"
             class="listen-btn"
             :disabled="loadingAudio || loadingChapter"
             :aria-label="loadingAudio ? 'Preparing audio' : 'Listen'"
@@ -560,6 +586,7 @@ onMounted(() => {
             <span class="btn-label"> {{ loadingAudio ? 'Preparing…' : 'Listen' }}</span>
           </button>
           <button
+            v-if="feat('highlight')"
             type="button"
             class="icon-toggle"
             :class="{ active: highlightEnabled }"
@@ -571,7 +598,7 @@ onMounted(() => {
             <span aria-hidden="true">✨</span><span class="btn-label"> Highlight: {{ highlightEnabled ? 'On' : 'Off' }}</span>
           </button>
           <button
-            v-if="canNarrate"
+            v-if="canNarrate && feat('continuous')"
             type="button"
             class="icon-toggle"
             :class="{ active: continuousRead }"
@@ -583,7 +610,7 @@ onMounted(() => {
             <span aria-hidden="true">📖</span><span class="btn-label"> Continuous: {{ continuousRead ? 'On' : 'Off' }}</span>
           </button>
           <button
-            v-if="musicAvailable"
+            v-if="musicAvailable && feat('music')"
             type="button"
             class="icon-toggle"
             :class="{ active: bgMusicPref }"
@@ -595,6 +622,7 @@ onMounted(() => {
             <span aria-hidden="true">🎵</span><span class="btn-label"> Music: {{ bgMusicPref ? 'On' : 'Off' }}</span>
           </button>
           <button
+            v-if="feat('select')"
             type="button"
             class="icon-toggle"
             :class="{ active: selectMode }"
@@ -611,7 +639,8 @@ onMounted(() => {
         </div>
 
         <!-- Reading comfort: text size + peaceful background colour. -->
-        <div class="reader-prefs">
+        <div v-if="feat('textsize') || feat('color')" class="reader-prefs">
+          <template v-if="feat('textsize')">
           <span class="prefs-label" aria-hidden="true">Aa</span>
           <button
             v-for="s in TEXT_SIZES"
@@ -621,7 +650,9 @@ onMounted(() => {
             :class="{ active: textSize === s.id }"
             @click="setTextSize(s.id)"
           >{{ s.label }}</button>
-          <span class="prefs-sep" aria-hidden="true">·</span>
+          </template>
+          <span v-if="feat('textsize') && feat('color')" class="prefs-sep" aria-hidden="true">·</span>
+          <template v-if="feat('color')">
           <span class="prefs-label">Color</span>
           <button
             v-for="t in BG_THEMES"
@@ -634,6 +665,7 @@ onMounted(() => {
             :title="t.label"
             @click="setBgTheme(t.id)"
           >{{ t.id === 'default' ? 'A' : '' }}</button>
+          </template>
         </div>
       </div>
       <!-- /reader-collapsible -->
@@ -661,7 +693,7 @@ onMounted(() => {
           preload="auto"
           aria-hidden="true"
         ></audio>
-        <div class="speed-row" role="group" aria-label="Playback speed">
+        <div v-if="feat('speed')" class="speed-row" role="group" aria-label="Playback speed">
           <span class="speed-label">Speed</span>
           <button
             v-for="s in SPEEDS"

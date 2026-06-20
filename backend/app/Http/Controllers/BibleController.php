@@ -37,6 +37,15 @@ class BibleController extends Controller
         return in_array($lang, self::LANGS, true) ? $lang : 'en';
     }
 
+    /**
+     * Reject access to a translation the admin has hidden (its tab is off in the
+     * Bible feature matrix), so a disabled version can't be reached via the API.
+     */
+    private function assertVersionEnabled(string $lang): void
+    {
+        abort_unless(Setting::bibleVersionEnabled($lang), 404, 'Translation not available.');
+    }
+
     /** Public reader config — which languages can be narrated + highlight toggle. */
     public function config()
     {
@@ -51,6 +60,9 @@ class BibleController extends Controller
             'bg_music_mode'   => Setting::bibleBgMusicMode(),
             'bg_music_url'    => Setting::bibleBgMusicUrl(),
             'bg_music_volume' => Setting::bibleBgMusicVolume(),
+            // Which translation tabs are shown + the per-version feature button matrix.
+            'versions'        => Setting::enabledBibleVersions(),
+            'features'        => Setting::bibleFeatureMatrix(),
         ];
     }
 
@@ -68,6 +80,8 @@ class BibleController extends Controller
             'chapter' => ['required', 'integer', 'min:1'],
             'hour'    => ['nullable', 'integer', 'between:0,23'],
         ]);
+
+        $this->assertVersionEnabled($data['lang'] ?? 'en');
 
         if (Setting::bibleBgMusicMode() !== 'ai') {
             abort(409, 'AI background music is not enabled.');
@@ -94,6 +108,7 @@ class BibleController extends Controller
     public function books(Request $request)
     {
         $lang = $this->lang($request);
+        $this->assertVersionEnabled($lang);
 
         return Cache::remember("bible:books:{$lang}", now()->addDay(), function () use ($lang) {
             $resp = Http::timeout(10)->get("{$this->base()}/bible/books", ['lang' => $lang]);
@@ -115,6 +130,8 @@ class BibleController extends Controller
         $lang    = $data['lang'] ?? 'en';
         $book    = (int) $data['book'];
         $chapter = (int) $data['chapter'];
+
+        $this->assertVersionEnabled($lang);
 
         return Cache::remember("bible:ch:{$lang}:{$book}:{$chapter}", now()->addDay(), function () use ($lang, $book, $chapter) {
             $resp = Http::timeout(10)->get("{$this->base()}/bible/chapter", [
@@ -149,6 +166,8 @@ class BibleController extends Controller
         $book    = (int) $data['book'];
         $chapter = (int) $data['chapter'];
         $gender  = $data['gender'] ?? 'female';
+
+        $this->assertVersionEnabled($lang);
 
         // Bible-specific voice (falls back to the service voice when unset).
         $mode = Setting::bibleNarrationMode($lang);

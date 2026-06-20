@@ -199,8 +199,8 @@ def book_title(reference: str, lang: str = "en") -> str:
 # list books, count chapters, fetch a chapter's verses — in any served language.
 
 _LANGS = (
-    "en", "kjv", "my", "td", "he",
-    "cfm", "cnh", "lus", "pck", "csy", "mrh", "hlt",
+    "kjv", "en", "he", "my",
+    "cfm", "cnh", "mrh", "hlt", "lus", "pck", "csy", "td",
 )
 
 

@@ -7,21 +7,23 @@
 import { ref, computed, watch, onMounted } from "vue";
 import { api } from "../composables/useApi.js";
 
+// Tab order: KJV, English, Hebrew, Burmese first, then the Chin/Zo Bibles
+// alphabetically by label.
 const LANGS = [
-  { code: "en", label: "English", note: "Berean Standard Bible (2020)" },
   { code: "kjv", label: "KJV", note: "King James Version" },
-  { code: "my", label: "ဗမာ", note: "Judson 1835" },
-  { code: "td", label: "Tedim", note: "Lai Siangtho 1932" },
+  { code: "en", label: "English", note: "Berean Standard Bible (2020)" },
   // Hebrew Tanakh (Westminster Leningrad Codex) — Old Testament only, RTL.
   { code: "he", label: "עברית", note: "Westminster Leningrad Codex (Tanakh)" },
-  // Chin/Zo language Bibles from the Bible Society of Myanmar. Latin script.
+  { code: "my", label: "ဗမာ", note: "Judson 1835" },
+  // Chin/Zo language Bibles from the Bible Society of Myanmar, A→Z. Latin script.
   { code: "cfm", label: "Falam", note: "Baibal Thianghlim (Falam, 1973)" },
   { code: "cnh", label: "Hakha", note: "Baibal Thiang (Hakha, 1920)" },
+  { code: "mrh", label: "Mara", note: "Khazopa Chabu Pathaipa (Mara, 2011)" },
+  { code: "hlt", label: "Matu", note: "Matu Bible (2009)" },
   { code: "lus", label: "Mizo", note: "Pathian Lehkhabu Thianghlim (Mizo, 1917)" },
   { code: "pck", label: "Paite", note: "Paite Bible (1971)" },
   { code: "csy", label: "Sizang", note: "Lai Siangtho (Sizang, 1932)" },
-  { code: "mrh", label: "Mara", note: "Khazopa Chabu Pathaipa (Mara, 2011)" },
-  { code: "hlt", label: "Matu", note: "Matu Bible (2009)" },
+  { code: "td", label: "Tedim", note: "Lai Siangtho 1932" },
 ];
 
 // Right-to-left scripts (Hebrew) need the reader heading and verse body laid out
@@ -475,7 +477,7 @@ onMounted(() => {
       <a href="#" class="back-link">&#8592; Back to worship</a>
       <div class="bible-title-block">
         <h1 class="bible-title">📖 Online Bible</h1>
-        <p class="bible-sub">Read Scripture in English (Berean Standard Bible, 2020 &amp; King James Version), Burmese (Judson, 1835), Tedim (Lai Siangtho, 1932) &amp; Hebrew (Westminster Leningrad Codex — Tanakh) — public-domain translations.</p>
+        <p class="bible-sub">Read Scripture in English (King James Version &amp; Berean Standard Bible, 2020), Hebrew (Westminster Leningrad Codex — Tanakh), Burmese (Judson, 1835) and the Chin/Zo languages (Falam, Hakha, Mara, Matu, Mizo, Paite, Sizang, Tedim) — public-domain translations.</p>
       </div>
       <div class="lang-tabs" role="group" aria-label="Translation">
         <button

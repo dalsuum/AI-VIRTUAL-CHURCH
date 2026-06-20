@@ -1047,6 +1047,12 @@ class AdminController extends Controller
         if (array_key_exists('bible_text_highlight_enabled', $data)) {
             Setting::set('bible_text_highlight_enabled', $data['bible_text_highlight_enabled'] ? '1' : '0');
         }
+        if (array_key_exists('bible_bg_music_url', $data)) {
+            Setting::set('bible_bg_music_url', trim((string) $data['bible_bg_music_url']));
+        }
+        if (array_key_exists('bible_bg_music_volume', $data)) {
+            Setting::set('bible_bg_music_volume', (string) round((float) $data['bible_bg_music_volume'], 2));
+        }
         foreach (['narration_en', 'narration_my', 'narration_td'] as $key) {
             if (array_key_exists($key, $data)) {
                 Setting::set($key, $data[$key] ? '1' : '0');
@@ -1131,6 +1137,8 @@ class AdminController extends Controller
             'bible_narration_mode_my' => Setting::bibleNarrationMode('my'),
             'bible_narration_mode_td' => Setting::bibleNarrationMode('td'),
             'bible_text_highlight_enabled' => Setting::bibleTextHighlightEnabled(),
+            'bible_bg_music_url' => Setting::bibleBgMusicUrl(),
+            'bible_bg_music_volume' => Setting::bibleBgMusicVolume(),
             'runpod_enabled'     => Setting::get('runpod_enabled', '0') === '1',
             // Per-language narration: all on by default.
             // Myanmar/Tedim: edge_tts = Microsoft cloud; mms_tts = local MMS-TTS.

@@ -26,9 +26,32 @@ const audioUrl = ref("");
 const loadingAudio = ref(false);
 const audioError = ref("");
 const audioEl = ref(null);
+const bgMusicEl = ref(null);
 
-// Reader config from admin: which languages can be narrated + highlight toggle.
-const config = ref({ narratable: {}, text_highlight: true });
+// Reader config from admin: which languages can be narrated + highlight toggle
+// + optional looping background music played softly behind the narration.
+const config = ref({ narratable: {}, text_highlight: true, bg_music_url: "", bg_music_volume: 0.15 });
+const bgMusicUrl = computed(() => config.value.bg_music_url || "");
+const bgMusicVolume = computed(() => {
+  const v = Number(config.value.bg_music_volume);
+  return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0.15;
+});
+
+// Keep the background track in lockstep with the narration: it starts, pauses
+// and stops with the spoken audio so the two never drift or play alone.
+function syncBgMusic(action) {
+  const bg = bgMusicEl.value;
+  if (!bg || !bgMusicUrl.value) return;
+  if (action === "play") {
+    bg.volume = bgMusicVolume.value;
+    bg.play().catch(() => {});
+  } else if (action === "pause") {
+    bg.pause();
+  } else if (action === "stop") {
+    bg.pause();
+    bg.currentTime = 0;
+  }
+}
 const canNarrate = computed(() => config.value.narratable?.[lang.value] !== false);
 const highlightEnabled = computed(() => config.value.text_highlight !== false);
 
@@ -127,6 +150,7 @@ function resetAudio() {
   audioUrl.value = "";
   audioError.value = "";
   highlightedVerse.value = -1;
+  syncBgMusic("stop");
 }
 
 async function listen() {
@@ -242,7 +266,17 @@ onMounted(() => {
           autoplay
           class="audio-player"
           @timeupdate="onAudioTime"
-          @ended="highlightedVerse = -1"
+          @play="syncBgMusic('play')"
+          @pause="syncBgMusic('pause')"
+          @ended="highlightedVerse = -1; syncBgMusic('stop')"
+        ></audio>
+        <audio
+          v-if="bgMusicUrl"
+          ref="bgMusicEl"
+          :src="bgMusicUrl"
+          loop
+          preload="auto"
+          aria-hidden="true"
         ></audio>
       </div>
       <p v-if="audioError" class="audio-error">{{ audioError }}</p>

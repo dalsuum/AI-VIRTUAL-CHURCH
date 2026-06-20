@@ -33,6 +33,9 @@ class UpdateSettingsRequest extends FormRequest
             'bible_narration_mode_td' => ['sometimes', 'string', 'in:edge_tts,mms_tts,off'],
             // Highlight verses in the Bible reader as narration plays.
             'bible_text_highlight_enabled' => ['sometimes', 'boolean'],
+            // Optional looping background music behind Bible narration.
+            'bible_bg_music_url'    => ['sometimes', 'nullable', 'string', 'url', 'max:2048'],
+            'bible_bg_music_volume' => ['sometimes', 'numeric', 'min:0', 'max:1'],
             // When on, a worshipper new to a mood is served a random song already
             // composed for it instead of generating (and paying for) a fresh one.
             'music_reuse'     => ['sometimes', 'boolean'],

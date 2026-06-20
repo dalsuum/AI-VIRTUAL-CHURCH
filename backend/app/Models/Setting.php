@@ -194,6 +194,23 @@ class Setting extends Model
         return static::get('bible_text_highlight_enabled', '1') === '1';
     }
 
+    /**
+     * Optional looping background music played softly behind Bible narration.
+     * Empty string disables the feature (the default).
+     */
+    public static function bibleBgMusicUrl(): string
+    {
+        $url = trim((string) static::get('bible_bg_music_url', ''));
+        return filter_var($url, FILTER_VALIDATE_URL) ? $url : '';
+    }
+
+    /** Background-music volume (0.0–1.0) for Bible narration; defaults to a gentle 0.15. */
+    public static function bibleBgMusicVolume(): float
+    {
+        $vol = (float) static::get('bible_bg_music_volume', '0.15');
+        return max(0.0, min(1.0, $vol));
+    }
+
     /** Read a JSON-encoded list setting, falling back to $default when unset/garbled. */
     public static function getList(string $key, array $default = []): array
     {

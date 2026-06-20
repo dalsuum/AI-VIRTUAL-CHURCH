@@ -337,6 +337,10 @@ const setTextHighlightEnabled = (on) => saveSetting("text_highlight_enabled", on
 // Online Bible reader ("Listen" button) — its own per-language voice + highlight.
 const setBibleNarrationMode = (lang, mode) => saveSetting(`bible_narration_mode_${lang}`, mode, "Bible narration voice updated.");
 const setBibleTextHighlight = (on) => saveSetting("bible_text_highlight_enabled", on, "Bible highlighting updated.");
+const saveBibleBgMusicUrl = () =>
+  saveSetting("bible_bg_music_url", (settings.value.bible_bg_music_url || "").trim(), "Bible background music updated.");
+const setBibleBgMusicVolume = (v) =>
+  saveSetting("bible_bg_music_volume", Number(v), "Bible background music volume updated.");
 const setRunpodEnabled = (on) => saveSetting("runpod_enabled", on ? "1" : "0", "Premium GPU usage updated.");
 const setStorageBackend = (backend) => saveSetting("storage_backend", backend, "Storage backend updated.");
 const setAiChordsEnabled = (on) => saveSetting("ai_chords_enabled", on, "AI chord detection updated.");
@@ -2038,6 +2042,44 @@ onUnmounted(() => {
                 <span>Play audio without highlighting.</span>
               </button>
             </div>
+
+            <!-- Background music during narration -->
+            <p class="setting-desc" style="margin-top:1.5rem"><strong>Background music</strong></p>
+            <p class="setting-desc">
+              Optional instrumental track looped softly behind the spoken narration.
+              Paste a direct audio URL (.mp3/.ogg); leave blank to play voice only.
+            </p>
+            <div class="bgm-row">
+              <input
+                v-model="settings.bible_bg_music_url"
+                type="url"
+                class="pool-input"
+                placeholder="https://example.com/ambient.mp3"
+                :disabled="savingSettings || settingsReadOnly"
+                @keyup.enter="saveBibleBgMusicUrl"
+              />
+              <button
+                type="button"
+                class="choice bgm-save"
+                :disabled="savingSettings || settingsReadOnly"
+                @click="saveBibleBgMusicUrl"
+              >
+                Save
+              </button>
+            </div>
+            <label class="setting-desc" style="display:block;margin-top:0.75rem">
+              Volume: {{ Math.round((settings.bible_bg_music_volume ?? 0.15) * 100) }}%
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                style="width:100%"
+                :value="settings.bible_bg_music_volume ?? 0.15"
+                :disabled="savingSettings || settingsReadOnly || !settings.bible_bg_music_url"
+                @change="setBibleBgMusicVolume($event.target.value)"
+              />
+            </label>
           </template>
           <p v-else class="setting-desc">Loading…</p>
         </div>
@@ -2913,6 +2955,9 @@ onUnmounted(() => {
 .pool-grid { display: grid; grid-template-columns: 1fr 120px 140px 1.4fr 1.4fr 1fr; gap: 0.55rem; }
 .pool-input { width: 100%; padding: 0.45rem 0.6rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); font: inherit; }
 .pool-input:focus, .pool-lyrics:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-soft); }
+.bgm-row { display: flex; gap: 0.5rem; align-items: stretch; }
+.bgm-row .pool-input { flex: 1; }
+.bgm-save { flex: 0 0 auto; padding: 0.45rem 1.1rem; cursor: pointer; }
 .pool-lyrics { width: 100%; margin-top: 0.55rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); padding: 0.55rem 0.6rem; font: inherit; resize: vertical; }
 .pool-actions { display: flex; gap: 0.45rem; margin-top: 0.65rem; }
 

@@ -40,8 +40,10 @@ class BibleController extends Controller
         }
 
         return [
-            'narratable'     => $narratable,
-            'text_highlight' => Setting::bibleTextHighlightEnabled(),
+            'narratable'      => $narratable,
+            'text_highlight'  => Setting::bibleTextHighlightEnabled(),
+            'bg_music_url'    => Setting::bibleBgMusicUrl(),
+            'bg_music_volume' => Setting::bibleBgMusicVolume(),
         ];
     }
 
@@ -112,9 +114,12 @@ class BibleController extends Controller
         }
 
         // The worker's `voice` field is the Edge voice name for edge_tts, or the
-        // Voicebox engine for voicebox; other providers ignore it.
+        // Voicebox engine for voicebox; other providers ignore it. Edge voices are
+        // language-specific — an English voice cannot synthesize Burmese/Tedim text
+        // (the worker returns "No audio was received"), so resolve per-language the
+        // same way the service pipeline does in agent_orchestrator._narrate_voice().
         $voice = match ($mode) {
-            'edge_tts' => Setting::get('edge_tts_voice', 'en-US-AriaNeural'),
+            'edge_tts' => $this->edgeVoice($lang, $gender),
             'voicebox' => Setting::get('voicebox_engine', 'qwen'),
             default    => '',
         };
@@ -136,5 +141,20 @@ class BibleController extends Controller
         abort_unless($resp->successful(), 502, 'Narration service unavailable');
 
         return $resp->json();
+    }
+
+    /**
+     * Resolve the Microsoft Edge TTS voice for a language/gender. Burmese has
+     * native my-MM neural voices; Tedim has no Zolai voice so it uses an English
+     * phonetic read; English uses the admin-selected voice. Mirrors the service
+     * pipeline (workers/agent_orchestrator.py::_narrate_voice).
+     */
+    private function edgeVoice(string $lang, string $gender): string
+    {
+        return match ($lang) {
+            'my'    => $gender === 'male' ? 'my-MM-ThihaNeural' : 'my-MM-NilarNeural',
+            'td'    => $gender === 'male' ? 'en-US-GuyNeural' : 'en-US-AriaNeural',
+            default => Setting::get('edge_tts_voice', 'en-US-AriaNeural'),
+        };
     }
 }

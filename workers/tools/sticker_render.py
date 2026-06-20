@@ -84,10 +84,14 @@ STYLES = [
     "flat modern vector illustration, minimal clean shading",
 ]
 PROMPT = (
-    "Repaint this photo as a cute die-cut sticker portrait{occasion} in {style}. "
-    "Keep the same people, faces, hairstyle, clothing and pose; head and "
-    "shoulders. Plain solid white background. No text, no border. "
-    "Friendly and warm."
+    "Restyle this photo as a cute die-cut sticker portrait{occasion} in {style}. "
+    "CRITICAL: preserve each person's exact facial identity and likeness — keep "
+    "the same face shape, eyes, nose, mouth, eyebrows, skin tone, facial hair, "
+    "glasses, hairstyle and expression so they remain clearly recognisable as "
+    "the same individual. Apply the artistic style ONLY to rendering/texture, "
+    "never change facial features, proportions or who the person is. Keep the "
+    "same clothing and pose; head and shoulders. Plain solid white background. "
+    "No text, no border. Friendly and warm."
 )
 
 DECOR = ["❤️", "\U0001f49b", "✨", "⭐", "\U0001f31f", "\U0001fa77"]

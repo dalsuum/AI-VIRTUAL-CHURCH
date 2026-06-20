@@ -1134,8 +1134,12 @@ Isolated from the worship pipeline so it can be removed cleanly.
   Both `/stickers/detect` and `/stickers/render` return **404 when the feature
   is disabled**, so no upload/CPU work happens unless an admin has turned it on.
 - **AI repaint (img2img)**: the sticker is repainted via **OpenRouter** using
-  Google's **`google/gemini-2.5-flash-image`** model with a watercolour style
-  prompt, driven by the existing `OPENROUTER_API_KEY` (`workers/.env`).
+  Google's **`google/gemini-2.5-flash-image`** model, driven by the existing
+  `OPENROUTER_API_KEY` (`workers/.env`). The prompt **rotates through a set of
+  distinct art styles** (`STYLES`) so consecutive renders look different, while
+  **strongly preserving each person's facial identity/likeness** (face shape,
+  eyes, nose, mouth, skin tone, glasses, hairstyle, expression) — style is
+  applied to rendering/texture only, never to facial features.
   **One image per job (~$0.02–0.04)** to keep cost low — change `COUNT` in
   `sticker_render.py` + `StickerController` to make more. If the key is missing
   or a call fails, it falls back to a cutout of the **real** photo so the tool

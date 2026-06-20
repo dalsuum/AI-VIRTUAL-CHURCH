@@ -42,6 +42,13 @@ function setSpeed(rate) {
   playbackRate.value = rate;
   localStorage.setItem(SPEED_KEY, String(rate));
   applyRate();
+  // Background music is a fixed-tempo loop, so it only fits at normal speed.
+  // Off-normal: stop it. Back to normal while narration is still playing: resume.
+  if (rate !== 1) {
+    syncBgMusic("stop");
+  } else if (audioEl.value && !audioEl.value.paused) {
+    syncBgMusic("play");
+  }
 }
 
 // Reader config from admin: which languages can be narrated + highlight toggle
@@ -85,12 +92,32 @@ const bgMusicVolume = computed(() => {
   return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0.15;
 });
 
+// Whether the admin has any background music configured (static URL or AI mode).
+// The reader's own on/off button only appears when there's music to control.
+const musicAvailable = computed(() => (config.value.bg_music_mode || "off") !== "off");
+
+// Background music is also a personal preference, remembered per-device: even
+// when the admin enables it, a reader can mute it for themselves. Defaults to on.
+const BGM_PREF_KEY = "bible_bg_music";
+const bgMusicPref = ref(localStorage.getItem(BGM_PREF_KEY) !== "0");
+function toggleBgMusic() {
+  bgMusicPref.value = !bgMusicPref.value;
+  localStorage.setItem(BGM_PREF_KEY, bgMusicPref.value ? "1" : "0");
+  if (!bgMusicPref.value) {
+    syncBgMusic("stop");
+  } else if (audioEl.value && !audioEl.value.paused) {
+    syncBgMusic("play"); // turned back on mid-narration → resume under the voice
+  }
+}
+
 // Keep the background track in lockstep with the narration: it starts, pauses
 // and stops with the spoken audio so the two never drift or play alone.
 function syncBgMusic(action) {
   const bg = bgMusicEl.value;
   if (!bg || !bgMusicUrl.value) return;
   if (action === "play") {
+    if (!bgMusicPref.value) return;       // reader muted the background music
+    if (playbackRate.value !== 1) return; // music only fits at normal speed
     bg.volume = bgMusicVolume.value;
     bg.play().catch(() => {});
   } else if (action === "pause") {
@@ -305,6 +332,9 @@ onMounted(() => {
 
     <!-- Chapter reader -->
     <div v-else class="reader">
+      <!-- Frozen top panel: controls + chapter title + player stay pinned while
+           only the verses scroll (like Excel freeze panes). -->
+      <div class="reader-top">
       <div class="reader-bar">
         <button class="link-btn" @click="backToBooks">&#8592; All books</button>
         <div class="reader-bar-right">
@@ -326,6 +356,17 @@ onMounted(() => {
             @click="toggleHighlight"
           >
             ✨ Highlight: {{ highlightEnabled ? 'On' : 'Off' }}
+          </button>
+          <button
+            v-if="musicAvailable"
+            type="button"
+            class="hl-toggle"
+            :class="{ active: bgMusicPref }"
+            :aria-pressed="bgMusicPref"
+            title="Play soft background music behind the narration"
+            @click="toggleBgMusic"
+          >
+            🎵 Music: {{ bgMusicPref ? 'On' : 'Off' }}
           </button>
           <select class="ch-select" :value="chapterNum" @change="goChapter(Number($event.target.value))">
             <option v-for="n in chapterList" :key="n" :value="n">Chapter {{ n }}</option>
@@ -371,6 +412,8 @@ onMounted(() => {
         </div>
       </div>
       <p v-if="audioError" class="audio-error">{{ audioError }}</p>
+      </div>
+      <!-- /reader-top -->
 
       <p v-if="loadingChapter" class="muted">Loading…</p>
       <div v-else-if="chapter" class="verses" :class="{ mm: lang !== 'en' }">
@@ -482,12 +525,28 @@ onMounted(() => {
 .book-name { font-weight: 600; font-size: 0.95rem; }
 .book-ch { font-size: 0.75rem; color: var(--text-muted); }
 
+/* Frozen header: controls + title + player pin to the top of the viewport
+   while the verses scroll beneath. Negative margins let its background span
+   the full reader width; the inner padding restores the original spacing. */
+.reader-top {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--bg);
+  margin: -1.25rem -1.5rem 1rem;
+  padding: 0.85rem 1.5rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 6px 12px -10px rgba(0, 0, 0, 0.5);
+}
+.reader-top .reader-heading { margin-bottom: 0.6rem; }
+.reader-top .audio-wrap { margin-bottom: 0.4rem; }
+
 .reader-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  margin-bottom: 1rem;
+  margin-bottom: 0.75rem;
 }
 .link-btn {
   background: none;
@@ -573,11 +632,20 @@ onMounted(() => {
   vertical-align: super;
 }
 
+/* Frozen footer: Previous/Next stay pinned to the bottom of the viewport so
+   chapter navigation is always reachable without scrolling to the end. */
 .reader-nav {
+  position: sticky;
+  bottom: 0;
+  z-index: 20;
   display: flex;
   justify-content: space-between;
   gap: 1rem;
-  margin-top: 2rem;
+  margin: 1.5rem -1.5rem 0;
+  padding: 0.7rem 1.5rem;
+  background: var(--bg);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -6px 12px -10px rgba(0, 0, 0, 0.5);
 }
 .nav-btn {
   padding: 0.55rem 1.1rem;

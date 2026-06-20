@@ -37,6 +37,13 @@ class FathersDayController extends Controller
     private const MAX_PHOTOS = 6;
     private const MAX_SONGS  = 20;
     private const EFFECTS    = ['slide', 'fade', 'kenburns'];
+    // Hard ceiling for the whole feature's storage tree. A cleanup bug must not
+    // be able to take the host down — past this, new renders are refused.
+    private const MAX_FEATURE_BYTES = 5368709120; // 5 GB
+    // Identical (same photos + same settings) renders within this window reuse
+    // the existing job instead of burning CPU/ffmpeg/disk on a duplicate.
+    private const DEDUP_WINDOW = 86400; // 24h
+    private const INDEX        = 'fathersday/render_index.json';
 
     // ---- Config helpers ----------------------------------------------------
 
@@ -199,6 +206,28 @@ class FathersDayController extends Controller
                 [$clipStart, $clipEnd] = [(float) $song['clip_start'], (float) $song['clip_end']];
             }
         }
+        // Opportunistic retention sweep so finished MVs/abandoned uploads don't
+        // accumulate unbounded between the daily scheduled prune (a public
+        // endpoint can otherwise fill the disk). Cheap dir-stat walk.
+        \App\Console\Commands\PruneSpecialDayMedia::sweep();
+
+        // Safety valve: even with cleanup, never let this feature grow past a hard
+        // ceiling (a cleanup bug must not be able to fill the host).
+        if ($this->featureBytes() > self::MAX_FEATURE_BYTES) {
+            \Log::warning('FathersDay storage ceiling hit; refusing new render.');
+            return response()->json([
+                'message' => 'We\'re a bit busy right now — please try again later.',
+            ], 503);
+        }
+
+        // Idempotency: an identical render (same photos + settings) already made
+        // recently is reused instead of re-encoding a duplicate. Guards against
+        // double-clicks, browser refresh and proxy retries.
+        $fingerprint = $this->fingerprint($request->file('photos'), $effect, $song['id'], $clipStart, $clipEnd);
+        if ($existing = $this->findFreshRender($fingerprint)) {
+            return response()->json(['job_id' => $existing, 'status' => 'queued', 'deduped' => true]);
+        }
+
         $jobId  = (string) Str::uuid();
         $jobDir = self::DIR . "/jobs/{$jobId}";
 
@@ -227,6 +256,7 @@ class FathersDayController extends Controller
 
         RenderFathersDayJob::dispatch($jobId, $effect, $song['id'], $clipStart, $clipEnd);
         $this->recordUse();
+        $this->recordRender($fingerprint, $jobId);
 
         return response()->json(['job_id' => $jobId, 'status' => 'queued']);
     }
@@ -552,6 +582,113 @@ class FathersDayController extends Controller
 
         Storage::put(self::CONFIG, json_encode($c, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
         @chmod(Storage::path(self::CONFIG), 0664);
+    }
+
+    // ---- Abuse / resource guards ------------------------------------------
+
+    /** Total bytes under the feature's storage tree (for the hard ceiling). */
+    private function featureBytes(): int
+    {
+        $base = Storage::path(self::DIR);
+        if (! is_dir($base)) {
+            return 0;
+        }
+        $bytes = 0;
+        $it = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($base, \FilesystemIterator::SKIP_DOTS)
+        );
+        foreach ($it as $f) {
+            if ($f->isFile()) {
+                $bytes += $f->getSize();
+            }
+        }
+        return $bytes;
+    }
+
+    /**
+     * Stable fingerprint of a render request: the content hash of every uploaded
+     * photo (order-independent) plus the chosen effect/song/clip. Identical
+     * inputs always produce the same fingerprint.
+     */
+    private function fingerprint(array $photos, string $effect, string $songId, ?float $clipStart, ?float $clipEnd): string
+    {
+        $hashes = [];
+        foreach ($photos as $p) {
+            $real = $p->getRealPath();
+            $hashes[] = $real ? hash_file('sha256', $real) : '';
+        }
+        sort($hashes);
+        return hash('sha256', implode('|', [
+            implode(',', $hashes), $effect, $songId, (string) $clipStart, (string) $clipEnd,
+        ]));
+    }
+
+    /** Read the fingerprint→job index (small JSON map). */
+    private function renderIndex(): array
+    {
+        $data = Storage::exists(self::INDEX)
+            ? json_decode((string) Storage::get(self::INDEX), true)
+            : [];
+        return is_array($data) ? $data : [];
+    }
+
+    /**
+     * Return a recent job id for this fingerprint whose output still exists or is
+     * still in flight; null if none (so a fresh render is started).
+     */
+    private function findFreshRender(string $fingerprint): ?string
+    {
+        $idx = $this->renderIndex();
+        $e   = $idx[$fingerprint] ?? null;
+        if (! is_array($e) || (time() - (int) ($e['ts'] ?? 0)) > self::DEDUP_WINDOW) {
+            return null;
+        }
+        $jobId = (string) ($e['job_id'] ?? '');
+        if ($this->safeId($jobId) && Storage::exists(self::DIR . "/jobs/{$jobId}/status.json")) {
+            return $jobId;
+        }
+        return null;
+    }
+
+    /**
+     * Record a fingerprint→job mapping, pruning entries past the dedup window.
+     * Concurrent PHP-FPM requests can race here, so the whole read-modify-write
+     * runs under an exclusive flock — without it two simultaneous renders could
+     * clobber each other's entry (a lost entry only costs a duplicate render, but
+     * the lock keeps the index from corrupting).
+     */
+    private function recordRender(string $fingerprint, string $jobId): void
+    {
+        $path = Storage::path(self::INDEX);
+        @mkdir(dirname($path), 0775, true);
+        $fp = @fopen($path, 'c+');
+        if ($fp === false) {
+            return;
+        }
+        try {
+            if (! flock($fp, LOCK_EX)) {
+                return;
+            }
+            $raw = stream_get_contents($fp);
+            $idx = json_decode($raw ?: '[]', true);
+            $idx = is_array($idx) ? $idx : [];
+            $now = time();
+            foreach ($idx as $k => $e) {
+                if (! is_array($e) || ($now - (int) ($e['ts'] ?? 0)) > self::DEDUP_WINDOW) {
+                    unset($idx[$k]);
+                }
+            }
+            $idx[$fingerprint] = ['job_id' => $jobId, 'ts' => $now];
+
+            ftruncate($fp, 0);
+            rewind($fp);
+            fwrite($fp, json_encode($idx));
+            fflush($fp);
+            @chmod($path, 0664);
+        } finally {
+            flock($fp, LOCK_UN);
+            fclose($fp);
+        }
     }
 
     // ---- Guards ------------------------------------------------------------

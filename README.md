@@ -1085,6 +1085,14 @@ job ids are UUIDs validated against path traversal, the render endpoint is
 throttled (`10/min`), and originals are deleted after the render. The public page
 only appears once a song is uploaded **and** the feature is enabled.
 
+**Abuse / resource guards**: finished MVs are pruned after **30 days** and
+abandoned uploads after **1h** by the scheduled `media:prune` command (daily
+03:30) plus an opportunistic sweep on each render — so a public endpoint can't
+fill the disk. A hard **5 GB** storage ceiling refuses new renders (HTTP 503) if
+cleanup ever falls behind, and **idempotency** (a content hash of the uploaded
+photos + effect/song/clip, kept 24h in `render_index.json`) returns the existing
+job for an identical re-submit instead of re-encoding a duplicate.
+
 **nginx note**: photo uploads can exceed the default body cap. Bump the API
 server block: `client_max_body_size 60M;` then `nginx -t && systemctl reload nginx`.
 
@@ -1158,9 +1166,19 @@ server-generated names; job ids are UUIDs validated against path traversal;
 **finished** stickers (a `sticker_*.png` exists) are kept **~1 year**
 (`KEEP_SECS` = 365 days) so links stay alive, while **abandoned** uploads
 (photo detected but never rendered) are still pruned after **1h**
-(`ABANDON_SECS`) for privacy. The base storage dir is `setgid 02775` so the render
-worker (separate OS user in the `www-data` group) can read the queued job. The
-photo is sent to OpenRouter for the repaint — note this in any privacy copy.
+(`ABANDON_SECS`) for privacy; the scheduled `media:prune` command (daily 03:30)
+is the backstop. The base storage dir is `setgid 02775` so the render worker
+(separate OS user in the `www-data` group) can read the queued job. The photo is
+sent to OpenRouter for the repaint — note this in any privacy copy.
+
+**Abuse / resource guards**: a global **daily cap** (`DAILY_CAP` = 500 renders)
+bounds paid OpenRouter cost even under distributed abuse (HTTP 429 past the cap);
+**idempotency** returns the existing job for a repeat submit of the same upload
+token instead of paying for a second repaint; and a hard **2 GB** storage ceiling
+refuses new renders (HTTP 503) if cleanup falls behind. Public share pages
+(`/s`,`/si`,`/v`,`/vi`,`/vp`) are served with `X-Robots-Tag: noindex,
+noimageindex` so user photos stay shareable by direct link but out of search
+results.
 
 **Sharing**: the visitor's primary action is **📤 Share**, which hands the actual
 PNG file to `navigator.share({files})` — it lands straight in WhatsApp /

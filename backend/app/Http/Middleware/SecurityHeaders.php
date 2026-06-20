@@ -25,6 +25,14 @@ class SecurityHeaders
             : "default-src 'none'; frame-ancestors 'none'";
         $response->headers->set('Content-Security-Policy', $csp);
 
+        // Public share pages re-serve user-uploaded photos/videos under guessable
+        // /s,/si,/v,/vi,/vp paths. Keep them shareable via a direct link but out
+        // of search results so user content isn't indexed/cached by crawlers.
+        if ($request->is('s/*') || $request->is('si/*') || $request->is('v/*')
+            || $request->is('vi/*') || $request->is('vp/*')) {
+            $response->headers->set('X-Robots-Tag', 'noindex, noimageindex');
+        }
+
         // Only set HSTS over a real HTTPS connection so local dev isn't poisoned.
         if ($request->isSecure()) {
             $response->headers->set(

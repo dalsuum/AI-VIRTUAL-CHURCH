@@ -44,6 +44,12 @@ class StickerController extends Controller
     // cleaned up quickly for privacy.
     private const KEEP_SECS    = 31536000; // finished stickers: 365 days
     private const ABANDON_SECS = 3600;     // photo uploaded but never rendered: 1h
+    // Global daily budget on AI repaints (each render = a paid OpenRouter call).
+    // Caps cost even under distributed abuse that slips past per-IP throttling.
+    private const DAILY_CAP    = 500;
+    // Hard storage ceiling for the feature tree — a cleanup bug must not be able
+    // to fill the host; past this, new renders are refused.
+    private const MAX_FEATURE_BYTES = 2147483648; // 2 GB
 
     /** Admin-managed feature config (enable flag + fallback page copy). */
     private function config(): array
@@ -250,6 +256,29 @@ class StickerController extends Controller
             return response()->json(['message' => 'Upload expired — please add the photo again.'], 422);
         }
 
+        // Idempotency: a render was already queued for this upload (double-click,
+        // refresh, proxy retry) — return the existing job rather than dispatching
+        // a second paid repaint. Keyed on the upload token (one render per upload).
+        if (Storage::exists("{$jobDir}/status.json")) {
+            return response()->json(['job_id' => $token, 'status' => 'queued', 'deduped' => true]);
+        }
+
+        // Global daily budget: cap paid OpenRouter repaints even under abuse that
+        // slips past per-IP throttling.
+        if ($this->usageSummary($this->config())['today'] >= self::DAILY_CAP) {
+            return response()->json([
+                'message' => 'We\'ve hit today\'s sticker limit — please try again tomorrow.',
+            ], 429);
+        }
+
+        // Storage safety valve (a cleanup bug must not be able to fill the host).
+        if ($this->featureBytes() > self::MAX_FEATURE_BYTES) {
+            \Log::warning('Sticker storage ceiling hit; refusing new render.');
+            return response()->json([
+                'message' => 'We\'re a bit busy right now — please try again later.',
+            ], 503);
+        }
+
         $photos = glob(Storage::path("{$jobDir}/src/*"));
         if (! $photos) {
             return response()->json(['message' => 'Upload expired — please add the photo again.'], 422);
@@ -427,6 +456,25 @@ class StickerController extends Controller
     private function safeId(string $id): ?string
     {
         return preg_match('/^[0-9a-f-]{36}$/i', $id) ? $id : null;
+    }
+
+    /** Total bytes under the feature's storage tree (for the hard ceiling). */
+    private function featureBytes(): int
+    {
+        $base = Storage::path(self::DIR);
+        if (! is_dir($base)) {
+            return 0;
+        }
+        $bytes = 0;
+        $it = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($base, \FilesystemIterator::SKIP_DOTS)
+        );
+        foreach ($it as $f) {
+            if ($f->isFile()) {
+                $bytes += $f->getSize();
+            }
+        }
+        return $bytes;
     }
 
     /**

@@ -1519,6 +1519,12 @@ This includes:
 - post-edit validation queries
 - Tedim/Burmese/English language-safety notes
 
+## API services & billing
+
+A complete list of every external API the platform uses, which ones are **paid/metered**,
+and the **monthly admin checklist** for checking balances and recharging lives in
+[**docs/API_SERVICES_AND_BILLING.md**](docs/API_SERVICES_AND_BILLING.md).
+
 ## Environment variables
 
 > **Note:** the LLM path uses an OpenAI-compatible chat endpoint and is configured with

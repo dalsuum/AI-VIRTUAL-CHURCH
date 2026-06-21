@@ -138,4 +138,106 @@ class WebhookController extends Controller
 
         return response()->json(['ok' => true, 'track_id' => $track->id]);
     }
+
+    /**
+     * Persist one completed Bible Study turn (source of truth for show/replay) and
+     * its token usage. HMAC-signed (over "{ts}.{body}") with a ±tolerance window so a
+     * leaked secret can't replay old payloads. The live event stream is published
+     * separately by the worker; this only writes durable state.
+     */
+    public function studyTurn(Request $request): JsonResponse
+    {
+        $this->verifySignature($request);
+
+        $data = $request->validate([
+            'session_id'        => ['required', 'integer'],
+            'turn'              => ['required', 'integer', 'min:1'],
+            'role'              => ['required', 'in:user,moderator,pastor,synthesis,system'],
+            'persona_id'        => ['nullable', 'integer'],
+            'display_name'      => ['nullable', 'string', 'max:120'],
+            'content'           => ['nullable', 'string'],
+            'scripture_refs'    => ['nullable', 'array'],
+            'safety_flag'       => ['nullable', 'boolean'],
+            'prompt_tokens'     => ['nullable', 'integer'],
+            'completion_tokens' => ['nullable', 'integer'],
+        ]);
+
+        $session = \App\Models\StudySession::findOrFail($data['session_id']);
+
+        \App\Models\StudyMessage::updateOrCreate(
+            ['session_id' => $session->id, 'turn' => $data['turn']],
+            [
+                'role'              => $data['role'],
+                'persona_id'        => $data['persona_id'] ?? null,
+                'content'           => $data['content'] ?? '',
+                'scripture_refs'    => $data['scripture_refs'] ?? null,
+                'safety_flag'       => (bool) ($data['safety_flag'] ?? false),
+                'prompt_tokens'     => $data['prompt_tokens'] ?? null,
+                'completion_tokens' => $data['completion_tokens'] ?? null,
+            ],
+        );
+
+        if (($data['prompt_tokens'] ?? 0) || ($data['completion_tokens'] ?? 0)) {
+            \App\Models\AiUsageLedger::create([
+                'module'            => config('bible_study.module'),
+                'session_id'        => $session->id,
+                'prompt_tokens'     => $data['prompt_tokens'] ?? 0,
+                'completion_tokens' => $data['completion_tokens'] ?? 0,
+            ]);
+        }
+
+        $session->update(['last_activity_at' => now()]);
+
+        return response()->json(['ok' => true]);
+    }
+
+    /** Persist the generated end-of-discussion summary. HMAC-signed like studyTurn. */
+    public function studySummary(Request $request): JsonResponse
+    {
+        $this->verifySignature($request);
+
+        $data = $request->validate([
+            'session_id' => ['required', 'integer'],
+            'summary'    => ['required', 'array'],
+        ]);
+
+        $session = \App\Models\StudySession::findOrFail($data['session_id']);
+        $s = $data['summary'];
+
+        \App\Models\StudySummary::updateOrCreate(
+            ['session_id' => $session->id],
+            [
+                'key_verses'           => $s['key_verses'] ?? null,
+                'lessons'              => $s['lessons'] ?? null,
+                'prayer'               => is_string($s['prayer'] ?? null) ? $s['prayer'] : null,
+                'action_points'        => $s['action_points'] ?? null,
+                'reflection_questions' => $s['reflection_questions'] ?? null,
+                'study_plan'           => $s['study_plan'] ?? null,
+                'generated_at'         => now(),
+            ],
+        );
+
+        $session->update(['state' => 'summarized']);
+
+        return response()->json(['ok' => true]);
+    }
+
+    /**
+     * Verify an HMAC-signed worker payload: signature = HMAC-SHA256(secret,
+     * "{timestamp}.{raw body}"), compared in constant time, with a tolerance window
+     * to reject replays. Falls back to nothing — fail closed.
+     */
+    private function verifySignature(Request $request): void
+    {
+        $secret = (string) config('services.worker.secret', '');
+        $ts     = (string) $request->header('X-Worker-Timestamp', '');
+        $sig    = (string) $request->header('X-Worker-Signature', '');
+        $tolerance = (int) config('bible_study.webhook_tolerance', 60);
+
+        abort_unless(strlen($secret) >= 32, 403);
+        abort_unless($ts !== '' && abs(time() - (int) $ts) <= $tolerance, 403, 'Stale or missing timestamp.');
+
+        $expected = hash_hmac('sha256', $ts . '.' . $request->getContent(), $secret);
+        abort_unless($sig !== '' && hash_equals($expected, $sig), 403, 'Bad signature.');
+    }
 }

@@ -11,6 +11,7 @@ import MyanmarLyrics from "./components/MyanmarLyrics.vue";
 import FathersDay from "./components/FathersDay.vue";
 import LiveSticker from "./components/LiveSticker.vue";
 import BibleReader from "./components/BibleReader.vue";
+import BibleStudy from "./components/BibleStudy.vue";
 import { api } from "./composables/useApi";
 
 // The admin console lives at #admin so it never collides with the worship flow.
@@ -18,6 +19,7 @@ const isAdminRoute  = ref(window.location.hash === "#admin");
 const isVocabRoute  = ref(window.location.hash === "#vocabulary");
 const isLyricsRoute = ref(window.location.hash === "#lyrics");
 const isBibleRoute  = ref(window.location.hash === "#bible");
+const isStudyRoute  = ref(window.location.hash === "#bible-study");
 // Father's Day (Special Day) MV — standalone, removable page.
 const isFathersDayRoute = ref(window.location.hash === "#fathers-day");
 const fathersDayEnabled = ref(false);
@@ -42,6 +44,7 @@ window.addEventListener("hashchange", () => {
   isVocabRoute.value  = window.location.hash === "#vocabulary";
   isLyricsRoute.value = window.location.hash === "#lyrics";
   isBibleRoute.value  = window.location.hash === "#bible";
+  isStudyRoute.value  = window.location.hash === "#bible-study";
   isFathersDayRoute.value = window.location.hash === "#fathers-day";
   isStickerRoute.value = window.location.hash === "#stickers";
 });
@@ -274,6 +277,7 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
   <FathersDay v-else-if="isFathersDayRoute" />
   <LiveSticker v-else-if="isStickerRoute" />
   <BibleReader v-else-if="isBibleRoute" />
+  <BibleStudy v-else-if="isStudyRoute" />
 
   <div v-else class="page">
     <header class="topbar">
@@ -285,6 +289,7 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
         <nav class="topbar-nav">
           <a href="#lyrics" class="nav-link" :class="{ active: isLyricsRoute }">🎵 သီချင်း</a>
           <a href="#bible" class="nav-link" :class="{ active: isBibleRoute }">📖 Bible</a>
+          <a href="#bible-study" class="nav-link" :class="{ active: isStudyRoute }">💬 Bible Study</a>
           <a href="#vocabulary" class="nav-link" :class="{ active: isVocabRoute }">📖 Vocabulary</a>
           <a v-if="fathersDayEnabled" href="#fathers-day" class="nav-link" :class="{ active: isFathersDayRoute }">💙 <span class="nav-label-full">{{ fdTitle }}</span><span class="nav-label-short">MV</span></a>
           <a v-if="stickersEnabled" href="#stickers" class="nav-link" :class="{ active: isStickerRoute }">🎨 Stickers</a>

@@ -386,6 +386,64 @@ Doors open the instant all required steps check off — no fixed countdown to dr
 
 ---
 
+## AI Bible Study (multi-agent discussion)
+
+A live, multi-pastor Bible discussion built on a reusable **AI Core platform** so future
+ministry modules (sermon, prayer room, counseling, discipleship) can share the same
+orchestration, personas, prompts, and admin console. Reached at `#bible-study`.
+
+**The experience.** A worshipper picks a language, translation, conversation style, and
+number of pastors (2–7), then asks any Bible question. A panel of *fictional* pastors —
+inspired by different preaching traditions but **never revealing or naming any real
+figure** — discusses it under a moderator, streaming live. Each round runs
+**FRAME → DELIBERATE → SYNTHESIZE**: the moderator frames the question and assigns each
+pastor a distinct angle, the weighted pastors deliberate in turn (agreeing, building,
+respectfully differing), and the moderator synthesizes agreements + honest disagreements
+with a verse spine. Ending the discussion produces a structured summary (key verses,
+lessons, prayer, action points, reflection questions, study plan).
+
+**AI Core platform.** Everything is module-keyed and admin-editable, no code change to add
+a module or language:
+
+| Service | Role |
+|---|---|
+| `module_manifests` | per-module config (languages, agent bounds, memory strategy, RAG sources) |
+| `ai_personas` | fictional pastors/moderators; weighted participation; **server-only** `system_prompt` + `tradition_tag` lens |
+| `ai_prompt_templates` | frame/pastor/synthesis/summary bodies (server-only) |
+| `ai_provider_profiles` | OpenRouter / Ollama / RunPod / LM Studio; **encrypted** keys, never returned |
+| `ai_tools` + `manifest_tools` | closed tool registry + per-module allow-list (no dynamic exec) |
+| `ai_memories`, `ai_usage_ledger`, `ai_audit_log` | owner-scoped recall, cost telemetry, append-only audit |
+
+The Python side mirrors this: [`workers/core/`](workers/core/) holds `scripture` (immutable
+resolved-verse DTOs over `bible_api`), `prompt_engine` (7-layer injection-resistant
+composition), `persona_engine`, `memory`, `rag`, `events`, `tool_registry`; `core_orchestrator`
+runs the round; [`workers/plugins/bible_study/driver.py`](workers/plugins/bible_study/driver.py)
+is the thin Celery driver (`tasks.study_discuss`, `ai:study` queue, via the bridge).
+
+**Security model.** System prompts, persona lens tags, template bodies, and provider keys
+are server-only and never serialized to any API or SSE event. The prompt engine separates
+**trusted** context (moderator frame + canonical verses, in the system role) from
+**untrusted** content (other pastors + the worshipper question, fenced in the user role)
+to resist cross-agent and user prompt injection; ASCII-only fences are spoof-neutralized.
+Safety is two-stage: a cheap pre-filter before dispatch + the authoritative `classifier`
+post-filter on every turn. Sessions are owner-scoped; the SSE stream is gated by a
+**hash-only, CSPRNG stream token** (constant-time compared, idle-TTL'd, soft device
+fingerprint) with a per-user concurrency cap. Worker callbacks are **HMAC-signed with a
+timestamp tolerance**. Scripture is never model-generated — only references are cited; exact
+text comes from the local corpus (`resolved=false` on gaps, never fabricated).
+
+**Streaming.** The worker publishes seq-stamped events to a durable, **size-capped + TTL'd**
+Redis log; the Laravel SSE endpoint polls it by `seq` (proxy-safe, heartbeated) and the Vue
+client dedupes/orders on `seq`, so reconnect replay is idempotent.
+
+**Setup.** `php artisan migrate` then `php artisan db:seed --class=Database\Seeders\BibleStudySeeder`
+(idempotent: seeds the manifest, fictional personas + templates for all 7 languages, provider
+profiles, and the tool registry). Set the `STUDY_*` env vars (see `.env.example`) and run the
+`ai:study` Celery worker ([`.systemd/prod/aivc-workers-study.service`](.systemd/prod/aivc-workers-study.service))
+alongside the bridge. Admin manage it under the console's **Bible Study** tab.
+
+---
+
 ## Multilingual services (Myanmar & Tedim)
 
 Three languages are supported. Language is chosen on the intake form and **locked per session** (like `music_source`).

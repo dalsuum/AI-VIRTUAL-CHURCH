@@ -173,6 +173,42 @@ export const api = {
     }),
   me: () => request("/me"),
 
+  // ── AI Bible Study (worshipper) ──────────────────────────────────────────
+  studyConfig: () => request("/v1/study/config"),
+  studyCreateSession: (payload) =>
+    request("/v1/study/sessions", { method: "POST", body: payload }),
+  studyShow: (id) => request(`/v1/study/sessions/${id}`),
+  studyPostMessage: (id, content) =>
+    request(`/v1/study/sessions/${id}/messages`, { method: "POST", body: { content } }),
+  studyListEvents: (id, afterSeq = 0) =>
+    request(`/v1/study/sessions/${id}/events?after_seq=${afterSeq}`),
+  studyEnd: (id) => request(`/v1/study/sessions/${id}/end`, { method: "POST" }),
+
+  // ── AI Bible Study (admin / AI Core console) ─────────────────────────────
+  studyAdminPersonas: () => request("/v1/admin/study/personas"),
+  studyAdminCreatePersona: (payload) =>
+    request("/v1/admin/study/personas", { method: "POST", body: payload }),
+  studyAdminUpdatePersona: (id, payload) =>
+    request(`/v1/admin/study/personas/${id}`, { method: "PATCH", body: payload }),
+  studyAdminDeletePersona: (id) =>
+    request(`/v1/admin/study/personas/${id}`, { method: "DELETE" }),
+  studyAdminPrompts: () => request("/v1/admin/study/prompts"),
+  studyAdminUpdatePrompt: (id, payload) =>
+    request(`/v1/admin/study/prompts/${id}`, { method: "PATCH", body: payload }),
+  studyAdminProviders: () => request("/v1/admin/study/providers"),
+  studyAdminCreateProvider: (payload) =>
+    request("/v1/admin/study/providers", { method: "POST", body: payload }),
+  studyAdminUpdateProvider: (id, payload) =>
+    request(`/v1/admin/study/providers/${id}`, { method: "PATCH", body: payload }),
+  studyAdminDeleteProvider: (id) =>
+    request(`/v1/admin/study/providers/${id}`, { method: "DELETE" }),
+  studyAdminManifest: () => request("/v1/admin/study/manifest"),
+  studyAdminUpdateManifest: (payload) =>
+    request("/v1/admin/study/manifest", { method: "PATCH", body: payload }),
+  studyAdminSessions: () => request("/v1/admin/study/sessions"),
+  studyAdminUsage: () => request("/v1/admin/study/usage"),
+  studyAdminAudit: () => request("/v1/admin/study/audit"),
+
   // Account self-service
   updateName: (name) =>
     request("/me/name", { method: "PATCH", body: { name } }),

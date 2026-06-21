@@ -41,6 +41,9 @@ class PermissionService
         'ads.analytics',
         'special_sundays.view',
         'special_sundays.manage',
+        // AI Bible Study (AI Core console).
+        'study.view',
+        'study.manage',
     ];
 
     /** Only these roles appear in the permissions matrix. Admin is always full access. */

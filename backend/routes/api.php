@@ -8,6 +8,8 @@ use App\Http\Controllers\ConfigController;
 use App\Http\Controllers\OfferingController;
 use App\Http\Controllers\ServiceController;
 use App\Http\Controllers\SongController;
+use App\Http\Controllers\StudyAdminController;
+use App\Http\Controllers\StudyController;
 use App\Http\Controllers\SpecialSundayController;
 use App\Http\Controllers\TestimonyController;
 use App\Http\Controllers\UpdateController;
@@ -62,6 +64,11 @@ Route::get('/service/{token}/resume', [ServiceController::class, 'resume'])
 // Internal worker callbacks (shared-secret protected, no user auth)
 Route::post('/internal/asset-ready', [WebhookController::class, 'assetReady']);
 Route::post('/internal/music-track', [WebhookController::class, 'musicTrack']);
+
+// AI Bible Study worker callbacks (HMAC-signed: X-Worker-Signature over "{ts}.{body}"
+// with a timestamp tolerance, so a leaked secret can't replay old payloads).
+Route::post('/internal/study-turn', [\App\Http\Controllers\WebhookController::class, 'studyTurn']);
+Route::post('/internal/study-summary', [\App\Http\Controllers\WebhookController::class, 'studySummary']);
 
 // Stripe offering webhook (Stripe-signature verified, no user auth)
 Route::post('/webhooks/stripe', [OfferingController::class, 'webhook']);
@@ -292,4 +299,51 @@ Route::middleware('auth:sanctum')->group(function () {
         // Route::post('/updates/install',         [UpdateController::class, 'install']);
         Route::post('/updates/restart-service', [UpdateController::class, 'restartService']);
     });
+});
+
+// ===========================================================================
+// AI Bible Study (v1) — multi-agent discussion module on the AI Core platform.
+// ===========================================================================
+
+// Public config (enabled languages, agent bounds, public persona names only).
+Route::get('/v1/study/config', [StudyController::class, 'config'])->middleware('throttle:120,1');
+
+// Worshipper-facing endpoints. Guests are authenticated users (@guest.local), so
+// the whole surface sits behind sanctum; every handler is owner-scoped.
+Route::middleware('auth:sanctum')->prefix('v1/study')->group(function () {
+    Route::post('/sessions', [StudyController::class, 'createSession'])
+        ->middleware('throttle:6,1');                 // expensive multi-agent round
+    Route::get('/sessions/{session}', [StudyController::class, 'show']);
+    Route::post('/sessions/{session}/messages', [StudyController::class, 'postMessage'])
+        ->middleware('throttle:20,1');
+    Route::get('/sessions/{session}/events', [StudyController::class, 'listEvents']);
+    Route::get('/sessions/{session}/stream', [StudyController::class, 'stream']);
+    Route::post('/sessions/{session}/end', [StudyController::class, 'endSession']);
+});
+
+// AI Core / Bible Study admin console. Entry gated by `staff`; each method enforces
+// study.view (reads) or study.manage (writes) via PermissionService + audit log.
+Route::middleware(['auth:sanctum', 'staff'])->prefix('v1/admin/study')->group(function () {
+    Route::get('/personas',  [StudyAdminController::class, 'personas']);
+    Route::post('/personas', [StudyAdminController::class, 'storePersona']);
+    Route::patch('/personas/{persona}',  [StudyAdminController::class, 'updatePersona']);
+    Route::delete('/personas/{persona}', [StudyAdminController::class, 'destroyPersona']);
+
+    Route::get('/prompts', [StudyAdminController::class, 'prompts']);
+    Route::patch('/prompts/{template}', [StudyAdminController::class, 'updatePrompt']);
+
+    Route::get('/providers',  [StudyAdminController::class, 'providers']);
+    Route::post('/providers', [StudyAdminController::class, 'storeProvider']);
+    Route::patch('/providers/{provider}',  [StudyAdminController::class, 'updateProvider']);
+    Route::delete('/providers/{provider}', [StudyAdminController::class, 'destroyProvider']);
+
+    Route::get('/tools', [StudyAdminController::class, 'tools']);
+
+    Route::get('/manifest',   [StudyAdminController::class, 'manifest']);
+    Route::patch('/manifest', [StudyAdminController::class, 'updateManifest']);
+
+    Route::get('/sessions', [StudyAdminController::class, 'sessions']);
+    Route::get('/sessions/{session}', [StudyAdminController::class, 'sessionDetail']);
+    Route::get('/usage', [StudyAdminController::class, 'usage']);
+    Route::get('/audit', [StudyAdminController::class, 'audit']);
 });

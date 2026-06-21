@@ -22,6 +22,7 @@ import llm_engine  # noqa: E402
 import narrator  # noqa: E402
 from tasks.celery_burmese_tasks import localize_segment_burmese, narrate_burmese  # noqa: E402, F401
 from tasks.celery_tedim_tasks import localize_segment_tedim, narrate_tedim  # noqa: E402, F401
+from tasks.celery_study_tasks import study_discuss  # noqa: E402, F401
 import storage  # noqa: E402
 from strategies import MusicResult, get_strategy  # noqa: E402
 from strategies.youtube_strategy import find_sermon_video  # noqa: E402

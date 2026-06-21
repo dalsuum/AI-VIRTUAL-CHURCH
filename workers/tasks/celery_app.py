@@ -46,6 +46,9 @@ app.conf.update(
         # Serialized by the semaphore in burmese_router.py.
         "tasks.localize_segment_burmese": {"queue": "ai:sermon"},
         "tasks.narrate_burmese": {"queue": "ai:narration"},
+        # AI Bible Study multi-agent discussion rounds — own queue so a long round
+        # never blocks the worship pipeline.
+        "tasks.study_discuss": {"queue": "ai:study"},
     },
     task_acks_late=True,
     worker_prefetch_multiplier=1,

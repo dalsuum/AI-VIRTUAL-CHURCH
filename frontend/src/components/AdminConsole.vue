@@ -13,6 +13,7 @@ import VocabularyManager from "./VocabularyManager.vue";
 import SpecialSundaysManager from "./SpecialSundaysManager.vue";
 import FathersDayManager from "./FathersDayManager.vue";
 import StickerManager from "./StickerManager.vue";
+import BibleStudyAdmin from "./BibleStudyAdmin.vue";
 
 const authed      = ref(false);
 const currentUser = ref(null); // { id, name, role, permissions: string[] }
@@ -50,6 +51,7 @@ const TABS = [
   { name: "ads",            label: "Ads",              can: () => can("ads.view"),             load: null },
   { name: "special-sundays",label: "Special Sundays",  can: () => can("special_sundays.view"), load: null },
   { name: "special-day-mv", label: "Special Day MV",   can: () => isAdminUser.value,           load: null },
+  { name: "bible-study",    label: "Bible Study",      can: () => can("study.view"),           load: null },
   { name: "live-sticker",   label: "Live Sticker",     can: () => isAdminUser.value,           load: null },
   { name: "permissions",    label: "Permissions",      can: () => can("permissions.view"),     load: loadPermissions },
   { name: "grammar-review", label: "Language Review",  can: () => can("language_review.view"), load: () => { grData.value = null; loadGrammarReview(); } },
@@ -3048,6 +3050,10 @@ onUnmounted(() => {
 
       <section v-else-if="tab === 'live-sticker' && isAdminUser">
         <StickerManager />
+      </section>
+
+      <section v-else-if="tab === 'bible-study' && can('study.view')">
+        <BibleStudyAdmin />
       </section>
 
       <section v-else-if="tab === 'special-sundays' && can('special_sundays.view')">

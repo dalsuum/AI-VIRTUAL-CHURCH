@@ -197,7 +197,7 @@ def run_summary(*, job: dict, llm, review_fn=None) -> dict:
         untrusted_turns=[{"name": t.get("role", "pastor"), "content": t.get("content", "")} for t in turns],
         user_content="",
         temperature=float(tmpl.get("temperature", 0.4)),
-        max_tokens=int(tmpl.get("max_tokens", 1200)),
+        max_tokens=int(tmpl.get("max_tokens", 2500)),
     )
     text, _usage = llm.complete(system=cp.system, messages=cp.messages,
                                 temperature=cp.temperature, max_tokens=cp.max_tokens,
@@ -222,5 +222,34 @@ def run_summary(*, job: dict, llm, review_fn=None) -> dict:
             except json.JSONDecodeError:
                 pass
 
-    # Total parse failure → degrade gracefully, keep the prose as a single lesson.
-    return {"lessons": [text]}
+    # Parse failed (commonly: output truncated by max_tokens mid-JSON, frequent with
+    # token-heavy languages). Salvage whatever complete fields exist rather than
+    # dumping the raw blob to the user.
+    salvaged = _salvage_summary(raw)
+    if salvaged:
+        return salvaged
+
+    # Nothing salvageable → keep cleaned prose (no code fence) as a single lesson.
+    return {"lessons": [raw]}
+
+
+def _salvage_summary(raw: str) -> dict:
+    """Best-effort extraction of summary fields from malformed/truncated JSON."""
+    import re as _re
+
+    out: dict = {}
+    array_keys = ["key_verses", "lessons", "action_points", "reflection_questions", "study_plan"]
+    for key in array_keys:
+        m = _re.search(rf'"{key}"\s*:\s*\[(.*?)\]', raw, _re.DOTALL)
+        if not m:
+            continue
+        items = _re.findall(r'"((?:[^"\\]|\\.)*)"', m.group(1))
+        items = [i.replace('\\"', '"').strip() for i in items if i.strip()]
+        if items:
+            out[key] = items
+
+    pm = _re.search(r'"prayer"\s*:\s*"((?:[^"\\]|\\.)*)"', raw, _re.DOTALL)
+    if pm:
+        out["prayer"] = pm.group(1).replace('\\"', '"').strip()
+
+    return out

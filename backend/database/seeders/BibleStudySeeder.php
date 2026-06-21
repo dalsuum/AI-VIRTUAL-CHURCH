@@ -290,8 +290,8 @@ class BibleStudySeeder extends Seeder
             ],
             'summary' => [
                 'temperature' => 0.4,
-                'max_tokens'  => 1200,
-                'body'        => "Produce the end-of-discussion study summary in {$language}. Draw only on what the discussion actually covered; never use the worshipper's name; never invent scripture. Respond with STRICT JSON only (no prose, no code fences) using exactly these keys: {\"key_verses\": [\"ref\", ...], \"lessons\": [\"...\"], \"prayer\": \"...\", \"action_points\": [\"...\"], \"reflection_questions\": [\"...\"], \"study_plan\": [\"Day 1 ...\", ...]}.",
+                'max_tokens'  => 2500,
+                'body'        => "Produce the end-of-discussion study summary in {$language}. Draw only on what the discussion actually covered; never use the worshipper's name; never invent scripture. Keep each item concise (one or two sentences) so the whole summary fits. Respond with STRICT JSON only — no prose, no markdown, NO code fences — using exactly these keys: {\"key_verses\": [\"ref\", ...], \"lessons\": [\"...\"], \"prayer\": \"...\", \"action_points\": [\"...\"], \"reflection_questions\": [\"...\"], \"study_plan\": [\"Day 1 ...\", ...]}.",
             ],
         ];
 

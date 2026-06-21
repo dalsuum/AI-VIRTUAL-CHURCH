@@ -6,6 +6,9 @@
 import { onMounted, onBeforeUnmount, reactive, ref, computed, watch } from "vue";
 import { api } from "../composables/useApi";
 import { useStudyStream } from "../composables/useStudyStream";
+import ThemeToggle from "./ThemeToggle.vue";
+
+const year = new Date().getFullYear();
 
 // Bible translations offered per language. The first entry is that language's
 // DEFAULT (its own version where available); English versions are offered as a
@@ -186,7 +189,23 @@ function roleClass(role) {
 </script>
 
 <template>
-  <div class="study">
+  <div class="study-page">
+    <!-- Shared site header (matches the rest of the app) -->
+    <header class="topbar">
+      <a class="brand" href="#">
+        <span class="brand-mark" aria-hidden="true">✝</span>
+        <span class="brand-name">AI Virtual Church</span>
+      </a>
+      <div class="topbar-right">
+        <nav class="topbar-nav">
+          <a href="#bible" class="nav-link">📖 Bible</a>
+          <a href="#bible-study" class="nav-link active">💬 Bible Study</a>
+        </nav>
+        <ThemeToggle />
+      </div>
+    </header>
+
+    <main class="study">
     <header class="study-head">
       <h1>AI Bible Study</h1>
       <p class="sub" v-if="phase === 'setup'">Sit with experienced pastors. Ask anything. Study together.</p>
@@ -282,11 +301,43 @@ function roleClass(role) {
         <ol><li v-for="(v, i) in summary.study_plan" :key="i">{{ v }}</li></ol>
       </div>
     </section>
+    </main>
+
+    <footer class="site-footer">
+      <span>✝ AI Virtual Church</span>
+      <span class="sep">·</span>
+      <span>AI Bible Study</span>
+      <span class="sep">·</span>
+      <span>© {{ year }}</span>
+    </footer>
   </div>
 </template>
 
 <style scoped>
-.study { max-width: 760px; margin: 0 auto; padding: 1rem; color: var(--text); }
+.study-page { min-height: 100vh; display: flex; flex-direction: column; background: var(--bg); }
+
+.topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 0.75rem; padding: 0.8rem 1.1rem;
+  background: var(--surface); border-bottom: 1px solid var(--border);
+}
+.topbar-right { display: flex; align-items: center; gap: 0.75rem; }
+.topbar-nav { display: flex; align-items: center; gap: 0.4rem; }
+.brand { display: inline-flex; align-items: center; gap: 0.55rem; text-decoration: none; color: var(--text); font-weight: 600; }
+.brand-mark { font-size: 1.15rem; }
+.nav-link { text-decoration: none; color: var(--text-muted); padding: 0.35rem 0.6rem; border-radius: var(--radius-sm); font-size: 0.92rem; }
+.nav-link:hover { background: var(--surface-2); color: var(--text); }
+.nav-link.active { background: var(--primary-soft); color: var(--text); }
+
+.site-footer {
+  margin-top: auto; display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5rem;
+  padding: 1.1rem; color: var(--text-muted); font-size: 0.85rem;
+  border-top: 1px solid var(--border); background: var(--surface);
+}
+.site-footer .sep { opacity: 0.5; }
+
+.study { max-width: 760px; margin: 0 auto; padding: 1rem; color: var(--text); width: 100%; box-sizing: border-box; flex: 1; }
+@media (max-width: 600px) { .brand-name { display: none; } }
 .study-head h1 { margin: 0; color: var(--text); }
 .sub { color: var(--text-muted); }
 .err { color: var(--danger); }

@@ -152,15 +152,19 @@ async function activate() {
 </template>
 
 <style scoped>
+.bsa { color: var(--text); }
 .bsa table { width: 100%; border-collapse: collapse; }
-.bsa th, .bsa td { text-align: left; padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--border, #eee); font-size: 0.92em; }
-.subtabs { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-bottom: 0.7rem; }
-.subtabs button { border: 1px solid var(--border, #ccc); background: transparent; border-radius: 6px; padding: 0.25rem 0.6rem; cursor: pointer; }
-.subtabs button.active { background: var(--accent, #3b5bdb); color: #fff; }
-.chip { border: 1px solid var(--border, #ccc); border-radius: 999px; padding: 0.15rem 0.6rem; cursor: pointer; background: transparent; }
-.primary { background: var(--accent, #3b5bdb); color: #fff; border: 0; border-radius: 6px; padding: 0.4rem 0.8rem; cursor: pointer; }
-.add { margin-top: 1rem; display: flex; flex-wrap: wrap; gap: 0.4rem; }
-.add input, .add select { padding: 0.4rem; }
-.ok { color: #2e7d32; } .err { color: #c0392b; }
-.hint { color: var(--muted, #888); font-size: 0.9em; }
+.bsa th, .bsa td { text-align: left; padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--border); font-size: 0.92em; color: var(--text); }
+.bsa th { color: var(--text-muted); font-weight: 600; }
+.subtabs { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-bottom: 0.8rem; }
+.subtabs button { border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text); border-radius: var(--radius-sm); padding: 0.3rem 0.7rem; cursor: pointer; font: inherit; text-transform: capitalize; }
+.subtabs button.active { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
+.chip { border: 1px solid var(--border-strong); border-radius: 999px; padding: 0.15rem 0.7rem; cursor: pointer; background: var(--surface-2); color: var(--text); font: inherit; }
+.primary { background: var(--primary); color: var(--on-primary); border: 0; border-radius: var(--radius-sm); padding: 0.45rem 0.9rem; cursor: pointer; font: inherit; font-weight: 600; }
+.primary:hover { background: var(--primary-hover); }
+.add { margin-top: 1rem; display: flex; flex-wrap: wrap; gap: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0.8rem; }
+.add legend { color: var(--text-muted); padding: 0 0.4rem; }
+.add input, .add select { padding: 0.45rem; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm); font: inherit; }
+.ok { color: var(--success); } .err { color: var(--danger); }
+.hint { color: var(--text-muted); font-size: 0.9em; }
 </style>

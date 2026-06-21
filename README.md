@@ -1508,6 +1508,31 @@ npm run dev
 cd backend && php artisan schedule:work
 ```
 
+## Automated tests
+
+The backend has a **PHPUnit** suite (`backend/tests`) covering authentication,
+email-verification/activation, the token ledger, monthly refill, authorization,
+admin user management, and billing-disabled behaviour. Tests run against a
+**dedicated MySQL test database** (the production engine, never the dev/prod data)
+with `RefreshDatabase`.
+
+```bash
+# one-time: provision an isolated test database
+sudo mysql -e "CREATE DATABASE ai_church_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; \
+  GRANT ALL PRIVILEGES ON ai_church_test.* TO 'ai_church'@'localhost'; FLUSH PRIVILEGES;"
+
+cd backend
+composer install                 # installs dev deps (phpunit, mockery)
+cp .env.testing.example .env.testing   # then set DB_USERNAME / DB_PASSWORD
+vendor/bin/phpunit               # or: vendor/bin/phpunit --testdox
+```
+
+Connection + drivers (sqlite-free, MySQL, array cache/session, sync queue, array
+mailer) are pinned in [backend/phpunit.xml](backend/phpunit.xml); local DB
+credentials live in a gitignored `.env.testing`. **CI** ([.github/workflows/ci.yml](.github/workflows/ci.yml))
+spins up a MySQL service, runs the suite with coverage, and builds the frontend on
+every push and pull request.
+
 ### Local gotchas worth knowing
 
 - **Redis key-prefix trap.** Laravel auto-prefixes Redis keys with

@@ -13,6 +13,7 @@ use App\Services\StudyDispatchService;
 use App\Services\StudyInputGuard;
 use App\Services\StudyTiers;
 use App\Services\TokenService;
+use App\Services\UsageLogger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Redis;
@@ -30,7 +31,14 @@ class StudyController extends Controller
         private readonly StudyInputGuard $guard,
         private readonly TokenService $tokens,
         private readonly GuestUsageService $guests,
+        private readonly UsageLogger $usage,
     ) {}
+
+    /** Record a request-level usage row (model-turn telemetry lives in ai_usage_ledger). */
+    private function logUsage($user, string $service, string $status, int $tokens, string $requestId): void
+    {
+        $this->usage->record($user, $service, $status, $tokens, $requestId);
+    }
 
     /** Public-safe config: enabled languages, agent bounds, and public persona names.
      *  Agent bounds are tier-aware for the (optionally authenticated) caller. */
@@ -118,6 +126,7 @@ class StudyController extends Controller
             if ($reservation) {
                 $this->tokens->rollback($reservation);
             }
+            $this->logUsage($user, 'study', 'failed', 0, "study:{$session->id}");
             throw $e;
         }
 
@@ -126,6 +135,8 @@ class StudyController extends Controller
         } elseif ($user->isGuestAccount()) {
             $this->guests->record($request, 'study');
         }
+
+        $this->logUsage($user, 'study', 'ok', $reservation?->amount ?? 0, "study:{$session->id}");
 
         return response()->json([
             'session'      => $session->only(['id', 'language', 'translation', 'style', 'agent_count', 'state']),

@@ -26,5 +26,15 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
-        //
+        // A lost race for the last token(s) (reserve() under lockForUpdate) surfaces as
+        // a clean 402, matching the RequireTokens pre-check, instead of a 500.
+        $exceptions->render(function (\App\Exceptions\InsufficientTokensException $e, $request) {
+            return response()->json([
+                'message'     => 'You have run out of tokens for this billing period.',
+                'reason'      => 'insufficient_tokens',
+                'required'    => $e->required,
+                'balance'     => $e->available,
+                'upgrade_url' => '/account',
+            ], 402);
+        });
     })->create();

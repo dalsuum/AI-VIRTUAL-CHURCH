@@ -41,19 +41,30 @@ class SubscriptionService
         return $ok;
     }
 
-    /** Activate premium (called from the verified webhook). Idempotent. */
+    /**
+     * Activate premium (called from the verified webhook). Idempotent: safe to call on
+     * every redelivered or routine subscription event. The wallet is only topped up on
+     * the FIRST transition into premium — not on routine `subscription.updated` events
+     * (card changes, metadata edits, renewals) — so a user's spent-down balance is never
+     * silently reset. The monthly cron handles ongoing replenishment.
+     */
     public function activatePremium(User $user, ?string $subscriptionId, ?string $customerId, ?Carbon $expiresAt, string $reason = 'webhook'): void
     {
+        $wasPremiumActive = $user->plan() === SubscriptionPlan::PREMIUM
+            && $user->subscriptionStatus() === SubscriptionStatus::ACTIVE;
+
         $this->transition($user, SubscriptionPlan::PREMIUM, SubscriptionStatus::ACTIVE, $reason, $subscriptionId, function (User $u) use ($subscriptionId, $customerId, $expiresAt) {
             $u->forceFill([
                 'stripe_subscription_id'  => $subscriptionId ?? $u->stripe_subscription_id,
                 'stripe_customer_id'      => $customerId ?? $u->stripe_customer_id,
-                'subscription_expires_at' => $expiresAt,
+                // Don't clobber a known expiry with null on events that omit it.
+                'subscription_expires_at' => $expiresAt ?? $u->subscription_expires_at,
             ])->save();
         });
 
-        // Top the wallet up to the premium allowance on activation.
-        $this->tokens->refillMonthly($user->refresh());
+        if (! $wasPremiumActive) {
+            $this->tokens->refillMonthly($user->refresh());
+        }
     }
 
     /** Payment failing — retain access briefly so they can fix their card. */
@@ -135,15 +146,21 @@ class SubscriptionService
 
     private function setStatus(User $user, SubscriptionStatus $status, string $reason): void
     {
+        if ($user->subscription_status === $status->value) {
+            return; // idempotent — no real change, don't log a no-op transition
+        }
         $user->forceFill(['subscription_status' => $status->value])->save();
         $this->recordHistory($user, $user->subscription_plan, $user->subscription_plan, $reason, null);
     }
 
-    /** Change plan + status atomically and log the transition. */
+    /** Change plan + status atomically and log the transition (only when something changed). */
     private function transition(User $user, SubscriptionPlan $plan, SubscriptionStatus $status, string $reason, ?string $paymentRef, ?callable $extra = null): void
     {
         DB::transaction(function () use ($user, $plan, $status, $reason, $paymentRef, $extra) {
-            $old = $user->subscription_plan;
+            $old        = $user->subscription_plan;
+            $oldStatus  = $user->subscription_status;
+            $changed    = $old !== $plan->value || $oldStatus !== $status->value;
+
             $user->forceFill([
                 'subscription_plan'   => $plan->value,
                 'subscription_status' => $status->value,
@@ -152,7 +169,11 @@ class SubscriptionService
             if ($extra) {
                 $extra($user);
             }
-            $this->recordHistory($user, $old, $plan->value, $reason, $paymentRef);
+            // Only record a history row when the plan/status actually moved, so a
+            // redelivered webhook doesn't pollute the audit trail.
+            if ($changed) {
+                $this->recordHistory($user, $old, $plan->value, $reason, $paymentRef);
+            }
         });
     }
 

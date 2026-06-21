@@ -10,6 +10,7 @@ use App\Notifications\ServiceScheduledNotification;
 use App\Services\CrisisInterceptService;
 use App\Services\GuestUsageService;
 use App\Services\TokenService;
+use App\Services\UsageLogger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -24,6 +25,7 @@ class ServiceController extends Controller
         private CrisisInterceptService $crisis,
         private TokenService $tokens,
         private GuestUsageService $guests,
+        private UsageLogger $usage,
     ) {}
 
     /**
@@ -51,6 +53,9 @@ class ServiceController extends Controller
         if (! $already) {
             $this->tokens->spend($user, 'service', "service:{$session->id}");
         }
+
+        $cost = $user->isGuestAccount() ? 0 : $this->tokens->cost('service');
+        $this->usage->record($user, 'service', 'ok', $cost, "service:{$session->id}");
     }
 
     /** Create a session. The media source is locked from the user's preference now. */

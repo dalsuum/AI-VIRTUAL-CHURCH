@@ -32,13 +32,26 @@ const LANG_FIELDS = [
 const filterCat = ref("All");
 const search    = ref("");
 
+// The list table would be far too wide with every language column, so it shows
+// only Zolai + a chosen language + English. The editor form still exposes all
+// languages. `tableLang` picks the middle column.
+const otherLangs = LANG_FIELDS.filter((l) => l.code !== "zolai" && l.code !== "english");
+const tableLang  = ref("burmese");
+
+const tableCols = computed(() => {
+  const cols = [LANG_FIELDS.find((l) => l.code === "zolai")];
+  const sel = otherLangs.find((l) => l.code === tableLang.value);
+  if (sel) cols.push(sel);
+  cols.push(LANG_FIELDS.find((l) => l.code === "english"));
+  return cols;
+});
+
 const filtered = computed(() => {
   const q = search.value.trim().toLowerCase();
   return words.value.filter((w) => {
     if (filterCat.value !== "All" && w.category !== filterCat.value) return false;
     if (!q) return true;
-    return LANG_FIELDS.some((l) => (w[l.code] || "").toLowerCase().includes(q)) ||
-      (w.notes || "").toLowerCase().includes(q);
+    return LANG_FIELDS.some((l) => (w[l.code] || "").toLowerCase().includes(q));
   });
 });
 
@@ -62,7 +75,7 @@ const saving  = ref(false);
 const form    = ref(blank());
 
 function blank() {
-  const b = { id: null, category: "Theology", notes: "" };
+  const b = { id: null, category: "Theology" };
   for (const l of LANG_FIELDS) b[l.code] = "";
   return b;
 }
@@ -73,7 +86,7 @@ function newWord() {
 }
 
 function editWord(w) {
-  const f = { id: w.id, category: w.category || "Theology", notes: w.notes || "" };
+  const f = { id: w.id, category: w.category || "Theology" };
   for (const l of LANG_FIELDS) f[l.code] = w[l.code] || "";
   form.value = f;
   editing.value = true;
@@ -97,7 +110,7 @@ async function save() {
     return;
   }
   saving.value = true;
-  const payload = { category: f.category || null, notes: f.notes.trim() || null };
+  const payload = { category: f.category || null };
   for (const l of LANG_FIELDS) {
     const v = (f[l.code] || "").trim();
     payload[l.code] = l.required ? v : (v || null);
@@ -144,7 +157,13 @@ async function remove(w) {
       </div>
 
       <div class="filters">
-        <input v-model="search" class="inp" type="search" placeholder="Search Zolai, Burmese, Hebrew, English or notes…" />
+        <input v-model="search" class="inp" type="search" placeholder="Search any language…" />
+        <label class="lang-pick">
+          <span>Show language</span>
+          <select v-model="tableLang" class="inp">
+            <option v-for="l in otherLangs" :key="l.code" :value="l.code">{{ l.label }}</option>
+          </select>
+        </label>
         <div class="cat-tabs">
           <button class="tab" :class="{ active: filterCat === 'All' }" @click="filterCat = 'All'">All</button>
           <button v-for="c in CATEGORIES" :key="c" class="tab"
@@ -160,21 +179,20 @@ async function remove(w) {
       <table v-else class="tbl">
         <thead>
           <tr>
-            <th v-for="l in LANG_FIELDS" :key="l.code">{{ l.label }}</th>
-            <th>Category</th><th>Notes</th><th></th>
+            <th v-for="l in tableCols" :key="l.code">{{ l.label }}</th>
+            <th>Category</th><th></th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="w in filtered" :key="w.id">
             <td
-              v-for="l in LANG_FIELDS"
+              v-for="l in tableCols"
               :key="l.code"
               :dir="l.dir || null"
               :lang="l.lang || null"
               :class="{ 't-zolai': l.code === 'zolai', 't-hebrew': l.code === 'hebrew' }"
             >{{ w[l.code] || "—" }}</td>
             <td>{{ w.category || "—" }}</td>
-            <td class="t-notes">{{ w.notes || "" }}</td>
             <td class="t-actions">
               <button class="btn sm" @click="editWord(w)">Edit</button>
               <button class="btn sm danger" @click="remove(w)">Delete</button>
@@ -209,10 +227,6 @@ async function remove(w) {
             <option v-for="c in CATEGORIES" :key="c" :value="c">{{ c }}</option>
           </select>
         </label>
-        <label class="full">Notes
-          <input v-model="form.notes" class="inp" type="text" maxlength="500"
-                 placeholder="Optional usage note, e.g. 'NOT Pathian (Mizo word)'" />
-        </label>
       </div>
 
       <div class="form-actions">
@@ -244,6 +258,8 @@ async function remove(w) {
        background: var(--bg); color: var(--text); font-size: 0.9rem; outline: none; width: 100%; }
 .inp:focus { border-color: var(--primary); }
 .filters .inp { max-width: 320px; }
+.lang-pick { display: flex; align-items: center; gap: 0.4rem; font-size: 0.78rem; color: var(--text-muted); }
+.lang-pick .inp { width: auto; min-width: 130px; }
 
 .cat-tabs { display: flex; flex-wrap: wrap; gap: 0.35rem; }
 .tab { padding: 0.25rem 0.6rem; font-size: 0.78rem; border: 1px solid var(--border);
@@ -256,7 +272,6 @@ async function remove(w) {
 .tbl td { padding: 0.5rem; border-bottom: 1px solid var(--border); vertical-align: top; }
 .t-zolai { font-weight: 600; }
 .t-hebrew { text-align: right; direction: rtl; font-size: 1.05rem; }
-.t-notes { color: var(--text-muted); font-style: italic; font-size: 0.82rem; }
 .t-actions { white-space: nowrap; text-align: right; }
 .t-actions .btn { margin-left: 0.35rem; }
 

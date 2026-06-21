@@ -65,8 +65,7 @@ const filtered = computed(() => {
     const catOk = activeCategory.value === "All" || w.category === activeCategory.value;
     if (!catOk) return false;
     if (!q) return true;
-    return LANGUAGES.some((l) => (w[l.code] || "").toLowerCase().includes(q)) ||
-      (w.notes || "").toLowerCase().includes(q);
+    return LANGUAGES.some((l) => (w[l.code] || "").toLowerCase().includes(q));
   });
 });
 
@@ -371,12 +370,6 @@ function catColor(cat) {
   border-radius: 999px;
   border: 1px solid;
   white-space: nowrap;
-}
-
-.notes-cell {
-  color: var(--text-muted);
-  font-size: 0.82rem;
-  font-style: italic;
 }
 
 .vocab-footer {

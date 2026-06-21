@@ -19,7 +19,23 @@ see whether the system **stays correct over time** under real conditions.
 **Browser probe** (`freeze_browser_probe.mjs`, hourly — Playwright/Chromium):
 - logged-out home load is **console-clean** (no error/warning noise)
 - login → account page renders the token gauge
+- **logout → nav clears + guard redirects `#account`→`#login`** (auth-drift check;
+  logout is browser-owned because `SESSION_DRIVER=cookie` makes a hand-rolled
+  multi-cookie logout replay brittle)
 - captures console errors, Vue warnings, and 5xx that only appear in a browser
+
+**Verdict gate** (`freeze_verdict.py`, hourly): the autonomous decision layer. It
+self-gates on window age (does nothing until 24h elapse), then evaluates the whole
+window and acts:
+- **PASS** (all green + coverage ≥80%) → writes `logs/freeze_verdict.txt`, then runs
+  `freeze_teardown.sh` automatically (removes cron + synthetic accounts).
+- **WARN** (mostly green but missed cycles / coverage gap) → writes the verdict,
+  notifies, keeps running so a human can look; re-evaluates next hour.
+- **FAIL** (any 5xx / failed check / balance regression / browser failure) →
+  **preserves** state and snapshots the logs to `logs/freeze_FAIL_<ts>/`; no teardown.
+
+Inspect early without acting: `python3 ops/freeze_verdict.py --dry-run`.
+Force an explicit early close: `python3 ops/freeze_verdict.py --force`.
 
 ## Usage
 

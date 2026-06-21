@@ -142,7 +142,6 @@ function catColor(cat) {
             <th>{{ primaryMeta.label }}</th>
             <th v-for="col in referenceCols" :key="col.code">{{ col.label }}</th>
             <th>Category</th>
-            <th>Notes</th>
           </tr>
         </thead>
         <tbody>
@@ -164,7 +163,6 @@ function catColor(cat) {
                 {{ word.category }}
               </span>
             </td>
-            <td class="notes-cell">{{ word.notes }}</td>
           </tr>
         </tbody>
       </table>

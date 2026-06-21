@@ -12,6 +12,7 @@ use App\Models\Setting;
 use App\Models\Testimony;
 use App\Models\User;
 use App\Http\Requests\UpdateSettingsRequest;
+use App\Services\BibleBgMusicLibrary;
 use App\Services\PermissionService;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -1022,55 +1023,87 @@ class AdminController extends Controller
     }
 
     /**
-     * Upload a static background-music track from the admin's device. Validates a
-     * small mp3/ogg, stores it under our own fixed name (never the client's), and
-     * points bible_bg_music_url at the public serving route (cache-busted). Lets
-     * an admin who has no hosted URL just pick a local file. (admin-only route)
+     * The background-music library: admin-uploaded tracks + AI-generated loops,
+     * each flagged with whether it's the one currently selected to play (static
+     * mode). Lets the admin browse, pick, and manage tracks. (admin-only route)
      */
-    public function bibleBgMusicUpload(Request $request): JsonResponse
+    public function bibleBgMusicLibrary(BibleBgMusicLibrary $library): JsonResponse
+    {
+        $selected = (string) Setting::get('bible_bg_music_url', '');
+        $tracks = array_map(function ($t) use ($selected) {
+            $t['selected'] = $selected !== '' && $t['url'] === $selected;
+
+            return $t;
+        }, $library->all());
+
+        return response()->json([
+            'tracks'       => $tracks,
+            'selected_url' => $selected,
+            'mode'         => (string) Setting::get('bible_bg_music_mode', 'off'),
+        ]);
+    }
+
+    /**
+     * Upload a track from the admin's device into the library. Validates a small
+     * mp3/ogg and (for convenience) selects it as the active static track when
+     * nothing is selected yet. (admin-only route)
+     */
+    public function bibleBgMusicUpload(Request $request, BibleBgMusicLibrary $library): JsonResponse
     {
         $validated = $request->validate([
             // Keep it small — it's a soft instrumental loop, not a full album.
             // Accept by extension as well as MIME: browsers label mp3s variously
             // (audio/mpeg, audio/mp3, audio/x-mpeg…), so a strict mimetypes-only
             // rule rejects perfectly valid files.
-            'file' => ['required', 'file', 'mimes:mp3,mpga,ogg,oga', 'max:10240'],
+            'file'  => ['required', 'file', 'mimes:mp3,mpga,ogg,oga', 'max:10240'],
+            'title' => ['nullable', 'string', 'max:80'],
         ]);
 
-        $file = $validated['file'];
-        $ext  = $file->getClientOriginalExtension() === 'ogg' || $file->getMimeType() === 'audio/ogg'
-            ? 'ogg' : 'mp3';
-
-        // One track at a time: clear any previous upload (either extension) so a
-        // stale .ogg can't shadow a freshly uploaded .mp3 in the serving order.
-        foreach (['mp3', 'ogg'] as $old) {
-            Storage::delete(BibleController::BG_MUSIC_DIR . "/track.{$old}");
+        $track = $library->addUpload($validated['file']);
+        if (! empty($validated['title'])) {
+            $track['title'] = $validated['title'];
         }
-        $file->storeAs(BibleController::BG_MUSIC_DIR, "track.{$ext}");
-        @chmod(Storage::path(BibleController::BG_MUSIC_DIR . "/track.{$ext}"), 0664);
 
-        // Cache-bust so readers pick up the new file immediately (the <audio> src
-        // changes), and so the static URL passes the FILTER_VALIDATE_URL check.
-        $url = url('/api/bible/bg-music/file') . '?v=' . time();
+        // First track uploaded with nothing chosen yet → make it the live one, so
+        // a single upload "just works" without a second click.
+        if ((string) Setting::get('bible_bg_music_url', '') === '') {
+            Setting::set('bible_bg_music_url', $track['url']);
+            Setting::set('bible_bg_music_mode', 'static');
+        }
+        $track['selected'] = (string) Setting::get('bible_bg_music_url', '') === $track['url'];
+
+        return response()->json(['track' => $track]);
+    }
+
+    /** Delete an uploaded library track; clears the selection if it was live. */
+    public function bibleBgMusicDelete(string $id, BibleBgMusicLibrary $library): JsonResponse
+    {
+        $res = $library->deleteUpload($id);
+        abort_if($res === null, 404, 'Track not found.');
+
+        if ((string) Setting::get('bible_bg_music_url', '') === $res['url']) {
+            Setting::set('bible_bg_music_url', '');
+        }
+
+        return response()->json(['ok' => true]);
+    }
+
+    /** Choose which library track plays (sets static mode + its URL). */
+    public function bibleBgMusicSelect(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'src' => ['required', 'in:upload,ai'],
+            'key' => ['required', 'string', 'max:64'],
+        ]);
+
+        $library = app(BibleBgMusicLibrary::class);
+        abort_if($library->resolvePath($data['src'], $data['key']) === null, 404, 'Track not found.');
+
+        $url = $library->url($data['src'], $data['key']);
         Setting::set('bible_bg_music_url', $url);
         Setting::set('bible_bg_music_mode', 'static');
 
         return response()->json(['url' => $url, 'mode' => 'static']);
-    }
-
-    /** Remove the uploaded static track and clear its URL. (admin-only route) */
-    public function bibleBgMusicRemove(Request $request): JsonResponse
-    {
-        foreach (['mp3', 'ogg'] as $ext) {
-            Storage::delete(BibleController::BG_MUSIC_DIR . "/track.{$ext}");
-        }
-        // Only clear the URL if it pointed at our own upload, so a hand-entered
-        // external URL isn't wiped by removing a local file.
-        if (str_contains((string) Setting::get('bible_bg_music_url', ''), '/api/bible/bg-music/file')) {
-            Setting::set('bible_bg_music_url', '');
-        }
-
-        return response()->json(['url' => '']);
     }
 
     public function updateSettings(UpdateSettingsRequest $request): JsonResponse

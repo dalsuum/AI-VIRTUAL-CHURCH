@@ -33,11 +33,10 @@ class VocabularyController extends Controller
                 foreach (Vocabulary::LANGUAGE_COLUMNS as $col) {
                     $sub->orWhere($col, 'like', "%{$search}%");
                 }
-                $sub->orWhere('notes', 'like', "%{$search}%");
             });
         }
 
-        $words = $q->get(array_merge(['id'], Vocabulary::LANGUAGE_COLUMNS, ['category', 'notes']));
+        $words = $q->get(array_merge(['id'], Vocabulary::LANGUAGE_COLUMNS, ['category']));
 
         return response()->json(['vocabulary' => $words]);
     }
@@ -87,10 +86,9 @@ class VocabularyController extends Controller
             'hebrew'   => ['nullable', 'string', 'max:255'],
             'english'  => [$required, 'string', 'max:255'],
             'category' => ['nullable', 'string', 'max:100'],
-            'notes'    => ['nullable', 'string', 'max:500'],
         ]);
 
-        foreach (array_merge(Vocabulary::LANGUAGE_COLUMNS, ['category', 'notes']) as $field) {
+        foreach (array_merge(Vocabulary::LANGUAGE_COLUMNS, ['category']) as $field) {
             if (array_key_exists($field, $data)) {
                 $data[$field] = $data[$field] !== null ? trim($data[$field]) : null;
             }

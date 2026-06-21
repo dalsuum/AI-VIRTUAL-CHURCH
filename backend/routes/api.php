@@ -212,9 +212,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::patch('/settings', [AdminController::class, 'updateSettings']);
         // Queue AI background-music generation for the whole theme x tod matrix.
         Route::post('/bible/bg-music/pregenerate', [AdminController::class, 'bibleBgMusicPregenerate']);
-        // Upload / remove a static background-music track from the admin's device.
+        // Background-music library: list, upload, delete an uploaded track, and
+        // choose which track plays.
+        Route::get('/bible/bg-music/library', [AdminController::class, 'bibleBgMusicLibrary']);
         Route::post('/bible/bg-music/upload', [AdminController::class, 'bibleBgMusicUpload']);
-        Route::delete('/bible/bg-music/upload', [AdminController::class, 'bibleBgMusicRemove']);
+        Route::delete('/bible/bg-music/library/{id}', [AdminController::class, 'bibleBgMusicDelete']);
+        Route::post('/bible/bg-music/select', [AdminController::class, 'bibleBgMusicSelect']);
 
         // Content filter — categorized YouTube blocklist (CRUD + import/export).
         Route::get('/content-filter',                      [\App\Http\Controllers\ContentFilterController::class, 'index']);

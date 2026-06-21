@@ -18,6 +18,6 @@ class Vocabulary extends Model
 
     protected $fillable = [
         'zolai', 'falam', 'hakha', 'matu', 'mizo', 'paite', 'sizang',
-        'burmese', 'hebrew', 'english', 'category', 'notes', 'source',
+        'burmese', 'hebrew', 'english', 'category', 'source',
     ];
 }

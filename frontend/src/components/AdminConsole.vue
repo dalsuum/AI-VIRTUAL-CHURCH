@@ -434,12 +434,29 @@ const pregenerateBibleBg = async () => {
 };
 const saveBibleBgMusicUrl = () =>
   saveSetting("bible_bg_music_url", (settings.value.bible_bg_music_url || "").trim(), "Bible background music updated.");
-// Local-file upload for the static track: pick an mp3/ogg from the admin's
-// device, store it server-side, and point bible_bg_music_url at it.
+// Background-music library: uploaded tracks + AI-generated loops. The admin can
+// upload, delete uploads, and pick which track plays (sets bible_bg_music_url).
 const bibleBgUploading = ref(false);
 const bibleBgFileInput = ref(null);
-const uploadedBibleBgMusic = computed(() =>
-  String(settings.value?.bible_bg_music_url || "").includes("/api/bible/bg-music/file"));
+const bibleBgTracks = ref([]);
+const bibleBgLibraryLoading = ref(false);
+const refreshBibleBgLibrary = async () => {
+  bibleBgLibraryLoading.value = true;
+  try {
+    const res = await api.adminBibleBgMusicLibrary();
+    bibleBgTracks.value = res.tracks || [];
+    if (typeof res.selected_url === "string") settings.value.bible_bg_music_url = res.selected_url;
+  } catch (e) {
+    bibleBgTracks.value = [];
+  } finally {
+    bibleBgLibraryLoading.value = false;
+  }
+};
+// Load the library when the admin switches into static mode.
+watch(
+  () => settings.value?.bible_bg_music_mode,
+  (mode) => { if (mode === "static" && !bibleBgTracks.value.length) refreshBibleBgLibrary(); }
+);
 const uploadBibleBgMusic = async (ev) => {
   const file = ev?.target?.files?.[0];
   if (!file || bibleBgUploading.value) return;
@@ -451,9 +468,9 @@ const uploadBibleBgMusic = async (ev) => {
   bibleBgUploading.value = true;
   try {
     const res = await api.adminBibleBgMusicUpload(file);
-    settings.value.bible_bg_music_url = res.url || "";
-    if (res.mode) settings.value.bible_bg_music_mode = res.mode;
-    notice.value = "Background music uploaded.";
+    if (res.track?.selected) settings.value.bible_bg_music_url = res.track.url;
+    notice.value = "Track uploaded to the library.";
+    await refreshBibleBgLibrary();
   } catch (e) {
     notice.value = e?.data?.message || "Could not upload that file (use a small .mp3/.ogg).";
   } finally {
@@ -461,17 +478,24 @@ const uploadBibleBgMusic = async (ev) => {
     if (bibleBgFileInput.value) bibleBgFileInput.value.value = "";
   }
 };
-const removeBibleBgMusic = async () => {
-  if (bibleBgUploading.value) return;
-  bibleBgUploading.value = true;
+const selectBibleBgTrack = async (track) => {
   try {
-    const res = await api.adminBibleBgMusicRemove();
+    const res = await api.adminBibleBgMusicSelect(track.source, track.key);
     settings.value.bible_bg_music_url = res.url || "";
-    notice.value = "Background music removed.";
+    notice.value = `Now playing: ${track.title}`;
+    await refreshBibleBgLibrary();
   } catch (e) {
-    notice.value = e?.data?.message || "Could not remove the track.";
-  } finally {
-    bibleBgUploading.value = false;
+    notice.value = e?.data?.message || "Could not select that track.";
+  }
+};
+const deleteBibleBgTrack = async (track) => {
+  if (!confirm(`Delete "${track.title}" from the library?`)) return;
+  try {
+    await api.adminBibleBgMusicDelete(track.id);
+    notice.value = "Track deleted.";
+    await refreshBibleBgLibrary();
+  } catch (e) {
+    notice.value = e?.data?.message || "Could not delete that track.";
   }
 };
 const setBibleBgMusicVolume = (v) =>
@@ -2628,8 +2652,9 @@ onUnmounted(() => {
               </div>
 
               <p class="setting-desc" style="margin-top:1rem">
-                …or upload an .mp3/.ogg from this device (max 10&nbsp;MB). It's
-                served from this site, so no external hosting or CORS setup needed.
+                …or upload an .mp3/.ogg from this device (max 10&nbsp;MB) into the
+                library below. Uploaded tracks are served from this site — no
+                external hosting or CORS setup needed.
               </p>
               <div class="bgm-row">
                 <input
@@ -2639,20 +2664,59 @@ onUnmounted(() => {
                   :disabled="bibleBgUploading || savingSettings || settingsReadOnly"
                   @change="uploadBibleBgMusic"
                 />
+                <span v-if="bibleBgUploading" class="setting-desc">Uploading…</span>
+              </div>
+
+              <!-- The track library: uploaded tracks + AI-generated loops. Pick
+                   which one plays, preview it, or delete an uploaded one. -->
+              <p class="setting-desc" style="margin-top:1.25rem">
+                <strong>Music library</strong>
                 <button
-                  v-if="uploadedBibleBgMusic"
                   type="button"
                   class="choice bgm-save"
-                  :disabled="bibleBgUploading || savingSettings || settingsReadOnly"
-                  @click="removeBibleBgMusic"
+                  style="margin-left:0.6rem"
+                  :disabled="bibleBgLibraryLoading"
+                  @click="refreshBibleBgLibrary"
                 >
-                  Remove
+                  {{ bibleBgLibraryLoading ? 'Loading…' : 'Refresh' }}
                 </button>
-              </div>
-              <p v-if="bibleBgUploading" class="setting-desc">Uploading…</p>
-              <p v-else-if="uploadedBibleBgMusic" class="setting-desc">
-                ✓ Using an uploaded track. <a :href="settings.bible_bg_music_url" target="_blank" rel="noopener">Preview</a>
               </p>
+              <p v-if="!bibleBgTracks.length && !bibleBgLibraryLoading" class="setting-desc">
+                No tracks yet. Upload one above, or generate some in AI mode.
+              </p>
+              <ul v-else class="bgm-library">
+                <li
+                  v-for="t in bibleBgTracks"
+                  :key="t.id"
+                  class="bgm-track"
+                  :class="{ selected: t.selected }"
+                >
+                  <span class="bgm-track-title">
+                    <span v-if="t.selected" aria-hidden="true">▶ </span>{{ t.title }}
+                    <small class="bgm-track-src">{{ t.source === 'ai' ? 'AI' : 'uploaded' }}</small>
+                  </span>
+                  <span class="bgm-track-actions">
+                    <a :href="t.url" target="_blank" rel="noopener" class="choice bgm-save">Preview</a>
+                    <button
+                      type="button"
+                      class="choice bgm-save"
+                      :disabled="t.selected || settingsReadOnly"
+                      @click="selectBibleBgTrack(t)"
+                    >
+                      {{ t.selected ? 'In use' : 'Use' }}
+                    </button>
+                    <button
+                      v-if="t.source !== 'ai'"
+                      type="button"
+                      class="choice bgm-save bgm-del"
+                      :disabled="settingsReadOnly"
+                      @click="deleteBibleBgTrack(t)"
+                    >
+                      Delete
+                    </button>
+                  </span>
+                </li>
+              </ul>
             </template>
 
             <!-- AI mode: which engine generates the loop -->
@@ -3328,6 +3392,17 @@ onUnmounted(() => {
 .bgm-row { display: flex; gap: 0.5rem; align-items: stretch; }
 .bgm-row .pool-input { flex: 1; }
 .bgm-save { flex: 0 0 auto; padding: 0.45rem 1.1rem; cursor: pointer; }
+.bgm-library { list-style: none; margin: 0.5rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; }
+.bgm-track {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+  padding: 0.5rem 0.75rem; border: 1px solid var(--border, #2a2f3a); border-radius: 8px;
+}
+.bgm-track.selected { border-color: var(--primary, #4f8cff); background: rgba(79, 140, 255, 0.08); }
+.bgm-track-title { display: flex; align-items: center; gap: 0.4rem; min-width: 0; }
+.bgm-track-src { opacity: 0.6; font-weight: 400; }
+.bgm-track-actions { display: flex; gap: 0.4rem; flex: 0 0 auto; }
+.bgm-track-actions .bgm-save { padding: 0.3rem 0.7rem; font-size: 0.85rem; text-decoration: none; }
+.bgm-del { color: #ff6b6b; }
 
 /* Per-version Bible feature matrix: a scrollable grid of show/enable checkboxes. */
 .bible-matrix-wrap { overflow-x: auto; margin-top: 0.5rem; }

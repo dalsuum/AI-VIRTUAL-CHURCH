@@ -183,6 +183,8 @@ export const api = {
   studyListEvents: (id, afterSeq = 0) =>
     request(`/v1/study/sessions/${id}/events?after_seq=${afterSeq}`),
   studyEnd: (id) => request(`/v1/study/sessions/${id}/end`, { method: "POST" }),
+  studyEmail: (id, email) =>
+    request(`/v1/study/sessions/${id}/email`, { method: "POST", body: email ? { email } : {} }),
 
   // ── AI Bible Study (admin / AI Core console) ─────────────────────────────
   studyAdminPersonas: () => request("/v1/admin/study/personas"),

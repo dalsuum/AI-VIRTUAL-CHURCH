@@ -199,6 +199,88 @@ function roleClass(role) {
   if (role === "user") return "user";
   return role === "moderator" || role === "synthesis" ? "moderator" : "pastor";
 }
+
+// ── Summary actions: copy / share / email / PDF / navigation ────────────────
+function summaryText() {
+  const s = summary.value || {};
+  const L = [];
+  L.push("AI Bible Study — Summary");
+  if (session.value?.topic || form.question) L.push(`Topic: ${session.value?.topic || form.question}`);
+  const sect = (title, items) => {
+    const arr = (items || []).filter(Boolean);
+    if (arr.length) { L.push("", title); arr.forEach((i) => L.push("- " + i)); }
+  };
+  sect("Key Verses", s.key_verses);
+  sect("Main Lessons", s.lessons);
+  if (s.prayer) { L.push("", "Prayer", s.prayer); }
+  sect("Action Points", s.action_points);
+  sect("Reflection Questions", s.reflection_questions);
+  sect("Study Plan", s.study_plan);
+  return L.join("\n");
+}
+
+const actionMsg = ref("");
+function flash(m) { actionMsg.value = m; setTimeout(() => (actionMsg.value = ""), 2500); }
+
+async function copySummary() {
+  try { await navigator.clipboard.writeText(summaryText()); flash("Copied to clipboard."); }
+  catch { flash("Could not copy."); }
+}
+
+async function shareSummary() {
+  const text = summaryText();
+  if (navigator.share) {
+    try { await navigator.share({ title: "AI Bible Study", text }); return; } catch { /* cancelled */ }
+  }
+  try { await navigator.clipboard.writeText(text); flash("Copied — paste it anywhere to share."); }
+  catch { flash("Sharing not supported on this device."); }
+}
+
+async function emailSummary() {
+  let email = "";
+  try {
+    const res = await api.studyEmail(session.value.id);
+    if (res?.ok) { flash("Summary emailed."); return; }
+  } catch (e) {
+    if (e?.status === 422) {
+      email = window.prompt("Send the summary to which email address?") || "";
+      if (!email) return;
+      try { await api.studyEmail(session.value.id, email); flash("Summary emailed."); }
+      catch { flash("Could not send the email."); }
+    } else { flash("Could not send the email."); }
+  }
+}
+
+async function exportPdf() {
+  const el = document.getElementById("study-summary-print");
+  if (!el) return;
+  const { default: html2pdf } = await import("html2pdf.js");
+  el.classList.add("pdf-mode");   // force dark-on-white for a legible PDF
+  try {
+    await html2pdf()
+      .set({
+        margin: 12,
+        filename: `bible-study-${session.value?.id || "summary"}.pdf`,
+        html2canvas: { scale: 2, backgroundColor: "#ffffff" },
+        jsPDF: { unit: "mm", format: "a4" },
+      })
+      .from(el)
+      .save();
+  } finally {
+    el.classList.remove("pdf-mode");
+  }
+}
+
+function newDiscussion() {
+  stream.close();
+  summary.value = null;
+  bubbles.value = [];
+  notice.value = "";
+  session.value = null;
+  phase.value = "setup";
+}
+
+function goHome() { window.location.hash = ""; }
 </script>
 
 <template>
@@ -289,29 +371,44 @@ function roleClass(role) {
 
     <!-- SUMMARY -->
     <section v-else-if="phase === 'summary'" class="summary card">
-      <h2>Your Study Summary</h2>
-      <div v-if="summary.key_verses?.length" class="block">
-        <h3>📖 Key Verses</h3>
-        <ul><li v-for="(v, i) in summary.key_verses" :key="i">{{ v }}</li></ul>
+      <div id="study-summary-print" class="print-area">
+        <h2>Your Study Summary</h2>
+        <p v-if="session?.topic || form.question" class="topic">{{ session?.topic || form.question }}</p>
+        <div v-if="summary.key_verses?.length" class="block">
+          <h3>📖 Key Verses</h3>
+          <ul><li v-for="(v, i) in summary.key_verses" :key="i">{{ v }}</li></ul>
+        </div>
+        <div v-if="summary.lessons?.length" class="block">
+          <h3>💡 Main Lessons</h3>
+          <ul><li v-for="(v, i) in summary.lessons" :key="i">{{ v }}</li></ul>
+        </div>
+        <div v-if="summary.prayer" class="block">
+          <h3>🙏 Prayer</h3><p>{{ summary.prayer }}</p>
+        </div>
+        <div v-if="summary.action_points?.length" class="block">
+          <h3>✅ Action Points</h3>
+          <ol><li v-for="(v, i) in summary.action_points" :key="i">{{ v }}</li></ol>
+        </div>
+        <div v-if="summary.reflection_questions?.length" class="block">
+          <h3>❓ Reflection</h3>
+          <ul><li v-for="(v, i) in summary.reflection_questions" :key="i">{{ v }}</li></ul>
+        </div>
+        <div v-if="summary.study_plan?.length" class="block">
+          <h3>🗓 Study Plan</h3>
+          <ol><li v-for="(v, i) in summary.study_plan" :key="i">{{ v }}</li></ol>
+        </div>
       </div>
-      <div v-if="summary.lessons?.length" class="block">
-        <h3>💡 Main Lessons</h3>
-        <ul><li v-for="(v, i) in summary.lessons" :key="i">{{ v }}</li></ul>
+
+      <p v-if="actionMsg" class="action-msg">{{ actionMsg }}</p>
+      <div class="actions">
+        <button class="primary" @click="exportPdf">⬇ Export PDF</button>
+        <button class="ghost" @click="copySummary">📋 Copy</button>
+        <button class="ghost" @click="shareSummary">🔗 Share</button>
+        <button class="ghost" @click="emailSummary">✉ Email me</button>
       </div>
-      <div v-if="summary.prayer" class="block">
-        <h3>🙏 Prayer</h3><p>{{ summary.prayer }}</p>
-      </div>
-      <div v-if="summary.action_points?.length" class="block">
-        <h3>✅ Action Points</h3>
-        <ol><li v-for="(v, i) in summary.action_points" :key="i">{{ v }}</li></ol>
-      </div>
-      <div v-if="summary.reflection_questions?.length" class="block">
-        <h3>❓ Reflection</h3>
-        <ul><li v-for="(v, i) in summary.reflection_questions" :key="i">{{ v }}</li></ul>
-      </div>
-      <div v-if="summary.study_plan?.length" class="block">
-        <h3>🗓 Study Plan</h3>
-        <ol><li v-for="(v, i) in summary.study_plan" :key="i">{{ v }}</li></ol>
+      <div class="actions">
+        <button class="primary" @click="newDiscussion">➕ New Discussion</button>
+        <button class="ghost" @click="goHome">🏠 Church Home</button>
       </div>
     </section>
     </main>
@@ -422,4 +519,10 @@ function roleClass(role) {
 .summary h2, .summary h3 { color: var(--text); }
 .summary .block { margin: 0.9rem 0; }
 .summary li, .summary p { color: var(--text); }
+.summary .topic { color: var(--text-muted); font-style: italic; margin-top: 0; }
+.actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem; }
+.action-msg { color: var(--success); margin-top: 0.8rem; }
+/* Forced light palette during PDF capture so text is legible on white. */
+.print-area.pdf-mode { background: #fff; padding: 8px; }
+.print-area.pdf-mode :is(h2, h3, li, p, span) { color: #111 !important; }
 </style>

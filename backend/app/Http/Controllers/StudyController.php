@@ -239,6 +239,31 @@ class StudyController extends Controller
         return response()->json(['ok' => true, 'state' => $session->state]);
     }
 
+    /** Email the finished summary to the worshipper (owner-scoped). */
+    public function emailSummary(Request $request, StudySession $session): JsonResponse
+    {
+        $this->authorizeOwner($request, $session);
+        $session->load('summary');
+        abort_unless($session->summary !== null, 422, 'Summary is not ready yet.');
+
+        $data = $request->validate(['email' => ['nullable', 'email', 'max:190']]);
+        $user = $request->user();
+        $email = $data['email']
+            ?? $session->contact_email
+            ?? (! str_ends_with((string) $user->email, '@guest.local') ? $user->email : null);
+        abort_unless($email, 422, 'No email address available. Please provide one.');
+
+        \Illuminate\Support\Facades\Notification::route('mail', $email)
+            ->notify(new \App\Notifications\StudySummaryNotification($session, $session->summary));
+
+        // Remember it for any future sends on this session.
+        if (! $session->contact_email) {
+            $session->update(['contact_email' => $email]);
+        }
+
+        return response()->json(['ok' => true]);
+    }
+
     /** Read a session with its messages + summary (owner-scoped). */
     public function show(Request $request, StudySession $session): JsonResponse
     {

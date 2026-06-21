@@ -319,6 +319,8 @@ Route::middleware('auth:sanctum')->prefix('v1/study')->group(function () {
     Route::get('/sessions/{session}/events', [StudyController::class, 'listEvents']);
     Route::get('/sessions/{session}/stream', [StudyController::class, 'stream']);
     Route::post('/sessions/{session}/end', [StudyController::class, 'endSession']);
+    Route::post('/sessions/{session}/email', [StudyController::class, 'emailSummary'])
+        ->middleware('throttle:6,1');
 });
 
 // AI Core / Bible Study admin console. Entry gated by `staff`; each method enforces

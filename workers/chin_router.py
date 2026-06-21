@@ -5,10 +5,14 @@ Config-driven sibling of tedim_router.py covering four additional
 Chin/Zo languages, each backed by its own Ollama model (llama3.2:1b +
 per-language Modelfile system prompt):
 
-    Falam (Lai)   cfm  → ollama: falam-lai     prefix: /falam
-    Hakha (Lai)   cnh  → ollama: hakha-lai     prefix: /hakha
-    Mizo (Lushai) lus  → ollama: mizo-lushai   prefix: /mizo
-    Paite (Zomi)  pck  → ollama: paite-zomi    prefix: /paite
+    Falam (Lai)   cfm  → ollama:   falam-lai                    prefix: /falam
+    Hakha (Lai)   cnh  → ollama:   hakha-lai                    prefix: /hakha
+    Mizo (Lushai) lus  → goldfish: goldfish-models/lus_latn_full prefix: /mizo
+    Paite (Zomi)  pck  → goldfish: goldfish-models/pck_latn_full prefix: /paite
+
+Falam/Hakha use instruction-tuned Ollama models; Mizo/Paite have no such model
+upstream, so they are backed by the goldfish-models monolingual LMs served
+in-process by goldfish_service.py (engine: "goldfish" in their LANGS config).
 
 Mount in workers/api.py:
     from chin_router import ROUTERS as CHIN_ROUTERS
@@ -123,6 +127,9 @@ LANGS: dict[str, dict] = {
     "mizo": {
         "iso": "lus",
         "name": "Mizo (Lushai)",
+        # Mizo has no instruction-tuned Ollama model; it is backed by the
+        # goldfish-models/lus_latn_full monolingual LM via goldfish_service.
+        "engine": "goldfish",
         "model_env": "OLLAMA_MODEL_LUS",
         "model": "mizo-lushai",
         "bible": "lus",
@@ -144,6 +151,8 @@ LANGS: dict[str, dict] = {
     "paite": {
         "iso": "pck",
         "name": "Paite (Zomi)",
+        # Paite is backed by goldfish-models/pck_latn_full via goldfish_service.
+        "engine": "goldfish",
         "model_env": "OLLAMA_MODEL_PCK",
         "model": "paite-zomi",
         "bible": "pck",
@@ -243,6 +252,27 @@ def _validate(text: str, cfg: dict) -> str:
     return clean
 
 
+async def _goldfish(cfg: dict, prompt: str, system: str | None = None,
+                    max_tokens: int = 512) -> str:
+    """Generate via the in-process goldfish monolingual LM (Mizo/Paite).
+
+    Goldfish is completion-only, so the system prompt is folded into a short
+    native-language preamble and the model continues from there.
+    """
+    import goldfish_service  # mounted alongside this router in api.py
+
+    seed = f"{system}\n\n{prompt}" if system else prompt
+    return await goldfish_service.generate_text(cfg["iso"], seed, max_tokens)
+
+
+async def _infer(cfg: dict, prompt: str, system: str | None = None,
+                 max_tokens: int = 512) -> str:
+    """Dispatch to the configured engine: goldfish (Mizo/Paite) or Ollama."""
+    if cfg.get("engine") == "goldfish":
+        return await _goldfish(cfg, prompt, system=system, max_tokens=max_tokens)
+    return await _ollama(cfg, prompt, system=system, max_tokens=max_tokens)
+
+
 async def _ollama(cfg: dict, prompt: str, system: str | None = None,
                   max_tokens: int = 512) -> str:
     payload = {
@@ -281,7 +311,7 @@ def _build_router(prefix: str, cfg: dict) -> APIRouter:
             if body.direction != "xx2en"
             else f"Translate to English: {body.text}"
         )
-        out = await _ollama(cfg, prompt)
+        out = await _infer(cfg, prompt)
         await _redis.set(key, out, ex=CACHE_TTL)
         return {"text": out, "cached": False}
 
@@ -290,8 +320,8 @@ def _build_router(prefix: str, cfg: dict) -> APIRouter:
         system = body.system or cfg["system"]
         out = _validate(
             _strip_english_paragraphs(
-                await _ollama(cfg, body.prompt, system=system,
-                              max_tokens=body.max_tokens)
+                await _infer(cfg, body.prompt, system=system,
+                             max_tokens=body.max_tokens)
             ),
             cfg,
         )

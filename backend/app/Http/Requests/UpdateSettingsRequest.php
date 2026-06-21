@@ -37,11 +37,11 @@ class UpdateSettingsRequest extends FormRequest
             'bible_narration_mode_my'  => ['sometimes', 'string', 'in:edge_tts,mms_tts,off'],
             'bible_narration_mode_td'  => ['sometimes', 'string', 'in:edge_tts,mms_tts,off'],
             'bible_narration_mode_he'  => ['sometimes', 'string', 'in:edge_tts,off'],
-            // Falam & Hakha have native Meta MMS-TTS voices (mms-tts-cfm / -cnh).
+            // Falam, Hakha & Matu have native Meta MMS-TTS voices (mms-tts-cfm / -cnh / -hlt).
             'bible_narration_mode_cfm' => ['sometimes', 'string', 'in:edge_tts,mms_tts,off'],
             'bible_narration_mode_cnh' => ['sometimes', 'string', 'in:edge_tts,mms_tts,off'],
             'bible_narration_mode_mrh' => ['sometimes', 'string', 'in:edge_tts,off'],
-            'bible_narration_mode_hlt' => ['sometimes', 'string', 'in:edge_tts,off'],
+            'bible_narration_mode_hlt' => ['sometimes', 'string', 'in:edge_tts,mms_tts,off'],
             'bible_narration_mode_lus' => ['sometimes', 'string', 'in:edge_tts,off'],
             'bible_narration_mode_pck' => ['sometimes', 'string', 'in:edge_tts,off'],
             'bible_narration_mode_csy' => ['sometimes', 'string', 'in:edge_tts,off'],

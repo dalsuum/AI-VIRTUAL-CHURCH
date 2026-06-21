@@ -74,3 +74,9 @@ workers/nllb-200-distilled-600M/
 .ai/
 .claude/settings.json
 partner-activities/
+
+# Freeze monitoring harness — secrets, logs, local deps (scripts are committed)
+/ops/.freeze_env
+/ops/logs/
+/ops/node_modules/
+/ops/package-lock.json

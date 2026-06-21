@@ -973,6 +973,7 @@ Ads appear in the service player at three positions:
 - **List view** — shows all campaigns with live impression/click/revenue totals.
 - **Edit view** — two-column layout: ad settings on the left, slide manager on the right.
   - Set status (`draft` / `active` / `paused`), type (`slideshow` / `html`), locations, slide duration, billing rates, and audience targeting.
+  - **Locations** — `start` / `between` / `end` (service flow), `special_day` (Special Day MV page), `sticker_ads` (Live Sticker page), and `bible_study` (the box below the AI Bible Study setup form). Tag an ad to a location to show it there; untag to hide.
   - **Image slides** — upload an image and crop it in-browser with Cropper.js (free aspect ratio, max 1200×800 WebP output at 88% quality).
   - **HTML slides** — paste any HTML (embed codes, custom banners).
   - Reorder slides with ↑/↓ buttons (persisted to `sort_order`).

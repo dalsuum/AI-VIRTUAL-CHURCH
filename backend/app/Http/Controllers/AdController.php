@@ -58,7 +58,7 @@ class AdController extends Controller
             'type'                 => ['sometimes', 'in:slideshow,html'],
             'status'               => ['sometimes', 'in:draft,active,paused'],
             'locations'            => ['required', 'array', 'min:1'],
-            'locations.*'          => ['in:start,between,end,special_day,sticker_ads'],
+            'locations.*'          => ['in:start,between,end,special_day,sticker_ads,bible_study'],
             'target_language'      => ['nullable', 'in:en,my,td'],
             'target_moods'         => ['sometimes', 'array'],
             'currency'             => ['sometimes', 'string', 'size:3'],
@@ -81,7 +81,7 @@ class AdController extends Controller
             'type'                 => ['sometimes', 'in:slideshow,html'],
             'status'               => ['sometimes', 'in:draft,active,paused'],
             'locations'            => ['sometimes', 'array', 'min:1'],
-            'locations.*'          => ['in:start,between,end,special_day,sticker_ads'],
+            'locations.*'          => ['in:start,between,end,special_day,sticker_ads,bible_study'],
             'target_language'      => ['sometimes', 'nullable', 'in:en,my,td'],
             'target_moods'         => ['sometimes', 'array'],
             'currency'             => ['sometimes', 'string', 'size:3'],
@@ -251,7 +251,7 @@ class AdController extends Controller
     {
         $data = $request->validate([
             'ad_id'         => ['required', 'exists:ads,id'],
-            'location'      => ['required', 'in:start,between,end,special_day,sticker_ads'],
+            'location'      => ['required', 'in:start,between,end,special_day,sticker_ads,bible_study'],
             'duration_ms'   => ['sometimes', 'integer', 'min:0'],
             'clicked'       => ['sometimes', 'boolean'],
             'session_token' => ['sometimes', 'nullable', 'string', 'max:64'],

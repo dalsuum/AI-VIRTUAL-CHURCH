@@ -7,6 +7,7 @@ import { onMounted, onBeforeUnmount, reactive, ref, computed, watch } from "vue"
 import { api } from "../composables/useApi";
 import { useStudyStream } from "../composables/useStudyStream";
 import ThemeToggle from "./ThemeToggle.vue";
+import AdCarousel from "./AdCarousel.vue";
 
 const year = new Date().getFullYear();
 
@@ -50,6 +51,12 @@ const inputOpen = ref(false);
 const followUp = ref("");
 const summary = ref(null);
 
+// Active ads for the box below the Bible Study setup form.
+const ads = ref([]);
+const hasStudyAd = computed(() =>
+  ads.value.some((a) => a.status === "active" && (a.locations || []).includes("bible_study"))
+);
+
 const stream = useStudyStream();
 const { connected, reconnecting } = stream;
 
@@ -76,6 +83,12 @@ onMounted(async () => {
   } catch (e) {
     error.value = "Bible Study is not available right now.";
   }
+  // Active ads for the box below the setup form — fire-and-forget so a
+  // failure here never blocks the study experience.
+  try {
+    const res = await api.fetchActiveAds();
+    ads.value = res.ads || [];
+  } catch (_) { /* ignore */ }
 });
 
 onBeforeUnmount(() => stream.close());
@@ -341,6 +354,14 @@ function goHome() { window.location.hash = ""; }
       </button>
     </section>
 
+    <!-- Sponsored box below the setup form (admin-controlled via Ads → Bible Study page) -->
+    <div v-if="phase === 'setup' && hasStudyAd" class="study-ads">
+      <AdCarousel
+        :ads="ads"
+        location="bible_study"
+        :language="form.language" />
+    </div>
+
     <!-- DISCUSSION -->
     <section v-else-if="phase === 'discussion'" class="discussion">
       <div class="status">
@@ -525,4 +546,6 @@ function goHome() { window.location.hash = ""; }
 /* Forced light palette during PDF capture so text is legible on white. */
 .print-area.pdf-mode { background: #fff; padding: 8px; }
 .print-area.pdf-mode :is(h2, h3, li, p, span) { color: #111 !important; }
+
+.study-ads { margin-top: 1.5rem; }
 </style>

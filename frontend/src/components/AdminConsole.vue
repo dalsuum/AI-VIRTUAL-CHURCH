@@ -2008,6 +2008,33 @@ onUnmounted(() => {
         </div>
 
         <div class="setting-block">
+          <h2>Goldfish text generators</h2>
+          <p class="setting-desc">
+            Mizo and Paite have no instruction-tuned LLM and <strong>no spoken voice</strong>
+            upstream, so their generated worship <em>text</em> (prayers, sermon, lyrics) comes
+            from the <strong>goldfish-models</strong> monolingual language models on the worker.
+            This produces text, not audio — it is unrelated to the Bible reader voice. Off →
+            curated fallback for that language. Requires the goldfish service
+            (transformers + torch) on the LLM worker.
+          </p>
+          <div v-if="settings" class="choice-row">
+            <button
+              v-for="g in goldfishNarrators"
+              :key="g.key"
+              type="button"
+              class="choice"
+              :class="{ active: settings[g.key] === true }"
+              :disabled="savingSettings || settingsReadOnly"
+              @click="setGoldfishNarrator(g.key, !settings[g.key])"
+            >
+              <strong>{{ g.label }} <span class="state">{{ settings[g.key] ? "On" : "Off" }}</span></strong>
+              <span>{{ g.hint }}</span>
+            </button>
+          </div>
+          <p v-else class="setting-desc">Loading…</p>
+        </div>
+
+        <div class="setting-block">
           <h2>Narration voice</h2>
           <p class="setting-desc">
             How the spoken segments — opening prayer, scripture, message, benediction —
@@ -2639,33 +2666,6 @@ onUnmounted(() => {
               />
             </label>
           </template>
-          <p v-else class="setting-desc">Loading…</p>
-        </div>
-
-        <div class="setting-block">
-          <h2>Goldfish text generators</h2>
-          <p class="setting-desc">
-            Mizo and Paite have no instruction-tuned LLM and <strong>no spoken voice</strong>
-            upstream, so their generated worship <em>text</em> (prayers, sermon, lyrics) comes
-            from the <strong>goldfish-models</strong> monolingual language models on the worker.
-            This is separate from the Bible reader voice above — it produces text, not audio,
-            so turning it on does not add a 🔊 Listen voice. Off → curated fallback for that
-            language. Requires the goldfish service (transformers + torch) on the LLM worker.
-          </p>
-          <div v-if="settings" class="choice-row">
-            <button
-              v-for="g in goldfishNarrators"
-              :key="g.key"
-              type="button"
-              class="choice"
-              :class="{ active: settings[g.key] === true }"
-              :disabled="savingSettings || settingsReadOnly"
-              @click="setGoldfishNarrator(g.key, !settings[g.key])"
-            >
-              <strong>{{ g.label }} <span class="state">{{ settings[g.key] ? "On" : "Off" }}</span></strong>
-              <span>{{ g.hint }}</span>
-            </button>
-          </div>
           <p v-else class="setting-desc">Loading…</p>
         </div>
       </section>

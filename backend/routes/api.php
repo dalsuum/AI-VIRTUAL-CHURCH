@@ -52,6 +52,8 @@ Route::middleware('throttle:auth')->group(function () {
     Route::post('/guest',          [AuthController::class, 'guest']);
     Route::post('/register',       [AuthController::class, 'register']);
     Route::post('/login',          [AuthController::class, 'login']);
+    // Public auth-state probe — 200 {user:null} when logged out (no console 401).
+    Route::get('/auth/session',    [AuthController::class, 'session']);
     Route::post('/forgot-password',[AuthController::class, 'forgotPassword']);
     Route::post('/reset-password', [AuthController::class, 'resetPassword']);
 });

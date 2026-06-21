@@ -209,6 +209,9 @@ export const api = {
       rememberName(null);
     }),
   me: () => request("/me"),
+  // Public auth-state probe — returns { authenticated, user } with HTTP 200 even
+  // when logged out (no console 401), unlike /me which sits behind auth:sanctum.
+  session: () => request("/auth/session"),
 
   // ── AI Bible Study (worshipper) ──────────────────────────────────────────
   studyConfig: () => request("/v1/study/config"),

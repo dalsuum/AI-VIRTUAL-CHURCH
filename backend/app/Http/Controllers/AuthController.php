@@ -113,31 +113,59 @@ class AuthController extends Controller
     /** The currently authenticated user — used by the SPA to greet returnees. */
     public function me(Request $request): JsonResponse
     {
-        $user = $request->user();
-        $isGuest = str_ends_with($user->email, '@guest.local');
+        return response()->json(['user' => $this->userPayload($request->user())]);
+    }
 
-        $features = \App\Services\FeatureService::for($user);
+    /**
+     * Public "who am I" probe for the SPA's initial load. Unlike /me (behind
+     * auth:sanctum, which 401s for anonymous visitors and litters the console),
+     * this returns 200 with user:null when there's no session — so the frontend
+     * can resolve auth state cleanly without an expected-error round-trip.
+     */
+    public function session(Request $request): JsonResponse
+    {
+        $user = $request->user();
 
         return response()->json([
-            'user' => [
-                'id'             => $user->id,
-                'name'           => $user->name,
-                'email'          => $isGuest ? null : $user->email,
-                'is_admin'       => $user->isAdmin(),
-                'role'           => $user->role(),
-                'is_guest'       => $isGuest,
-                'music_source'   => $user->music_source,
-                'permissions'    => PermissionService::forUser($user),
-                // Subscription + wallet, so the SPA can hide ads, show the token gauge,
-                // and surface upgrade prompts without an extra round-trip.
-                'plan'              => $user->plan()->value,
-                'subscription'      => $user->subscriptionStatus()->value,
-                'is_premium'        => $user->isPremium(),
-                'shows_ads'         => $features->showsAds(),
-                'token_balance'     => (int) $user->token_balance,
-                'monthly_allowance' => $features->monthlyAllowance(),
-            ],
+            'authenticated' => (bool) $user,
+            'user'          => $user ? $this->userPayload($user) : null,
         ]);
+    }
+
+    /** The identity + entitlements payload shared by /me and /auth/session. */
+    private function userPayload(User $user): array
+    {
+        $isGuest  = str_ends_with($user->email, '@guest.local');
+        $features = \App\Services\FeatureService::for($user);
+
+        return [
+            'id'             => $user->id,
+            'name'           => $user->name,
+            'email'          => $isGuest ? null : $user->email,
+            'is_admin'       => $user->isAdmin(),
+            'role'           => $user->role(),
+            'is_guest'       => $isGuest,
+            'music_source'   => $user->music_source,
+            'permissions'    => PermissionService::forUser($user),
+            // Subscription + wallet, so the SPA can hide ads, show the token gauge,
+            // and surface upgrade prompts without an extra round-trip.
+            'plan'              => $user->plan()->value,
+            'subscription'      => $user->subscriptionStatus()->value,
+            'is_premium'        => $user->isPremium(),
+            'shows_ads'         => $features->showsAds(),
+            'token_balance'     => (int) $user->token_balance,
+            'monthly_allowance' => $features->monthlyAllowance(),
+            // Whether self-serve upgrades are possible in this deployment, so the
+            // account UI can degrade gracefully when billing is unconfigured.
+            'billing_enabled'   => self::billingEnabled(),
+        ];
+    }
+
+    /** True only when a payment provider is fully configured (key + price id). */
+    public static function billingEnabled(): bool
+    {
+        return filled(config('services.stripe.secret'))
+            && filled(config('tokens.stripe_premium_price'));
     }
 
     /** Let a registered user update their display name. */

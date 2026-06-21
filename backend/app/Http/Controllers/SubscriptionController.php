@@ -34,6 +34,9 @@ class SubscriptionController extends Controller
             'monthly_allowance' => $f->monthlyAllowance(),
             'max_pastors'       => $f->maxPastors(),
             'shows_ads'         => $f->showsAds(),
+            // Lets the account page hide the upgrade CTA when no provider is
+            // configured, instead of offering a checkout that can't complete.
+            'billing_enabled'   => \App\Http\Controllers\AuthController::billingEnabled(),
         ]);
     }
 
@@ -42,6 +45,9 @@ class SubscriptionController extends Controller
     {
         $user = $request->user();
 
+        if (! AuthController::billingEnabled()) {
+            return response()->json(['message' => 'Subscriptions are not available right now.'], 503);
+        }
         if ($user->isGuestAccount()) {
             return response()->json(['message' => 'Please register before subscribing.'], 422);
         }

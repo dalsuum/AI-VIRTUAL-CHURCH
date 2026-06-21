@@ -69,10 +69,11 @@ const isAdmin  = computed(() =>
 
 async function loadMe() {
   try {
-    const res = await api.me();
+    // Public probe: 200 with user:null when logged out (no expected-error 401 noise).
+    const res = await api.session();
     currentUser.value = res?.user || null;
   } catch {
-    currentUser.value = null; // no session / 401 → treated as logged out
+    currentUser.value = null; // network failure → treat as logged out
   }
   enforceGuards();
 }

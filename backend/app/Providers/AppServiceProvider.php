@@ -33,6 +33,17 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        // Deploy-time config sanity: surface a half-configured billing setup so a
+        // missing key is visible in deploy/cache logs rather than only failing at
+        // a user's checkout. Console-only so it never logs on every web request.
+        if ($this->app->runningInConsole()) {
+            $hasSecret = filled(config('services.stripe.secret'));
+            $hasPrice  = filled(config('tokens.stripe_premium_price'));
+            if ($hasSecret xor $hasPrice) {
+                logger()->warning('Billing partially configured: STRIPE_SECRET and STRIPE_PREMIUM_PRICE_ID must both be set; premium checkout is disabled until then.');
+            }
+        }
+
         // Auth endpoints — keyed by IP so unauthenticated callers are also covered.
         RateLimiter::for('auth', function (Request $request) {
             return Limit::perMinute(5)->by($request->ip());

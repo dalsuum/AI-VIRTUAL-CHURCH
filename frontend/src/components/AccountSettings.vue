@@ -53,12 +53,20 @@
         <p v-if="expiresAt" class="sub-meta">Renews / ends: {{ formatDate(expiresAt) }}</p>
 
         <div class="sub-actions">
-          <button v-if="!isPremium" class="acct-btn" :disabled="subBusy" @click="upgrade">
-            {{ subBusy ? "Redirecting…" : "Upgrade to Premium" }}
-          </button>
-          <button v-else class="acct-btn ghost" :disabled="subBusy" @click="cancel">
-            {{ subBusy ? "Working…" : "Cancel subscription" }}
-          </button>
+          <!-- Hide the upgrade CTA entirely when no payment provider is configured,
+               so we never offer a checkout that can't complete. Premium members can
+               still cancel (that path doesn't need a new checkout). -->
+          <template v-if="isPremium">
+            <button class="acct-btn ghost" :disabled="subBusy" @click="cancel">
+              {{ subBusy ? "Working…" : "Cancel subscription" }}
+            </button>
+          </template>
+          <template v-else-if="billingEnabled">
+            <button class="acct-btn" :disabled="subBusy" @click="upgrade">
+              {{ subBusy ? "Redirecting…" : "Upgrade to Premium" }}
+            </button>
+          </template>
+          <p v-else class="sub-meta">Premium upgrades are not available right now.</p>
         </div>
         <p v-if="subMsg" class="acct-msg" :class="subMsgClass">{{ subMsg }}</p>
       </div>
@@ -125,6 +133,7 @@ const isPremium        = ref(false);
 const expiresAt        = ref(null);
 const tokenBalance     = ref(0);
 const monthlyAllowance = ref(0);
+const billingEnabled   = ref(true); // assume on until /subscription says otherwise
 const subBusy          = ref(false);
 const subMsg           = ref("");
 const subMsgClass      = ref("ok");
@@ -150,6 +159,7 @@ async function loadSubscription() {
     expiresAt.value        = s.expires_at || null;
     tokenBalance.value     = s.token_balance ?? 0;
     monthlyAllowance.value = s.monthly_allowance ?? 0;
+    billingEnabled.value   = s.billing_enabled !== false;
   } catch { /* leave defaults */ }
 }
 

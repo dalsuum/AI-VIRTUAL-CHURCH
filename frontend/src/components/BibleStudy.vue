@@ -80,6 +80,16 @@ onMounted(async () => {
 
 onBeforeUnmount(() => stream.close());
 
+// User bubbles use decreasing negative turn ids so they never collide with the
+// positive turn numbers the worker assigns to moderator/pastor turns.
+let userTurnSeq = 0;
+function pushUserBubble(text) {
+  bubbles.value.push({
+    turn: --userTurnSeq, persona_id: null, name: "You",
+    role: "user", text, refs: [],
+  });
+}
+
 function bubbleFor(env) {
   let b = bubbles.value.find((x) => x.turn === env.turn);
   if (!b) {
@@ -138,6 +148,7 @@ async function start() {
     bubbles.value = [];
     inputOpen.value = false;
     phase.value = "discussion";
+    pushUserBubble(form.question.trim());   // show the worshipper's question first
     attachHandlers();
   } catch (e) {
     error.value = e?.message || "Could not start the discussion.";
@@ -151,6 +162,7 @@ async function send() {
   if (text.length < 2) return;
   inputOpen.value = false;
   followUp.value = "";
+  pushUserBubble(text);                      // echo the follow-up into the thread
   try {
     await api.studyPostMessage(session.value.id, text);
   } catch (e) {
@@ -184,6 +196,7 @@ async function loadSummary() {
 }
 
 function roleClass(role) {
+  if (role === "user") return "user";
   return role === "moderator" || role === "synthesis" ? "moderator" : "pastor";
 }
 </script>
@@ -392,6 +405,9 @@ function roleClass(role) {
 .bubble { border-radius: var(--radius); padding: 0.8rem 1rem; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
 .bubble.moderator { background: var(--primary-soft); border-color: var(--border-strong); }
 .bubble.pastor { background: var(--surface-2); }
+.bubble.user { align-self: flex-end; max-width: 88%; background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
+.bubble.user .who { color: var(--on-primary); }
+.bubble.user .body { color: var(--on-primary); }
 .who { font-weight: 600; margin-bottom: 0.3rem; color: var(--text); }
 .who .role { color: var(--text-muted); font-weight: 400; font-size: 0.85em; }
 .body { white-space: pre-wrap; color: var(--text); }

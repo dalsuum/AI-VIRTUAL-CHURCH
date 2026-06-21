@@ -77,17 +77,19 @@ def run_round(*, job: dict, llm, bus, turn_sink=None, review_fn=None, base_turn:
     turns: list[dict] = []
     round_verses: dict[str, dict] = {}   # canonical_id -> verse dict (dedupe cards)
 
-    def _emit_turn(role, persona, content, extra_verses_text=""):
+    def _emit_turn(role, persona, content, extra_verses_text="", usage=None):
         nonlocal turn
         turn += 1
         ok, reason = review_fn(content)
         pid = (persona or {}).get("id")
         name = (persona or {}).get("display_name", "Moderator")
+        ptok = int((usage or {}).get("prompt_tokens", 0) or 0)
+        ctok = int((usage or {}).get("completion_tokens", 0) or 0)
         if not ok:
             bus.publish("safety.blocked", turn=turn, persona_id=pid, reason=reason)
             rec = {"turn": turn, "role": role, "persona_id": pid,
                    "display_name": name, "content": "", "scripture_refs": [],
-                   "safety_flag": True, "prompt_tokens": 0, "completion_tokens": 0}
+                   "safety_flag": True, "prompt_tokens": ptok, "completion_tokens": ctok}
             sink(rec)
             turns.append(rec)
             return rec
@@ -106,8 +108,10 @@ def run_round(*, job: dict, llm, bus, turn_sink=None, review_fn=None, base_turn:
                             ref=v["ref"], translation=v["translation"])
 
         rec = {"turn": turn, "role": role, "persona_id": pid, "display_name": name,
-               "content": content, "scripture_refs": refs_for_turn, "safety_flag": False}
-        bus.publish("turn.complete", turn=turn, persona_id=pid, message_id=None)
+               "content": content, "scripture_refs": refs_for_turn, "safety_flag": False,
+               "prompt_tokens": ptok, "completion_tokens": ctok}
+        bus.publish("turn.complete", turn=turn, persona_id=pid, message_id=None,
+                    prompt_tokens=ptok, completion_tokens=ctok)
         sink(rec)
         turns.append(rec)
         return rec
@@ -124,10 +128,10 @@ def run_round(*, job: dict, llm, bus, turn_sink=None, review_fn=None, base_turn:
             temperature=float(tmpl.get("temperature", 0.7)),
             max_tokens=persona_engine.token_budget(persona or {}, int(tmpl.get("max_tokens", 700))),
         )
-        text, _usage = llm.complete(system=cp.system, messages=cp.messages,
-                                    temperature=cp.temperature, max_tokens=cp.max_tokens,
-                                    role=role)
-        return (text or "").strip()
+        text, usage = llm.complete(system=cp.system, messages=cp.messages,
+                                   temperature=cp.temperature, max_tokens=cp.max_tokens,
+                                   role=role)
+        return (text or "").strip(), (usage or {})
 
     # ── FRAME ────────────────────────────────────────────────────────────────
     bus.publish("state.changed", state="discussing")
@@ -135,12 +139,12 @@ def run_round(*, job: dict, llm, bus, turn_sink=None, review_fn=None, base_turn:
     # round_verses here — _emit_turn() detects + emits the cards and fills the
     # dedup set, so pre-seeding would suppress the frame's own verse cards.
     frame_verses = rag.scripture_in_text(question, translation)
-    frame_text = _call(
+    frame_text, frame_usage = _call(
         "frame", moderator,
         TrustedContext(verses=tuple(frame_verses)),
         untrusted=[], user_content=question, tmpl_key="frame",
     )
-    _emit_turn("moderator", moderator, frame_text, extra_verses_text=question)
+    _emit_turn("moderator", moderator, frame_text, extra_verses_text=question, usage=frame_usage)
 
     # ── DELIBERATE ────────────────────────────────────────────────────────────
     for pastor in pastors:
@@ -151,19 +155,19 @@ def run_round(*, job: dict, llm, bus, turn_sink=None, review_fn=None, base_turn:
             assigned_angle=pastor.get("tradition_tag", ""),
             verses=tuple(round_verses.values()),
         )
-        text = _call("pastor", pastor, trusted, untrusted=prior,
-                     user_content=question, tmpl_key="pastor")
-        _emit_turn("pastor", pastor, text)
+        text, usage = _call("pastor", pastor, trusted, untrusted=prior,
+                            user_content=question, tmpl_key="pastor")
+        _emit_turn("pastor", pastor, text, usage=usage)
 
     # ── SYNTHESIZE ────────────────────────────────────────────────────────────
     pastor_turns = [{"name": t["display_name"], "content": t["content"]}
                     for t in turns if t["role"] == "pastor" and t["content"]]
-    synth = _call(
+    synth, synth_usage = _call(
         "synthesis", moderator,
         TrustedContext(moderator_frame=frame_text, verses=tuple(round_verses.values())),
         untrusted=pastor_turns, user_content=question, tmpl_key="synthesis",
     )
-    _emit_turn("synthesis", moderator, synth)
+    _emit_turn("synthesis", moderator, synth, usage=synth_usage)
 
     bus.publish("round.complete", round=round_no)
     return turns

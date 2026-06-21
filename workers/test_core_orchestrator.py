@@ -115,6 +115,14 @@ def test_safety_block_suppresses_content():
     assert any(e["event"] == "safety.blocked" for e in bus.events)
 
 
+def test_usage_tokens_threaded_to_turns():
+    # Token usage from the LLM must reach each persisted turn (feeds ai_usage_ledger).
+    bus = RecordingBus(session_id=42)
+    llm = orch.FakeLLM()  # FakeLLM reports prompt=10, completion=20 per call
+    turns = orch.run_round(job=_job(2), llm=llm, bus=bus, review_fn=lambda t: (True, ""))
+    assert turns and all(t["prompt_tokens"] == 10 and t["completion_tokens"] == 20 for t in turns)
+
+
 def test_untrusted_pastor_output_not_in_system_prompt():
     # A pastor turn must reach later turns only as untrusted (user) content.
     bus = RecordingBus(session_id=42)

@@ -1021,6 +1021,55 @@ class AdminController extends Controller
         return response()->json($resp->json());
     }
 
+    /**
+     * Upload a static background-music track from the admin's device. Validates a
+     * small mp3/ogg, stores it under our own fixed name (never the client's), and
+     * points bible_bg_music_url at the public serving route (cache-busted). Lets
+     * an admin who has no hosted URL just pick a local file. (admin-only route)
+     */
+    public function bibleBgMusicUpload(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            // Keep it small — it's a soft instrumental loop, not a full album.
+            'file' => ['required', 'file', 'mimetypes:audio/mpeg,audio/ogg', 'max:10240'],
+        ]);
+
+        $file = $validated['file'];
+        $ext  = $file->getClientOriginalExtension() === 'ogg' || $file->getMimeType() === 'audio/ogg'
+            ? 'ogg' : 'mp3';
+
+        // One track at a time: clear any previous upload (either extension) so a
+        // stale .ogg can't shadow a freshly uploaded .mp3 in the serving order.
+        foreach (['mp3', 'ogg'] as $old) {
+            Storage::delete(BibleController::BG_MUSIC_DIR . "/track.{$old}");
+        }
+        $file->storeAs(BibleController::BG_MUSIC_DIR, "track.{$ext}");
+        @chmod(Storage::path(BibleController::BG_MUSIC_DIR . "/track.{$ext}"), 0664);
+
+        // Cache-bust so readers pick up the new file immediately (the <audio> src
+        // changes), and so the static URL passes the FILTER_VALIDATE_URL check.
+        $url = url('/api/bible/bg-music/file') . '?v=' . time();
+        Setting::set('bible_bg_music_url', $url);
+        Setting::set('bible_bg_music_mode', 'static');
+
+        return response()->json(['url' => $url, 'mode' => 'static']);
+    }
+
+    /** Remove the uploaded static track and clear its URL. (admin-only route) */
+    public function bibleBgMusicRemove(Request $request): JsonResponse
+    {
+        foreach (['mp3', 'ogg'] as $ext) {
+            Storage::delete(BibleController::BG_MUSIC_DIR . "/track.{$ext}");
+        }
+        // Only clear the URL if it pointed at our own upload, so a hand-entered
+        // external URL isn't wiped by removing a local file.
+        if (str_contains((string) Setting::get('bible_bg_music_url', ''), '/api/bible/bg-music/file')) {
+            Setting::set('bible_bg_music_url', '');
+        }
+
+        return response()->json(['url' => '']);
+    }
+
     public function updateSettings(UpdateSettingsRequest $request): JsonResponse
     {
         $data = $request->validated();

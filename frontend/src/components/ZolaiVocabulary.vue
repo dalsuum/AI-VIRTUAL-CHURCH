@@ -10,6 +10,39 @@ const loadError = ref("");
 const search = ref("");
 const activeCategory = ref("All");
 
+// Languages the worshipper can read each word in. `zolai` is the default;
+// the dropdown swaps which ethnic tongue is the primary (left-most) column.
+// Codes match the column names on the vocabularies table.
+const LANGUAGES = [
+  { code: "zolai",   label: "Zolai (Tedim)" },
+  { code: "falam",   label: "Falam" },
+  { code: "hakha",   label: "Hakha" },
+  { code: "matu",    label: "Matu" },
+  { code: "mizo",    label: "Mizo" },
+  { code: "paite",   label: "Paite" },
+  { code: "sizang",  label: "Sizang" },
+  { code: "burmese", label: "Burmese" },
+  { code: "hebrew",  label: "Hebrew", dir: "rtl", lang: "he" },
+  { code: "english", label: "English" },
+];
+
+const primaryLang = ref("zolai");
+
+const primaryMeta = computed(
+  () => LANGUAGES.find((l) => l.code === primaryLang.value) || LANGUAGES[0],
+);
+
+// Reference columns shown after the primary one — English and Hebrew always
+// help orient, and Burmese stays as a gloss. Drop whichever the user already
+// picked as the primary so it isn't shown twice.
+const referenceCols = computed(() =>
+  [
+    { code: "burmese", label: "Burmese" },
+    { code: "hebrew",  label: "Hebrew", dir: "rtl", lang: "he" },
+    { code: "english", label: "English" },
+  ].filter((c) => c.code !== primaryLang.value),
+);
+
 onMounted(async () => {
   try {
     const res = await api.getVocabulary();
@@ -32,13 +65,8 @@ const filtered = computed(() => {
     const catOk = activeCategory.value === "All" || w.category === activeCategory.value;
     if (!catOk) return false;
     if (!q) return true;
-    return (
-      w.zolai.toLowerCase().includes(q) ||
-      (w.burmese || "").toLowerCase().includes(q) ||
-      (w.hebrew || "").includes(q) ||
-      w.english.toLowerCase().includes(q) ||
-      (w.notes || "").toLowerCase().includes(q)
-    );
+    return LANGUAGES.some((l) => (w[l.code] || "").toLowerCase().includes(q)) ||
+      (w.notes || "").toLowerCase().includes(q);
   });
 });
 
@@ -73,13 +101,21 @@ function catColor(cat) {
     </header>
 
     <div class="controls">
-      <input
-        v-model="search"
-        class="search-input"
-        type="search"
-        placeholder="Search Zolai, Burmese, Hebrew or English…"
-        aria-label="Search vocabulary"
-      />
+      <div class="controls-row">
+        <input
+          v-model="search"
+          class="search-input"
+          type="search"
+          placeholder="Search any language…"
+          aria-label="Search vocabulary"
+        />
+        <label class="lang-picker">
+          <span class="lang-picker-label">Language</span>
+          <select v-model="primaryLang" class="lang-select" aria-label="Choose display language">
+            <option v-for="l in LANGUAGES" :key="l.code" :value="l.code">{{ l.label }}</option>
+          </select>
+        </label>
+      </div>
       <div class="cat-filters" role="group" aria-label="Filter by category">
         <button
           v-for="cat in categories"
@@ -102,20 +138,26 @@ function catColor(cat) {
       <table class="vocab-table">
         <thead>
           <tr>
-            <th>Zolai (Tedim)</th>
-            <th>Burmese</th>
-            <th>Hebrew</th>
-            <th>English</th>
+            <th>{{ primaryMeta.label }}</th>
+            <th v-for="col in referenceCols" :key="col.code">{{ col.label }}</th>
             <th>Category</th>
             <th>Notes</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="(word, i) in filtered" :key="i">
-            <td class="zolai-word">{{ word.zolai }}</td>
-            <td class="burmese-word">{{ word.burmese }}</td>
-            <td class="hebrew-word" dir="rtl" lang="he">{{ word.hebrew }}</td>
-            <td>{{ word.english }}</td>
+            <td
+              class="primary-word"
+              :dir="primaryMeta.dir || null"
+              :lang="primaryMeta.lang || null"
+            >{{ word[primaryLang] || "—" }}</td>
+            <td
+              v-for="col in referenceCols"
+              :key="col.code"
+              :dir="col.dir || null"
+              :lang="col.lang || null"
+              :class="{ 'hebrew-word': col.code === 'hebrew', 'burmese-word': col.code === 'burmese' }"
+            >{{ word[col.code] || "—" }}</td>
             <td>
               <span class="cat-badge" :style="{ color: catColor(word.category), borderColor: catColor(word.category) }">
                 {{ word.category }}
@@ -270,7 +312,7 @@ function catColor(cat) {
   background: color-mix(in srgb, var(--primary) 5%, transparent);
 }
 
-.zolai-word {
+.primary-word {
   font-weight: 600;
   font-size: 0.95rem;
   letter-spacing: 0.01em;

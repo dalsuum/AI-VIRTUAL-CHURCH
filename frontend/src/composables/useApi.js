@@ -305,6 +305,24 @@ export const api = {
   adminBibleBgMusicStatus: () => request("/admin/bible/bg-music/status"),
   adminBibleBgMusicPregenerate: () =>
     request("/admin/bible/bg-music/pregenerate", { method: "POST" }),
+  // Upload a local mp3/ogg as the static background track. Multipart — can't use
+  // the JSON request() helper.
+  adminBibleBgMusicUpload: async (file) => {
+    await ensureCsrf();
+    const fd = new FormData();
+    fd.append("file", file, file.name);
+    const res = await fetch(`${BASE_URL}/admin/bible/bg-music/upload`, {
+      method: "POST",
+      credentials: "include",
+      headers: { Accept: "application/json", "X-XSRF-TOKEN": getCsrfToken() },
+      body: fd,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw Object.assign(new Error(data.message || "Upload failed"), { status: res.status, data });
+    return data;
+  },
+  adminBibleBgMusicRemove: () =>
+    request("/admin/bible/bg-music/upload", { method: "DELETE" }),
 
   // Content filter — categorized YouTube blocklist (CRUD + import/export).
   cfList: () => request("/admin/content-filter"),

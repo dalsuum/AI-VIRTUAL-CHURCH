@@ -4,7 +4,7 @@
 // Version), Burmese (Judson 1835), Hebrew Tanakh (WLC) and a set of Chin/Zo
 // language Bibles from the Bible Society of Myanmar (Tedim, Falam, Hakha, Mizo,
 // Paite, Sizang, Mara, Matu). Read-only, no auth required.
-import { ref, computed, watch, onMounted } from "vue";
+import { ref, computed, watch, onMounted, nextTick } from "vue";
 import { api } from "../composables/useApi.js";
 
 // Tab order: KJV, English, Hebrew, Burmese first, then the Chin/Zo Bibles
@@ -107,6 +107,12 @@ const visibleLangs = computed(() => {
 function feat(name) {
   return config.value.features?.[lang.value]?.[name] !== false;
 }
+// Admin-controlled default for select mode. Defaults to on; an admin can set
+// features[lang].select_default = false to have a version start with taps off.
+function applySelectDefault() {
+  selectMode.value = config.value.features?.[lang.value]?.select_default !== false;
+  selectedVerses.value = new Set();
+}
 // In AI mode the loop URL is resolved per chapter from the backend (cached or
 // freshly generated); in static mode it's the admin's fixed URL.
 const aiMusicUrl = ref("");
@@ -150,8 +156,11 @@ function toggleBgMusic() {
   localStorage.setItem(BGM_PREF_KEY, bgMusicPref.value ? "1" : "0");
   if (!bgMusicPref.value) {
     syncBgMusic("stop");
-  } else if (audioEl.value && !audioEl.value.paused) {
-    syncBgMusic("play"); // turned back on mid-narration → resume under the voice
+  } else {
+    // Turned on → start the loop now. The toggle click is the user gesture that
+    // lets it begin under browser autoplay rules. It plays whether or not a
+    // narration voice is present or currently sounding.
+    syncBgMusic("play");
   }
 }
 
@@ -214,7 +223,9 @@ async function continueNarration() {
 // background loop, then (in continuous mode) rolls into the next chapter.
 function onNarrationEnded() {
   highlightedVerse.value = -1;
-  syncBgMusic("stop");
+  // Don't stop the background loop when the voice finishes — it's independent of
+  // narration and keeps playing. In continuous mode the next chapter's load will
+  // restart it cleanly; otherwise it simply plays on alone.
   continueNarration();
 }
 
@@ -287,9 +298,10 @@ const readingStyle = computed(() => {
 });
 
 // --- Verse selection + copy (for notes / social / sharing) ---------------
-// Tap verses to (de)select; a floating bar offers Copy/Clear. Off by default so
-// taps don't interfere with reading until the reader enters select mode.
-const selectMode = ref(false);
+// Tap verses to (de)select; a floating bar offers Copy/Clear. On by default so
+// readers can copy straight away; admins can flip the default off per version
+// via the `select_default` feature flag (see applySelectDefault below).
+const selectMode = ref(true);
 const selectedVerses = ref(new Set());
 function toggleSelectMode() {
   selectMode.value = !selectMode.value;
@@ -407,6 +419,16 @@ async function loadChapter() {
   resetAudio();
   try {
     chapter.value = await api.bibleChapter(lang.value, selectedBook.value.num, chapterNum.value);
+    // Background music is independent of the voice: whenever the reader has it
+    // toggled on it plays on its own — under the narration when there's a voice,
+    // and alone when there isn't (or the voice is off). resetAudio() stopped it
+    // above, so (re)start it here on every chapter load. In AI mode resolve this
+    // chapter's loop first.
+    if (musicAvailable.value && bgMusicPref.value) {
+      if (config.value.bg_music_mode === "ai") await resolveAiBgMusic();
+      await nextTick();
+      syncBgMusic("play");
+    }
   } catch (e) {
     error.value = "Could not load that chapter.";
     chapter.value = null;
@@ -466,6 +488,7 @@ async function listen() {
 // Switching translation re-fetches the table of contents, then re-opens the
 // same book/chapter so the reader stays on their place across languages.
 watch(lang, async () => {
+  applySelectDefault();
   const keepNum = selectedBook.value?.num;
   const keepCh = chapterNum.value;
   await loadBooks();
@@ -484,6 +507,7 @@ watch(lang, async () => {
 onMounted(() => {
   api.bibleConfig().then((c) => {
     config.value = c;
+    applySelectDefault();
     // If the admin has hidden the default translation, fall back to the first
     // visible one before (re)loading its table of contents.
     if (!visibleLangs.value.some((l) => l.code === lang.value) && visibleLangs.value.length) {
@@ -621,6 +645,17 @@ onMounted(() => {
           >
             <span aria-hidden="true">🎵</span><span class="btn-label"> Music: {{ bgMusicPref ? 'On' : 'Off' }}</span>
           </button>
+          <!-- Background-music element lives here (not inside the narration audio
+               wrapper) so it exists and can play on its own even when there's no
+               voice / the voice is off. -->
+          <audio
+            v-if="bgMusicUrl"
+            ref="bgMusicEl"
+            :src="bgMusicUrl"
+            loop
+            preload="auto"
+            aria-hidden="true"
+          ></audio>
           <button
             v-if="feat('select')"
             type="button"
@@ -684,14 +719,6 @@ onMounted(() => {
           @play="syncBgMusic('play')"
           @pause="syncBgMusic('pause')"
           @ended="onNarrationEnded"
-        ></audio>
-        <audio
-          v-if="bgMusicUrl"
-          ref="bgMusicEl"
-          :src="bgMusicUrl"
-          loop
-          preload="auto"
-          aria-hidden="true"
         ></audio>
         <div v-if="feat('speed')" class="speed-row" role="group" aria-label="Playback speed">
           <span class="speed-label">Speed</span>

@@ -35,6 +35,8 @@ Route::get('/bible/chapter', [BibleController::class, 'chapter'])->middleware('t
 Route::get('/bible/audio', [BibleController::class, 'audio'])->middleware('throttle:30,1');
 // AI background-music loop for a chapter + reader time-of-day (cached/generated).
 Route::get('/bible/bg-music', [BibleController::class, 'bgMusic'])->middleware('throttle:60,1');
+// Serve the admin-uploaded static background-music track (public, read-only).
+Route::get('/bible/bg-music/file', [BibleController::class, 'bgMusicFile'])->middleware('throttle:120,1');
 
 // Public special-Sunday highlight — the active observance (if any) for the
 // intake/home card, localized to ?language=en|my|td.
@@ -210,6 +212,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::patch('/settings', [AdminController::class, 'updateSettings']);
         // Queue AI background-music generation for the whole theme x tod matrix.
         Route::post('/bible/bg-music/pregenerate', [AdminController::class, 'bibleBgMusicPregenerate']);
+        // Upload / remove a static background-music track from the admin's device.
+        Route::post('/bible/bg-music/upload', [AdminController::class, 'bibleBgMusicUpload']);
+        Route::delete('/bible/bg-music/upload', [AdminController::class, 'bibleBgMusicRemove']);
 
         // Content filter — categorized YouTube blocklist (CRUD + import/export).
         Route::get('/content-filter',                      [\App\Http\Controllers\ContentFilterController::class, 'index']);

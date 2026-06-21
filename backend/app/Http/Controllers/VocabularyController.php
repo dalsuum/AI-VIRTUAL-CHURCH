@@ -30,15 +30,14 @@ class VocabularyController extends Controller
         $search = trim((string) $request->query('search', ''));
         if ($search !== '') {
             $q->where(function ($sub) use ($search) {
-                $sub->where('zolai', 'like', "%{$search}%")
-                    ->orWhere('burmese', 'like', "%{$search}%")
-                    ->orWhere('hebrew', 'like', "%{$search}%")
-                    ->orWhere('english', 'like', "%{$search}%")
-                    ->orWhere('notes', 'like', "%{$search}%");
+                foreach (Vocabulary::LANGUAGE_COLUMNS as $col) {
+                    $sub->orWhere($col, 'like', "%{$search}%");
+                }
+                $sub->orWhere('notes', 'like', "%{$search}%");
             });
         }
 
-        $words = $q->get(['id', 'zolai', 'burmese', 'hebrew', 'english', 'category', 'notes']);
+        $words = $q->get(array_merge(['id'], Vocabulary::LANGUAGE_COLUMNS, ['category', 'notes']));
 
         return response()->json(['vocabulary' => $words]);
     }
@@ -78,6 +77,12 @@ class VocabularyController extends Controller
 
         $data = $request->validate([
             'zolai'    => [$required, 'string', 'max:255'],
+            'falam'    => ['nullable', 'string', 'max:255'],
+            'hakha'    => ['nullable', 'string', 'max:255'],
+            'matu'     => ['nullable', 'string', 'max:255'],
+            'mizo'     => ['nullable', 'string', 'max:255'],
+            'paite'    => ['nullable', 'string', 'max:255'],
+            'sizang'   => ['nullable', 'string', 'max:255'],
             'burmese'  => ['nullable', 'string', 'max:255'],
             'hebrew'   => ['nullable', 'string', 'max:255'],
             'english'  => [$required, 'string', 'max:255'],
@@ -85,7 +90,7 @@ class VocabularyController extends Controller
             'notes'    => ['nullable', 'string', 'max:500'],
         ]);
 
-        foreach (['zolai', 'burmese', 'hebrew', 'english', 'category', 'notes'] as $field) {
+        foreach (array_merge(Vocabulary::LANGUAGE_COLUMNS, ['category', 'notes']) as $field) {
             if (array_key_exists($field, $data)) {
                 $data[$field] = $data[$field] !== null ? trim($data[$field]) : null;
             }

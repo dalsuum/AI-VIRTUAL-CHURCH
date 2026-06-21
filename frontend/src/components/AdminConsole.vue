@@ -434,6 +434,41 @@ const pregenerateBibleBg = async () => {
 };
 const saveBibleBgMusicUrl = () =>
   saveSetting("bible_bg_music_url", (settings.value.bible_bg_music_url || "").trim(), "Bible background music updated.");
+// Local-file upload for the static track: pick an mp3/ogg from the admin's
+// device, store it server-side, and point bible_bg_music_url at it.
+const bibleBgUploading = ref(false);
+const bibleBgFileInput = ref(null);
+const uploadedBibleBgMusic = computed(() =>
+  String(settings.value?.bible_bg_music_url || "").includes("/api/bible/bg-music/file"));
+const uploadBibleBgMusic = async (ev) => {
+  const file = ev?.target?.files?.[0];
+  if (!file || bibleBgUploading.value) return;
+  bibleBgUploading.value = true;
+  try {
+    const res = await api.adminBibleBgMusicUpload(file);
+    settings.value.bible_bg_music_url = res.url || "";
+    if (res.mode) settings.value.bible_bg_music_mode = res.mode;
+    notice.value = "Background music uploaded.";
+  } catch (e) {
+    notice.value = e?.data?.message || "Could not upload that file (use a small .mp3/.ogg).";
+  } finally {
+    bibleBgUploading.value = false;
+    if (bibleBgFileInput.value) bibleBgFileInput.value.value = "";
+  }
+};
+const removeBibleBgMusic = async () => {
+  if (bibleBgUploading.value) return;
+  bibleBgUploading.value = true;
+  try {
+    const res = await api.adminBibleBgMusicRemove();
+    settings.value.bible_bg_music_url = res.url || "";
+    notice.value = "Background music removed.";
+  } catch (e) {
+    notice.value = e?.data?.message || "Could not remove the track.";
+  } finally {
+    bibleBgUploading.value = false;
+  }
+};
 const setBibleBgMusicVolume = (v) =>
   saveSetting("bible_bg_music_volume", Number(v), "Bible background music volume updated.");
 
@@ -2586,6 +2621,33 @@ onUnmounted(() => {
                   Save
                 </button>
               </div>
+
+              <p class="setting-desc" style="margin-top:1rem">
+                …or upload an .mp3/.ogg from this device (max 10&nbsp;MB). It's
+                served from this site, so no external hosting or CORS setup needed.
+              </p>
+              <div class="bgm-row">
+                <input
+                  ref="bibleBgFileInput"
+                  type="file"
+                  accept="audio/mpeg,audio/ogg,.mp3,.ogg"
+                  :disabled="bibleBgUploading || savingSettings || settingsReadOnly"
+                  @change="uploadBibleBgMusic"
+                />
+                <button
+                  v-if="uploadedBibleBgMusic"
+                  type="button"
+                  class="choice bgm-save"
+                  :disabled="bibleBgUploading || savingSettings || settingsReadOnly"
+                  @click="removeBibleBgMusic"
+                >
+                  Remove
+                </button>
+              </div>
+              <p v-if="bibleBgUploading" class="setting-desc">Uploading…</p>
+              <p v-else-if="uploadedBibleBgMusic" class="setting-desc">
+                ✓ Using an uploaded track. <a :href="settings.bible_bg_music_url" target="_blank" rel="noopener">Preview</a>
+              </p>
             </template>
 
             <!-- AI mode: which engine generates the loop -->

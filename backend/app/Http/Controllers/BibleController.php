@@ -6,6 +6,7 @@ use App\Models\Setting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * Online Bible reader — public, read-only proxy to the local FastAPI worker
@@ -102,6 +103,45 @@ class BibleController extends Controller
         abort_unless($resp->successful(), 502, 'Background music service unavailable');
 
         return $resp->json();
+    }
+
+    /** Storage dir for an admin-uploaded static background-music track. */
+    public const BG_MUSIC_DIR = 'bible/bg-music';
+
+    /**
+     * Serve the admin-uploaded static background-music track. Public + read-only
+     * so the reader's <audio> element can stream it; CORS-open so it plays from
+     * the SPA origin. The stored file is always re-encoded under our own name and
+     * extension (never the client's), so this only ever serves a known asset.
+     */
+    public function bgMusicFile()
+    {
+        $rel = $this->bgMusicStoredPath();
+        abort_if($rel === null, 404, 'No background music uploaded.');
+
+        return response()->file(Storage::path($rel), [
+            'Content-Type'                => $this->bgMusicMime($rel),
+            'Cache-Control'               => 'public, max-age=86400',
+            'Access-Control-Allow-Origin' => '*',
+        ]);
+    }
+
+    /** Relative path of the uploaded track (mp3 preferred, then ogg), or null. */
+    private function bgMusicStoredPath(): ?string
+    {
+        foreach (['mp3', 'ogg'] as $ext) {
+            $rel = self::BG_MUSIC_DIR . "/track.{$ext}";
+            if (Storage::exists($rel)) {
+                return $rel;
+            }
+        }
+
+        return null;
+    }
+
+    private function bgMusicMime(string $rel): string
+    {
+        return str_ends_with($rel, '.ogg') ? 'audio/ogg' : 'audio/mpeg';
     }
 
     /** Table of contents (book numbers, native names, chapter counts) for a translation. */

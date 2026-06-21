@@ -57,15 +57,22 @@ echo "Installing playwright into ops/node_modules..."
 ( cd "$DIR" && [ -f package.json ] || echo '{"name":"freeze-ops","private":true}' > package.json
   "$NPM" i playwright >/dev/null 2>&1 ) && echo "  playwright ok" || echo "  playwright install failed (browser probe will skip)"
 
+# Start a clean window: truncate prior logs so coverage is measured from arm time.
+echo "Resetting logs for a fresh window..."
+: > "$DIR/logs/freeze.jsonl"; : > "$DIR/logs/freeze_browser.jsonl"; : > "$DIR/logs/cron.log"
+rm -f "$DIR/logs/freeze_verdict.txt"
+
 echo "Installing cron entries..."
 CRON_API="*/10 * * * * . $ENVF; $PY $DIR/freeze_api_probe.py >> $DIR/logs/cron.log 2>&1 # freeze-harness"
 CRON_BRW="7 * * * * . $ENVF; $NODE $DIR/freeze_browser_probe.mjs >> $DIR/logs/cron.log 2>&1 # freeze-harness"
+# The autonomous gate: self-gates on window age, renders a verdict at T+24h.
+CRON_VERDICT="17 * * * * . $ENVF; $PY $DIR/freeze_verdict.py >> $DIR/logs/cron.log 2>&1 # freeze-harness"
 # Build the new crontab in a temp file (set -e safe: crontab -l exits non-zero
 # when empty, and grep exits 1 on no match — neither is an error here).
 set +e
 CRONTMP="$(mktemp)"
 crontab -l 2>/dev/null | grep -v '# freeze-harness' > "$CRONTMP"
-printf '%s\n%s\n' "$CRON_API" "$CRON_BRW" >> "$CRONTMP"
+printf '%s\n%s\n%s\n' "$CRON_API" "$CRON_BRW" "$CRON_VERDICT" >> "$CRONTMP"
 crontab "$CRONTMP"; CRON_RC=$?
 rm -f "$CRONTMP"
 set -e

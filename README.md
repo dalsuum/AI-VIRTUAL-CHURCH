@@ -943,6 +943,10 @@ upgrade-to-premium (→ Stripe), cancel, and token history. `GET /me` now return
 > for `checkout.session.completed`, `customer.subscription.updated`,
 > `customer.subscription.deleted`, and `invoice.payment_failed`.
 
+**Reference docs:** [`docs/SUBSCRIPTION_SYSTEM.md`](docs/SUBSCRIPTION_SYSTEM.md)
+(architecture) · [`docs/DEPLOYMENT_CHECKLIST.md`](docs/DEPLOYMENT_CHECKLIST.md) ·
+[`docs/STAGING_TEST_PLAN.md`](docs/STAGING_TEST_PLAN.md).
+
 ---
 
 ## Testimonies

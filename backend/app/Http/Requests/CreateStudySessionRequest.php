@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Models\ModuleManifest;
+use App\Services\StudyTiers;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -24,7 +25,9 @@ class CreateStudySessionRequest extends FormRequest
         $manifest = ModuleManifest::where('key', config('bible_study.module'))->first();
         $languages = $manifest?->languages ?? ['en'];
         $min = max(ModuleManifest::AGENT_COUNT_MIN, (int) ($manifest->min_agent_count ?? 2));
-        $max = min(ModuleManifest::AGENT_COUNT_MAX, (int) ($manifest->max_agent_count ?? 7));
+        // The hard cap is the caller's TIER limit (admin-configured), not just the
+        // manifest max — so the slider can never be used to exceed their allowance.
+        $max = StudyTiers::maxFor($this->user());
 
         return [
             'language'    => ['required', 'string', Rule::in($languages)],

@@ -342,6 +342,9 @@ Route::middleware(['auth:sanctum', 'staff'])->prefix('v1/admin/study')->group(fu
     Route::get('/manifest',   [StudyAdminController::class, 'manifest']);
     Route::patch('/manifest', [StudyAdminController::class, 'updateManifest']);
 
+    Route::get('/tiers',   [StudyAdminController::class, 'tiers']);
+    Route::patch('/tiers', [StudyAdminController::class, 'updateTiers']);
+
     Route::get('/sessions', [StudyAdminController::class, 'sessions']);
     Route::get('/sessions/{session}', [StudyAdminController::class, 'sessionDetail']);
     Route::get('/usage', [StudyAdminController::class, 'usage']);

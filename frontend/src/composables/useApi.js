@@ -205,6 +205,9 @@ export const api = {
   studyAdminManifest: () => request("/v1/admin/study/manifest"),
   studyAdminUpdateManifest: (payload) =>
     request("/v1/admin/study/manifest", { method: "PATCH", body: payload }),
+  studyAdminTiers: () => request("/v1/admin/study/tiers"),
+  studyAdminUpdateTiers: (payload) =>
+    request("/v1/admin/study/tiers", { method: "PATCH", body: payload }),
   studyAdminSessions: () => request("/v1/admin/study/sessions"),
   studyAdminUsage: () => request("/v1/admin/study/usage"),
   studyAdminAudit: () => request("/v1/admin/study/audit"),

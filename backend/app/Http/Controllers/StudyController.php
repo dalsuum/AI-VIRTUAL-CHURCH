@@ -10,6 +10,7 @@ use App\Models\StudyMessage;
 use App\Models\StudySession;
 use App\Services\StudyDispatchService;
 use App\Services\StudyInputGuard;
+use App\Services\StudyTiers;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Redis;
@@ -27,11 +28,17 @@ class StudyController extends Controller
         private readonly StudyInputGuard $guard,
     ) {}
 
-    /** Public-safe config: enabled languages, agent bounds, and public persona names. */
-    public function config(): JsonResponse
+    /** Public-safe config: enabled languages, agent bounds, and public persona names.
+     *  Agent bounds are tier-aware for the (optionally authenticated) caller. */
+    public function config(Request $request): JsonResponse
     {
         $manifest = ModuleManifest::where('key', config('bible_study.module'))->first();
         abort_unless($manifest && $manifest->isActive(), 503);
+
+        // Resolve the caller (cookie/token) even though this route is public, so the
+        // slider max reflects their tier. Falls back to the guest cap when anonymous.
+        $user = auth('sanctum')->user();
+        $tierMax = StudyTiers::maxFor($user);
 
         $personas = [];
         foreach ($manifest->languages ?? [] as $lang) {
@@ -45,11 +52,15 @@ class StudyController extends Controller
                 ])->values();
         }
 
+        $min = max(ModuleManifest::AGENT_COUNT_MIN, (int) $manifest->min_agent_count);
+
         return response()->json([
             'languages'           => $manifest->languages,
-            'default_agent_count' => $manifest->default_agent_count,
-            'min_agent_count'     => max(ModuleManifest::AGENT_COUNT_MIN, (int) $manifest->min_agent_count),
-            'max_agent_count'     => min(ModuleManifest::AGENT_COUNT_MAX, (int) $manifest->max_agent_count),
+            // Default starts at the floor (2) but never above the caller's tier cap.
+            'default_agent_count' => min(max($min, (int) $manifest->default_agent_count), $tierMax),
+            'min_agent_count'     => min($min, $tierMax),
+            'max_agent_count'     => $tierMax,                 // tier-capped, server-authoritative
+            'tier'                => StudyTiers::tierForUser($user),
             'personas'            => $personas,
         ]);
     }

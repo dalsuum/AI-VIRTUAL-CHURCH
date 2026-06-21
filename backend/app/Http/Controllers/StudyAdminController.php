@@ -12,6 +12,7 @@ use App\Models\ModuleManifest;
 use App\Models\StudyMessage;
 use App\Models\StudySession;
 use App\Services\PermissionService;
+use App\Services\StudyTiers;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -272,6 +273,27 @@ class StudyAdminController extends Controller
         }
 
         return $errors;
+    }
+
+    // ── Per-tier pastor caps (guest / member / premium) ───────────────────────
+    public function tiers(Request $r): JsonResponse
+    {
+        $this->canView($r);
+        return response()->json(['caps' => StudyTiers::caps(), 'tiers' => StudyTiers::TIERS]);
+    }
+
+    public function updateTiers(Request $r): JsonResponse
+    {
+        $this->canManage($r);
+        $data = $r->validate([
+            'guest'   => ['sometimes', 'integer', 'min:2', 'max:7'],
+            'member'  => ['sometimes', 'integer', 'min:2', 'max:7'],
+            'premium' => ['sometimes', 'integer', 'min:2', 'max:7'],
+        ]);
+        $caps = StudyTiers::save($data);
+        $this->recordAudit($r, 'study.tiers.update', 'setting', null, null, $caps);
+
+        return response()->json(['ok' => true, 'caps' => $caps]);
     }
 
     // ── Sessions / usage / audit (reads) ──────────────────────────────────────

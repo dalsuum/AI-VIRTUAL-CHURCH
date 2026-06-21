@@ -69,7 +69,7 @@ onMounted(async () => {
   try {
     await api.ensureSession();
     config.value = await api.studyConfig();
-    form.agent_count = config.value.default_agent_count ?? 4;
+    form.agent_count = config.value.default_agent_count ?? 2;
   } catch (e) {
     error.value = "Bible Study is not available right now.";
   }
@@ -213,8 +213,12 @@ function roleClass(role) {
           @click="form.style = form.style === s ? '' : s">{{ s }}</button>
       </div>
       <label>Pastors: {{ form.agent_count }}
-        <input type="range" v-model.number="form.agent_count" :min="agentMin" :max="agentMax" />
+        <input type="range" v-model.number="form.agent_count" :min="agentMin" :max="agentMax" :disabled="agentMin >= agentMax" />
       </label>
+      <p class="tier-note">
+        Your plan allows up to <strong>{{ agentMax }}</strong> pastor{{ agentMax === 1 ? '' : 's' }}<span v-if="config?.tier"> ({{ config.tier }})</span>.
+        <span v-if="config?.tier === 'guest'">Register for more.</span>
+      </p>
       <label>Your question
         <textarea v-model="form.question" rows="3" placeholder="e.g. What does John 3:16 mean for me?"></textarea>
       </label>
@@ -305,6 +309,7 @@ function roleClass(role) {
 }
 .setup input::placeholder, .setup textarea::placeholder { color: var(--text-faint); }
 
+.tier-note { color: var(--text-muted); font-size: 0.85em; margin: 0.2rem 0 0.6rem; }
 .styles { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.6rem 0; }
 .chip {
   border: 1px solid var(--border-strong); border-radius: 999px;

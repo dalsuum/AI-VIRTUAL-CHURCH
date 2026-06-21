@@ -216,7 +216,7 @@ class BibleStudySeeder extends Seeder
                 'enabled'             => true,
                 'status'              => 'active',
                 'languages'           => array_keys(self::LANGUAGES),
-                'default_agent_count' => 4,
+                'default_agent_count' => 2,
                 'min_agent_count'     => 2,
                 'max_agent_count'     => 7,
                 'memory_strategy'     => 'window',

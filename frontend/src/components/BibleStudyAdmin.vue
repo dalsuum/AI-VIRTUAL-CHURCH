@@ -10,6 +10,7 @@ const personas = ref([]);
 const prompts = ref([]);
 const providers = ref([]);
 const manifest = ref(null);
+const tiers = ref(null);
 const sessions = ref(null);
 const usage = ref([]);
 const audit = ref(null);
@@ -23,6 +24,7 @@ async function load() {
     else if (sub.value === "prompts") prompts.value = await api.studyAdminPrompts();
     else if (sub.value === "providers") providers.value = await api.studyAdminProviders();
     else if (sub.value === "manifest") manifest.value = await api.studyAdminManifest();
+    else if (sub.value === "tiers") tiers.value = (await api.studyAdminTiers()).caps;
     else if (sub.value === "sessions") sessions.value = await api.studyAdminSessions();
     else if (sub.value === "usage") usage.value = await api.studyAdminUsage();
     else if (sub.value === "audit") audit.value = await api.studyAdminAudit();
@@ -50,6 +52,15 @@ async function addProvider() {
   } catch (e) { err.value = e?.message || "Failed."; }
 }
 
+async function saveTiers() {
+  err.value = ""; msg.value = "";
+  try {
+    const res = await api.studyAdminUpdateTiers(tiers.value);
+    tiers.value = res.caps;
+    msg.value = "Tier limits saved.";
+  } catch (e) { err.value = e?.message || "Failed."; }
+}
+
 async function activate() {
   err.value = ""; msg.value = "";
   try {
@@ -65,7 +76,7 @@ async function activate() {
 <template>
   <div class="bsa">
     <nav class="subtabs">
-      <button v-for="t in ['personas','prompts','providers','manifest','sessions','usage','audit']"
+      <button v-for="t in ['personas','prompts','providers','manifest','tiers','sessions','usage','audit']"
               :key="t" :class="{ active: sub === t }" @click="go(t)">{{ t }}</button>
     </nav>
 
@@ -125,6 +136,17 @@ async function activate() {
       <button class="primary" @click="activate">Validate &amp; activate</button>
     </div>
 
+    <div v-else-if="sub === 'tiers' && tiers">
+      <p class="hint">Max pastors a worshipper may convene, by plan (2–7). Enforced server-side.</p>
+      <div class="tier-grid">
+        <label v-for="k in ['guest','member','premium']" :key="k">
+          {{ k }}
+          <input type="number" min="2" max="7" v-model.number="tiers[k]" />
+        </label>
+      </div>
+      <button class="primary" @click="saveTiers">Save tier limits</button>
+    </div>
+
     <div v-else-if="sub === 'sessions' && sessions">
       <table><thead><tr><th>ID</th><th>User</th><th>Lang</th><th>State</th><th>Agents</th></tr></thead>
         <tbody><tr v-for="s in sessions.data" :key="s.id">
@@ -167,4 +189,7 @@ async function activate() {
 .add input, .add select { padding: 0.45rem; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm); font: inherit; }
 .ok { color: var(--success); } .err { color: var(--danger); }
 .hint { color: var(--text-muted); font-size: 0.9em; }
+.tier-grid { display: flex; gap: 1rem; margin: 0.6rem 0; }
+.tier-grid label { display: flex; flex-direction: column; gap: 0.2rem; text-transform: capitalize; color: var(--text); }
+.tier-grid input { width: 5rem; padding: 0.4rem; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm); }
 </style>

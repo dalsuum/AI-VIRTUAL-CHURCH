@@ -12,6 +12,8 @@ import FathersDay from "./components/FathersDay.vue";
 import LiveSticker from "./components/LiveSticker.vue";
 import BibleReader from "./components/BibleReader.vue";
 import BibleStudy from "./components/BibleStudy.vue";
+import AuthPanel from "./components/AuthPanel.vue";
+import AccountSettings from "./components/AccountSettings.vue";
 import { api } from "./composables/useApi";
 
 // The admin console lives at #admin so it never collides with the worship flow.
@@ -20,6 +22,10 @@ const isVocabRoute  = ref(window.location.hash === "#vocabulary");
 const isLyricsRoute = ref(window.location.hash === "#lyrics");
 const isBibleRoute  = ref(window.location.hash === "#bible");
 const isStudyRoute  = ref(window.location.hash === "#bible-study");
+// Account + auth entry points (hash-routed like the rest of the app).
+const isLoginRoute    = ref(window.location.hash === "#login");
+const isRegisterRoute = ref(window.location.hash === "#register");
+const isAccountRoute  = ref(window.location.hash === "#account");
 // Father's Day (Special Day) MV — standalone, removable page.
 const isFathersDayRoute = ref(window.location.hash === "#fathers-day");
 const fathersDayEnabled = ref(false);
@@ -47,7 +53,63 @@ window.addEventListener("hashchange", () => {
   isStudyRoute.value  = window.location.hash === "#bible-study";
   isFathersDayRoute.value = window.location.hash === "#fathers-day";
   isStickerRoute.value = window.location.hash === "#stickers";
+  isLoginRoute.value    = window.location.hash === "#login";
+  isRegisterRoute.value = window.location.hash === "#register";
+  isAccountRoute.value  = window.location.hash === "#account";
+  enforceGuards();
 });
+
+// ── Auth state + route guards ────────────────────────────────────────────────
+// currentUser is the /me payload (or null when no session). A guest session is
+// authenticated but anonymous, so it counts as "logged out" for the account UI.
+const currentUser = ref(null);
+const isAuthed = computed(() => !!currentUser.value && !currentUser.value.is_guest);
+const isAdmin  = computed(() =>
+  !!currentUser.value && (currentUser.value.is_admin || currentUser.value.role === "admin"));
+
+async function loadMe() {
+  try {
+    const res = await api.me();
+    currentUser.value = res?.user || null;
+  } catch {
+    currentUser.value = null; // no session / 401 → treated as logged out
+  }
+  enforceGuards();
+}
+
+// Hash-route access control. Mirrors requireAuth / requireGuest / requireAdmin:
+//  • #account needs a registered login;
+//  • #login / #register are for logged-out users only;
+//  • #admin is barred to logged-in non-staff (the console keeps its own login
+//    form for the not-yet-authenticated case, so we don't bounce those away).
+function enforceGuards() {
+  const hash = window.location.hash;
+  if (hash === "#account" && !isAuthed.value) {
+    window.location.hash = "#login";
+  } else if ((hash === "#login" || hash === "#register") && isAuthed.value) {
+    window.location.hash = "#account";
+  } else if (hash === "#admin" && currentUser.value && !currentUser.value.is_guest && !isAdmin.value) {
+    window.location.hash = "";
+  }
+}
+
+// Called by AuthPanel after a successful login/register: refresh identity, then
+// send the user into the app (account page for the freshly registered).
+async function onAuthed() {
+  await loadMe();
+  window.location.hash = "#account";
+}
+
+async function logout() {
+  try { await api.logout(); } catch { /* clear locally regardless */ }
+  currentUser.value = null;
+  window.location.hash = "";
+}
+
+// Resolve identity once on load so nav + guards reflect the real session.
+loadMe();
+
+function goHome() { window.location.hash = ""; }
 
 // view: "intake" | "preparing" | "service" | "intercepted" | "reset"
 const view = ref("intake");
@@ -293,13 +355,30 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
           <a href="#vocabulary" class="nav-link" :class="{ active: isVocabRoute }">📖 Vocabulary</a>
           <a v-if="fathersDayEnabled" href="#fathers-day" class="nav-link" :class="{ active: isFathersDayRoute }">💙 <span class="nav-label-full">{{ fdTitle }}</span><span class="nav-label-short">MV</span></a>
           <a v-if="stickersEnabled" href="#stickers" class="nav-link" :class="{ active: isStickerRoute }">🎨 Stickers</a>
+          <a v-if="isAdmin" href="#admin" class="nav-link" :class="{ active: isAdminRoute }">🛠 Admin</a>
+          <a v-if="isAuthed" href="#account" class="nav-link" :class="{ active: isAccountRoute }">👤 <span class="nav-label-full">Account</span></a>
+          <button v-if="isAuthed" class="nav-link nav-btn" @click="logout">Logout</button>
+          <template v-else>
+            <a href="#login" class="nav-link" :class="{ active: isLoginRoute }">Login</a>
+            <a href="#register" class="nav-link" :class="{ active: isRegisterRoute }">Register</a>
+          </template>
         </nav>
         <ThemeToggle />
       </div>
     </header>
 
     <main class="shell">
-      <div class="card">
+      <!-- Public auth entry: #login / #register. -->
+      <div v-if="isLoginRoute || isRegisterRoute" class="card">
+        <AuthPanel :mode="isRegisterRoute ? 'register' : 'login'" @authed="onAuthed" />
+      </div>
+
+      <!-- Authenticated account dashboard: token balance, plan, password. -->
+      <div v-else-if="isAccountRoute && isAuthed" class="card">
+        <AccountSettings @close="goHome" @nameChanged="loadMe" />
+      </div>
+
+      <div v-else class="card">
         <p v-if="resumeError" style="color:var(--danger);font-size:0.85rem;margin-bottom:1rem;">{{ resumeError }}</p>
 
         <!-- Father's Day (Special Day) MV — promo banner, only when enabled. -->
@@ -412,6 +491,7 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
   transition: color 0.12s, border-color 0.12s, background 0.12s;
 }
 .nav-link:hover { color: var(--primary); border-color: var(--border); }
+.nav-btn { background: none; cursor: pointer; font-family: inherit; }
 .nav-link.active { color: var(--primary); background: var(--primary-soft); border-color: var(--primary); font-weight: 600; }
 .nav-label-short { display: none; }
 @media (max-width: 640px) {

@@ -14,10 +14,15 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->statefulApi();
         $middleware->append(\App\Http\Middleware\SecurityHeaders::class);
+        // The guest-quota cookie is a non-sensitive client-set UUID, read raw by
+        // GuestUsageService; exempt it from cookie encryption so it isn't dropped.
+        $middleware->encryptCookies(except: ['guest_id']);
         $middleware->alias([
-            'admin' => \App\Http\Middleware\EnsureAdmin::class,
-            'staff' => \App\Http\Middleware\EnsureStaff::class,
-            'role'  => \App\Http\Middleware\EnsureRole::class,
+            'admin'       => \App\Http\Middleware\EnsureAdmin::class,
+            'staff'       => \App\Http\Middleware\EnsureStaff::class,
+            'role'        => \App\Http\Middleware\EnsureRole::class,
+            'guest.limit' => \App\Http\Middleware\GuestRateLimiter::class,
+            'tokens'      => \App\Http\Middleware\RequireTokens::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

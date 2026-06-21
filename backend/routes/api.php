@@ -73,6 +73,11 @@ Route::post('/internal/study-summary', [\App\Http\Controllers\WebhookController:
 // Stripe offering webhook (Stripe-signature verified, no user auth)
 Route::post('/webhooks/stripe', [OfferingController::class, 'webhook']);
 
+// Stripe subscription webhook (Stripe-signature verified) — the only place premium is
+// activated/downgraded. Separate endpoint so subscription + offering events are routed
+// independently in the Stripe dashboard.
+Route::post('/webhooks/stripe/subscription', [\App\Http\Controllers\SubscriptionController::class, 'webhook']);
+
 // Public ad endpoints — no auth required; track is throttled to prevent abuse.
 Route::get('/ads/active', [AdController::class, 'activeForService']);
 Route::post('/ads/track', [AdController::class, 'track'])->middleware('throttle:60,1');
@@ -119,11 +124,21 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::patch('/me/presenter-gender', [AuthController::class, 'updatePresenterGender']);
     Route::post('/me/change-password',   [AuthController::class, 'changePassword']);
 
+    // Subscription self-service (Stripe checkout / cancel) + token wallet (read-only).
+    Route::get('/subscription',          [\App\Http\Controllers\SubscriptionController::class, 'status']);
+    Route::post('/subscription/checkout',[\App\Http\Controllers\SubscriptionController::class, 'checkout'])
+        ->middleware('throttle:auth');
+    Route::post('/subscription/cancel',  [\App\Http\Controllers\SubscriptionController::class, 'cancel'])
+        ->middleware('throttle:auth');
+    Route::get('/tokens/balance',        [\App\Http\Controllers\TokenController::class, 'balance']);
+    Route::get('/tokens/history',        [\App\Http\Controllers\TokenController::class, 'history']);
+
     Route::get('/me/services', [ServiceController::class, 'myServices']);
     Route::post('/service/start', [ServiceController::class, 'start']);
     // Intake triggers the full AI pipeline — throttled tightly per user/IP.
     Route::post('/service/{token}/intake', [ServiceController::class, 'intake'])
-        ->middleware('throttle:intake');
+        // Guests: one free service; members/premium: must hold a token (charged in handler).
+        ->middleware(['throttle:intake', 'guest.limit:service', 'tokens:service']);
     Route::get('/service/{token}', [ServiceController::class, 'show']);
 
     // Offering segment — open a PaymentIntent; the browser confirms with Stripe.
@@ -312,7 +327,9 @@ Route::get('/v1/study/config', [StudyController::class, 'config'])->middleware('
 // the whole surface sits behind sanctum; every handler is owner-scoped.
 Route::middleware('auth:sanctum')->prefix('v1/study')->group(function () {
     Route::post('/sessions', [StudyController::class, 'createSession'])
-        ->middleware('throttle:6,1');                 // expensive multi-agent round
+        // Guests: one free study; members/premium: must hold a token. The handler
+        // reserves/commits the token and records guest usage on success.
+        ->middleware(['throttle:6,1', 'guest.limit:study', 'tokens:study']);
     Route::get('/sessions/{session}', [StudyController::class, 'show']);
     Route::post('/sessions/{session}/messages', [StudyController::class, 'postMessage'])
         ->middleware('throttle:20,1');

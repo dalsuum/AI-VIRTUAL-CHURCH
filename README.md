@@ -866,6 +866,85 @@ Stripe webhooks are signature-verified.
 
 ---
 
+## Subscriptions, plans & the token economy
+
+Three billing tiers govern access, **separate from the staff `role`** (which controls
+admin/console privilege):
+
+| Plan        | How you get it          | Ads | Tokens/month\* | Max pastors\*\* |
+|-------------|-------------------------|-----|----------------|-----------------|
+| **Guest**   | anonymous walk-up        | yes | — (1 free use per service) | 2 |
+| **Member**  | register an account      | no  | 100            | 3 |
+| **Premium** | Stripe subscription      | no  | 1000           | 7 |
+
+\* Configurable via `config/tokens.php` / env, and overridable live by an admin
+(`plan_overrides` setting). \*\* From the existing admin-editable `study_agent_tiers`.
+
+### Single source of truth
+
+No controller branches on a plan string. [`PlanService`](backend/app/Services/PlanService.php)
+maps a plan → its rules (allowance, ads, features) from config layered with admin
+overrides; [`FeatureService`](backend/app/Services/FeatureService.php) is the per-user
+façade (`showsAds()`, `maxPastors()`, `monthlyAllowance()`, …). Plans, statuses and
+ledger entry types are PHP enums (`app/Enums/`) — no magic strings.
+
+### Token wallet (reserve → commit → rollback)
+
+`users.token_balance` is the authoritative balance; every change is appended to
+`token_ledger` inside the same `lockForUpdate` transaction that moves it, so concurrent
+requests can't double-spend. AI calls use a **two-phase hold**
+([`TokenService`](backend/app/Services/TokenService.php)): `reserve()` debits before the
+fallible upstream call, then `commit()` on success or `rollback()` (refund) on failure —
+a model timeout never charges a user. A `token_reservations` row carries a TTL;
+`reservations:cleanup` (hourly) refunds any hold stranded by a crashed worker.
+
+### Guest one-use enforcement
+
+Guests get a single free use **per service**, tracked in `guest_tracking` by salted
+hashes of three signals — IP, a browser fingerprint, and a long-lived `guest_id` cookie
+— so clearing cookies alone doesn't reset the quota (see
+[`GuestUsageService`](backend/app/Services/GuestUsageService.php)). Enforced by the
+`guest.limit:{service}` middleware; members/premium fall through to `tokens:{service}`.
+
+### Ad suppression
+
+Server-authoritative: `GET /ads/active` returns `[]` for any ad-free plan, so the
+suppression can't be bypassed by calling the API directly.
+
+### Subscription lifecycle (Stripe Checkout)
+
+`POST /subscription/checkout` opens a hosted Stripe Checkout via the
+[`BillingProvider`](backend/app/Services/Billing/BillingProvider.php) seam (Stripe today;
+a second provider can be added without touching controllers). Premium is **only**
+activated/downgraded by the signature-verified webhook
+(`POST /webhooks/stripe/subscription`). `subscription_status`
+(active/trial/grace/expired/cancelled) is explicit rather than date-inferred; every
+transition is appended to `subscription_history` for support/audit. `subscriptions:expire`
+is a daily backstop for missed deletion webhooks.
+
+### Scheduled jobs (`routes/console.php`)
+
+`tokens:refill-monthly` (daily, idempotent within a month) · `subscriptions:expire`
+(daily) · `guests:cleanup` (daily) · `reservations:cleanup` (hourly).
+
+### Usage logging
+
+`usage_logs` records per-request AI usage (user, service, model, tokens, cost, latency,
+status) for cost forensics — distinct from the wallet ledger.
+
+### Account page
+
+`AccountSettings.vue` surfaces the plan badge, a token gauge (used / remaining),
+upgrade-to-premium (→ Stripe), cancel, and token history. `GET /me` now returns
+`plan`, `is_premium`, `shows_ads`, `token_balance`, and `monthly_allowance`.
+
+> **Deploy note:** run `php artisan migrate --force` (six additive migrations) and set
+> `STRIPE_PREMIUM_PRICE_ID`. Point a Stripe webhook at `/webhooks/stripe/subscription`
+> for `checkout.session.completed`, `customer.subscription.updated`,
+> `customer.subscription.deleted`, and `invoice.payment_failed`.
+
+---
+
 ## Testimonies
 
 `GET /testimonies` returns the **approved** wall; `POST /testimonies` submits one, held

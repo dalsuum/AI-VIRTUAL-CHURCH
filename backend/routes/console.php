@@ -32,3 +32,14 @@ Schedule::command('voice-studio:train-due')
     ->between('2:00', '6:00')
     ->runInBackground()
     ->withoutOverlapping(300);
+
+// Subscription / token economy maintenance.
+//   - Monthly token refill: run daily (idempotent within a month; only touches wallets
+//     not yet refilled this month, so a missed day self-heals).
+//   - Subscription expiry: daily backstop for missed Stripe deletion webhooks.
+//   - Guest-tracking prune: daily, bounds table growth.
+//   - Reservation cleanup: hourly, refunds tokens stranded by a crashed worker.
+Schedule::command('tokens:refill-monthly')->dailyAt('00:10');
+Schedule::command('subscriptions:expire')->dailyAt('00:15');
+Schedule::command('guests:cleanup')->dailyAt('03:45');
+Schedule::command('reservations:cleanup')->hourly();

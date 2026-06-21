@@ -31,6 +31,41 @@ function rememberedName() {
 }
 
 // Read the XSRF-TOKEN cookie that Sanctum sets after /sanctum/csrf-cookie.
+// ── Guest device identity ────────────────────────────────────────────────────
+// Two stable, non-sensitive signals so the server can enforce the "one free use
+// per service" guest quota across cookie clears (see GuestUsageService):
+//   • a coarse browser fingerprint (UA + language + screen + timezone), sent as a
+//     header — survives clearing site data;
+//   • a long-lived first-party `guest_id` cookie (a random UUID), readable by the
+//     server. Neither identifies the person; both are hashed server-side.
+function guestFingerprint() {
+  try {
+    const parts = [
+      navigator.userAgent,
+      navigator.language,
+      `${screen.width}x${screen.height}x${screen.colorDepth}`,
+      Intl.DateTimeFormat().resolvedOptions().timeZone || "",
+      navigator.hardwareConcurrency || "",
+    ].join("|");
+    // Small, fast non-crypto hash (djb2) → hex. The server salts+SHA-256s it anyway.
+    let h = 5381;
+    for (let i = 0; i < parts.length; i++) h = ((h << 5) + h + parts.charCodeAt(i)) >>> 0;
+    return h.toString(16);
+  } catch {
+    return "unknown";
+  }
+}
+
+function ensureGuestCookie() {
+  if (/(^|;\s*)guest_id=/.test(document.cookie)) return;
+  const uuid =
+    (crypto.randomUUID && crypto.randomUUID()) ||
+    `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  // 1-year first-party cookie; SameSite=Lax so it rides along with same-site XHR.
+  document.cookie = `guest_id=${uuid}; path=/; max-age=${60 * 60 * 24 * 365}; SameSite=Lax`;
+}
+ensureGuestCookie();
+
 function getCsrfToken() {
   const match = document.cookie
     .split(";")
@@ -70,6 +105,8 @@ async function request(path, { method = "GET", body } = {}, _retried = false) {
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json",
+      // Guest-quota fingerprint (ignored by the server for registered users).
+      "X-Guest-Fingerprint": guestFingerprint(),
       ...(mutating ? { "X-XSRF-TOKEN": getCsrfToken() } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
@@ -223,6 +260,13 @@ export const api = {
     request("/forgot-password", { method: "POST", body: { email } }),
   resetPassword: (token, new_password) =>
     request("/reset-password", { method: "POST", body: { token, new_password } }),
+
+  // Subscription + token wallet (account page).
+  subscriptionStatus: () => request("/subscription"),
+  subscriptionCheckout: () => request("/subscription/checkout", { method: "POST" }),
+  subscriptionCancel: () => request("/subscription/cancel", { method: "POST" }),
+  tokenBalance: () => request("/tokens/balance"),
+  tokenHistory: () => request("/tokens/history"),
 
   // Public app configuration (intake/preparing options). Optional context narrows
   // countdown cards by service mood/language once a session poll is available.

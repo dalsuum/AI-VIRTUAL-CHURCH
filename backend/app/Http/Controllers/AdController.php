@@ -210,6 +210,14 @@ class AdController extends Controller
     /** GET /ads/active?language=en&mood=grateful */
     public function activeForService(Request $request): JsonResponse
     {
+        // Ad-free plans (member/premium) get nothing — enforced server-side so the
+        // suppression can't be bypassed by calling the API directly. This route is
+        // public, so resolve the caller from the session/token if present.
+        $user = auth('sanctum')->user();
+        if ($user && ! \App\Services\FeatureService::for($user)->showsAds()) {
+            return response()->json(['ads' => []]);
+        }
+
         $language = $request->query('language');
         $mood     = $request->query('mood');
 

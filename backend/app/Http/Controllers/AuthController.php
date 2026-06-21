@@ -116,16 +116,26 @@ class AuthController extends Controller
         $user = $request->user();
         $isGuest = str_ends_with($user->email, '@guest.local');
 
+        $features = \App\Services\FeatureService::for($user);
+
         return response()->json([
             'user' => [
-                'id'           => $user->id,
-                'name'         => $user->name,
-                'email'        => $isGuest ? null : $user->email,
-                'is_admin'     => $user->isAdmin(),
-                'role'         => $user->role(),
-                'is_guest'     => $isGuest,
-                'music_source' => $user->music_source,
-                'permissions'  => PermissionService::forUser($user),
+                'id'             => $user->id,
+                'name'           => $user->name,
+                'email'          => $isGuest ? null : $user->email,
+                'is_admin'       => $user->isAdmin(),
+                'role'           => $user->role(),
+                'is_guest'       => $isGuest,
+                'music_source'   => $user->music_source,
+                'permissions'    => PermissionService::forUser($user),
+                // Subscription + wallet, so the SPA can hide ads, show the token gauge,
+                // and surface upgrade prompts without an extra round-trip.
+                'plan'              => $user->plan()->value,
+                'subscription'      => $user->subscriptionStatus()->value,
+                'is_premium'        => $user->isPremium(),
+                'shows_ads'         => $features->showsAds(),
+                'token_balance'     => (int) $user->token_balance,
+                'monthly_allowance' => $features->monthlyAllowance(),
             ],
         ]);
     }

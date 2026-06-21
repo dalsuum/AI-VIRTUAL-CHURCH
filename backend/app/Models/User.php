@@ -38,15 +38,21 @@ class User extends Authenticatable
         'name', 'name_provided', 'email', 'password', 'timezone',
         'music_source', 'presenter_gender', 'is_admin', 'is_blocked',
         'role', 'password_reset_token', 'password_reset_expires_at',
+        'subscription_plan', 'subscription_expires_at', 'stripe_customer_id',
+        'stripe_subscription_id', 'token_balance', 'monthly_allowance', 'tokens_refilled_at',
     ];
-    protected $hidden = ['password', 'remember_token', 'password_reset_token'];
+    protected $hidden = ['password', 'remember_token', 'password_reset_token', 'stripe_customer_id', 'stripe_subscription_id'];
     protected $casts = [
         'email_verified_at'        => 'datetime',
         'password_reset_expires_at'=> 'datetime',
+        'subscription_expires_at'  => 'datetime',
+        'tokens_refilled_at'       => 'datetime',
         'password'                 => 'hashed',
         'is_admin'                 => 'boolean',
         'name_provided'            => 'boolean',
         'is_blocked'               => 'boolean',
+        'token_balance'            => 'integer',
+        'monthly_allowance'        => 'integer',
     ];
 
     public function role(): string
@@ -69,5 +75,54 @@ class User extends Authenticatable
     public function ledgerEntries(): HasMany
     {
         return $this->hasMany(FinancialLedger::class);
+    }
+
+    public function tokenLedger(): HasMany
+    {
+        return $this->hasMany(TokenLedger::class);
+    }
+
+    public function tokenReservations(): HasMany
+    {
+        return $this->hasMany(TokenReservation::class);
+    }
+
+    public function subscriptionHistory(): HasMany
+    {
+        return $this->hasMany(SubscriptionHistory::class);
+    }
+
+    /** Anonymous walk-ups live as @guest.local accounts; their billing tier is always guest. */
+    public function isGuestAccount(): bool
+    {
+        return str_ends_with((string) $this->email, '@guest.local');
+    }
+
+    /**
+     * The user's effective billing plan as an enum. Anonymous accounts are always
+     * guest; otherwise the stored plan, defaulting to member. PlanService is the
+     * single place that turns this into limits/features — callers should not branch
+     * on the plan string directly.
+     */
+    public function plan(): \App\Enums\SubscriptionPlan
+    {
+        if ($this->isGuestAccount()) {
+            return \App\Enums\SubscriptionPlan::GUEST;
+        }
+
+        return \App\Enums\SubscriptionPlan::tryFrom((string) $this->subscription_plan)
+            ?? \App\Enums\SubscriptionPlan::MEMBER;
+    }
+
+    public function subscriptionStatus(): \App\Enums\SubscriptionStatus
+    {
+        return \App\Enums\SubscriptionStatus::tryFrom((string) $this->subscription_status)
+            ?? \App\Enums\SubscriptionStatus::ACTIVE;
+    }
+
+    /** Premium entitlements apply only when on a paid plan AND the status grants access. */
+    public function isPremium(): bool
+    {
+        return $this->plan()->isPaid() && $this->subscriptionStatus()->grantsAccess();
     }
 }

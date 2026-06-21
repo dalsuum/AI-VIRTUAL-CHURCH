@@ -58,11 +58,12 @@ class StudyTiers
     /** Which tier a user falls into. Anonymous → guest. */
     public static function tierForUser(?User $user): string
     {
-        if (! $user || str_ends_with((string) $user->email, '@guest.local')) {
+        if (! $user || $user->isGuestAccount()) {
             return 'guest';
         }
-        // Future: a real `is_premium` flag/role. For now admins act as premium.
-        if ($user->isAdmin() || ($user->is_premium ?? false)) {
+        // Premium entitlement comes from the subscription plan + status; admins are
+        // always treated as premium so the full slider is reachable for testing.
+        if ($user->isAdmin() || $user->isPremium()) {
             return 'premium';
         }
 

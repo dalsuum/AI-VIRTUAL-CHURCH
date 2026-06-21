@@ -8,6 +8,8 @@ use App\Models\ServiceSession;
 use App\Models\Setting;
 use App\Notifications\ServiceScheduledNotification;
 use App\Services\CrisisInterceptService;
+use App\Services\GuestUsageService;
+use App\Services\TokenService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -18,7 +20,38 @@ class ServiceController extends Controller
 {
     private const NARRATED_SEGMENTS = ['opening_prayer', 'scripture', 'sermon', 'benediction'];
 
-    public function __construct(private CrisisInterceptService $crisis) {}
+    public function __construct(
+        private CrisisInterceptService $crisis,
+        private TokenService $tokens,
+        private GuestUsageService $guests,
+    ) {}
+
+    /**
+     * Charge one worship-service generation. Members/premium spend a token; guests
+     * record their single free use. Idempotent per session via the `service:{id}`
+     * reference + the caller's already-active guard, so a retried intake never
+     * double-charges. Eligibility was already verified by the route middleware.
+     */
+    private function chargeService(Request $request, ServiceSession $session): void
+    {
+        $user = $request->user();
+
+        if ($user->isGuestAccount()) {
+            $this->guests->record($request, 'service');
+
+            return;
+        }
+
+        // Don't charge twice if this session was already paid for (e.g. scheduled then
+        // dispatched, or a duplicate intake).
+        $already = $user->tokenLedger()
+            ->where('reference', "service:{$session->id}")
+            ->whereIn('type', ['spend', 'reservation'])
+            ->exists();
+        if (! $already) {
+            $this->tokens->spend($user, 'service', "service:{$session->id}");
+        }
+    }
 
     /** Create a session. The media source is locked from the user's preference now. */
     public function start(Request $request): JsonResponse
@@ -120,6 +153,9 @@ class ServiceController extends Controller
                 'contact_email' => $contactEmail,
             ]);
 
+            // Scheduling commits to a generation, so charge now.
+            $this->chargeService($request, $session);
+
             // Send an immediate booking confirmation to the notification address.
             if ($notifyEmail) {
                 \Illuminate\Support\Facades\Notification::route('mail', $notifyEmail)
@@ -144,6 +180,8 @@ class ServiceController extends Controller
                 'status'        => $session->status,
             ], 202);
         }
+
+        $this->chargeService($request, $session);
 
         $session->update(['status' => 'active', 'scheduled_at' => null]);
         DispatchServiceJob::dispatch($session->id);

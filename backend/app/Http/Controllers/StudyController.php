@@ -8,9 +8,11 @@ use App\Models\AiPersona;
 use App\Models\ModuleManifest;
 use App\Models\StudyMessage;
 use App\Models\StudySession;
+use App\Services\GuestUsageService;
 use App\Services\StudyDispatchService;
 use App\Services\StudyInputGuard;
 use App\Services\StudyTiers;
+use App\Services\TokenService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Redis;
@@ -26,6 +28,8 @@ class StudyController extends Controller
     public function __construct(
         private readonly StudyDispatchService $dispatch,
         private readonly StudyInputGuard $guard,
+        private readonly TokenService $tokens,
+        private readonly GuestUsageService $guests,
     ) {}
 
     /** Public-safe config: enabled languages, agent bounds, and public persona names.
@@ -100,8 +104,28 @@ class StudyController extends Controller
             'content'    => $question,
         ]);
 
-        $session->update(['state' => 'discussing']);
-        $this->dispatch->dispatchRound($session, $question);
+        // Charge the session. Members/premium reserve a token (refunded if dispatch
+        // fails); guests have no wallet — their single free use is recorded instead.
+        // The guest.limit / tokens middleware on this route already verified eligibility.
+        $reservation = $user->isGuestAccount()
+            ? null
+            : $this->tokens->reserve($user, 'study', "study:{$session->id}");
+
+        try {
+            $session->update(['state' => 'discussing']);
+            $this->dispatch->dispatchRound($session, $question);
+        } catch (\Throwable $e) {
+            if ($reservation) {
+                $this->tokens->rollback($reservation);
+            }
+            throw $e;
+        }
+
+        if ($reservation) {
+            $this->tokens->commit($reservation);
+        } elseif ($user->isGuestAccount()) {
+            $this->guests->record($request, 'study');
+        }
 
         return response()->json([
             'session'      => $session->only(['id', 'language', 'translation', 'style', 'agent_count', 'state']),

@@ -17,6 +17,12 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(StripeClient::class, function () {
             return new StripeClient(config('services.stripe.secret'));
         });
+
+        // The billing seam resolves to Stripe today; swap here to add a provider.
+        $this->app->bind(
+            \App\Services\Billing\BillingProvider::class,
+            \App\Services\Billing\StripeProvider::class,
+        );
     }
 
     public function boot(): void

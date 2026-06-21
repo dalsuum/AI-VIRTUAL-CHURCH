@@ -3,9 +3,22 @@
 // (streaming agent bubbles + verse cards) → summary. Streaming is delivered by
 // useStudyStream over SSE; the seq-based composable handles reconnect/replay so a
 // dropped connection never loses or duplicates content.
-import { onMounted, onBeforeUnmount, reactive, ref, computed } from "vue";
+import { onMounted, onBeforeUnmount, reactive, ref, computed, watch } from "vue";
 import { api } from "../composables/useApi";
 import { useStudyStream } from "../composables/useStudyStream";
+
+// Bible translations offered per language. The first entry is that language's
+// DEFAULT (its own version where available); English versions are offered as a
+// fallback so any reference always resolves. Codes match the backend corpus.
+const TRANSLATIONS = {
+  en:  [["kjv", "KJV"], ["en", "English (BSB)"]],
+  my:  [["my", "Burmese (Judson 1835)"], ["kjv", "KJV (English)"]],
+  td:  [["td", "Tedim (Lai Siangtho 1932)"], ["kjv", "KJV (English)"]],
+  cnh: [["cnh", "Hakha Chin"], ["kjv", "KJV (English)"]],
+  cfm: [["cfm", "Falam Chin"], ["kjv", "KJV (English)"]],
+  lus: [["lus", "Mizo"], ["kjv", "KJV (English)"]],
+  hlt: [["hlt", "Matu Chin"], ["kjv", "KJV (English)"]],
+};
 
 const phase = ref("setup");
 const loading = ref(false);
@@ -22,6 +35,11 @@ const form = reactive({
 
 const STYLES = ["Gentle", "Teaching", "Encouraging", "Deep Theology", "Youth", "Family", "Hope"];
 
+const LANG_NAMES = {
+  en: "English", my: "Burmese (ဗမာ)", td: "Tedim", cnh: "Hakha",
+  cfm: "Falam", lus: "Mizo", hlt: "Matu",
+};
+
 const session = ref(null);
 const bubbles = ref([]);            // { turn, persona_id, name, role, text, refs:[] }
 const notice = ref("");
@@ -34,6 +52,18 @@ const { connected, reconnecting } = stream;
 
 const agentMin = computed(() => config.value?.min_agent_count ?? 2);
 const agentMax = computed(() => config.value?.max_agent_count ?? 7);
+
+// Translation options for the selected language; first is the default.
+const translationOptions = computed(() => TRANSLATIONS[form.language] || TRANSLATIONS.en);
+
+// When the language changes, snap the translation to that language's default
+// (unless the current pick is still valid for the new language).
+watch(() => form.language, () => {
+  const valid = translationOptions.value.map(([code]) => code);
+  if (!valid.includes(form.translation)) {
+    form.translation = translationOptions.value[0][0];
+  }
+});
 
 onMounted(async () => {
   try {
@@ -168,11 +198,13 @@ function roleClass(role) {
     <section v-if="phase === 'setup'" class="setup card">
       <label>Language
         <select v-model="form.language">
-          <option v-for="l in (config?.languages || ['en'])" :key="l" :value="l">{{ l }}</option>
+          <option v-for="l in (config?.languages || ['en'])" :key="l" :value="l">{{ LANG_NAMES[l] || l }}</option>
         </select>
       </label>
       <label>Translation
-        <input v-model="form.translation" maxlength="12" />
+        <select v-model="form.translation">
+          <option v-for="[code, name] in translationOptions" :key="code" :value="code">{{ name }}</option>
+        </select>
       </label>
       <div class="styles">
         <button

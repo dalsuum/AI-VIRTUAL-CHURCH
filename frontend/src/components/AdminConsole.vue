@@ -193,8 +193,8 @@ const bibleVoiceLangs = [
   { code: "cnh", label: "Hakha",          modes: bibleVoiceHakha },
   { code: "mrh", label: "Mara",           modes: bibleVoicePhonetic },
   { code: "hlt", label: "Matu",           modes: bibleVoiceMatu },
-  { code: "lus", label: "Mizo",           modes: bibleVoicePhonetic },
-  { code: "pck", label: "Paite",          modes: bibleVoicePhonetic },
+  { code: "lus", label: "Mizo",           modes: bibleVoicePhonetic, goldfish: "narration_lus" },
+  { code: "pck", label: "Paite",          modes: bibleVoicePhonetic, goldfish: "narration_pck" },
   { code: "csy", label: "Sizang",         modes: bibleVoicePhonetic },
 ];
 
@@ -387,12 +387,8 @@ function toggleServiceLanguage(key) {
   saveSetting(key, !settings.value[key], "Service language updated.");
 }
 // Goldfish LLM narrators — the Bible-only Chin/Zo languages backed by the
-// goldfish-models monolingual LMs (Mizo lus, Paite pck). Toggling enables or
-// disables the worker's goldfish generation; off falls back to curated content.
-const goldfishNarrators = [
-  { key: "narration_lus", label: "Mizo (Lushai)", hint: "goldfish-models/lus_latn_full — native Mizo generation. Off → curated fallback." },
-  { key: "narration_pck", label: "Paite (Zomi)", hint: "goldfish-models/pck_latn_full — native Paite generation. Off → curated fallback." },
-];
+// goldfish-models monolingual LMs (Mizo lus, Paite pck), shown as a "Goldfish"
+// chip on those translations' Bible reader voice row. Off → curated fallback.
 const setGoldfishNarrator = (key, on) => saveSetting(key, on, "Goldfish narrator updated.");
 
 const setMusicReuse = (on) => saveSetting("music_reuse", on, "Music reuse updated.");
@@ -2458,36 +2454,24 @@ onUnmounted(() => {
                     :title="m.hint"
                     @click="setBibleNarrationMode(l.code, m.value)"
                   >{{ m.label }}</button>
-                </div>
-              </div>
-              <!-- Goldfish LLM narrators (generated text, not a spoken voice) for the
-                   two Bible-only Chin/Zo languages with no instruction model upstream. -->
-              <div v-for="g in goldfishNarrators" :key="g.key" class="voice-row">
-                <span class="voice-row-lang">{{ g.label }} LLM</span>
-                <div class="voice-row-modes">
+                  <!-- Mizo/Paite also expose their goldfish-models text generator
+                       (independent of the spoken voice): Edge on the left, Goldfish here. -->
                   <button
+                    v-if="l.goldfish"
                     type="button"
                     class="voice-chip"
-                    :class="{ active: settings[g.key] === true }"
+                    :class="{ active: settings[l.goldfish] === true }"
                     :disabled="savingSettings || settingsReadOnly"
-                    :title="g.hint"
-                    @click="setGoldfishNarrator(g.key, true)"
+                    title="goldfish-models LLM generates native worship text for this language. Off → curated fallback."
+                    @click="setGoldfishNarrator(l.goldfish, !settings[l.goldfish])"
                   >Goldfish (local, free)</button>
-                  <button
-                    type="button"
-                    class="voice-chip"
-                    :class="{ active: settings[g.key] === false }"
-                    :disabled="savingSettings || settingsReadOnly"
-                    title="Disable goldfish generation — fall back to curated content."
-                    @click="setGoldfishNarrator(g.key, false)"
-                  >Off</button>
                 </div>
               </div>
             </div>
             <p class="setting-desc" style="margin-top:0.6rem">
               The English Edge / Voicebox voice follows the live-service voice picked in Settings.
-              <strong>Mizo&nbsp;LLM</strong> and <strong>Paite&nbsp;LLM</strong> toggle the
-              goldfish-models text generators (no native voice); Off falls back to curated content.
+              The <strong>Goldfish</strong> chip on Mizo &amp; Paite toggles their goldfish-models
+              text generator (independent of the spoken voice); off falls back to curated content.
             </p>
 
             <!-- Highlight default -->

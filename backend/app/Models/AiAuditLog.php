@@ -12,6 +12,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class AiAuditLog extends Model
 {
+    // Migration table is singular; without this Eloquent would look for
+    // `ai_audit_logs` (pluralized) and fail.
+    protected $table = 'ai_audit_log';
+
     public $timestamps = false; // created_at only
 
     /** Keys whose values are stripped from any before/after diff. */

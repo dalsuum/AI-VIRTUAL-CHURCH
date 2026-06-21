@@ -2432,33 +2432,6 @@ onUnmounted(() => {
         </div>
 
         <div class="setting-block">
-          <h2>Goldfish LLM narrators</h2>
-          <p class="setting-desc">
-            Mizo and Paite have no instruction-tuned LLM or native TTS voice upstream,
-            so their generated worship text comes from the
-            <strong>goldfish-models</strong> monolingual language models running on the
-            worker. Turn a narrator off to fall back to curated content for that
-            language. Requires the goldfish service (transformers + torch) on the LLM
-            worker.
-          </p>
-          <div v-if="settings" class="choice-row">
-            <button
-              v-for="g in goldfishNarrators"
-              :key="g.key"
-              type="button"
-              class="choice"
-              :class="{ active: settings[g.key] === true }"
-              :disabled="savingSettings || settingsReadOnly"
-              @click="setGoldfishNarrator(g.key, !settings[g.key])"
-            >
-              <strong>{{ g.label }} <span class="state">{{ settings[g.key] ? "On" : "Off" }}</span></strong>
-              <span>{{ g.hint }}</span>
-            </button>
-          </div>
-          <p v-else class="setting-desc">Loading…</p>
-        </div>
-
-        <div class="setting-block">
           <h2>Bible reader voice</h2>
           <p class="setting-desc">
             The voice used by the online Bible reader's <strong>🔊 Listen</strong> button,
@@ -2487,9 +2460,34 @@ onUnmounted(() => {
                   >{{ m.label }}</button>
                 </div>
               </div>
+              <!-- Goldfish LLM narrators (generated text, not a spoken voice) for the
+                   two Bible-only Chin/Zo languages with no instruction model upstream. -->
+              <div v-for="g in goldfishNarrators" :key="g.key" class="voice-row">
+                <span class="voice-row-lang">{{ g.label }} LLM</span>
+                <div class="voice-row-modes">
+                  <button
+                    type="button"
+                    class="voice-chip"
+                    :class="{ active: settings[g.key] === true }"
+                    :disabled="savingSettings || settingsReadOnly"
+                    :title="g.hint"
+                    @click="setGoldfishNarrator(g.key, true)"
+                  >Goldfish (local, free)</button>
+                  <button
+                    type="button"
+                    class="voice-chip"
+                    :class="{ active: settings[g.key] === false }"
+                    :disabled="savingSettings || settingsReadOnly"
+                    title="Disable goldfish generation — fall back to curated content."
+                    @click="setGoldfishNarrator(g.key, false)"
+                  >Off</button>
+                </div>
+              </div>
             </div>
             <p class="setting-desc" style="margin-top:0.6rem">
               The English Edge / Voicebox voice follows the live-service voice picked in Settings.
+              <strong>Mizo&nbsp;LLM</strong> and <strong>Paite&nbsp;LLM</strong> toggle the
+              goldfish-models text generators (no native voice); Off falls back to curated content.
             </p>
 
             <!-- Highlight default -->

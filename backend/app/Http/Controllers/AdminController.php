@@ -1102,6 +1102,16 @@ class AdminController extends Controller
                 Setting::set($key, $data[$key] ? '1' : '0');
             }
         }
+        // Goldfish LLM narrators (Mizo lus, Paite pck): persist the setting AND
+        // mirror it to Redis so the worker's goldfish_service can gate inference.
+        foreach (['lus', 'pck'] as $iso) {
+            $key = 'narration_' . $iso;
+            if (array_key_exists($key, $data)) {
+                $on = $data[$key] ? '1' : '0';
+                Setting::set($key, $on);
+                Redis::set('ai:narration_' . $iso, $on);
+            }
+        }
         if (array_key_exists('countdown_content_enabled', $data)) {
             Setting::set('countdown_content_enabled', $data['countdown_content_enabled'] ? '1' : '0');
         }
@@ -1191,6 +1201,9 @@ class AdminController extends Controller
             'lang_en'            => Setting::get('lang_en', '1') === '1',
             'lang_my'            => Setting::get('lang_my', '0') === '1',
             'lang_td'            => Setting::get('lang_td', '0') === '1',
+            // Goldfish LLM narrators (Bible-only Chin/Zo); default on.
+            'narration_lus'      => Setting::get('narration_lus', '1') === '1',
+            'narration_pck'      => Setting::get('narration_pck', '1') === '1',
             'moods'                => Setting::moods(),
             'music_sources'        => Setting::enabledMusicSources(),
             'scheduling_enabled'   => Setting::schedulingEnabled(),

@@ -386,6 +386,15 @@ function toggleServiceLanguage(key) {
   }
   saveSetting(key, !settings.value[key], "Service language updated.");
 }
+// Goldfish LLM narrators — the Bible-only Chin/Zo languages backed by the
+// goldfish-models monolingual LMs (Mizo lus, Paite pck). Toggling enables or
+// disables the worker's goldfish generation; off falls back to curated content.
+const goldfishNarrators = [
+  { key: "narration_lus", label: "Mizo (Lushai)", hint: "goldfish-models/lus_latn_full — native Mizo generation. Off → curated fallback." },
+  { key: "narration_pck", label: "Paite (Zomi)", hint: "goldfish-models/pck_latn_full — native Paite generation. Off → curated fallback." },
+];
+const setGoldfishNarrator = (key, on) => saveSetting(key, on, "Goldfish narrator updated.");
+
 const setMusicReuse = (on) => saveSetting("music_reuse", on, "Music reuse updated.");
 const setAvatarEnabled = (on) => saveSetting("avatar_enabled", on, "D-ID avatar rendering updated.");
 const setLocalAvatarEnabled = (on) => saveSetting("local_avatar_enabled", on, "Local avatar rendering updated.");
@@ -2419,6 +2428,33 @@ onUnmounted(() => {
               </table>
             </div>
           </template>
+          <p v-else class="setting-desc">Loading…</p>
+        </div>
+
+        <div class="setting-block">
+          <h2>Goldfish LLM narrators</h2>
+          <p class="setting-desc">
+            Mizo and Paite have no instruction-tuned LLM or native TTS voice upstream,
+            so their generated worship text comes from the
+            <strong>goldfish-models</strong> monolingual language models running on the
+            worker. Turn a narrator off to fall back to curated content for that
+            language. Requires the goldfish service (transformers + torch) on the LLM
+            worker.
+          </p>
+          <div v-if="settings" class="choice-row">
+            <button
+              v-for="g in goldfishNarrators"
+              :key="g.key"
+              type="button"
+              class="choice"
+              :class="{ active: settings[g.key] === true }"
+              :disabled="savingSettings || settingsReadOnly"
+              @click="setGoldfishNarrator(g.key, !settings[g.key])"
+            >
+              <strong>{{ g.label }} <span class="state">{{ settings[g.key] ? "On" : "Off" }}</span></strong>
+              <span>{{ g.hint }}</span>
+            </button>
+          </div>
           <p v-else class="setting-desc">Loading…</p>
         </div>
 

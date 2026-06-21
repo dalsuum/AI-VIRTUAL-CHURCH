@@ -92,6 +92,11 @@ class UpdateSettingsRequest extends FormRequest
             'narration_en'        => ['sometimes', 'boolean'],
             'narration_my'        => ['sometimes', 'boolean'],
             'narration_td'        => ['sometimes', 'boolean'],
+            // Goldfish LLM narrators for the Bible-only Chin/Zo languages
+            // (Mizo lus, Paite pck). Toggling writes a Redis flag the worker
+            // goldfish_service consults; off → fall back to curated content.
+            'narration_lus'       => ['sometimes', 'boolean'],
+            'narration_pck'       => ['sometimes', 'boolean'],
             // Which service languages appear as tabs in the intake form.
             'lang_en'             => ['sometimes', 'boolean'],
             'lang_my'             => ['sometimes', 'boolean'],

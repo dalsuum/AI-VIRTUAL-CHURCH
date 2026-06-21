@@ -144,8 +144,8 @@ const narrationModesTD = [
 
 // Compact per-version "Listen" voice rows for the Bible page. English & KJV get
 // the full English provider set; Myanmar & Tedim reuse their native-aware lists;
-// Hebrew uses its he-IL Edge voice; the Chin/Zo Bibles have no native voice so
-// they read phonetically via the English Edge voice (or Off).
+// Hebrew uses its he-IL Edge voice; Falam & Hakha have native MMS-TTS voices;
+// the remaining Chin/Zo Bibles read phonetically via the English Edge voice (or Off).
 const bibleVoiceEN = narrationModes.filter((x) => x.value !== "browser");
 const bibleVoiceHE = [
   { value: "edge_tts", label: "Edge TTS (cloud, free)", hint: "Microsoft he-IL neural voice (Avri / Hila) — native Hebrew, no server needed." },
@@ -155,14 +155,37 @@ const bibleVoicePhonetic = [
   { value: "edge_tts", label: "Edge TTS (cloud, free)", hint: "No native voice — reads the Latin-script text phonetically with the English Edge voice. Free, but the accent is English." },
   { value: "off",      label: "Off",                    hint: "No narration for this translation." },
 ];
+// Edge-first ordering so every Bible row lines up: Edge TTS on the left, the
+// native MMS-TTS voice to its right, Off last. (The live-service Settings
+// section keeps its own native-first ordering via narrationModesMY/TD.)
+const bibleVoiceBurmese = [
+  { value: "edge_tts", label: "Edge TTS (cloud, free)", hint: "Microsoft my-MM-NilarNeural (female) / my-MM-ThihaNeural (male) — high-quality neural Burmese, no server needed." },
+  { value: "mms_tts",  label: "MMS-TTS (local, free)",  hint: "Local facebook/mms-tts-mya via the aivc-mms-tts service. Best offline quality; requires MMS speech on port 8003." },
+  { value: "off",      label: "Off",                    hint: "No narration for this translation." },
+];
+const bibleVoiceTedim = [
+  { value: "edge_tts", label: "Edge TTS (cloud, free)", hint: "No native Zolai cloud voice — reads Tedim text phonetically using EDGE_TTS_VOICE_TD (default en-US-AriaNeural). Free but the accent is English." },
+  { value: "mms_tts",  label: "MMS-TTS (local, free)",  hint: "Local facebook/mms-tts-ctd — the only native Zolai TTS. Requires MMS speech on port 8003." },
+  { value: "off",      label: "Off",                    hint: "No narration for this translation." },
+];
+const bibleVoiceFalam = [
+  { value: "edge_tts", label: "Edge TTS (cloud, free)", hint: "No native cloud voice — reads the Latin-script text phonetically with the English Edge voice." },
+  { value: "mms_tts",  label: "MMS-TTS (local, free)",  hint: "Local facebook/mms-tts-cfm — native Falam (Lai) voice. Requires MMS speech on port 8003." },
+  { value: "off",      label: "Off",                    hint: "No narration for this translation." },
+];
+const bibleVoiceHakha = [
+  { value: "edge_tts", label: "Edge TTS (cloud, free)", hint: "No native cloud voice — reads the Latin-script text phonetically with the English Edge voice." },
+  { value: "mms_tts",  label: "MMS-TTS (local, free)",  hint: "Local facebook/mms-tts-cnh — native Hakha (Lai) voice. Requires MMS speech on port 8003." },
+  { value: "off",      label: "Off",                    hint: "No narration for this translation." },
+];
 const bibleVoiceLangs = [
   { code: "kjv", label: "KJV (English)",  modes: bibleVoiceEN },
   { code: "en",  label: "English (BSB)",  modes: bibleVoiceEN },
   { code: "he",  label: "Hebrew (עברית)", modes: bibleVoiceHE },
-  { code: "my",  label: "Burmese (ဗမာ)",  modes: narrationModesMY },
-  { code: "td",  label: "Tedim (Zolai)",  modes: narrationModesTD },
-  { code: "cfm", label: "Falam",          modes: bibleVoicePhonetic },
-  { code: "cnh", label: "Hakha",          modes: bibleVoicePhonetic },
+  { code: "my",  label: "Burmese (ဗမာ)",  modes: bibleVoiceBurmese },
+  { code: "td",  label: "Tedim (Zolai)",  modes: bibleVoiceTedim },
+  { code: "cfm", label: "Falam",          modes: bibleVoiceFalam },
+  { code: "cnh", label: "Hakha",          modes: bibleVoiceHakha },
   { code: "mrh", label: "Mara",           modes: bibleVoicePhonetic },
   { code: "hlt", label: "Matu",           modes: bibleVoicePhonetic },
   { code: "lus", label: "Mizo",           modes: bibleVoicePhonetic },
@@ -2399,9 +2422,10 @@ onUnmounted(() => {
           <p class="setting-desc">
             The voice used by the online Bible reader's <strong>🔊 Listen</strong> button,
             per translation. Independent of the live-service narration. English &amp;
-            KJV support every provider; Burmese &amp; Tedim add the native local
-            MMS-TTS voice; Hebrew uses its he-IL voice; the Chin/Zo Bibles have no
-            native voice, so they read phonetically with the English Edge voice — or
+            KJV support every provider; Burmese, Tedim, Falam &amp; Hakha add a
+            native local MMS-TTS voice; Hebrew uses its he-IL voice; the remaining
+            Chin/Zo Bibles (Mizo, Paite, Mara, Matu, Sizang) have no native voice,
+            so they read phonetically with the English Edge voice — or
             set any translation to <strong>Off</strong> to disable narration there.
             Hover a button for details.
           </p>

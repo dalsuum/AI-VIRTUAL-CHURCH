@@ -361,6 +361,7 @@ export const api = {
 
   // Admin console (requires an is_admin account).
   adminDashboard: () => request("/admin/dashboard"),
+  adminFreezeStatus: () => request("/admin/freeze/status"),
   adminServices: () => request("/admin/services"),
   adminRetryService: (id) => request(`/admin/services/${id}/retry`, { method: "POST" }),
   adminDeleteService: (id) => request(`/admin/services/${id}`, { method: "DELETE" }),

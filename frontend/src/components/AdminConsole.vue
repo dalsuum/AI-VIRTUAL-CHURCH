@@ -56,6 +56,7 @@ const TABS = [
   { name: "permissions",    label: "Permissions",      can: () => can("permissions.view"),     load: loadPermissions },
   { name: "grammar-review", label: "Language Review",  can: () => can("language_review.view"), load: () => { grData.value = null; loadGrammarReview(); } },
   { name: "system",         label: "System",           can: () => can("system.view"),          load: () => { loadUpdateStatus(); scheduleUpdatePoll(); loadVoiceboxStatus(); scheduleVoiceboxPoll(); } },
+  { name: "freeze",         label: "Freeze Monitor",   can: () => isAdminUser.value,           load: () => { loadFreeze(); scheduleFreezePoll(); } },
 ];
 
 function firstAllowedTab() {
@@ -352,6 +353,7 @@ async function loadMusicTracks() {
 function show(name) {
   if (name !== "system")         { clearInterval(updateTimer); clearInterval(vbTimer); }
   if (name !== "voice-training") { clearInterval(voiceTrainingTimer); }
+  if (name !== "freeze")         { clearInterval(freezeTimer); }
   tab.value    = name;
   notice.value = "";
   const t = TABS.find(t => t.name === name);
@@ -1142,6 +1144,30 @@ const updateBusy     = ref(false);  // true while an action is in flight
 const updateNotice   = ref("");
 let   updateTimer    = null;
 
+// ─── Freeze Monitor (synthetic health harness) ─────────────────────────────────
+const freeze       = ref(null);   // full /admin/freeze/status payload
+const freezeError  = ref("");
+let   freezeTimer  = null;
+async function loadFreeze() {
+  try { freeze.value = await api.adminFreezeStatus(); freezeError.value = ""; }
+  catch (e) { freezeError.value = e?.data?.message || "Could not load freeze status."; }
+}
+function scheduleFreezePoll() {
+  clearInterval(freezeTimer);
+  freezeTimer = setInterval(loadFreeze, 10000);  // live refresh every 10s
+}
+function fmtAge(h) {
+  if (h == null) return "—";
+  const m = Math.round(h * 60);
+  return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m`;
+}
+function shortTime(ts) {
+  try { return new Date(ts).toISOString().slice(11, 19); } catch { return ts; }
+}
+function shortDateTime(ts) {
+  try { const i = new Date(ts).toISOString(); return i.slice(5, 10) + " " + i.slice(11, 16); } catch { return ts; }
+}
+
 // ─── Voicebox TTS Monitor ──────────────────────────────────────────────────────
 
 const vbHealth   = ref(null);   // { status, model_loaded, gpu_type, vram_used_mb, ... }
@@ -1385,6 +1411,7 @@ onUnmounted(() => {
   clearInterval(updateTimer);
   clearInterval(vbTimer);
   clearInterval(voiceTrainingTimer);
+  clearInterval(freezeTimer);
 });
 </script>
 
@@ -3314,6 +3341,82 @@ onUnmounted(() => {
 
       </section>
 
+      <!-- Freeze Monitor -->
+      <section v-else-if="tab === 'freeze' && isAdminUser" class="freeze-page">
+        <div class="fz-head">
+          <h2>Freeze Monitor</h2>
+          <span class="fz-live"><span class="fz-dot" :class="freeze?.armed ? 'on' : 'off'"></span>
+            {{ freeze?.armed ? 'live · refreshes every 10s' : 'no recent activity' }}</span>
+        </div>
+        <p v-if="freezeError" class="fz-error">{{ freezeError }}</p>
+
+        <template v-if="freeze">
+          <!-- Top row: verdict + window -->
+          <div class="fz-top">
+            <div class="fz-verdict" :class="(freeze.rendered_verdict || freeze.verdict || '').toLowerCase()">
+              <span class="fz-verdict-label">Verdict</span>
+              <span class="fz-verdict-val">{{ freeze.rendered_verdict || freeze.verdict }}</span>
+              <span class="fz-verdict-sub">{{ freeze.rendered_verdict ? 'gate rendered' : 'live (gate at ~24h)' }}</span>
+            </div>
+            <div class="fz-window">
+              <div class="fz-wrow"><span>Window start</span><b>{{ freeze.window_start ? shortTime(freeze.window_start) : '—' }} UTC</b></div>
+              <div class="fz-wrow"><span>Window age</span><b>{{ fmtAge(freeze.age_hours) }} / 24h</b></div>
+              <div class="fz-bar"><div class="fz-fill" :style="{ width: Math.min(100, (freeze.age_hours/24*100)).toFixed(1) + '%' }"></div></div>
+              <div class="fz-wrow"><span>Window end</span><b>{{ freeze.window_end ? shortDateTime(freeze.window_end) : '—' }} UTC</b></div>
+            </div>
+          </div>
+
+          <!-- Health score cards -->
+          <div class="fz-cards">
+            <div class="fz-card"><span class="fz-k">API Cycles</span><span class="fz-v">{{ freeze.health.api_cycles }}</span><span class="fz-s">exp ~{{ freeze.health.expected_api }}</span></div>
+            <div class="fz-card"><span class="fz-k">Browser</span><span class="fz-v">{{ freeze.health.browser_cycles }}</span><span class="fz-s">exp ~{{ freeze.health.expected_brw }}</span></div>
+            <div class="fz-card"><span class="fz-k">Coverage</span><span class="fz-v" :class="freeze.health.coverage < 80 ? 'warn' : 'ok'">{{ freeze.health.coverage }}%</span><span class="fz-s">target ≥80%</span></div>
+            <div class="fz-card"><span class="fz-k">5xx Errors</span><span class="fz-v" :class="freeze.health.err5xx ? 'bad' : 'ok'">{{ freeze.health.err5xx }}</span><span class="fz-s">all good</span></div>
+            <div class="fz-card"><span class="fz-k">Failed Checks</span><span class="fz-v" :class="freeze.health.failed_checks ? 'bad' : 'ok'">{{ freeze.health.failed_checks }}</span><span class="fz-s">all good</span></div>
+            <div class="fz-card"><span class="fz-k">Balance Drift</span><span class="fz-v" :class="freeze.health.balance_drift ? 'bad' : 'ok'">{{ freeze.health.balance_drift }}</span><span class="fz-s">regressions</span></div>
+            <div class="fz-card"><span class="fz-k">Auth Drift</span><span class="fz-v" :class="freeze.health.auth_drift ? 'bad' : 'ok'">{{ freeze.health.auth_drift }}</span><span class="fz-s">all good</span></div>
+            <div class="fz-card"><span class="fz-k">Token Balance</span><span class="fz-v">{{ freeze.health.balance ?? '—' }}</span><span class="fz-s">climbs by 1/cycle</span></div>
+          </div>
+
+          <!-- Cycle tables -->
+          <div class="fz-tables">
+            <div class="fz-tbl">
+              <h3>API Probe — last 10</h3>
+              <table class="grid">
+                <thead><tr><th>Time</th><th>Status</th><th>5xx</th><th>Checks</th><th>Bal</th><th>Fails</th></tr></thead>
+                <tbody>
+                  <tr v-for="(r, i) in freeze.api_cycles.slice().reverse()" :key="i">
+                    <td>{{ shortTime(r.ts) }}</td>
+                    <td><span class="badge" :class="r.ok ? 'ok' : 'failed'">{{ r.ok ? 'PASS' : 'FAIL' }}</span></td>
+                    <td>{{ r.err5xx }}</td>
+                    <td>{{ Object.values(r.checks||{}).filter(Boolean).length }}/{{ Object.keys(r.checks||{}).length }}</td>
+                    <td>{{ r.balance }}</td>
+                    <td><small>{{ (r.fails||[]).join(', ') || '—' }}</small></td>
+                  </tr>
+                  <tr v-if="!freeze.api_cycles.length"><td colspan="6" class="empty">No API cycles yet.</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="fz-tbl">
+              <h3>Browser Probe — last 10</h3>
+              <table class="grid">
+                <thead><tr><th>Time</th><th>Status</th><th>Console</th><th>Note</th></tr></thead>
+                <tbody>
+                  <tr v-for="(r, i) in freeze.browser_cycles.slice().reverse()" :key="i">
+                    <td>{{ shortTime(r.ts) }}</td>
+                    <td><span class="badge" :class="r.ok ? 'ok' : 'failed'">{{ r.ok ? 'PASS' : 'FAIL' }}</span></td>
+                    <td><span :class="r.console_issues ? 'fz-bad' : ''">{{ r.console_issues }}</span></td>
+                    <td><small>{{ r.note || '—' }}</small></td>
+                  </tr>
+                  <tr v-if="!freeze.browser_cycles.length"><td colspan="4" class="empty">No browser cycles yet (first at :07).</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </template>
+        <p v-else-if="!freezeError" class="fz-loading">Loading freeze status…</p>
+      </section>
+
       <!-- Language Grammar Review -->
       <section v-else-if="tab === 'grammar-review'" class="gr-section">
         <div class="gr-header">
@@ -3748,4 +3851,45 @@ onUnmounted(() => {
 .pkg-badge { vertical-align: middle; }
 .pkg-row-update { background: rgba(234,179,8,.04); }
 .pkg-upgrade-btn { font-size: 0.78rem; padding: 0.2rem 0.6rem; }
+
+/* ── Freeze Monitor ─────────────────────────────────────────────────────── */
+.badge.ok { background: var(--success-soft); color: var(--success); }
+.fz-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
+.fz-head h2 { margin: 0; }
+.fz-live { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; color: var(--text-muted); }
+.fz-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.fz-dot.on { background: var(--success); box-shadow: 0 0 0 3px var(--success-soft); }
+.fz-dot.off { background: var(--text-muted); }
+.fz-error { color: var(--danger); font-size: 0.85rem; }
+.fz-loading { color: var(--text-muted); }
+.fz-top { display: grid; grid-template-columns: 200px 1fr; gap: 1rem; margin-bottom: 1.25rem; }
+.fz-verdict { display: flex; flex-direction: column; gap: 0.2rem; justify-content: center; align-items: center;
+  padding: 1rem; border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface-2); }
+.fz-verdict-label { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.fz-verdict-val { font-size: 1.8rem; font-weight: 700; }
+.fz-verdict-sub { font-size: 0.72rem; color: var(--text-muted); }
+.fz-verdict.green .fz-verdict-val, .fz-verdict.pass .fz-verdict-val { color: var(--success); }
+.fz-verdict.warn .fz-verdict-val, .fz-verdict.pending .fz-verdict-val { color: #b45309; }
+.fz-verdict.fail .fz-verdict-val { color: var(--danger); }
+.fz-window { padding: 1rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); }
+.fz-wrow { display: flex; justify-content: space-between; font-size: 0.85rem; padding: 0.15rem 0; }
+.fz-wrow span { color: var(--text-muted); }
+.fz-bar { height: 8px; border-radius: 999px; background: var(--surface-3); overflow: hidden; margin: 0.5rem 0; }
+.fz-fill { height: 100%; background: var(--primary); transition: width 0.5s; }
+.fz-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; margin-bottom: 1.5rem; }
+.fz-card { display: flex; flex-direction: column; gap: 0.15rem; padding: 0.75rem 0.9rem;
+  border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
+.fz-k { font-size: 0.75rem; color: var(--text-muted); }
+.fz-v { font-size: 1.5rem; font-weight: 700; }
+.fz-v.ok { color: var(--success); }
+.fz-v.bad { color: var(--danger); }
+.fz-v.warn { color: #b45309; }
+.fz-s { font-size: 0.72rem; color: var(--text-muted); }
+.fz-bad { color: var(--danger); font-weight: 600; }
+.fz-tables { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
+.fz-tbl h3 { font-size: 0.95rem; margin: 0 0 0.5rem; }
+@media (max-width: 900px) {
+  .fz-top, .fz-tables { grid-template-columns: 1fr; }
+  .fz-cards { grid-template-columns: repeat(2, 1fr); }
+}
 </style>

@@ -227,6 +227,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::patch('/users/{user}/admin',            [AdminController::class, 'setAdmin']);
         Route::patch('/users/{user}/block',            [AdminController::class, 'blockUser']);
         Route::post('/users/{user}/tokens',            [AdminController::class, 'grantTokens']);
+
+        // Read-only freeze-harness monitor for the admin console.
+        Route::get('/freeze/status',                   [AdminController::class, 'freezeStatus']);
         Route::patch('/users/{user}/presenter-gender', [AdminController::class, 'updatePresenterGender']);
         Route::post('/users/{user}/force-reset',       [AdminController::class, 'forcePasswordReset']);
         Route::delete('/users/{user}',                 [AdminController::class, 'deleteUser']);

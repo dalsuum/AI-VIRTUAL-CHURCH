@@ -1369,6 +1369,104 @@ class AdminController extends Controller
         ]);
     }
 
+    /**
+     * Read-only freeze-harness status for the admin console monitor. Parses the
+     * synthetic-probe logs the cron jobs write under ../ops/logs and computes a
+     * health summary (coverage vs expected cadence, 5xx, failed checks, balance &
+     * auth drift, overall verdict). Never mutates anything; if the harness isn't
+     * armed it returns armed=false so the UI can show a "not running" state.
+     */
+    public function freezeStatus(): JsonResponse
+    {
+        $ops = dirname(base_path()) . '/ops';
+        $readJsonl = function (string $path): array {
+            $out = [];
+            if (is_readable($path)) {
+                foreach (file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [] as $line) {
+                    $row = json_decode($line, true);
+                    if (is_array($row)) $out[] = $row;
+                }
+            }
+            return $out;
+        };
+
+        $api = $readJsonl("$ops/logs/freeze.jsonl");
+        $brw = $readJsonl("$ops/logs/freeze_browser.jsonl");
+
+        $tsList = [];
+        foreach ($api as $r) {
+            if (!empty($r['ts'])) { try { $tsList[] = Carbon::parse($r['ts']); } catch (\Throwable $e) {} }
+        }
+        $now = Carbon::now('UTC');
+        $start = $tsList ? min($tsList) : null;
+        $lastTs = $tsList ? max($tsList) : null;
+        $ageH = $start ? $start->diffInSeconds($now) / 3600.0 : 0.0;
+        // The .freeze_env file is chmod 600 (has credentials), so php-fpm can't read
+        // it. Infer "armed/live" from recent probe activity instead — a cycle within
+        // the last 20 min means cron is actively writing.
+        $armed = $lastTs && $lastTs->diffInMinutes($now) <= 20;
+
+        $api5xx = array_sum(array_map(fn($r) => (int) ($r['err5xx'] ?? 0), $api));
+        $failedChecks = array_sum(array_map(fn($r) => count($r['fails'] ?? []), $api));
+        $bals = array_values(array_filter(array_map(fn($r) => $r['balance'] ?? null, $api), 'is_int'));
+        $regressions = 0;
+        for ($i = 1; $i < count($bals); $i++) if ($bals[$i] < $bals[$i - 1]) $regressions++;
+        $brwFail = count(array_filter($brw, fn($r) => !($r['ok'] ?? false)));
+        $brwConsole = array_sum(array_map(fn($r) => (int) ($r['console_issues'] ?? 0), $brw));
+        $authDrift = $brwFail + array_sum(array_map(
+            fn($r) => count(array_filter($r['fails'] ?? [], fn($f) => str_starts_with($f, 'session') || str_starts_with($f, 'logout'))),
+            $api
+        ));
+
+        $expApi = max(0, (int) ($ageH * 6));
+        $expBrw = max(0, (int) ($ageH * 1));
+        $coverage = $expApi > 0 ? round(count($api) / $expApi * 100, 1) : 0.0;
+
+        $hardFail = $api5xx > 0 || $failedChecks > 0 || $regressions > 0 || $brwFail > 0;
+        if (!$api && !$brw)      $verdict = 'PENDING';
+        elseif ($hardFail)       $verdict = 'FAIL';
+        elseif ($coverage < 80)  $verdict = 'WARN';
+        else                     $verdict = 'GREEN';
+
+        // A rendered verdict file (written by the gate at T+24h) overrides the live read.
+        $verdictFile = "$ops/logs/freeze_verdict.txt";
+        $renderedVerdict = null;
+        if (is_readable($verdictFile)) {
+            $first = trim((string) (file($verdictFile)[0] ?? ''));
+            if (str_contains($first, ':')) $renderedVerdict = trim(explode(':', $first, 2)[1]);
+        }
+
+        $trim = fn(array $rows, array $keys) => array_map(
+            fn($r) => array_intersect_key($r, array_flip($keys)),
+            array_slice($rows, -10)
+        );
+
+        return response()->json([
+            'armed'        => $armed,
+            'now'          => $now->toIso8601String(),
+            'window_start' => $start?->toIso8601String(),
+            'window_end'   => $start?->copy()->addHours(24)->toIso8601String(),
+            'age_hours'    => round($ageH, 2),
+            'verdict'      => $verdict,
+            'rendered_verdict' => $renderedVerdict,
+            'health' => [
+                'api_cycles'     => count($api),
+                'browser_cycles' => count($brw),
+                'expected_api'   => $expApi,
+                'expected_brw'   => $expBrw,
+                'coverage'       => $coverage,
+                'err5xx'         => $api5xx,
+                'failed_checks'  => $failedChecks,
+                'balance_drift'  => $regressions,
+                'auth_drift'     => $authDrift,
+                'console_issues' => $brwConsole,
+                'balance'        => $bals ? end($bals) : null,
+            ],
+            'api_cycles' => $trim($api, ['ts', 'ok', 'err5xx', 'fails', 'balance', 'checks']),
+            'browser_cycles' => $trim($brw, ['ts', 'ok', 'console_issues', 'note']),
+        ]);
+    }
+
     /** Set the presenter gender (avatar + voice pair) for a specific user. */
     public function updatePresenterGender(Request $request, User $user): JsonResponse
     {

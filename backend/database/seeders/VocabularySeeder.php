@@ -40,14 +40,25 @@ class VocabularySeeder extends Seeder
 
             // Match on zolai+english+category: a few words (e.g. "siangtho") appear
             // legitimately under more than one category, so category is part of identity.
+            $attrs = [
+                'burmese' => isset($row['burmese']) ? trim((string) $row['burmese']) : null,
+                'hebrew'  => isset($row['hebrew']) && $row['hebrew'] !== '' ? trim((string) $row['hebrew']) : null,
+                'notes'   => isset($row['notes']) && $row['notes'] !== '' ? trim((string) $row['notes']) : null,
+                'source'  => 'reference',
+            ];
+
+            // Optional per-language glosses (falam, hakha, matu, mizo, paite, sizang).
+            // Only overwrite when the JSON actually carries a value, so admin edits to
+            // a blank language cell survive a reseed.
+            foreach (['falam', 'hakha', 'matu', 'mizo', 'paite', 'sizang'] as $lang) {
+                if (isset($row[$lang]) && trim((string) $row[$lang]) !== '') {
+                    $attrs[$lang] = trim((string) $row[$lang]);
+                }
+            }
+
             Vocabulary::updateOrCreate(
                 ['zolai' => $zolai, 'english' => $english, 'category' => $category],
-                [
-                    'burmese' => isset($row['burmese']) ? trim((string) $row['burmese']) : null,
-                    'hebrew'  => isset($row['hebrew']) && $row['hebrew'] !== '' ? trim((string) $row['hebrew']) : null,
-                    'notes'   => isset($row['notes']) && $row['notes'] !== '' ? trim((string) $row['notes']) : null,
-                    'source'  => 'reference',
-                ],
+                $attrs,
             );
         }
     }

@@ -5,7 +5,13 @@
     "hebrew": "אֱלֹהִים",
     "english": "God",
     "category": "Theology",
-    "notes": "NOT Pathian (Mizo word)"
+    "notes": "NOT Pathian (Mizo word)",
+    "falam": "Pathian",
+    "hakha": "Pathian",
+    "matu": "Pathian",
+    "mizo": "Pathian",
+    "paite": "Pasian",
+    "sizang": "Pasian"
   },
   {
     "zolai": "Topa",
@@ -13,7 +19,13 @@
     "hebrew": "אָדוֹן",
     "english": "Lord / Master",
     "category": "Theology",
-    "notes": "NOT Lalpa (Mizo word)"
+    "notes": "NOT Lalpa (Mizo word)",
+    "falam": "Bawipa",
+    "hakha": "Bawipa",
+    "matu": "Bawipa",
+    "mizo": "Lalpa",
+    "paite": "Toupa",
+    "sizang": "Topa"
   },
   {
     "zolai": "Zeisu",
@@ -21,7 +33,13 @@
     "hebrew": "יֵשׁוּעַ",
     "english": "Jesus",
     "category": "Theology",
-    "notes": "NOT Isua (Mizo word)"
+    "notes": "NOT Isua (Mizo word)",
+    "falam": "Jesuh",
+    "hakha": "Jesuh",
+    "matu": "Jesuh",
+    "mizo": "Isua",
+    "paite": "Jesu",
+    "sizang": "Jesu"
   },
   {
     "zolai": "Zeisu Krist",
@@ -29,7 +47,10 @@
     "hebrew": "יֵשׁוּעַ הַמָּשִׁיחַ",
     "english": "Jesus Christ",
     "category": "Theology",
-    "notes": ""
+    "notes": "",
+    "falam": "Jesuh Khrih",
+    "hakha": "Jesuh Khrih",
+    "mizo": "Isua Krista"
   },
   {
     "zolai": "Kha Siangtho",
@@ -37,7 +58,12 @@
     "hebrew": "רוּחַ הַקֹּדֶשׁ",
     "english": "Holy Spirit",
     "category": "Theology",
-    "notes": ""
+    "notes": "",
+    "falam": "Thlarau Thiang",
+    "hakha": "Thlarau Thiang",
+    "mizo": "Thlarau Thianghlim",
+    "paite": "Kha Siangthou",
+    "sizang": "Kha Siangtho"
   },
   {
     "zolai": "Thu Siangtho",
@@ -45,7 +71,9 @@
     "hebrew": "דְּבַר הָאֱלֹהִים",
     "english": "Holy Bible / Holy Word",
     "category": "Theology",
-    "notes": ""
+    "notes": "",
+    "paite": "Lai Siangthou",
+    "sizang": "Lai Siangtho"
   },
   {
     "zolai": "hotkhiatna",
@@ -53,7 +81,10 @@
     "hebrew": "יְשׁוּעָה",
     "english": "salvation",
     "category": "Theology",
-    "notes": "hong hotkhia = to save/rescue. NOT zangtal (= free of charge)"
+    "notes": "hong hotkhia = to save/rescue. NOT zangtal (= free of charge)",
+    "mizo": "Chhandamna",
+    "paite": "Hotkhiatna",
+    "sizang": "Hotkhiatna"
   },
   {
     "zolai": "lungdamna",
@@ -61,7 +92,9 @@
     "hebrew": "תּוֹדָה",
     "english": "thanksgiving / gratitude",
     "category": "Theology",
-    "notes": "lungdam = to be glad/thankful. NOT 'grace'"
+    "notes": "lungdam = to be glad/thankful. NOT 'grace'",
+    "paite": "Lungdamna",
+    "sizang": "Lungdamna"
   },
   {
     "zolai": "itna",
@@ -69,7 +102,12 @@
     "hebrew": "אַהֲבָה",
     "english": "love (noun)",
     "category": "Theology",
-    "notes": ""
+    "notes": "",
+    "falam": "Dawtnak",
+    "hakha": "Dawtnak",
+    "mizo": "Hmangaihna",
+    "paite": "Itna",
+    "sizang": "Itna"
   },
   {
     "zolai": "kumdan",
@@ -85,7 +123,9 @@
     "hebrew": "כִּתְבֵי הַקֹּדֶשׁ",
     "english": "Holy Bible (the Tedim Bible name)",
     "category": "Theology",
-    "notes": "Lai Siangtho 1932 edition"
+    "notes": "Lai Siangtho 1932 edition",
+    "paite": "Lai Siangthou",
+    "sizang": "Lai Siangtho"
   },
   {
     "zolai": "biakinn",
@@ -93,7 +133,8 @@
     "hebrew": "כְּנֵסִיָּה",
     "english": "church",
     "category": "Worship",
-    "notes": "NOT koici, NOT kohhran"
+    "notes": "NOT koici, NOT kohhran",
+    "mizo": "Kohhran"
   },
   {
     "zolai": "thungetna",
@@ -101,7 +142,11 @@
     "hebrew": "תְּפִלָּה",
     "english": "prayer (noun)",
     "category": "Worship",
-    "notes": "NOT tawngtaina (Mizo word)"
+    "notes": "NOT tawngtaina (Mizo word)",
+    "hakha": "Thlacamnak",
+    "mizo": "Tawngtaina",
+    "paite": "Thumna",
+    "sizang": "Thumna"
   },
   {
     "zolai": "thungen",
@@ -109,7 +154,11 @@
     "hebrew": "לְהִתְפַּלֵּל",
     "english": "to pray",
     "category": "Worship",
-    "notes": "thu + ngen = 'request word'. NOT tawngtai (Mizo word)"
+    "notes": "thu + ngen = 'request word'. NOT tawngtai (Mizo word)",
+    "hakha": "Thlacam",
+    "mizo": "Tawngtai",
+    "paite": "Thum",
+    "sizang": "Thum"
   },
   {
     "zolai": "kiphatna",
@@ -133,7 +182,10 @@
     "hebrew": "לְהַלֵּל",
     "english": "to praise",
     "category": "Worship",
-    "notes": ""
+    "notes": "",
+    "mizo": "Fak",
+    "paite": "Phat",
+    "sizang": "Phat"
   },
   {
     "zolai": "siangtho",
@@ -141,7 +193,12 @@
     "hebrew": "קָדוֹשׁ",
     "english": "holy / sacred",
     "category": "Worship",
-    "notes": ""
+    "notes": "",
+    "falam": "Thiang",
+    "hakha": "Thiang",
+    "mizo": "Thianghlim",
+    "paite": "Siangthou",
+    "sizang": "Siangtho"
   },
   {
     "zolai": "labu",
@@ -149,14 +206,23 @@
     "hebrew": "מִזְמוֹר",
     "english": "hymn / song",
     "category": "Worship",
-    "notes": ""
+    "notes": "",
+    "falam": "Hla",
+    "hakha": "Hla",
+    "mizo": "Hla",
+    "paite": "La",
+    "sizang": "La"
   },
   {
     "zolai": "Zomi",
     "burmese": "ဇိုမီး (ချင်းလူမျိုး)",
     "english": "the Tedim / Chin people",
     "category": "Worship",
-    "notes": ""
+    "notes": "",
+    "hakha": "Laimi",
+    "mizo": "Mizo",
+    "paite": "Zomi",
+    "sizang": "Zomi"
   },
   {
     "zolai": "biakpiakna",

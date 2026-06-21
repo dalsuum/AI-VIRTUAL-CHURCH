@@ -12,8 +12,10 @@ use App\Models\Setting;
 use App\Models\Testimony;
 use App\Models\User;
 use App\Http\Requests\UpdateSettingsRequest;
+use App\Enums\LedgerType;
 use App\Services\BibleBgMusicLibrary;
 use App\Services\PermissionService;
+use App\Services\TokenService;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -304,7 +306,7 @@ class AdminController extends Controller
             ->withMax('sessions', 'created_at')
             ->latest()
             ->limit(200)
-            ->get(['id', 'name', 'email', 'is_admin', 'is_blocked', 'music_source', 'presenter_gender', 'created_at']);
+            ->get(['id', 'name', 'email', 'is_admin', 'is_blocked', 'music_source', 'presenter_gender', 'created_at', 'subscription_plan', 'token_balance']);
 
         $userIds = $users->pluck('id')->all();
         $customMoods  = $this->allCustomMoodsByUser($userIds);
@@ -323,6 +325,8 @@ class AdminController extends Controller
                     'is_admin'     => $u->isAdmin(),
                     'is_blocked'   => $u->is_blocked,
                     'is_guest'     => $isGuest,
+                    'plan'         => $isGuest ? 'guest' : $u->plan()->value,
+                    'token_balance'=> $isGuest ? null : (int) $u->token_balance,
                     'music_source'     => $u->music_source,
                     'presenter_gender' => $u->presenter_gender ?? 'female',
                     'visits'       => $u->sessions_count,
@@ -1334,6 +1338,35 @@ class AdminController extends Controller
         $user->update(['is_blocked' => $data['is_blocked']]);
 
         return response()->json(['ok' => true, 'is_blocked' => $user->is_blocked]);
+    }
+
+    /**
+     * Credit a registered user's token wallet (support top-up / goodwill grant).
+     * The move is recorded in token_ledger as an ADJUSTMENT referencing the acting
+     * admin, and the wallet row is locked inside TokenService so it can't race.
+     * Guest accounts have no wallet, so they're rejected.
+     */
+    public function grantTokens(Request $request, User $user, TokenService $tokens): JsonResponse
+    {
+        if (str_ends_with((string) $user->email, '@guest.local')) {
+            return response()->json(['message' => 'Visitors do not have a token wallet.'], 422);
+        }
+
+        $data = $request->validate([
+            'amount' => ['required', 'integer', 'min:1', 'max:1000000'],
+        ]);
+
+        $tokens->grant(
+            $user,
+            (int) $data['amount'],
+            LedgerType::ADJUSTMENT,
+            'admin:' . $request->user()->id,
+        );
+
+        return response()->json([
+            'ok'            => true,
+            'token_balance' => (int) $user->fresh()->token_balance,
+        ]);
     }
 
     /** Set the presenter gender (avatar + voice pair) for a specific user. */

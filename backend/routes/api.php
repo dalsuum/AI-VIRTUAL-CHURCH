@@ -224,6 +224,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::patch('/users/{user}/role',             [AdminController::class, 'assignRole']);
         Route::patch('/users/{user}/admin',            [AdminController::class, 'setAdmin']);
         Route::patch('/users/{user}/block',            [AdminController::class, 'blockUser']);
+        Route::post('/users/{user}/tokens',            [AdminController::class, 'grantTokens']);
         Route::patch('/users/{user}/presenter-gender', [AdminController::class, 'updatePresenterGender']);
         Route::post('/users/{user}/force-reset',       [AdminController::class, 'forcePasswordReset']);
         Route::delete('/users/{user}',                 [AdminController::class, 'deleteUser']);

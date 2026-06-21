@@ -383,6 +383,8 @@ export const api = {
     request("/admin/users", { method: "POST", body: payload }),
   adminAssignRole: (id, role) =>
     request(`/admin/users/${id}/role`, { method: "PATCH", body: { role } }),
+  adminGrantTokens: (id, amount) =>
+    request(`/admin/users/${id}/tokens`, { method: "POST", body: { amount } }),
   adminForcePasswordReset: (id) =>
     request(`/admin/users/${id}/force-reset`, { method: "POST" }),
   adminDonors: () => request("/admin/donors"),

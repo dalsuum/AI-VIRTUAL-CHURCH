@@ -984,6 +984,22 @@ async function toggleBlock(u) {
     notice.value = e?.data?.message || "Could not update.";
   }
 }
+async function grantTokens(u) {
+  const raw = prompt(`Grant how many tokens to "${u.name}"? (current: ${u.token_balance ?? 0})`);
+  if (raw === null) return; // cancelled
+  const amount = Number.parseInt(raw, 10);
+  if (!Number.isInteger(amount) || amount < 1) {
+    notice.value = "Enter a whole number of 1 or more.";
+    return;
+  }
+  try {
+    const res = await api.adminGrantTokens(u.id, amount);
+    u.token_balance = res.token_balance;
+    notice.value = `Granted ${amount} tokens to ${u.name}. New balance: ${res.token_balance}.`;
+  } catch (e) {
+    notice.value = e?.data?.message || "Could not grant tokens.";
+  }
+}
 async function deleteUser(u) {
   if (!confirm(`Delete "${u.name}" and all their data? This cannot be undone.`)) return;
   try {
@@ -1673,7 +1689,7 @@ onUnmounted(() => {
           <thead>
             <tr>
               <th><input type="checkbox" :checked="allUsersSelected" @change="toggleAllUsers($event.target.checked)" /></th>
-              <th>Name</th><th>Email</th><th>Role</th><th>Last mood</th>
+              <th>Name</th><th>Email</th><th>Role</th><th>Plan</th><th>Tokens</th><th>Last mood</th>
               <th>Visits</th><th>Last seen</th><th>Actions</th>
             </tr>
           </thead>
@@ -1701,12 +1717,21 @@ onUnmounted(() => {
                 <span v-else class="tag">{{ u.is_guest ? 'guest' : u.role }}</span>
               </td>
               <td>
+                <span v-if="!u.is_guest" class="tag">{{ u.plan }}</span>
+                <span v-else class="muted-cell">—</span>
+              </td>
+              <td>
+                <span v-if="!u.is_guest">{{ u.token_balance ?? 0 }}</span>
+                <span v-else class="muted-cell">—</span>
+              </td>
+              <td>
                 <span v-if="u.last_mood" class="badge pending">{{ u.last_mood }}</span>
                 <span v-else class="muted-cell">—</span>
               </td>
               <td>{{ u.visits }}</td>
               <td><small>{{ fmtDate(u.last_seen) }}</small></td>
               <td class="actions">
+                <button v-if="isAdminUser && !u.is_guest" class="link" @click="grantTokens(u)">Grant tokens</button>
                 <button v-if="isAdminUser && !u.is_guest" class="link" @click="forceReset(u)">Reset pw</button>
                 <button v-if="isAdminUser" class="link" @click="toggleBlock(u)">{{ u.is_blocked ? "Unblock" : "Block" }}</button>
                 <button v-if="isAdminUser" class="link danger" @click="deleteUser(u)">Delete</button>

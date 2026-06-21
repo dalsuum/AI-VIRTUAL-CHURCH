@@ -898,6 +898,12 @@ fallible upstream call, then `commit()` on success or `rollback()` (refund) on f
 a model timeout never charges a user. A `token_reservations` row carries a TTL;
 `reservations:cleanup` (hourly) refunds any hold stranded by a crashed worker.
 
+Admins can **top up a registered user's wallet** from **Admin Console → Users** (the
+**Grant tokens** row action; the table also shows each user's plan + current balance).
+It posts to `POST /api/admin/users/{user}/tokens` (`admin` middleware) which calls
+`TokenService::grant()` and records a `LedgerType::ADJUSTMENT` entry referencing the
+acting admin. Guest accounts have no wallet and are rejected.
+
 ### Guest one-use enforcement
 
 Guests get a single free use **per service**, tracked in `guest_tracking` by salted

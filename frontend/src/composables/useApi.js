@@ -191,12 +191,10 @@ export const api = {
 
   // Auth flows establish a server-side session (HttpOnly cookie set in response).
   // The frontend stores only the display name for greeting purposes.
+  // Registration no longer auto-logs-in: it creates a pending account and emails an
+  // activation link. No session is established here — the user signs in after activating.
   register: (payload) =>
-    request("/register", { method: "POST", body: payload }).then((res) => {
-      markSession();
-      if (res?.user?.name) rememberName(res.user.name);
-      return res;
-    }),
+    request("/register", { method: "POST", body: payload }),
   login: (payload) =>
     request("/login", { method: "POST", body: payload }).then((res) => {
       markSession();

@@ -15,7 +15,7 @@ use Illuminate\Validation\Rules\Password;
 
 class AuthController extends Controller
 {
-    public function register(Request $request): JsonResponse
+    public function register(Request $request, \App\Services\AccountActivationService $activation): JsonResponse
     {
         $data = $request->validate([
             'name'         => ['required', 'string', 'max:255'],
@@ -25,18 +25,23 @@ class AuthController extends Controller
             'music_source' => ['nullable', 'in:' . implode(',', Setting::MUSIC_SOURCES)],
         ]);
 
+        // Provision a PENDING account: it exists but cannot log in until the user clicks
+        // the activation link emailed below. No auto-login, no tokens granted yet — the
+        // Member package is granted on activation (App\Services\AccountActivationService).
         $user = User::create([
             'name'         => $data['name'],
             'email'        => $data['email'],
             'password'     => Hash::make($data['password']),
             'timezone'     => $data['timezone'] ?? 'UTC',
             'music_source' => $data['music_source'] ?? 'hymn_sung',
+            'status'       => User::STATUS_PENDING,
         ]);
 
-        Auth::login($user);
-        $request->session()->regenerate();
+        $activation->startVerification($user);
 
-        return response()->json(['user' => $user], 201);
+        return response()->json([
+            'message' => 'Please check your email to activate your account.',
+        ], 201);
     }
 
     /**
@@ -260,6 +265,15 @@ class AuthController extends Controller
 
         if ($user->is_blocked) {
             return response()->json(['message' => 'This account has been suspended.'], 403);
+        }
+
+        // Gate unverified accounts: a registrant who has not yet clicked the activation
+        // link must not be able to sign in. Checked after the credential check so this
+        // never reveals whether an email exists for a wrong password.
+        if ($user->isPending()) {
+            return response()->json([
+                'message' => 'Please activate your account from the email we sent.',
+            ], 403);
         }
 
         Auth::login($user);

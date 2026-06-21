@@ -37,13 +37,21 @@ class User extends Authenticatable
     protected $fillable = [
         'name', 'name_provided', 'email', 'password', 'timezone',
         'music_source', 'presenter_gender', 'is_admin', 'is_blocked',
+        'status', 'activation_token', 'activation_expires_at',
         'role', 'password_reset_token', 'password_reset_expires_at',
         'subscription_plan', 'subscription_expires_at', 'stripe_customer_id',
         'stripe_subscription_id', 'token_balance', 'monthly_allowance', 'tokens_refilled_at',
     ];
-    protected $hidden = ['password', 'remember_token', 'password_reset_token', 'stripe_customer_id', 'stripe_subscription_id'];
+    protected $hidden = ['password', 'remember_token', 'password_reset_token', 'activation_token', 'stripe_customer_id', 'stripe_subscription_id'];
+
+    // Account lifecycle. PENDING accounts exist but cannot authenticate until the
+    // email-activation link is clicked; ACTIVE is the normal, usable state.
+    public const STATUS_PENDING = 'pending';
+    public const STATUS_ACTIVE  = 'active';
+
     protected $casts = [
         'email_verified_at'        => 'datetime',
+        'activation_expires_at'    => 'datetime',
         'password_reset_expires_at'=> 'datetime',
         'subscription_expires_at'  => 'datetime',
         'tokens_refilled_at'       => 'datetime',
@@ -66,6 +74,10 @@ class User extends Authenticatable
     public function isModerator(): bool { return in_array($this->role(), [self::ROLE_MODERATOR, self::ROLE_ADMIN]); }
     public function isPresenter(): bool { return in_array($this->role(), [self::ROLE_PRESENTER, self::ROLE_MODERATOR, self::ROLE_ADMIN]); }
     public function isMember(): bool    { return $this->role() !== self::ROLE_GUEST; }
+
+    /** Account has completed email activation (or never required it). */
+    public function isActive(): bool  { return ($this->status ?? self::STATUS_ACTIVE) === self::STATUS_ACTIVE; }
+    public function isPending(): bool { return ($this->status ?? self::STATUS_ACTIVE) === self::STATUS_PENDING; }
 
     public function sessions(): HasMany
     {

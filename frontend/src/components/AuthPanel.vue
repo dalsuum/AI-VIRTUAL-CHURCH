@@ -15,13 +15,16 @@ const email    = ref("");
 const password = ref("");
 const busy     = ref(false);
 const error    = ref("");
+// Set after a successful registration: we no longer auto-login, so the user is asked
+// to activate via email before signing in.
+const registered = ref(false);
 
 const isRegister = computed(() => props.mode === "register");
 const title   = computed(() => (isRegister.value ? "Create your account" : "Welcome back"));
 const cta     = computed(() => (isRegister.value ? "Create account" : "Log in"));
 
 // Clear transient state when switching between login/register.
-watch(() => props.mode, () => { error.value = ""; password.value = ""; });
+watch(() => props.mode, () => { error.value = ""; password.value = ""; registered.value = false; });
 
 async function submit() {
   error.value = "";
@@ -36,16 +39,20 @@ async function submit() {
   busy.value = true;
   try {
     if (isRegister.value) {
+      // Registration creates a PENDING account and emails an activation link — no
+      // auto-login. Show the check-your-email confirmation instead of entering the app.
       await api.register({
         name: name.value.trim(),
         email: email.value.trim(),
         password: password.value,
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
       });
+      registered.value = true;
+      password.value = "";
     } else {
       await api.login({ email: email.value.trim(), password: password.value });
+      emit("authed");
     }
-    emit("authed");
   } catch (e) {
     error.value = e?.data?.message || "Something went wrong. Please try again.";
   } finally {
@@ -56,6 +63,17 @@ async function submit() {
 
 <template>
   <div class="auth-wrap">
+    <!-- Post-registration confirmation: account is pending until the emailed link is clicked. -->
+    <template v-if="registered">
+      <h1 class="auth-title">Registration successful</h1>
+      <p class="auth-sub">
+        Please check your email and activate your account before signing in. The
+        activation link expires in 24 hours.
+      </p>
+      <p class="auth-switch"><a href="#login">← Back to login</a></p>
+    </template>
+
+    <template v-else>
     <h1 class="auth-title">{{ title }}</h1>
     <p class="auth-sub">
       {{ isRegister ? "Register to keep your services, tokens and preferences." : "Log in to your account." }}
@@ -98,6 +116,7 @@ async function submit() {
     <p class="auth-switch">
       <a href="#">← Back to worship</a>
     </p>
+    </template>
   </div>
 </template>
 

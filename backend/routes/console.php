@@ -43,3 +43,7 @@ Schedule::command('tokens:refill-monthly')->dailyAt('00:10');
 Schedule::command('subscriptions:expire')->dailyAt('00:15');
 Schedule::command('guests:cleanup')->dailyAt('03:45');
 Schedule::command('reservations:cleanup')->hourly();
+
+// Email-verification cleanup: hourly, delete never-activated (pending) accounts past
+// the activation window so abandoned signups don't squat on email addresses.
+Schedule::command('users:cleanup-pending')->hourly();

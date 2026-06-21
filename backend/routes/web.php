@@ -1,7 +1,12 @@
 <?php
 
+use App\Http\Controllers\ActivationController;
 use App\Http\Controllers\ShareController;
 use Illuminate\Support\Facades\Route;
+
+// Account activation link target (from the verification email). Rate-limited to slow
+// token-guessing. Renders a result page with a "Continue to Login" button.
+Route::get('/activate', [ActivationController::class, 'activate'])->middleware('throttle:20,1');
 
 // ===========================================================================
 // Public sticker share pages — SELF-CONTAINED & REMOVABLE.

@@ -23,6 +23,8 @@ class RefillMonthlyTokens extends Command
 
         User::query()
             ->where('email', 'not like', '%@guest.local')
+            // Never-activated accounts receive their package on activation, not here.
+            ->where('status', User::STATUS_ACTIVE)
             ->where(function ($q) {
                 $q->whereNull('tokens_refilled_at')
                   ->orWhere('tokens_refilled_at', '<', now()->startOfMonth());

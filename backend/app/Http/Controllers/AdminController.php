@@ -1681,14 +1681,21 @@ class AdminController extends Controller
      * Returns the user and (optionally) a password-reset link when no
      * password is supplied, so the admin can share a first-login link.
      */
-    public function createUser(Request $request): JsonResponse
-    {
+    public function createUser(
+        Request $request,
+        \App\Services\AccountActivationService $activation,
+        \App\Services\TokenService $tokens
+    ): JsonResponse {
         $data = $request->validate([
             'name'     => ['required', 'string', 'max:255'],
             'email'    => ['required', 'email', 'max:255', 'unique:users,email'],
             'role'     => ['required', 'string', 'in:' . implode(',', User::ASSIGNABLE_ROLES)],
             'password' => ['nullable', 'string', 'min:8'],
         ]);
+
+        // Admin-created accounts are active by default (ADMIN_USERS_REQUIRE_VERIFICATION
+        // = false); flip the env to require email verification like a self-registrant.
+        $requireVerification = (bool) config('account.admin_requires_verification', false);
 
         $hasPassword = ! empty($data['password']);
         $user = User::create([
@@ -1702,7 +1709,18 @@ class AdminController extends Controller
             'name_provided' => true,
             'timezone'      => 'UTC',
             'music_source'  => 'hymn_sung',
+            'status'        => $requireVerification ? User::STATUS_PENDING : User::STATUS_ACTIVE,
         ]);
+
+        if ($requireVerification) {
+            // Defer the token grant to activation, exactly like self-service signup.
+            $activation->startVerification($user);
+        } else {
+            // Active immediately: stamp verification and grant the plan's monthly package
+            // through the ledger-backed refill (no-op for guests).
+            $user->forceFill(['email_verified_at' => now()])->save();
+            $tokens->refillMonthly($user);
+        }
 
         $result = ['ok' => true, 'user_id' => $user->id, 'reset_url' => null];
 

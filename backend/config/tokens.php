@@ -24,7 +24,7 @@ return [
             'features'          => ['voice' => false, 'video' => false, 'export' => false, 'priority' => false],
         ],
         'member' => [
-            'monthly_allowance' => (int) env('TOKENS_MEMBER_MONTHLY', 100),
+            'monthly_allowance' => (int) env('MEMBER_MONTHLY_TOKENS', env('TOKENS_MEMBER_MONTHLY', 100)),
             'ads'               => false,
             'features'          => ['voice' => true, 'video' => false, 'export' => false, 'priority' => false],
         ],

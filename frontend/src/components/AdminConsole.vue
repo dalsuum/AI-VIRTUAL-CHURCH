@@ -391,6 +391,43 @@ function toggleServiceLanguage(key) {
 // chip on those translations' Bible reader voice row. Off → curated fallback.
 const setGoldfishNarrator = (key, on) => saveSetting(key, on, "Goldfish narrator updated.");
 
+// Mizo/Paite expose ONE mutually-exclusive narration choice per row:
+//   Edge TTS  → phonetic spoken voice (bible_narration_mode_<code> = edge_tts)
+//   Goldfish  → goldfish-models text generator on (narration_<iso> = true), no voice
+//   Off       → no narration at all
+// Both keys are posted together so exactly one chip is ever active.
+async function setBibleVoiceChoice(l, choice) {
+  if (!settings.value) return;
+  const modeKey = `bible_narration_mode_${l.code}`;
+  const payload =
+    choice === "goldfish"
+      ? { [l.goldfish]: true, [modeKey]: "off" }
+      : { [l.goldfish]: false, [modeKey]: choice };
+  const changed = Object.entries(payload).filter(([k, v]) => settings.value[k] !== v);
+  if (!changed.length) return;
+  savingSettings.value = true;
+  const prev = {};
+  for (const [k, v] of changed) {
+    prev[k] = settings.value[k];
+    settings.value[k] = v; // optimistic
+  }
+  try {
+    await api.adminUpdateSettings(payload);
+    notice.value = "Bible narration updated.";
+  } catch (e) {
+    for (const [k] of changed) settings.value[k] = prev[k]; // roll back
+    notice.value = e?.data?.message || "Could not update setting.";
+  } finally {
+    savingSettings.value = false;
+  }
+}
+// Which chip is active for a goldfish-capable row (mutually exclusive).
+const bibleVoiceActive = (l, choice) =>
+  choice === "goldfish"
+    ? settings.value?.[l.goldfish] === true
+    : settings.value?.[l.goldfish] !== true &&
+      settings.value?.[`bible_narration_mode_${l.code}`] === choice;
+
 const setMusicReuse = (on) => saveSetting("music_reuse", on, "Music reuse updated.");
 const setAvatarEnabled = (on) => saveSetting("avatar_enabled", on, "D-ID avatar rendering updated.");
 const setLocalAvatarEnabled = (on) => saveSetting("local_avatar_enabled", on, "Local avatar rendering updated.");
@@ -2443,7 +2480,35 @@ onUnmounted(() => {
             <div class="voice-rows">
               <div v-for="l in bibleVoiceLangs" :key="l.code" class="voice-row">
                 <span class="voice-row-lang">{{ l.label }}</span>
-                <div class="voice-row-modes">
+                <!-- Mizo/Paite (l.goldfish set): one mutually-exclusive row —
+                     Edge TTS voice · Goldfish text generator · Off. -->
+                <div v-if="l.goldfish" class="voice-row-modes">
+                  <button
+                    type="button"
+                    class="voice-chip"
+                    :class="{ active: bibleVoiceActive(l, 'edge_tts') }"
+                    :disabled="savingSettings || settingsReadOnly"
+                    title="Phonetic spoken voice — reads the Latin-script text with the English Edge voice."
+                    @click="setBibleVoiceChoice(l, 'edge_tts')"
+                  >Edge TTS (cloud, free)</button>
+                  <button
+                    type="button"
+                    class="voice-chip"
+                    :class="{ active: bibleVoiceActive(l, 'goldfish') }"
+                    :disabled="savingSettings || settingsReadOnly"
+                    title="goldfish-models LLM generates native worship text for this language (no spoken voice). Off → curated fallback."
+                    @click="setBibleVoiceChoice(l, 'goldfish')"
+                  >Goldfish (local, free)</button>
+                  <button
+                    type="button"
+                    class="voice-chip"
+                    :class="{ active: bibleVoiceActive(l, 'off') }"
+                    :disabled="savingSettings || settingsReadOnly"
+                    title="No narration for this translation."
+                    @click="setBibleVoiceChoice(l, 'off')"
+                  >Off</button>
+                </div>
+                <div v-else class="voice-row-modes">
                   <button
                     v-for="m in l.modes"
                     :key="m.value"
@@ -2454,24 +2519,14 @@ onUnmounted(() => {
                     :title="m.hint"
                     @click="setBibleNarrationMode(l.code, m.value)"
                   >{{ m.label }}</button>
-                  <!-- Mizo/Paite also expose their goldfish-models text generator
-                       (independent of the spoken voice): Edge on the left, Goldfish here. -->
-                  <button
-                    v-if="l.goldfish"
-                    type="button"
-                    class="voice-chip"
-                    :class="{ active: settings[l.goldfish] === true }"
-                    :disabled="savingSettings || settingsReadOnly"
-                    title="goldfish-models LLM generates native worship text for this language. Off → curated fallback."
-                    @click="setGoldfishNarrator(l.goldfish, !settings[l.goldfish])"
-                  >Goldfish (local, free)</button>
                 </div>
               </div>
             </div>
             <p class="setting-desc" style="margin-top:0.6rem">
               The English Edge / Voicebox voice follows the live-service voice picked in Settings.
-              The <strong>Goldfish</strong> chip on Mizo &amp; Paite toggles their goldfish-models
-              text generator (independent of the spoken voice); off falls back to curated content.
+              Mizo &amp; Paite pick one source: <strong>Edge TTS</strong> (phonetic spoken voice),
+              <strong>Goldfish</strong> (goldfish-models native text generator — no spoken voice),
+              or <strong>Off</strong>. Goldfish off falls back to curated content.
             </p>
 
             <!-- Highlight default -->

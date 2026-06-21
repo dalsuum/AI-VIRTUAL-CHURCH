@@ -352,6 +352,15 @@ async function begin() {
 
 <template>
   <div class="intake" :class="{ 'lang-my': language === 'my' }">
+    <!-- AI Bible Study entry — a live multi-pastor discussion, above the language bar. -->
+    <a href="#bible-study" class="study-cta">
+      <span class="study-cta-icon" aria-hidden="true">💬</span>
+      <span class="study-cta-text">
+        <strong>AI Bible Study</strong>
+        <small>Discuss any Bible question with experienced pastors →</small>
+      </span>
+    </a>
+
     <!-- Service language tabs: the whole service — UI, prayers, sermon,
          scripture (Judson 1835), hymns, narration voice — follows this choice. -->
     <div v-if="enabledLangs.length > 1" class="lang-tabs" role="tablist" aria-label="Service language">
@@ -535,6 +544,20 @@ async function begin() {
   font-family: "Padauk", "Noto Sans Myanmar", "Myanmar Text", sans-serif;
   line-height: 1.9; /* Myanmar script needs taller lines for stacked diacritics */
 }
+.study-cta {
+  display: flex; align-items: center; gap: 0.75rem;
+  margin-bottom: 1rem; padding: 0.85rem 1rem;
+  background: var(--primary-soft); border: 1px solid var(--primary);
+  border-radius: var(--radius); text-decoration: none; color: var(--text);
+  transition: background 0.15s ease;
+}
+.study-cta:hover { background: var(--primary); }
+.study-cta:hover .study-cta-text strong,
+.study-cta:hover .study-cta-text small { color: var(--on-primary); }
+.study-cta-icon { font-size: 1.5rem; }
+.study-cta-text { display: flex; flex-direction: column; }
+.study-cta-text strong { color: var(--text); font-size: 1rem; }
+.study-cta-text small { color: var(--text-muted); font-size: 0.85rem; }
 .lang-tabs { display: flex; gap: 0; margin-bottom: 1.25rem; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
 .lang-tab { flex: 1; padding: 0.55rem; border: none; background: var(--surface); color: var(--text-muted); cursor: pointer; font: inherit; transition: background 0.12s ease, color 0.12s ease; }
 .lang-tab + .lang-tab { border-left: 1px solid var(--border); }

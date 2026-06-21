@@ -100,8 +100,13 @@ def _clean(text: str) -> str:
 
 
 def _mms_lang(language: str) -> str | None:
-    """Map a service language to the MMS-TTS lang key, or None if unsupported."""
-    return {"my": "burmese", "td": "tedim"}.get(language)
+    """Map a service language to the MMS-TTS lang key, or None if unsupported.
+
+    Falam (cfm) and Hakha (cnh) have native Meta MMS-TTS voices (mms-tts-cfm /
+    -cnh); Mizo (lus) and Paite (pck) have no upstream MMS-TTS repo, so they
+    stay phonetic/Edge only and are absent here."""
+    return {"my": "burmese", "td": "tedim",
+            "cfm": "falam", "cnh": "hakha"}.get(language)
 
 
 def _spell_tedim(n: int) -> str:
@@ -160,7 +165,16 @@ def _normalize_mms_text(text: str, language: str) -> str:
 
     def _repl(match: re.Match) -> str:
         val = int(match.group(0))
-        word = _spell_burmese(val) if language == "my" else _spell_tedim(val)
+        # Only Burmese and Tedim have number-word spellers. For other MMS
+        # languages (Falam/Hakha) leave the digit as-is rather than voicing a
+        # wrong-language Tedim numeral — verse numbers are already stripped
+        # before narration, so stray digits in verse text are rare.
+        if language == "my":
+            word = _spell_burmese(val)
+        elif language == "td":
+            word = _spell_tedim(val)
+        else:
+            return match.group(0)
         return f" {word} "
 
     text = re.sub(r'\d+', _repl, text)

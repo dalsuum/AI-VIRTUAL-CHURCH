@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\FeatureService;
+use App\Services\StripeEventGuard;
 use App\Services\SubscriptionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -81,7 +82,7 @@ class SubscriptionController extends Controller
      * activated/downgraded — we never trust the client. Mirrors OfferingController's
      * verification. Acknowledges all events so Stripe stops retrying ones we ignore.
      */
-    public function webhook(Request $request): JsonResponse
+    public function webhook(Request $request, StripeEventGuard $guard): JsonResponse
     {
         $secret = config('services.stripe.webhook_secret');
 
@@ -95,7 +96,10 @@ class SubscriptionController extends Controller
             abort(400, 'Invalid Stripe signature.');
         }
 
-        $this->subscriptions->handleStripeEvent($event->type, $event->data->object);
+        // Process exactly once: the marker insert + side effects share one transaction.
+        $guard->once($event->id, $event->type, function () use ($event) {
+            $this->subscriptions->handleStripeEvent($event->type, $event->data->object);
+        });
 
         return response()->json(['received' => true]);
     }

@@ -938,7 +938,7 @@ status) for cost forensics — distinct from the wallet ledger.
 upgrade-to-premium (→ Stripe), cancel, and token history. `GET /me` now returns
 `plan`, `is_premium`, `shows_ads`, `token_balance`, and `monthly_allowance`.
 
-> **Deploy note:** run `php artisan migrate --force` (six additive migrations) and set
+> **Deploy note:** run `php artisan migrate --force` (eight additive migrations) and set
 > `STRIPE_PREMIUM_PRICE_ID`. Point a Stripe webhook at `/webhooks/stripe/subscription`
 > for `checkout.session.completed`, `customer.subscription.updated`,
 > `customer.subscription.deleted`, and `invoice.payment_failed`.

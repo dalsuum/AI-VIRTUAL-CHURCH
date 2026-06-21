@@ -22,7 +22,10 @@ _Last reviewed: 2026-06-21. Run on staging before tagging a release candidate. A
 - [ ] Guest → Member (register)
 - [ ] Member → Premium via Stripe Checkout; webhook activates premium
 - [ ] **Duplicate webhook**: redeliver `checkout.session.completed` → NO duplicate
-      `subscription_history` row, NO second token grant
+      `subscription_history` row, NO second token grant. Confirm a single
+      `stripe_webhook_events` row exists for that event id (DB-level dedupe).
+- [ ] **Interleaved webhook**: fire the same event id twice concurrently → exactly one
+      is processed (the other fails the unique insert and is skipped)
 - [ ] `customer.subscription.updated` (card/metadata change) → balance NOT reset
 - [ ] `invoice.payment_failed` → status `grace`, access retained
 - [ ] Cancel → status `cancelled`, access until period end

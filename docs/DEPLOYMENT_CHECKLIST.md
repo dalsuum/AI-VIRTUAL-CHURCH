@@ -17,10 +17,10 @@ _Last reviewed: 2026-06-21. Run top-to-bottom when promoting the subscription fe
 
 ## Database
 
-- [ ] `php artisan migrate --force` (six additive migrations).
+- [ ] `php artisan migrate --force` (eight additive migrations).
 - [ ] Spot-check columns exist: `users.subscription_plan`, `users.token_balance`; tables
       `token_ledger`, `token_reservations`, `guest_tracking`, `usage_logs`,
-      `subscription_history`.
+      `subscription_history`, `stripe_webhook_events`.
 - [ ] Backfill existing users if needed: registered users default to `subscription_plan =
       member`, `subscription_status = active`. Run `tokens:refill-monthly` once so
       existing members get their first allowance.

@@ -86,10 +86,17 @@ activated/downgraded by the signature-verified webhook
 `subscription_status` (active/trial/grace/expired/cancelled) is explicit, not
 date-inferred. Every transition appends to `subscription_history` for support/audit.
 
-**Idempotency:** the wallet is refilled only on the *first* transition into premium —
-never on routine `subscription.updated` events (card/metadata/renewal) — and
-`transition()`/`setStatus()` are no-ops when nothing changed, so redelivered webhooks
-don't double-grant tokens or pollute history.
+**Idempotency (two layers):**
+1. *DB-level dedupe* — every verified event is run through
+   [`StripeEventGuard::once()`](../backend/app/Services/StripeEventGuard.php), which
+   INSERTs the Stripe `event_id` (UNIQUE in `stripe_webhook_events`) and runs the side
+   effects in the **same transaction**. A duplicate/interleaved delivery fails the
+   unique insert and does no work; a handler that throws rolls back the marker too, so
+   Stripe's retry can legitimately reprocess. This closes the partial-state window.
+2. *State guards* — the wallet is refilled only on the *first* transition into premium
+   (never on routine `subscription.updated` events), and `transition()`/`setStatus()`
+   are no-ops when nothing changed. Both the offering and subscription webhooks use the
+   guard.
 
 ## 6. Ad suppression
 
@@ -119,7 +126,7 @@ telemetry). Think: *wallet accounting* vs *operational telemetry* vs *model tele
   `stripe_customer_id`, `stripe_subscription_id`, `token_balance`, `monthly_allowance`,
   `tokens_refilled_at`
 - `guest_tracking`, `token_ledger`, `token_reservations`, `usage_logs`,
-  `subscription_history`
+  `subscription_history`, `stripe_webhook_events` (dedupe)
 
 ## 10. Deliberately deferred (extension points exist, not built)
 

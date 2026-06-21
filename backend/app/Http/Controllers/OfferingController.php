@@ -40,7 +40,7 @@ class OfferingController extends Controller
         return response()->json($intent, 201);
     }
 
-    public function webhook(Request $request): JsonResponse
+    public function webhook(Request $request, \App\Services\StripeEventGuard $guard): JsonResponse
     {
         $secret = config('services.stripe.webhook_secret');
 
@@ -56,7 +56,11 @@ class OfferingController extends Controller
         }
 
         if ($event->type === 'payment_intent.succeeded') {
-            $this->offerings->record($event->data->object);
+            // DB-level dedupe (in addition to the ledger's transaction_hash key) so a
+            // redelivered event does no work at all.
+            $guard->once($event->id, $event->type, function () use ($event) {
+                $this->offerings->record($event->data->object);
+            });
         }
 
         // Acknowledge everything else so Stripe stops retrying events we ignore.

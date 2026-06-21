@@ -32,18 +32,17 @@ const LANG_FIELDS = [
 const filterCat = ref("All");
 const search    = ref("");
 
-// The list table would be far too wide with every language column, so it shows
-// only Zolai + a chosen language + English. The editor form still exposes all
-// languages. `tableLang` picks the middle column.
-const otherLangs = LANG_FIELDS.filter((l) => l.code !== "zolai" && l.code !== "english");
-const tableLang  = ref("burmese");
+// Same logic as the public page: the list table shows one variable language
+// column (the dropdown, default Zolai) followed by fixed Burmese, English and
+// Hebrew reference columns. The editor form still exposes every language.
+const tableLang = ref("zolai");
 
 const tableCols = computed(() => {
-  const cols = [LANG_FIELDS.find((l) => l.code === "zolai")];
-  const sel = otherLangs.find((l) => l.code === tableLang.value);
-  if (sel) cols.push(sel);
-  cols.push(LANG_FIELDS.find((l) => l.code === "english"));
-  return cols;
+  const primary = LANG_FIELDS.find((l) => l.code === tableLang.value);
+  const refs = ["burmese", "english", "hebrew"]
+    .filter((code) => code !== tableLang.value)
+    .map((code) => LANG_FIELDS.find((l) => l.code === code));
+  return [primary, ...refs];
 });
 
 const filtered = computed(() => {
@@ -161,7 +160,7 @@ async function remove(w) {
         <label class="lang-pick">
           <span>Show language</span>
           <select v-model="tableLang" class="inp">
-            <option v-for="l in otherLangs" :key="l.code" :value="l.code">{{ l.label }}</option>
+            <option v-for="l in LANG_FIELDS" :key="l.code" :value="l.code">{{ l.label }}</option>
           </select>
         </label>
         <div class="cat-tabs">
@@ -190,7 +189,7 @@ async function remove(w) {
               :key="l.code"
               :dir="l.dir || null"
               :lang="l.lang || null"
-              :class="{ 't-zolai': l.code === 'zolai', 't-hebrew': l.code === 'hebrew' }"
+              :class="{ 't-zolai': l.code === tableLang, 't-hebrew': l.code === 'hebrew' }"
             >{{ w[l.code] || "—" }}</td>
             <td>{{ w.category || "—" }}</td>
             <td class="t-actions">

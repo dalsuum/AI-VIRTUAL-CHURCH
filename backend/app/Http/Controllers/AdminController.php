@@ -1031,7 +1031,10 @@ class AdminController extends Controller
     {
         $validated = $request->validate([
             // Keep it small — it's a soft instrumental loop, not a full album.
-            'file' => ['required', 'file', 'mimetypes:audio/mpeg,audio/ogg', 'max:10240'],
+            // Accept by extension as well as MIME: browsers label mp3s variously
+            // (audio/mpeg, audio/mp3, audio/x-mpeg…), so a strict mimetypes-only
+            // rule rejects perfectly valid files.
+            'file' => ['required', 'file', 'mimes:mp3,mpga,ogg,oga', 'max:10240'],
         ]);
 
         $file = $validated['file'];

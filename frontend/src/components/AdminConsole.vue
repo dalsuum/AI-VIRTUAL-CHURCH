@@ -443,6 +443,11 @@ const uploadedBibleBgMusic = computed(() =>
 const uploadBibleBgMusic = async (ev) => {
   const file = ev?.target?.files?.[0];
   if (!file || bibleBgUploading.value) return;
+  if (file.size > 10 * 1024 * 1024) {
+    notice.value = "That file is too large — please pick an .mp3/.ogg under 10 MB.";
+    if (bibleBgFileInput.value) bibleBgFileInput.value.value = "";
+    return;
+  }
   bibleBgUploading.value = true;
   try {
     const res = await api.adminBibleBgMusicUpload(file);

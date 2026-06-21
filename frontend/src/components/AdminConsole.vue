@@ -440,6 +440,13 @@ const bibleBgUploading = ref(false);
 const bibleBgFileInput = ref(null);
 const bibleBgTracks = ref([]);
 const bibleBgLibraryLoading = ref(false);
+// Mood + time-of-day vocabularies (mirror Setting/BibleBgMusicLibrary). 'any'
+// means the track fits every chapter / every time of day.
+const BIBLE_BG_THEMES = ["any", "comfort", "praise", "lament", "hope", "peace", "wisdom"];
+const BIBLE_BG_TODS = ["any", "morning", "afternoon", "evening", "night"];
+// Tags applied to the next upload.
+const bibleBgUploadTheme = ref("any");
+const bibleBgUploadTod = ref("any");
 const refreshBibleBgLibrary = async () => {
   bibleBgLibraryLoading.value = true;
   try {
@@ -467,7 +474,7 @@ const uploadBibleBgMusic = async (ev) => {
   }
   bibleBgUploading.value = true;
   try {
-    const res = await api.adminBibleBgMusicUpload(file);
+    const res = await api.adminBibleBgMusicUpload(file, bibleBgUploadTheme.value, bibleBgUploadTod.value);
     if (res.track?.selected) settings.value.bible_bg_music_url = res.track.url;
     notice.value = "Track uploaded to the library.";
     await refreshBibleBgLibrary();
@@ -496,6 +503,17 @@ const deleteBibleBgTrack = async (track) => {
     await refreshBibleBgLibrary();
   } catch (e) {
     notice.value = e?.data?.message || "Could not delete that track.";
+  }
+};
+// Save edited mood/time tags for an uploaded track (inline selects mutate the
+// track object directly; this persists the change).
+const saveBibleBgTags = async (track) => {
+  try {
+    await api.adminBibleBgMusicTags(track.id, track.theme, track.tod);
+    notice.value = "Tags saved.";
+  } catch (e) {
+    notice.value = e?.data?.message || "Could not save tags.";
+    await refreshBibleBgLibrary();
   }
 };
 const setBibleBgMusicVolume = (v) =>
@@ -2666,6 +2684,23 @@ onUnmounted(() => {
                 />
                 <span v-if="bibleBgUploading" class="setting-desc">Uploading…</span>
               </div>
+              <!-- Mood + time-of-day tags for the next upload. Leave both on
+                   "any" for a track that should play in all situations; tag them
+                   and the reader auto-picks the best fit per chapter + clock,
+                   exactly like AI mode. -->
+              <div class="bgm-row" style="margin-top:0.5rem; align-items:center; gap:0.6rem; flex-wrap:wrap">
+                <label class="setting-desc" style="margin:0">Tag upload —</label>
+                <label class="setting-desc" style="margin:0">Mood
+                  <select v-model="bibleBgUploadTheme" :disabled="bibleBgUploading">
+                    <option v-for="th in BIBLE_BG_THEMES" :key="th" :value="th">{{ th }}</option>
+                  </select>
+                </label>
+                <label class="setting-desc" style="margin:0">Time of day
+                  <select v-model="bibleBgUploadTod" :disabled="bibleBgUploading">
+                    <option v-for="d in BIBLE_BG_TODS" :key="d" :value="d">{{ d }}</option>
+                  </select>
+                </label>
+              </div>
 
               <!-- The track library: uploaded tracks + AI-generated loops. Pick
                    which one plays, preview it, or delete an uploaded one. -->
@@ -2694,6 +2729,17 @@ onUnmounted(() => {
                   <span class="bgm-track-title">
                     <span v-if="t.selected" aria-hidden="true">▶ </span>{{ t.title }}
                     <small class="bgm-track-src">{{ t.source === 'ai' ? 'AI' : 'uploaded' }}</small>
+                    <!-- AI tracks are inherently tagged (read-only); uploaded
+                         tracks expose editable mood/time selects. -->
+                    <small v-if="t.source === 'ai'" class="bgm-track-src">· {{ t.theme }} · {{ t.tod }}</small>
+                    <template v-else>
+                      <select v-model="t.theme" class="bgm-tag" @change="saveBibleBgTags(t)" :disabled="settingsReadOnly">
+                        <option v-for="th in BIBLE_BG_THEMES" :key="th" :value="th">{{ th }}</option>
+                      </select>
+                      <select v-model="t.tod" class="bgm-tag" @change="saveBibleBgTags(t)" :disabled="settingsReadOnly">
+                        <option v-for="d in BIBLE_BG_TODS" :key="d" :value="d">{{ d }}</option>
+                      </select>
+                    </template>
                   </span>
                   <span class="bgm-track-actions">
                     <a :href="t.url" target="_blank" rel="noopener" class="choice bgm-save">Preview</a>
@@ -3398,7 +3444,8 @@ onUnmounted(() => {
   padding: 0.5rem 0.75rem; border: 1px solid var(--border, #2a2f3a); border-radius: 8px;
 }
 .bgm-track.selected { border-color: var(--primary, #4f8cff); background: rgba(79, 140, 255, 0.08); }
-.bgm-track-title { display: flex; align-items: center; gap: 0.4rem; min-width: 0; }
+.bgm-track-title { display: flex; align-items: center; gap: 0.4rem; min-width: 0; flex-wrap: wrap; }
+.bgm-tag { padding: 0.15rem 0.3rem; font-size: 0.8rem; border-radius: 6px; }
 .bgm-track-src { opacity: 0.6; font-weight: 400; }
 .bgm-track-actions { display: flex; gap: 0.4rem; flex: 0 0 auto; }
 .bgm-track-actions .bgm-save { padding: 0.3rem 0.7rem; font-size: 0.85rem; text-decoration: none; }

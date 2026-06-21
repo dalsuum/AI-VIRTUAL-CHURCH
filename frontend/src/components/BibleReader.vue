@@ -114,14 +114,33 @@ function applySelectDefault() {
   selectedVerses.value = new Set();
 }
 // In AI mode the loop URL is resolved per chapter from the backend (cached or
-// freshly generated); in static mode it's the admin's fixed URL.
+// freshly generated); in static mode it's the admin's fixed track, or — when the
+// admin has tagged uploaded tracks — the one matched to this chapter's mood + the
+// reader's time of day (resolved per chapter, falling back to the fixed track).
 const aiMusicUrl = ref("");
+const staticMatchUrl = ref("");
 const bgMusicUrl = computed(() => {
   const mode = config.value.bg_music_mode || "off";
   if (mode === "ai") return aiMusicUrl.value || "";
-  if (mode === "static") return config.value.bg_music_url || "";
+  if (mode === "static") return staticMatchUrl.value || config.value.bg_music_url || "";
   return "";
 });
+
+// Static mode with tagged uploads: ask the backend which uploaded track best
+// fits this chapter (mood + reader's local time of day). Returns the fixed track
+// when nothing is tagged, so this is safe to call in every static-mode visit.
+async function resolveStaticBgMusic() {
+  staticMatchUrl.value = "";
+  if (config.value.bg_music_mode !== "static" || !selectedBook.value) return;
+  try {
+    const res = await api.bibleBgMusicMatch(
+      lang.value, selectedBook.value.num, chapterNum.value, new Date().getHours()
+    );
+    staticMatchUrl.value = res?.url || "";
+  } catch (e) {
+    staticMatchUrl.value = "";
+  }
+}
 
 // AI mode: ask the backend for this chapter's loop (keyed by theme + the
 // reader's local time of day). Returns a cached URL instantly, or null while
@@ -426,6 +445,7 @@ async function loadChapter() {
     // chapter's loop first.
     if (musicAvailable.value && bgMusicPref.value) {
       if (config.value.bg_music_mode === "ai") await resolveAiBgMusic();
+      else if (config.value.bg_music_mode === "static") await resolveStaticBgMusic();
       await nextTick();
       syncBgMusic("play");
     }
@@ -462,6 +482,7 @@ function resetAudio() {
   audioUrl.value = "";
   audioError.value = "";
   aiMusicUrl.value = "";
+  staticMatchUrl.value = "";
   highlightedVerse.value = -1;
   syncBgMusic("stop");
 }

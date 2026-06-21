@@ -126,6 +126,79 @@ class BibleController extends Controller
         ]);
     }
 
+    /**
+     * Resolve which *uploaded* static track to play for a chapter, matched by the
+     * same coarse mood + reader time-of-day the AI mode uses. When no uploaded
+     * track is tagged, this is a no-op and the reader just uses the single fixed
+     * track. Public + read-only (only ever returns a library URL). Falls back to
+     * the admin's selected track if classification or matching turns up nothing.
+     */
+    public function bgMusicMatch(Request $request, \App\Services\BibleBgMusicLibrary $library)
+    {
+        $data = $request->validate([
+            'lang'    => ['nullable', 'in:' . implode(',', self::LANGS)],
+            'book'    => ['required', 'integer', 'between:1,66'],
+            'chapter' => ['required', 'integer', 'min:1'],
+            'hour'    => ['nullable', 'integer', 'between:0,23'],
+        ]);
+
+        $fixed = Setting::bibleBgMusicUrl();
+
+        // Nothing tagged → keep it cheap: no worker call, just the fixed track.
+        if (! $library->hasTaggedUploads()) {
+            return ['url' => $fixed, 'matched' => false];
+        }
+
+        $hour = (int) ($data['hour'] ?? 12);
+        [$theme, $tod] = $this->classifyChapter($data['lang'] ?? 'en', (int) $data['book'], (int) $data['chapter'], $hour);
+
+        $match = $library->matchUpload($theme, $tod);
+
+        return [
+            'url'     => $match['url'] ?? $fixed,
+            'matched' => $match !== null,
+            'theme'   => $theme,
+            'tod'     => $tod,
+        ];
+    }
+
+    /**
+     * Ask the worker for a chapter's coarse (theme, tod). Cached briefly so a
+     * reader paging through chapters doesn't re-hit the worker each time. On any
+     * failure, fall back to a neutral theme + a locally-computed time of day so
+     * matching still works while the worker is down.
+     */
+    private function classifyChapter(string $lang, int $book, int $chapter, int $hour): array
+    {
+        $tod = $this->todFromHour($hour);
+        try {
+            return Cache::remember("bible:bgtheme:{$lang}:{$book}:{$chapter}:{$tod}", now()->addHours(6), function () use ($lang, $book, $chapter, $hour, $tod) {
+                $resp = Http::timeout(8)->get("{$this->base()}/bible/bg-music/classify", [
+                    'lang' => $lang, 'book' => $book, 'chapter' => $chapter, 'hour' => $hour,
+                ]);
+                if (! $resp->successful()) {
+                    return ['peace', $tod];
+                }
+                $j = $resp->json();
+
+                return [(string) ($j['theme'] ?? 'peace'), (string) ($j['tod'] ?? $tod)];
+            });
+        } catch (\Throwable $e) {
+            return ['peace', $tod];
+        }
+    }
+
+    /** Mirror of the worker's tod_from_hour (used as the offline fallback). */
+    private function todFromHour(int $hour): string
+    {
+        $h = (($hour % 24) + 24) % 24;
+        if ($h >= 5 && $h < 12) return 'morning';
+        if ($h >= 12 && $h < 17) return 'afternoon';
+        if ($h >= 17 && $h < 21) return 'evening';
+
+        return 'night';
+    }
+
     /** Table of contents (book numbers, native names, chapter counts) for a translation. */
     public function books(Request $request)
     {

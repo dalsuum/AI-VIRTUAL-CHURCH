@@ -230,6 +230,10 @@ export const api = {
   // { url, theme, tod, generating }. url is null while it's still generating.
   bibleBgMusic: (lang, book, chapter, hour) =>
     request(`/bible/bg-music?lang=${encodeURIComponent(lang)}&book=${book}&chapter=${chapter}&hour=${hour}`),
+  // Static mode: which uploaded track best fits this chapter's mood + the
+  // reader's time of day (falls back to the fixed track server-side).
+  bibleBgMusicMatch: (lang, book, chapter, hour) =>
+    request(`/bible/bg-music/match?lang=${encodeURIComponent(lang)}&book=${book}&chapter=${chapter}&hour=${hour}`),
 
   updateGuestEmail: (email) =>
     request("/me/email", { method: "PATCH", body: { email } }),
@@ -308,10 +312,12 @@ export const api = {
   // Background-music library: list tracks, upload, delete, and pick the active one.
   adminBibleBgMusicLibrary: () => request("/admin/bible/bg-music/library"),
   // Upload a local mp3/ogg into the library. Multipart — can't use the JSON helper.
-  adminBibleBgMusicUpload: async (file) => {
+  adminBibleBgMusicUpload: async (file, theme, tod) => {
     await ensureCsrf();
     const fd = new FormData();
     fd.append("file", file, file.name);
+    if (theme) fd.append("theme", theme);
+    if (tod) fd.append("tod", tod);
     const res = await fetch(`${BASE_URL}/admin/bible/bg-music/upload`, {
       method: "POST",
       credentials: "include",
@@ -324,6 +330,8 @@ export const api = {
   },
   adminBibleBgMusicDelete: (id) =>
     request(`/admin/bible/bg-music/library/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  adminBibleBgMusicTags: (id, theme, tod) =>
+    request(`/admin/bible/bg-music/library/${encodeURIComponent(id)}`, { method: "PATCH", body: { theme, tod } }),
   adminBibleBgMusicSelect: (src, key) =>
     request("/admin/bible/bg-music/select", { method: "POST", body: { src, key } }),
 

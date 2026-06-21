@@ -102,6 +102,26 @@ class BgMusicRequest(BaseModel):
     storage_backend: str = "" # 'local' | 's3'
 
 
+@router.get("/bg-music/classify")
+def bg_music_classify(lang: str = "en", book: int = 1, chapter: int = 1, hour: int = 12):
+    """Just the coarse (theme, tod) a chapter resolves to for the reader's hour —
+    no generation, no storage. Lets the static-track library match an uploaded
+    track to the same mood + time-of-day the AI mode would use."""
+    _check_lang(lang)
+    if not (1 <= book <= 66) or chapter < 1:
+        raise HTTPException(status_code=422, detail="Invalid book or chapter")
+
+    data = bible_api.chapter(lang, book, chapter)
+    if not data["verses"]:
+        raise HTTPException(status_code=404, detail="Chapter not found")
+
+    text = " ".join(v["text"] for v in data["verses"] if v["text"])
+    return {
+        "theme": bible_bg.classify_theme(text),
+        "tod": bible_bg.tod_from_hour(hour),
+    }
+
+
 @router.post("/bg-music")
 def bg_music(req: BgMusicRequest):
     """Resolve the AI background-music loop for a chapter + reader time-of-day.

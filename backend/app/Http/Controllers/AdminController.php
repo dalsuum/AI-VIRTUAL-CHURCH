@@ -1057,9 +1057,13 @@ class AdminController extends Controller
             // rule rejects perfectly valid files.
             'file'  => ['required', 'file', 'mimes:mp3,mpga,ogg,oga', 'max:10240'],
             'title' => ['nullable', 'string', 'max:80'],
+            // Optional mood + time-of-day tags so the reader can auto-pick this
+            // track by the same logic AI mode uses ('any' = fits everything).
+            'theme' => ['nullable', 'in:any,' . implode(',', BibleBgMusicLibrary::THEMES)],
+            'tod'   => ['nullable', 'in:any,' . implode(',', BibleBgMusicLibrary::TODS)],
         ]);
 
-        $track = $library->addUpload($validated['file']);
+        $track = $library->addUpload($validated['file'], $validated['theme'] ?? 'any', $validated['tod'] ?? 'any');
         if (! empty($validated['title'])) {
             $track['title'] = $validated['title'];
         }
@@ -1084,6 +1088,19 @@ class AdminController extends Controller
         if ((string) Setting::get('bible_bg_music_url', '') === $res['url']) {
             Setting::set('bible_bg_music_url', '');
         }
+
+        return response()->json(['ok' => true]);
+    }
+
+    /** Update an uploaded track's mood + time-of-day tags. */
+    public function bibleBgMusicTags(string $id, Request $request, BibleBgMusicLibrary $library): JsonResponse
+    {
+        $data = $request->validate([
+            'theme' => ['required', 'in:any,' . implode(',', BibleBgMusicLibrary::THEMES)],
+            'tod'   => ['required', 'in:any,' . implode(',', BibleBgMusicLibrary::TODS)],
+        ]);
+
+        abort_unless($library->updateTags($id, $data['theme'], $data['tod']), 404, 'Track not found.');
 
         return response()->json(['ok' => true]);
     }

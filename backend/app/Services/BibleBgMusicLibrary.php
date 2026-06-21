@@ -23,6 +23,11 @@ class BibleBgMusicLibrary
     /** Where the Celery worker writes generated loops (public disk). */
     public const AI_DIR = 'public/bible-bg';
 
+    /** Mood + time-of-day vocabularies, mirroring the worker's bible_bg module.
+     *  'any' means the track fits every theme / every time of day. */
+    public const THEMES = ['comfort', 'praise', 'lament', 'hope', 'peace', 'wisdom'];
+    public const TODS   = ['morning', 'afternoon', 'evening', 'night'];
+
     /** All library tracks: uploaded first (newest first), then AI loops (A→Z). */
     public function all(): array
     {
@@ -39,6 +44,8 @@ class BibleBgMusicLibrary
                 'title'  => $t['title'] ?? $t['id'],
                 'source' => 'upload',
                 'ext'    => $t['ext'] ?? 'mp3',
+                'theme'  => $t['theme'] ?? 'any',
+                'tod'    => $t['tod'] ?? 'any',
                 'key'    => $t['id'],
                 'url'    => $this->url('upload', $t['id']),
             ];
@@ -60,11 +67,14 @@ class BibleBgMusicLibrary
             if (! preg_match('/^[a-z]+_[a-z]+$/', $name)) {
                 continue;
             }
+            [$theme, $tod] = array_pad(explode('_', $name, 2), 2, 'any');
             $out[] = [
                 'id'     => "ai:{$name}",
                 'title'  => 'AI · ' . ucwords(str_replace('_', ' ', $name)),
                 'source' => 'ai',
                 'ext'    => 'mp3',
+                'theme'  => $theme,
+                'tod'    => $tod,
                 'key'    => $name,
                 'url'    => $this->url('ai', $name),
             ];
@@ -76,11 +86,13 @@ class BibleBgMusicLibrary
     }
 
     /** Store a freshly uploaded track; returns its library entry. */
-    public function addUpload(UploadedFile $file): array
+    public function addUpload(UploadedFile $file, string $theme = 'any', string $tod = 'any'): array
     {
         $ext = strtolower($file->getClientOriginalExtension());
         $ext = in_array($ext, ['ogg', 'oga'], true) ? 'ogg' : 'mp3';
         $id  = (string) Str::uuid();
+        $theme = $this->normTheme($theme);
+        $tod   = $this->normTod($tod);
 
         $file->storeAs(self::UPLOAD_DIR, "{$id}.{$ext}");
         @chmod(Storage::path(self::UPLOAD_DIR . "/{$id}.{$ext}"), 0664);
@@ -91,6 +103,8 @@ class BibleBgMusicLibrary
             'id'         => $id,
             'title'      => $title,
             'ext'        => $ext,
+            'theme'      => $theme,
+            'tod'        => $tod,
             'created_at' => now()->toIso8601String(),
         ];
         $this->saveManifest($manifest);
@@ -100,9 +114,91 @@ class BibleBgMusicLibrary
             'title'  => $title,
             'source' => 'upload',
             'ext'    => $ext,
+            'theme'  => $theme,
+            'tod'    => $tod,
             'key'    => $id,
             'url'    => $this->url('upload', $id),
         ];
+    }
+
+    /** Update an uploaded track's mood/time tags. Returns true if it existed. */
+    public function updateTags(string $id, string $theme, string $tod): bool
+    {
+        $manifest = $this->manifest();
+        $found = false;
+        foreach ($manifest as &$t) {
+            if ($t['id'] === $id) {
+                $t['theme'] = $this->normTheme($theme);
+                $t['tod']   = $this->normTod($tod);
+                $found = true;
+                break;
+            }
+        }
+        unset($t);
+        if ($found) {
+            $this->saveManifest($manifest);
+        }
+
+        return $found;
+    }
+
+    /** True when at least one uploaded track carries a non-'any' mood/time tag. */
+    public function hasTaggedUploads(): bool
+    {
+        foreach ($this->uploads() as $t) {
+            if ($t['theme'] !== 'any' || $t['tod'] !== 'any') {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Pick the uploaded track that best fits a target (theme, tod), using the
+     * same vocabulary as the AI mode. Exact tag = 2 points, 'any' = 1 (a wildcard
+     * that fits but yields to a sharper match), mismatch = 0; the track with the
+     * highest combined score wins, ties broken by upload order (newest first).
+     * Returns null when nothing scores — caller falls back to the fixed track.
+     */
+    public function matchUpload(string $theme, string $tod): ?array
+    {
+        $theme = $this->normTheme($theme);
+        $tod   = $this->normTod($tod);
+        $best = null;
+        $bestScore = 0;
+        foreach ($this->uploads() as $t) {
+            $score = $this->axisScore($t['theme'], $theme) + $this->axisScore($t['tod'], $tod);
+            if ($score > $bestScore) {
+                $best = $t;
+                $bestScore = $score;
+            }
+        }
+
+        return $best;
+    }
+
+    private function axisScore(string $tag, string $target): int
+    {
+        if ($tag === $target) {
+            return 2;
+        }
+
+        return $tag === 'any' ? 1 : 0;
+    }
+
+    private function normTheme(string $v): string
+    {
+        $v = strtolower(trim($v));
+
+        return in_array($v, self::THEMES, true) ? $v : 'any';
+    }
+
+    private function normTod(string $v): string
+    {
+        $v = strtolower(trim($v));
+
+        return in_array($v, self::TODS, true) ? $v : 'any';
     }
 
     /** Delete an uploaded track (file + manifest entry). AI tracks are read-only. */

@@ -37,6 +37,8 @@ Route::get('/bible/audio', [BibleController::class, 'audio'])->middleware('throt
 Route::get('/bible/bg-music', [BibleController::class, 'bgMusic'])->middleware('throttle:60,1');
 // Serve the admin-uploaded static background-music track (public, read-only).
 Route::get('/bible/bg-music/file', [BibleController::class, 'bgMusicFile'])->middleware('throttle:120,1');
+// Match an uploaded static track to a chapter's mood + reader time-of-day.
+Route::get('/bible/bg-music/match', [BibleController::class, 'bgMusicMatch'])->middleware('throttle:120,1');
 
 // Public special-Sunday highlight — the active observance (if any) for the
 // intake/home card, localized to ?language=en|my|td.
@@ -217,6 +219,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/bible/bg-music/library', [AdminController::class, 'bibleBgMusicLibrary']);
         Route::post('/bible/bg-music/upload', [AdminController::class, 'bibleBgMusicUpload']);
         Route::delete('/bible/bg-music/library/{id}', [AdminController::class, 'bibleBgMusicDelete']);
+        Route::patch('/bible/bg-music/library/{id}', [AdminController::class, 'bibleBgMusicTags']);
         Route::post('/bible/bg-music/select', [AdminController::class, 'bibleBgMusicSelect']);
 
         // Content filter — categorized YouTube blocklist (CRUD + import/export).

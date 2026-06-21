@@ -14,6 +14,21 @@ const CATEGORIES = [
   "Grammar", "Adjectives", "Numbers",
 ];
 
+// Per-language gloss fields. `zolai` and `english` are required; the rest are
+// optional. Order matches the public #vocabulary page language dropdown.
+const LANG_FIELDS = [
+  { code: "zolai",   label: "Zolai (Tedim)", required: true },
+  { code: "falam",   label: "Falam" },
+  { code: "hakha",   label: "Hakha" },
+  { code: "matu",    label: "Matu" },
+  { code: "mizo",    label: "Mizo" },
+  { code: "paite",   label: "Paite" },
+  { code: "sizang",  label: "Sizang" },
+  { code: "burmese", label: "Burmese" },
+  { code: "hebrew",  label: "Hebrew", dir: "rtl", lang: "he" },
+  { code: "english", label: "English", required: true },
+];
+
 const filterCat = ref("All");
 const search    = ref("");
 
@@ -22,13 +37,8 @@ const filtered = computed(() => {
   return words.value.filter((w) => {
     if (filterCat.value !== "All" && w.category !== filterCat.value) return false;
     if (!q) return true;
-    return (
-      w.zolai.toLowerCase().includes(q) ||
-      (w.burmese || "").toLowerCase().includes(q) ||
-      (w.hebrew || "").includes(q) ||
-      w.english.toLowerCase().includes(q) ||
-      (w.notes || "").toLowerCase().includes(q)
-    );
+    return LANG_FIELDS.some((l) => (w[l.code] || "").toLowerCase().includes(q)) ||
+      (w.notes || "").toLowerCase().includes(q);
   });
 });
 
@@ -52,7 +62,9 @@ const saving  = ref(false);
 const form    = ref(blank());
 
 function blank() {
-  return { id: null, zolai: "", burmese: "", hebrew: "", english: "", category: "Theology", notes: "" };
+  const b = { id: null, category: "Theology", notes: "" };
+  for (const l of LANG_FIELDS) b[l.code] = "";
+  return b;
 }
 
 function newWord() {
@@ -61,15 +73,9 @@ function newWord() {
 }
 
 function editWord(w) {
-  form.value = {
-    id: w.id,
-    zolai: w.zolai,
-    burmese: w.burmese || "",
-    hebrew: w.hebrew || "",
-    english: w.english,
-    category: w.category || "Theology",
-    notes: w.notes || "",
-  };
+  const f = { id: w.id, category: w.category || "Theology", notes: w.notes || "" };
+  for (const l of LANG_FIELDS) f[l.code] = w[l.code] || "";
+  form.value = f;
   editing.value = true;
 }
 
@@ -91,14 +97,11 @@ async function save() {
     return;
   }
   saving.value = true;
-  const payload = {
-    zolai: f.zolai.trim(),
-    burmese: f.burmese.trim() || null,
-    hebrew: f.hebrew.trim() || null,
-    english: f.english.trim(),
-    category: f.category || null,
-    notes: f.notes.trim() || null,
-  };
+  const payload = { category: f.category || null, notes: f.notes.trim() || null };
+  for (const l of LANG_FIELDS) {
+    const v = (f[l.code] || "").trim();
+    payload[l.code] = l.required ? v : (v || null);
+  }
   try {
     if (f.id) {
       const res = await api.adminUpdateVocabulary(f.id, payload);
@@ -156,14 +159,20 @@ async function remove(w) {
 
       <table v-else class="tbl">
         <thead>
-          <tr><th>Zolai</th><th>Burmese</th><th>Hebrew</th><th>English</th><th>Category</th><th>Notes</th><th></th></tr>
+          <tr>
+            <th v-for="l in LANG_FIELDS" :key="l.code">{{ l.label }}</th>
+            <th>Category</th><th>Notes</th><th></th>
+          </tr>
         </thead>
         <tbody>
           <tr v-for="w in filtered" :key="w.id">
-            <td class="t-zolai">{{ w.zolai }}</td>
-            <td>{{ w.burmese || "—" }}</td>
-            <td class="t-hebrew" dir="rtl" lang="he">{{ w.hebrew || "—" }}</td>
-            <td>{{ w.english }}</td>
+            <td
+              v-for="l in LANG_FIELDS"
+              :key="l.code"
+              :dir="l.dir || null"
+              :lang="l.lang || null"
+              :class="{ 't-zolai': l.code === 'zolai', 't-hebrew': l.code === 'hebrew' }"
+            >{{ w[l.code] || "—" }}</td>
             <td>{{ w.category || "—" }}</td>
             <td class="t-notes">{{ w.notes || "" }}</td>
             <td class="t-actions">
@@ -185,17 +194,15 @@ async function remove(w) {
       <p v-if="message" class="msg" :class="status">{{ message }}</p>
 
       <div class="form-grid">
-        <label>Zolai (Tedim) *
-          <input v-model="form.zolai" class="inp" type="text" maxlength="255" />
-        </label>
-        <label>Burmese
-          <input v-model="form.burmese" class="inp" type="text" maxlength="255" />
-        </label>
-        <label>Hebrew
-          <input v-model="form.hebrew" class="inp" type="text" maxlength="255" dir="rtl" lang="he" />
-        </label>
-        <label>English *
-          <input v-model="form.english" class="inp" type="text" maxlength="255" />
+        <label v-for="l in LANG_FIELDS" :key="l.code">{{ l.label }}<span v-if="l.required"> *</span>
+          <input
+            v-model="form[l.code]"
+            class="inp"
+            type="text"
+            maxlength="255"
+            :dir="l.dir || null"
+            :lang="l.lang || null"
+          />
         </label>
         <label>Category
           <select v-model="form.category" class="inp">

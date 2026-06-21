@@ -95,7 +95,8 @@ function catColor(cat) {
       <div class="vocab-title-block">
         <h1 class="vocab-title">Vocabulary</h1>
         <p class="vocab-sub">
-          Zolai (Tedim Chin) ↔ Burmese ↔ Hebrew ↔ English reference — {{ vocab.length }} words &amp; phrases.
+          Chin/Zo ↔ Burmese ↔ Hebrew ↔ English reference — {{ vocab.length }} words &amp; phrases.
+          Pick your language above; Zolai (Tedim) is the default.
         </p>
       </div>
     </header>
@@ -235,6 +236,37 @@ function catColor(cat) {
   backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--border);
 }
+
+.controls-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+}
+
+.lang-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.lang-picker-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+.lang-select {
+  padding: 0.5rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.9rem;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.lang-select:focus { border-color: var(--primary); }
 
 .search-input {
   width: 100%;

@@ -40,12 +40,19 @@ Force an explicit early close: `python3 ops/freeze_verdict.py --force`.
 ## Usage
 
 ```bash
-bash ops/freeze_setup.sh        # create synthetic accounts, install cron + playwright
-tail -f ops/logs/freeze.jsonl   # watch API cycles
-python3 ops/freeze_summary.py   # health score + drift (exit 0 = all green)
-bash ops/freeze_teardown.sh     # remove cron + delete synthetic accounts (keeps logs)
+bash ops/freeze_setup.sh           # create synthetic accounts, install cron + playwright
+python3 ops/freeze_dashboard.py    # LIVE dashboard (self-refreshing; Ctrl-C to quit)
+python3 ops/freeze_dashboard.py --once   # one-shot snapshot
+python3 ops/freeze_summary.py      # health score + drift (exit 0 = all green)
+tail -f ops/logs/freeze.jsonl      # raw API cycles
+bash ops/freeze_teardown.sh        # remove cron + delete synthetic accounts (keeps logs)
 #   add --purge-logs to also delete the logs
 ```
+
+`freeze_dashboard.py` is the at-a-glance live monitor: window countdown, verified
+cron jobs, synthetic accounts, last-10 cycles for both probes, and a health-score
+row (coverage / 5xx / failed checks / balance drift / auth drift / overall). It is
+**read-only** — it never mutates state. Default refresh 5s; `-n N` to change.
 
 ## Notes
 

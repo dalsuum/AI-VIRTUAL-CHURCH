@@ -34,7 +34,12 @@ when the daily/monthly quota is exhausted.
 | Service | Purpose | Env vars | Limit | Dashboard |
 |---|---|---|---|---|
 | **YouTube Data API** | Hymn video lookup/embeds | `YOUTUBE_API_KEY` | Daily quota units (default 10,000/day) | https://console.cloud.google.com/apis |
-| **ESV Bible API** | English Standard Version scripture text | `ESV_API_KEY` | Free for non-commercial; daily query cap | https://api.esv.org/account/ |
+
+> **ESV Bible API — NOT USED (application declined 2026-06-11).** Crossway's
+> Licensing team declined our application because they do not approve pairing ESV
+> text with AI-generated text. All ESV code/config has been removed. Scripture
+> text comes from the local public-domain corpus (BSB fallback) only — do not
+> re-add an ESV key.
 
 ---
 
@@ -72,7 +77,6 @@ Run on the **1st of each month** (and any time a feature stops generating output
       method is valid; watch bucket size growth.
 - [ ] **YouTube Data API** — check quota usage in Google Cloud Console; request
       a quota increase if approaching the daily cap.
-- [ ] **ESV API** — confirm the key still works (key can be revoked for ToS).
 - [ ] **Key rotation** — confirm no API key is near an expiry/rotation deadline.
 
 ### What breaks if a balance runs out
@@ -85,7 +89,6 @@ Run on the **1st of each month** (and any time a feature stops generating output
 | Stripe inactive | Offerings/donations can't be collected |
 | S3 unpaid | Asset upload/playback fails |
 | YouTube quota | Hymn video embeds stop resolving |
-| ESV quota/key | English scripture text fetch fails |
 
 ---
 

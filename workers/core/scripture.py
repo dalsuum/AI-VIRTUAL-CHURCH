@@ -65,7 +65,7 @@ def canonical_id(book_num: int, chapter: int, verse: int) -> str:
 
 
 def _resolve_translation(translation: str) -> tuple[str, bool]:
-    """Map a requested translation to one we actually carry. Unknown codes (NIV/ESV/
+    """Map a requested translation to one we actually carry. Unknown codes (NIV/
     NLT, not vendored in v1) degrade to the fallback — never fabricate."""
     code = (translation or "").strip().lower()
     if code in bible_api.languages():

@@ -144,7 +144,7 @@ const narrationModesTD = [
 
 // Compact per-version "Listen" voice rows for the Bible page. English & KJV get
 // the full English provider set; Myanmar & Tedim reuse their native-aware lists;
-// Hebrew uses its he-IL Edge voice; Falam & Hakha have native MMS-TTS voices;
+// Hebrew uses its he-IL Edge voice; Falam, Hakha & Matu have native MMS-TTS voices;
 // the remaining Chin/Zo Bibles read phonetically via the English Edge voice (or Off).
 const bibleVoiceEN = narrationModes.filter((x) => x.value !== "browser");
 const bibleVoiceHE = [
@@ -178,6 +178,11 @@ const bibleVoiceHakha = [
   { value: "mms_tts",  label: "MMS-TTS (local, free)",  hint: "Local facebook/mms-tts-cnh — native Hakha (Lai) voice. Requires MMS speech on port 8003." },
   { value: "off",      label: "Off",                    hint: "No narration for this translation." },
 ];
+const bibleVoiceMatu = [
+  { value: "edge_tts", label: "Edge TTS (cloud, free)", hint: "No native cloud voice — reads the Latin-script text phonetically with the English Edge voice." },
+  { value: "mms_tts",  label: "MMS-TTS (local, free)",  hint: "Local facebook/mms-tts-hlt — native Matu voice. Requires MMS speech on port 8003." },
+  { value: "off",      label: "Off",                    hint: "No narration for this translation." },
+];
 const bibleVoiceLangs = [
   { code: "kjv", label: "KJV (English)",  modes: bibleVoiceEN },
   { code: "en",  label: "English (BSB)",  modes: bibleVoiceEN },
@@ -187,7 +192,7 @@ const bibleVoiceLangs = [
   { code: "cfm", label: "Falam",          modes: bibleVoiceFalam },
   { code: "cnh", label: "Hakha",          modes: bibleVoiceHakha },
   { code: "mrh", label: "Mara",           modes: bibleVoicePhonetic },
-  { code: "hlt", label: "Matu",           modes: bibleVoicePhonetic },
+  { code: "hlt", label: "Matu",           modes: bibleVoiceMatu },
   { code: "lus", label: "Mizo",           modes: bibleVoicePhonetic },
   { code: "pck", label: "Paite",          modes: bibleVoicePhonetic },
   { code: "csy", label: "Sizang",         modes: bibleVoicePhonetic },
@@ -2422,9 +2427,9 @@ onUnmounted(() => {
           <p class="setting-desc">
             The voice used by the online Bible reader's <strong>🔊 Listen</strong> button,
             per translation. Independent of the live-service narration. English &amp;
-            KJV support every provider; Burmese, Tedim, Falam &amp; Hakha add a
+            KJV support every provider; Burmese, Tedim, Falam, Hakha &amp; Matu add a
             native local MMS-TTS voice; Hebrew uses its he-IL voice; the remaining
-            Chin/Zo Bibles (Mizo, Paite, Mara, Matu, Sizang) have no native voice,
+            Chin/Zo Bibles (Mizo, Paite, Mara, Sizang) have no native voice,
             so they read phonetically with the English Edge voice — or
             set any translation to <strong>Off</strong> to disable narration there.
             Hover a button for details.

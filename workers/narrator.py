@@ -102,11 +102,13 @@ def _clean(text: str) -> str:
 def _mms_lang(language: str) -> str | None:
     """Map a service language to the MMS-TTS lang key, or None if unsupported.
 
-    Falam (cfm) and Hakha (cnh) have native Meta MMS-TTS voices (mms-tts-cfm /
-    -cnh); Mizo (lus) and Paite (pck) have no upstream MMS-TTS repo, so they
-    stay phonetic/Edge only and are absent here."""
+    Falam (cfm), Hakha (cnh) and Matu (hlt) have native Meta MMS-TTS voices
+    (mms-tts-cfm / -cnh / -hlt); Mizo (lus), Paite (pck), Sizang (csy), Mara
+    (mrh) and Zou (zom) have no upstream MMS-TTS repo, so they stay
+    phonetic/Edge only and are absent here. Thadou (tcz) has an MMS-TTS voice
+    but no Bible text in the reader, so it never reaches Bible narration."""
     return {"my": "burmese", "td": "tedim",
-            "cfm": "falam", "cnh": "hakha"}.get(language)
+            "cfm": "falam", "cnh": "hakha", "hlt": "matu"}.get(language)
 
 
 def _spell_tedim(n: int) -> str:

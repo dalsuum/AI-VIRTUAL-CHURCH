@@ -29,10 +29,16 @@ VOICE_STUDIO_BASE_DIR = "/opt/ai-church/backend/storage/app/voice-studio"
 DEFAULT_MODELS = {
     "tedim": os.getenv("MMS_TTS_MODEL_TD", "facebook/mms-tts-ctd"),
     "burmese": os.getenv("MMS_TTS_MODEL_MY", "facebook/mms-tts-mya"),
-    # Meta MMS-TTS narrator voices for the Lai languages. Mizo (lus) and Paite
-    # (pck) have no MMS-TTS repo upstream, so they remain text-only (LLM + Bible).
+    # Meta MMS-TTS narrator voices for the Lai/Chin languages. Mizo (lus), Paite
+    # (pck), Sizang (csy), Mara (mrh) and Zou (zom) have no MMS-TTS repo upstream,
+    # so they remain text-only (LLM + Bible, phonetic Edge read at most).
     "falam": os.getenv("MMS_TTS_MODEL_CFM", "facebook/mms-tts-cfm"),
     "hakha": os.getenv("MMS_TTS_MODEL_CNH", "facebook/mms-tts-cnh"),
+    # Matu (hlt) has both a vendored Bible and a native MMS-TTS voice, so it is
+    # Bible-narratable. Thadou (tcz) has a native MMS-TTS voice but no Bible/LLM
+    # text source yet, so the model is registered but not reachable via /bible.
+    "matu": os.getenv("MMS_TTS_MODEL_HLT", "facebook/mms-tts-hlt"),
+    "thadou": os.getenv("MMS_TTS_MODEL_TCZ", "facebook/mms-tts-tcz"),
 }
 
 _cache: dict[str, tuple[Any, Any]] = {}

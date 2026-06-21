@@ -28,9 +28,10 @@ class Setting extends Model
         'en' => 'edge_tts',
         'my' => 'mms_tts',
         'td' => 'mms_tts',
-        // Falam & Hakha (Lai) have native Meta MMS-TTS voices.
+        // Falam, Hakha (Lai) & Matu have native Meta MMS-TTS voices.
         'cfm' => 'mms_tts',
         'cnh' => 'mms_tts',
+        'hlt' => 'mms_tts',
         // Hebrew Bible reader: Edge TTS has native he-IL neural voices.
         'he' => 'edge_tts',
     ];

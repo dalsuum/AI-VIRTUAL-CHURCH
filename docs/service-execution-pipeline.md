@@ -1,8 +1,30 @@
 # Service Execution Pipeline — Design Proposal
 
-**Status:** Draft / awaiting approval
+**Status:** Approved · Phase 1 implemented (Worship intake migrated)
 **Author:** Claude (with dalsuum08)
 **Date:** 2026-06-22
+
+## Implementation status
+
+- ✅ `App\Services\Pipeline\AiServicePipeline` (executor base) + `PipelineResult`.
+- ✅ `App\Services\Pipeline\Worship\WorshipServicePipeline` — worship `intake` migrated;
+  `ServiceController::intake` is now `return app(WorshipServicePipeline::class)->forToken($token)->handle($request);`.
+- ⏳ `StudyController`, `PastorChatController` — to migrate after Worship proves stable.
+
+### Decisions applied (from review)
+
+1. **Executor owns the transaction**, hooks run **after** commit.
+2. **Crisis is hard-path, before the action** — but kept **outside** the DB transaction.
+   Crisis detection is a network call (LLM classifier); holding a transaction open across
+   it would create long-lived locks. So `handle()` runs `prepare()` + `crisis()`
+   pre-transaction (both may short-circuit without charging), then opens the transaction
+   only around `reserveQuota → execute → commitQuota`. This honours the intent (crisis
+   gates the action, never charges on intercept) without the long-transaction anti-pattern.
+3. **Controllers don't know about hooks** — each pipeline subclass declares its own
+   `hooks()`; the controller only wires + delegates.
+4. **`execute()` dispatches the GPU job with `->afterCommit()`** so a worker can never pick
+   up the job before the surrounding transaction commits (queue driver is redis,
+   `after_commit=false`).
 
 ## Motivation
 
@@ -126,10 +148,11 @@ can no longer reorder the critical steps.
 - Changing the `guest_tracking` schema. The unique `(ip_hash, fingerprint_hash)` index +
   `lockForUpdate` already provide DB-level and transactional integrity.
 
-## Open questions
+## Resolved questions
 
-- Should `QuotaTicket` carry the commit/rollback closures, or should the executor call
-  back into the gate (`commit($ticket)` / `rollback($ticket)`)? The latter keeps the gate
-  the single owner of quota semantics.
-- Where do crisis-safety checks sit — inside `PrimaryAction::execute` or as a distinct
-  pre-action gate? They are hard-path and must precede commit, so probably a second gate.
+- **Quota commit/rollback ownership:** the executor calls `reserveQuota` / `commitQuota` /
+  `rollbackQuota` on the pipeline, keeping quota semantics owned by the pipeline (the gate),
+  not scattered into ticket closures. For worship, services are charged at commit (spend),
+  so `reserveQuota` returns `null` and `commitQuota` does the spend/record.
+- **Crisis placement:** a distinct hard-path gate (`crisis()`) that runs before the action
+  and can short-circuit without charging — and outside the transaction (see decision 2).

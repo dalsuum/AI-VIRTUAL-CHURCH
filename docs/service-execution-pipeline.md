@@ -1,15 +1,31 @@
 # Service Execution Pipeline — Design Proposal
 
-**Status:** Approved · Phase 1 implemented (Worship intake migrated)
+**Status:** Approved · all three AI endpoints migrated
 **Author:** Claude (with dalsuum08)
 **Date:** 2026-06-22
 
 ## Implementation status
 
 - ✅ `App\Services\Pipeline\AiServicePipeline` (executor base) + `PipelineResult`.
-- ✅ `App\Services\Pipeline\Worship\WorshipServicePipeline` — worship `intake` migrated;
-  `ServiceController::intake` is now `return app(WorshipServicePipeline::class)->forToken($token)->handle($request);`.
-- ⏳ `StudyController`, `PastorChatController` — to migrate after Worship proves stable.
+- ✅ `App\Services\Pipeline\Worship\WorshipServicePipeline` — worship `intake`. Charge at
+  commit; `usesTransaction()=true`; GPU job dispatched with `->afterCommit()`.
+- ✅ `App\Services\Pipeline\Study\StudySessionPipeline` — Bible study `createSession`.
+- ✅ `App\Services\Pipeline\Pastor\PastorChatPipeline` — Pastor chat `start` (the chat
+  session is the primary entity, so no history hook). Reply dispatch extracted to the
+  shared `App\Services\PastorReplyDispatcher` (also used by `postMessage`).
+- Each controller method is now a one-line delegation.
+
+### The transaction toggle (`usesTransaction()`)
+
+Worship charges at commit and enqueues via Laravel's queue, so it runs inside a DB
+transaction (`true`) with `->afterCommit()` dispatch. Study and Pastor hand work to
+external workers by pushing **straight onto a Redis list** (`ai:study` / `ai:history`),
+where `afterCommit()` is unavailable — wrapping their `execute()` in a transaction would
+let a worker read uncommitted rows. They therefore override `usesTransaction()=false` and
+rely on the **reserve→dispatch→commit saga**: the reservation (not a transaction) keeps the
+token economy correct if dispatch fails. This was verified live — Study survived a
+`session_nodes`-missing fault because its history mirror is a *soft hook* (caught + logged,
+`201` returned), proving the hard/soft split.
 
 ### Decisions applied (from review)
 

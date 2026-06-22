@@ -58,6 +58,21 @@ abstract class AiServicePipeline
     protected function rollbackQuota(mixed $ticket): void {}
 
     /**
+     * Whether to wrap reserveQuota→execute→commitQuota in a single DB transaction.
+     *
+     * True (default) suits "charge at commit" endpoints whose primary action enqueues via
+     * Laravel's queue with ->afterCommit() (e.g. worship). Override to FALSE for the
+     * reserve→dispatch→commit *saga* used by endpoints that hand work to external workers
+     * by pushing straight onto a Redis list (study, pastor): there the reservation — not a
+     * transaction — is what keeps quota correct if dispatch fails, and a transaction would
+     * let a worker read rows that haven't committed yet.
+     */
+    protected function usesTransaction(): bool
+    {
+        return true;
+    }
+
+    /**
      * Best-effort, post-commit enrichment. Subclasses (not controllers) register hooks
      * here so registration can't drift per call site.
      *
@@ -78,8 +93,10 @@ abstract class AiServicePipeline
             return response()->json($intercept->payload, $intercept->status);
         }
 
-        // Transactional hard path: quota and primary persistence are all-or-nothing.
-        $result = DB::transaction(function () use ($request) {
+        // Hard path: reserve → execute → commit. Wrapped in a transaction for "charge at
+        // commit" pipelines; run as a reserve/commit saga (no transaction) for pipelines
+        // that dispatch to external workers via raw Redis pushes. See usesTransaction().
+        $core = function () use ($request) {
             $ticket = $this->reserveQuota($request);
 
             try {
@@ -92,7 +109,9 @@ abstract class AiServicePipeline
             $this->commitQuota($request, $ticket);
 
             return $outcome;
-        });
+        };
+
+        $result = $this->usesTransaction() ? DB::transaction($core) : $core();
 
         // Soft path: post-commit, isolated. Skipped for short-circuit results.
         if ($result->runHooks) {

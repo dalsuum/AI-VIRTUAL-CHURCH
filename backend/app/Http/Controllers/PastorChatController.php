@@ -2,10 +2,11 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\ChatMessage;
 use App\Models\ChatSession;
 use App\Services\GuestUsageService;
 use App\Services\HistoryService;
+use App\Services\PastorReplyDispatcher;
+use App\Services\Pipeline\Pastor\PastorChatPipeline;
 use App\Services\TokenService;
 use App\Services\UsageLogger;
 use Illuminate\Http\JsonResponse;
@@ -30,6 +31,7 @@ class PastorChatController extends Controller
         private readonly TokenService $tokens,
         private readonly GuestUsageService $guests,
         private readonly UsageLogger $usage,
+        private readonly PastorReplyDispatcher $replies,
     ) {}
 
     private function eventsKey(ChatSession $s): string
@@ -45,41 +47,14 @@ class PastorChatController extends Controller
             ->firstOr(fn () => abort(Response::HTTP_NOT_FOUND));
     }
 
-    /** Start a Pastor Chat: charge a token, post the first message, dispatch a reply. */
+    /**
+     * Start a Pastor Chat: charge a token, post the first message, dispatch a reply.
+     * The hard path (validate → create session → reserve → dispatch → commit/rollback)
+     * is owned by the shared pipeline. See App\Services\Pipeline\Pastor\PastorChatPipeline.
+     */
     public function start(Request $request): JsonResponse
     {
-        $user = $request->user();
-        $data = $request->validate([
-            'message'  => ['required', 'string', 'max:4000'],
-            'language' => ['nullable', 'string', 'max:12'],
-        ]);
-
-        $session = $this->history->startSession($user, 'pastor', [
-            'language' => $data['language'] ?? ($user->fav_language ?? 'en'),
-        ]);
-        $plaintextToken = $session->issueStreamToken();
-        $session->save();
-
-        $reservation = $user->isGuestAccount()
-            ? null
-            : $this->tokens->reserve($user, 'pastor', "pastor:{$session->id}");
-
-        try {
-            $this->history->recordMessage($session, 'user', trim($data['message']));
-            $this->dispatchReply($session);
-        } catch (\Throwable $e) {
-            $reservation && $this->tokens->rollback($reservation);
-            $this->usage->record($user, 'pastor', 'failed', 0, "pastor:{$session->id}");
-            throw $e;
-        }
-
-        $reservation ? $this->tokens->commit($reservation) : $this->guests->record($request, 'pastor');
-        $this->usage->record($user, 'pastor', 'ok', $reservation?->amount ?? 0, "pastor:{$session->id}");
-
-        return response()->json([
-            'session'      => ['id' => $session->id, 'language' => $session->language],
-            'stream_token' => $plaintextToken,         // returned ONCE
-        ], 201);
+        return app(PastorChatPipeline::class)->handle($request);
     }
 
     /** Post a follow-up message and dispatch a new reply. */
@@ -89,7 +64,7 @@ class PastorChatController extends Controller
         $data = $request->validate(['message' => ['required', 'string', 'max:4000']]);
 
         $this->history->recordMessage($session, 'user', trim($data['message']));
-        $this->dispatchReply($session);
+        $this->replies->dispatch($session);
 
         return response()->json(['ok' => true]);
     }
@@ -149,49 +124,5 @@ class PastorChatController extends Controller
             'X-Accel-Buffering' => 'no',
             'Connection'        => 'keep-alive',
         ]);
-    }
-
-    /**
-     * Compose a reply job server-side and push it to the worker queue. Only
-     * conversation text + (opt-in) prior-session summaries travel — never secrets.
-     */
-    private function dispatchReply(ChatSession $session): void
-    {
-        $turns = ChatMessage::where('session_id', $session->id)
-            ->orderBy('created_at')->limit(20)
-            ->get(['sender', 'content'])
-            ->map(fn ($m) => ['role' => $m->sender, 'content' => $m->content])->all();
-
-        $job = [
-            'mode'       => 'pastor_reply',
-            'session_id' => $session->id,
-            'language'   => $session->language,
-            'turns'      => $turns,
-            'memory'     => $this->memoryContext($session),
-        ];
-
-        Redis::rpush(self::QUEUE, json_encode($job));
-    }
-
-    /**
-     * Prior-session summaries the pastor may reference ("Last week we studied
-     * Romans 8…") — ONLY when the user has opted in (users.ai_memory_enabled).
-     */
-    private function memoryContext(ChatSession $session): array
-    {
-        $user = $session->user;
-        if (! $user || ! ($user->ai_memory_enabled ?? true)) {
-            return [];
-        }
-
-        return ChatSession::forUser($user->id)
-            ->whereKeyNot($session->id)
-            ->whereNotNull('summary')
-            ->orderByDesc('last_activity_at')
-            ->limit(3)
-            ->get(['session_type', 'title', 'summary'])
-            ->map(fn ($s) => [
-                'type' => $s->session_type, 'title' => $s->title, 'summary' => $s->summary,
-            ])->all();
     }
 }

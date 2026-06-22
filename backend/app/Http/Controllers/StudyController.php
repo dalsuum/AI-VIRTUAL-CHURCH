@@ -9,6 +9,7 @@ use App\Models\ModuleManifest;
 use App\Models\StudyMessage;
 use App\Models\StudySession;
 use App\Services\GuestUsageService;
+use App\Services\Pipeline\Study\StudySessionPipeline;
 use App\Services\StudyDispatchService;
 use App\Services\StudyInputGuard;
 use App\Services\StudyTiers;
@@ -34,12 +35,6 @@ class StudyController extends Controller
         private readonly UsageLogger $usage,
         private readonly \App\Services\HistoryService $history,
     ) {}
-
-    /** Record a request-level usage row (model-turn telemetry lives in ai_usage_ledger). */
-    private function logUsage($user, string $service, string $status, int $tokens, string $requestId): void
-    {
-        $this->usage->record($user, $service, $status, $tokens, $requestId);
-    }
 
     /** Public-safe config: enabled languages, agent bounds, and public persona names.
      *  Agent bounds are tier-aware for the (optionally authenticated) caller. */
@@ -78,93 +73,15 @@ class StudyController extends Controller
         ]);
     }
 
-    /** Start a session, post the first question, dispatch round 1. */
+    /**
+     * Start a session, post the first question, dispatch round 1. The hard path
+     * (input guard → persist → reserve → dispatch → commit/rollback) and best-effort
+     * history mirror are owned by the shared pipeline. See
+     * App\Services\Pipeline\Study\StudySessionPipeline.
+     */
     public function createSession(CreateStudySessionRequest $request): JsonResponse
     {
-        $user = $request->user();
-        $question = trim($request->string('question'));
-
-        [$ok, $reason] = $this->guard->check($question);
-        abort_if(! $ok, 422, $reason);
-
-        $manifest = ModuleManifest::where('key', config('bible_study.module'))->first();
-
-        $session = new StudySession([
-            'user_id'       => $user->id,
-            'language'      => $request->string('language'),
-            'translation'   => $request->string('translation'),
-            'style'         => $request->input('style'),
-            'topic'         => mb_substr($question, 0, 160),
-            'agent_count'   => $manifest->clampAgentCount((int) $request->integer('agent_count')),
-            'state'         => 'created',
-            'contact_email' => $request->input('contact_email'),
-            'last_activity_at' => now(),
-        ]);
-        $plaintextToken = $session->issueStreamToken();
-        $session->owner_fingerprint = StudySession::fingerprint(
-            "u:{$user->id}", $request->userAgent(), $request->ip()
-        );
-        $session->save();
-
-        StudyMessage::create([
-            'session_id' => $session->id,
-            'turn'       => 1,
-            'role'       => 'user',
-            'content'    => $question,
-        ]);
-
-        // Mirror into the unified history spine so this study appears in the sidebar.
-        // The live multi-agent engine still runs off study_sessions; this is a 1:1 bridge.
-        // Best-effort enrichment, isolated so a history failure can never abort the run
-        // before the quota/usage is charged below.
-        try {
-            $chat = $this->history->startSession($user, 'bible_study', [
-                'language' => $session->language,
-                'title'    => mb_substr($question, 0, 120),
-                'mood'     => $session->mood,
-            ]);
-            \App\Models\BibleSessionMeta::create([
-                'chat_session_id'  => $chat->id,
-                'study_session_id' => $session->id,
-                'translation'      => $session->translation,
-            ]);
-        } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::warning('Study history mirror failed', [
-                'study_session_id' => $session->id,
-                'error'            => $e->getMessage(),
-            ]);
-        }
-
-        // Charge the session. Members/premium reserve a token (refunded if dispatch
-        // fails); guests have no wallet — their single free use is recorded instead.
-        // The guest.limit / tokens middleware on this route already verified eligibility.
-        $reservation = $user->isGuestAccount()
-            ? null
-            : $this->tokens->reserve($user, 'study', "study:{$session->id}");
-
-        try {
-            $session->update(['state' => 'discussing']);
-            $this->dispatch->dispatchRound($session, $question);
-        } catch (\Throwable $e) {
-            if ($reservation) {
-                $this->tokens->rollback($reservation);
-            }
-            $this->logUsage($user, 'study', 'failed', 0, "study:{$session->id}");
-            throw $e;
-        }
-
-        if ($reservation) {
-            $this->tokens->commit($reservation);
-        } elseif ($user->isGuestAccount()) {
-            $this->guests->record($request, 'study');
-        }
-
-        $this->logUsage($user, 'study', 'ok', $reservation?->amount ?? 0, "study:{$session->id}");
-
-        return response()->json([
-            'session'      => $session->only(['id', 'language', 'translation', 'style', 'agent_count', 'state']),
-            'stream_token' => $plaintextToken,   // returned ONCE — never stored in plaintext
-        ], 201);
+        return app(StudySessionPipeline::class)->handle($request);
     }
 
     /** Post a follow-up question; dispatch a new round. */

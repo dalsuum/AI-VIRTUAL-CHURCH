@@ -275,12 +275,19 @@ class WebhookController extends Controller
         if ($data['mode'] === 'pastor_reply') {
             $reply = trim((string) ($data['reply'] ?? ''));
             if ($reply !== '') {
-                \App\Models\ChatMessage::create([
-                    'session_id'  => $session->id,
-                    'sender'      => 'assistant',
-                    'content'     => $reply,
-                    'token_usage' => $data['token_usage'] ?? null,
-                ]);
+                // Dual-write the assistant turn: legacy projection + graph node (Phase 1).
+                \Illuminate\Support\Facades\DB::transaction(function () use ($session, $reply, $data) {
+                    \App\Models\ChatMessage::create([
+                        'session_id'  => $session->id,
+                        'sender'      => 'assistant',
+                        'content'     => $reply,
+                        'token_usage' => $data['token_usage'] ?? null,
+                    ]);
+                    app(\App\Services\SessionState\SessionStateStore::class)->appendNode(
+                        $session->id,
+                        \App\Services\SessionState\SessionNodeData::message('assistant', $reply, null, $data['token_usage'] ?? null)
+                    );
+                });
                 $session->forceFill(['last_activity_at' => now()])->save();
                 \Illuminate\Support\Facades\Cache::forget("history:list:{$session->user_id}");
                 // Push to the live SSE tail (assistant message as a single event).

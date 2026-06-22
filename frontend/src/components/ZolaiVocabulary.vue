@@ -88,9 +88,7 @@ function catColor(cat) {
 <template>
   <div class="vocab-page">
     <header class="vocab-header">
-      <a href="#" class="back-link" aria-label="Back to worship">
-        <span class="back-icon">&#8592;</span><span class="back-text">&nbsp;Back to worship</span>
-      </a>
+      <!-- No back-link: the global header nav handles navigation now. -->
       <div class="vocab-title-block">
         <h1 class="vocab-title">Vocabulary</h1>
         <p class="vocab-sub">
@@ -184,15 +182,6 @@ function catColor(cat) {
   background: var(--surface);
 }
 
-.back-link {
-  display: inline-block;
-  font-size: 0.83rem;
-  color: var(--text-muted);
-  text-decoration: none;
-  margin-bottom: 0.6rem;
-  transition: color 0.15s;
-}
-.back-link:hover { color: var(--primary); }
 
 .vocab-title-block { margin-bottom: 0.75rem; }
 .vocab-title {
@@ -370,7 +359,5 @@ function catColor(cat) {
   .vocab-header, .controls, .table-wrap { padding-left: 1rem; padding-right: 1rem; }
   .vocab-title { font-size: 1.2rem; }
   .vocab-table { font-size: 0.8rem; }
-  .back-text { display: none; }
-  .back-icon { font-size: 1.1rem; }
 }
 </style>

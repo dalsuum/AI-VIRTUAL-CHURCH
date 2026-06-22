@@ -5,7 +5,7 @@ import PreparingView from "./components/PreparingView.vue";
 import ServicePlayer from "./components/ServicePlayer.vue";
 import AdminConsole from "./components/AdminConsole.vue";
 import PasswordReset from "./components/PasswordReset.vue";
-import ThemeToggle from "./components/ThemeToggle.vue";
+import AppLayout from "./components/layout/AppLayout.vue";
 import ZolaiVocabulary from "./components/ZolaiVocabulary.vue";
 import MyanmarLyrics from "./components/MyanmarLyrics.vue";
 import FathersDay from "./components/FathersDay.vue";
@@ -20,6 +20,9 @@ import AuthPanel from "./components/AuthPanel.vue";
 import AccountSettings from "./components/AccountSettings.vue";
 import { api } from "./composables/useApi";
 
+// The current hash, kept reactive so the data-driven nav can derive its active
+// state from a single source instead of a per-route boolean.
+const currentHash = ref(window.location.hash);
 // The admin console lives at #admin so it never collides with the worship flow.
 const isAdminRoute  = ref(window.location.hash === "#admin");
 const isVocabRoute  = ref(window.location.hash === "#vocabulary");
@@ -54,6 +57,8 @@ api.stickerConfig().then((c) => {
   if (c?.title) stickersTitle.value = c.title;
 }).catch(() => {});
 window.addEventListener("hashchange", () => {
+  const prevHash = currentHash.value;
+  currentHash.value = window.location.hash;
   isAdminRoute.value  = window.location.hash === "#admin";
   isVocabRoute.value  = window.location.hash === "#vocabulary";
   isLyricsRoute.value = window.location.hash === "#lyrics";
@@ -68,6 +73,13 @@ window.addEventListener("hashchange", () => {
   isRegisterRoute.value = window.location.hash === "#register";
   isAccountRoute.value  = window.location.hash === "#account";
   enforceGuards();
+  // Scroll restoration: start a new page at the top, but ignore same-page hash
+  // changes (e.g. #pastor → #pastor?session=… or the guard redirects) so we
+  // don't yank the user up while staying on one view.
+  const baseOf = (h) => h.split("?")[0];
+  if (baseOf(prevHash) !== baseOf(window.location.hash)) {
+    window.scrollTo(0, 0);
+  }
 });
 
 // ── Auth state + route guards ────────────────────────────────────────────────
@@ -349,38 +361,17 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
   <!-- Unified history rail — only for registered users; collapses on mobile. -->
   <HistorySidebar v-if="isAuthed" :authed="isAuthed" />
   <div class="root-content">
-  <!-- Global app layout: the header + footer render once and persist across
-       every route. Only the <main> content swaps when navigating. -->
-  <div class="page">
-    <header class="topbar">
-      <a class="brand" href="#">
-        <span class="brand-mark" aria-hidden="true">✝</span>
-        <span class="brand-name">AI Virtual Church</span>
-      </a>
-      <div class="topbar-right">
-        <nav class="topbar-nav">
-          <a href="#lyrics" class="nav-link" :class="{ active: isLyricsRoute }">🎵 သီချင်း</a>
-          <a href="#bible" class="nav-link" :class="{ active: isBibleRoute }">📖 Bible</a>
-          <a href="#bible-study" class="nav-link" :class="{ active: isStudyRoute }">💬 Bible Study</a>
-          <a href="#worship" class="nav-link" :class="{ active: isWorshipRoute }">🎶 Worship</a>
-          <a href="#pastor" class="nav-link" :class="{ active: isPastorRoute }">💬 Pastor</a>
-          <a v-if="isAuthed" href="#journey" class="nav-link" :class="{ active: isJourneyRoute }">📊 Journey</a>
-          <a href="#vocabulary" class="nav-link" :class="{ active: isVocabRoute }">📖 Vocabulary</a>
-          <a v-if="fathersDayEnabled" href="#fathers-day" class="nav-link" :class="{ active: isFathersDayRoute }">💙 <span class="nav-label-full">{{ fdTitle }}</span><span class="nav-label-short">MV</span></a>
-          <a v-if="stickersEnabled" href="#stickers" class="nav-link" :class="{ active: isStickerRoute }">🎨 Stickers</a>
-          <a v-if="isAdmin" href="#admin" class="nav-link" :class="{ active: isAdminRoute }">🛠 Admin</a>
-          <a v-if="isAuthed" href="#account" class="nav-link" :class="{ active: isAccountRoute }">👤 <span class="nav-label-full">Account</span></a>
-          <button v-if="isAuthed" class="nav-link nav-btn" @click="logout">Logout</button>
-          <template v-else>
-            <a href="#login" class="nav-link" :class="{ active: isLoginRoute }">Login</a>
-            <a href="#register" class="nav-link" :class="{ active: isRegisterRoute }">Register</a>
-          </template>
-        </nav>
-        <ThemeToggle />
-      </div>
-    </header>
-
-    <main class="app-main">
+  <!-- Global app shell: header + footer render once and persist across every
+       route; only the slotted content swaps when navigating. -->
+  <AppLayout
+    :current-hash="currentHash"
+    :is-authed="isAuthed"
+    :is-admin="isAdmin"
+    :fathers-day-enabled="fathersDayEnabled"
+    :fd-title="fdTitle"
+    :stickers-enabled="stickersEnabled"
+    @logout="logout"
+  >
       <!-- Route views — rendered full-width inside the global layout. -->
       <AdminConsole v-if="isAdminRoute" />
       <ZolaiVocabulary v-else-if="isVocabRoute" />
@@ -476,20 +467,7 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
         />
       </div>
       </div>
-    </main>
-
-    <footer class="site-footer">
-      <span class="ai-disclaimer">AI can make mistakes. Please verify important information.</span>
-      <a
-        href="https://www.paypal.com/donate/?hosted_button_id=WETP5RQ7ZGJ6U"
-        target="_blank"
-        rel="noopener noreferrer"
-        class="donate-link"
-      >
-        ☕ Buy me a coffee
-      </a>
-    </footer>
-  </div>
+  </AppLayout>
   </div>
  </div>
 </template>
@@ -500,61 +478,9 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
 @media (max-width: 760px) { .root-layout { display: block; } }
 </style>
 <style scoped>
-.page { display: flex; flex-direction: column; min-height: 100vh; }
-/* Holds whichever route is active; grows so the footer stays at the bottom.
-   A flex column so a full-screen route view (e.g. the Bible reader) can fill
-   the remaining viewport between the sticky header and the footer. */
-.app-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
-.app-main > * { flex: 1 1 auto; min-height: 0; }
-
-.topbar {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.85rem 1.25rem;
-  background: color-mix(in srgb, var(--bg) 80%, transparent);
-  backdrop-filter: blur(8px);
-  border-bottom: 1px solid var(--border);
-}
-.topbar-right { display: flex; align-items: center; gap: 0.75rem; }
-.topbar-nav { display: flex; align-items: center; gap: 0.25rem; }
-.nav-link {
-  display: inline-flex; align-items: center; gap: 0.25rem;
-  padding: 0.35rem 0.65rem;
-  font-size: 0.8rem; font-family: "Padauk", "Noto Sans Myanmar", sans-serif;
-  color: var(--text-muted); text-decoration: none;
-  border: 1px solid transparent; border-radius: var(--radius-sm);
-  transition: color 0.12s, border-color 0.12s, background 0.12s;
-}
-.nav-link:hover { color: var(--primary); border-color: var(--border); }
-.nav-btn { background: none; cursor: pointer; font-family: inherit; }
-.nav-link.active { color: var(--primary); background: var(--primary-soft); border-color: var(--primary); font-weight: 600; }
-.nav-label-short { display: none; }
-@media (max-width: 640px) {
-  .nav-label-full { display: none; }
-  .nav-label-short { display: inline; }
-  /* Logo-only brand to free up width for the nav + theme toggle. */
-  .brand-name { display: none; }
-  .topbar { gap: 0.5rem; padding: 0.7rem 0.85rem; }
-  /* Keep the nav from squeezing the theme toggle off-screen: let it scroll. */
-  .topbar-right { gap: 0.5rem; min-width: 0; }
-  .topbar-nav { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
-  .topbar-nav::-webkit-scrollbar { display: none; }
-  .nav-link { flex: 0 0 auto; }
-  /* The theme toggle must always stay visible. */
-  .theme-toggle, .topbar-right > :last-child { flex: 0 0 auto; }
-}
-.brand { display: inline-flex; align-items: center; gap: 0.55rem; text-decoration: none; color: var(--text); font-weight: 600; }
-.brand-mark {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 30px; height: 30px; border-radius: 9px;
-  background: var(--primary); color: var(--on-primary); font-size: 1rem;
-}
-.brand-name { font-size: 0.98rem; letter-spacing: -0.01em; }
+/* The page chrome (header, footer, .page/.app-main layout) lives in
+   components/layout/. This block only styles the default intake/auth/account
+   content that App.vue still owns. */
 
 /* Father's Day (Special Day) MV promo banner on the intake card. */
 .fd-banner {
@@ -595,37 +521,4 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
 .service h1, .intercepted h1 { font-size: 1.55rem; margin: 0 0 0.35rem; letter-spacing: -0.02em; }
 .sub { color: var(--text-muted); margin: 0 0 1.5rem; line-height: 1.55; }
 .intercepted a { color: var(--primary); font-weight: 500; }
-
-.site-footer {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 1.25rem;
-  padding: 1.25rem;
-  border-top: 1px solid var(--border);
-}
-.ai-disclaimer {
-  width: 100%;
-  text-align: center;
-  font-size: 0.78rem;
-  color: var(--text-muted);
-  opacity: 0.7;
-}
-.donate-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.85rem;
-  color: var(--text-muted);
-  text-decoration: none;
-  padding: 0.4rem 0.85rem;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  transition: color 0.15s, border-color 0.15s;
-}
-.donate-link:hover {
-  color: var(--primary);
-  border-color: var(--primary);
-}
 </style>

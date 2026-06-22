@@ -29,6 +29,8 @@ class ChatSession extends Model
         'user_id', 'session_type', 'title', 'language', 'status', 'summary', 'mood',
         'pinned', 'favorite', 'archived', 'rating', 'stream_token',
         'started_at', 'last_activity_at', 'ended_at',
+        // SessionStateStore graph columns (docs/session-state-store.md).
+        'root_session_id', 'parent_session_id', 'parent_node_id', 'active_node_id',
     ];
 
     protected $hidden = ['stream_token'];

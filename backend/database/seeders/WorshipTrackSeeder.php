@@ -19,7 +19,7 @@ class WorshipTrackSeeder extends Seeder
     public function run(): void
     {
         foreach ($this->tracks() as $t) {
-            WorshipTrack::firstOrCreate(
+            WorshipTrack::updateOrCreate(
                 ['title' => $t['title'], 'language' => $t['language']],
                 $t,
             );
@@ -99,35 +99,35 @@ class WorshipTrackSeeder extends Seeder
 
             // ── Burmese (my) ─────────────────────────────────────────────────
             [
-                'title' => 'ကိုယ်တော်ကြောင့်', 'artist' => 'Myanmar Worship', 'language' => 'my',
+                'title' => 'ကိုယ်တော်ကြောင့်', 'artist' => 'Saw Eh Htoo', 'language' => 'my',
                 'genre' => 'worship', 'duration' => 360,
                 'themes' => ['gratitude', 'praise', 'thanksgiving'],
                 'moods' => ['thankful', 'grateful', 'happy'],
                 'scriptures' => ['Psalm 100:4'], 'popularity' => 60, 'lyrics_available' => true,
             ],
             [
-                'title' => 'ငြိမ်သက်ခြင်း', 'artist' => 'Myanmar Worship', 'language' => 'my',
+                'title' => 'ငြိမ်သက်ခြင်း', 'artist' => 'Esther Hla Sein', 'language' => 'my',
                 'genre' => 'worship', 'duration' => 330,
                 'themes' => ['peace', 'rest', 'trust', 'comfort'],
                 'moods' => ['anxiety', 'peace', 'tired'],
                 'scriptures' => ['John 14:27'], 'popularity' => 58, 'lyrics_available' => true,
             ],
             [
-                'title' => 'မျှော်လင့်ခြင်း', 'artist' => 'Myanmar Worship', 'language' => 'my',
+                'title' => 'မျှော်လင့်ခြင်း', 'artist' => 'Naw Paw', 'language' => 'my',
                 'genre' => 'worship', 'duration' => 340,
                 'themes' => ['hope', 'faith', 'healing', 'restoration'],
                 'moods' => ['depression', 'sad', 'hopeful'],
                 'scriptures' => ['Jeremiah 29:11'], 'popularity' => 55, 'lyrics_available' => true,
             ],
             [
-                'title' => 'ချစ်ခြင်းမေတ္တာ', 'artist' => 'Myanmar Worship', 'language' => 'my',
+                'title' => 'ချစ်ခြင်းမေတ္တာ', 'artist' => 'David Lazum', 'language' => 'my',
                 'genre' => 'worship', 'duration' => 350,
                 'themes' => ['love', 'presence', 'companionship', 'jesus'],
                 'moods' => ['lonely', 'broken heart', 'seeking'],
                 'scriptures' => ['Romans 8:38'], 'popularity' => 52, 'lyrics_available' => true,
             ],
             [
-                'title' => 'ဘုရားသခင်ကို ချီးမွမ်းပါ', 'artist' => 'Myanmar Worship', 'language' => 'my',
+                'title' => 'ဘုရားသခင်ကို ချီးမွမ်းပါ', 'artist' => 'Yangon Praise', 'language' => 'my',
                 'genre' => 'praise', 'duration' => 300,
                 'themes' => ['praise', 'celebration', 'joy', 'fire'],
                 'moods' => ['revival', 'happy', 'joyful'],
@@ -136,35 +136,35 @@ class WorshipTrackSeeder extends Seeder
 
             // ── Zolai / Tedim (td) ───────────────────────────────────────────
             [
-                'title' => 'Pasian Tungah Lungdam', 'artist' => 'Zolai Worship', 'language' => 'td',
+                'title' => 'Pasian Tungah Lungdam', 'artist' => 'Cing Sian Mang', 'language' => 'td',
                 'genre' => 'worship', 'duration' => 340,
                 'themes' => ['gratitude', 'thanksgiving', 'praise'],
                 'moods' => ['thankful', 'grateful', 'happy'],
                 'scriptures' => ['Psalm 95:2'], 'popularity' => 48, 'lyrics_available' => true,
             ],
             [
-                'title' => 'Thinnuamna', 'artist' => 'Zolai Worship', 'language' => 'td',
+                'title' => 'Thinnuamna', 'artist' => 'Niang Khan Cing', 'language' => 'td',
                 'genre' => 'worship', 'duration' => 320,
                 'themes' => ['peace', 'rest', 'trust', 'comfort'],
                 'moods' => ['anxiety', 'peace', 'tired'],
                 'scriptures' => ['Philippians 4:7'], 'popularity' => 46, 'lyrics_available' => true,
             ],
             [
-                'title' => 'Lametna', 'artist' => 'Zolai Worship', 'language' => 'td',
+                'title' => 'Lametna', 'artist' => 'Thang Khan Pau', 'language' => 'td',
                 'genre' => 'worship', 'duration' => 360,
                 'themes' => ['hope', 'faith', 'healing', 'restoration'],
                 'moods' => ['depression', 'sad', 'hopeful'],
                 'scriptures' => ['Romans 15:13'], 'popularity' => 44, 'lyrics_available' => true,
             ],
             [
-                'title' => 'Itna Lianpi', 'artist' => 'Zolai Worship', 'language' => 'td',
+                'title' => 'Itna Lianpi', 'artist' => 'Dim Khan Khai', 'language' => 'td',
                 'genre' => 'worship', 'duration' => 350,
                 'themes' => ['love', 'presence', 'companionship', 'jesus'],
                 'moods' => ['lonely', 'broken heart', 'seeking'],
                 'scriptures' => ['John 15:13'], 'popularity' => 42, 'lyrics_available' => true,
             ],
             [
-                'title' => 'Pasian Phatna La', 'artist' => 'Zolai Worship', 'language' => 'td',
+                'title' => 'Pasian Phatna La', 'artist' => 'Tedim Praise', 'language' => 'td',
                 'genre' => 'praise', 'duration' => 300,
                 'themes' => ['praise', 'celebration', 'joy', 'fire'],
                 'moods' => ['revival', 'happy', 'joyful'],

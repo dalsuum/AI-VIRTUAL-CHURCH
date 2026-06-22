@@ -57,6 +57,37 @@ class MusicRecommendTest extends TestCase
         $this->assertSame('my', $res->json('playlist.0.language'));
     }
 
+    public function test_request_stays_in_language_when_enough_tracks_exist(): void
+    {
+        // 8 Burmese tracks comfortably exceed the min of 5, so no English/Zolai
+        // should leak into a Burmese request even though more songs exist.
+        $this->seedCatalog();
+
+        $langs = array_column(
+            $this->postJson('/api/music/recommend', ['language' => 'my', 'mood' => 'Anxiety'])->json('playlist'),
+            'language',
+        );
+
+        $this->assertSame(['my'], array_values(array_unique($langs)));
+    }
+
+    public function test_cross_language_fills_only_below_minimum(): void
+    {
+        // Only 2 Zolai tracks exist (< min 5): the playlist tops up to the min
+        // with other languages rather than returning a too-short list.
+        WorshipTrack::create(['title' => 'td one', 'language' => 'td', 'moods' => ['anxiety'], 'active' => true]);
+        WorshipTrack::create(['title' => 'td two', 'language' => 'td', 'moods' => ['anxiety'], 'active' => true]);
+        foreach (range(1, 6) as $i) {
+            WorshipTrack::create(['title' => "en {$i}", 'language' => 'en', 'moods' => ['anxiety'], 'active' => true]);
+        }
+
+        $playlist = $this->postJson('/api/music/recommend', ['language' => 'td', 'mood' => 'Anxiety'])->json('playlist');
+
+        $this->assertCount(5, $playlist);
+        $this->assertSame('td', $playlist[0]['language'], 'same-language tracks rank first');
+        $this->assertSame(2, count(array_filter($playlist, fn ($t) => $t['language'] === 'td')));
+    }
+
     public function test_exclude_ids_are_not_returned(): void
     {
         $this->seedCatalog();

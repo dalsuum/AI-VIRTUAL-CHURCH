@@ -33,10 +33,14 @@ const themes = ref([]);
 const loading = ref(false);
 const error = ref("");
 const playing = ref(false);
+const noEmbed = ref(false);     // current track has no embeddable YouTube source
 const recentIds = [];           // rolling last-50 ids
 
 let player = null;              // YT.Player instance
 let ytReady = null;            // Promise resolving when the IFrame API is loaded
+let fallbackTimer = null;      // auto-advance timer for non-embeddable tracks
+
+function clearFallback() { if (fallbackTimer) { clearTimeout(fallbackTimer); fallbackTimer = null; } }
 
 const activeMoodLabel = computed(() => {
   if (freeText.value.trim()) return freeText.value.trim();
@@ -54,6 +58,7 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+  clearFallback();
   try { player && player.destroy(); } catch {}
 });
 
@@ -128,8 +133,22 @@ async function playNext() {
 }
 
 async function playCurrent() {
+  clearFallback();
   const id = youtubeId(current.value?.youtube_url);
-  if (!id) { /* no embeddable source — skip ahead */ await playNext(); return; }
+
+  // No embeddable video (e.g. a metadata-only track without a YouTube link):
+  // keep the radio rolling — show the card with an external link and
+  // auto-advance after the track's duration instead of silently skipping.
+  if (!id) {
+    try { player && player.pauseVideo(); } catch {}
+    noEmbed.value = true;
+    playing.value = true;
+    const secs = Math.min(Number(current.value?.duration) || 45, 600);
+    fallbackTimer = setTimeout(() => playNext(), secs * 1000);
+    return;
+  }
+
+  noEmbed.value = false;
   await loadYouTubeApi();
   if (!player) {
     player = new window.YT.Player("worship-yt", {
@@ -151,13 +170,25 @@ async function playCurrent() {
 }
 
 function togglePlay() {
+  // Non-embeddable track: pause/resume the auto-advance timer.
+  if (noEmbed.value) {
+    if (playing.value) { clearFallback(); playing.value = false; }
+    else {
+      const secs = Math.min(Number(current.value?.duration) || 45, 600);
+      fallbackTimer = setTimeout(() => playNext(), secs * 1000);
+      playing.value = true;
+    }
+    return;
+  }
   if (!player) return;
   playing.value ? player.pauseVideo() : player.playVideo();
 }
-function skip() { playNext(); }
+function skip() { clearFallback(); playNext(); }
 function stop() {
+  clearFallback();
   try { player && player.stopVideo(); } catch {}
   playing.value = false;
+  noEmbed.value = false;
   current.value = null;
   queue.value = [];
 }
@@ -218,7 +249,16 @@ function streamLink(t) {
     <section v-if="reason" class="wr-reason">{{ reason }}</section>
 
     <section v-if="current" class="wr-stage">
-      <div class="wr-video"><div id="worship-yt"></div></div>
+      <div v-show="!noEmbed" class="wr-video"><div id="worship-yt"></div></div>
+      <div v-if="noEmbed" class="wr-noembed">
+        <strong>{{ current.title }}</strong>
+        <span>{{ current.artist }}</span>
+        <p>No in-app player link for this track yet.</p>
+        <a v-if="streamLink(current)" :href="streamLink(current)" target="_blank" rel="noopener" class="wr-open">
+          Open externally ↗
+        </a>
+        <small>Auto-advancing to the next song…</small>
+      </div>
     </section>
 
     <section v-if="current || queue.length" class="wr-list">
@@ -288,6 +328,13 @@ function streamLink(t) {
 .wr-video { position: relative; padding-top: 56.25%; border-radius: var(--radius); overflow: hidden;
   background: #000; box-shadow: var(--shadow-sm); }
 .wr-video > div { position: absolute; inset: 0; }
+.wr-noembed { display: flex; flex-direction: column; align-items: center; gap: .35rem;
+  padding: 2rem 1rem; border: 1px dashed var(--border-strong); border-radius: var(--radius);
+  background: var(--surface); text-align: center; }
+.wr-noembed strong { font-size: 1.1rem; }
+.wr-noembed p { color: var(--text-muted); margin: .25rem 0; }
+.wr-noembed small { color: var(--text-faint); }
+.wr-open { color: var(--primary); text-decoration: none; font-weight: 600; }
 
 .wr-list { display: flex; flex-direction: column; gap: .5rem; margin-top: 1rem; }
 .wr-card { display: flex; align-items: center; gap: .75rem; padding: .6rem .8rem;

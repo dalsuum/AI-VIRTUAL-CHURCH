@@ -57,7 +57,21 @@ class MusicRecommendationService
             ->sortByDesc('score')
             ->values();
 
-        $playlist = $this->pickWithDiversity($scored, $size);
+        // The requested language is a HARD preference: build the playlist from
+        // same-language tracks first and only top up with other languages when
+        // there aren't even $min of them. This stops a small catalog from
+        // padding (e.g.) a Burmese request with English songs.
+        $sameLang = $scored->filter(fn ($r) => $r['track']->language === $language)->values();
+        $others   = $scored->filter(fn ($r) => $r['track']->language !== $language)->values();
+
+        $playlist = $this->pickWithDiversity($sameLang, $size);
+
+        $min = $this->minSize();
+        if (count($playlist) < $min) {
+            foreach ($this->pickWithDiversity($others, $min - count($playlist)) as $track) {
+                $playlist[] = $track;
+            }
+        }
 
         return [
             'playlist' => $playlist,
@@ -96,38 +110,39 @@ class MusicRecommendationService
     }
 
     /**
-     * Take the top $size tracks while avoiding the same artist back-to-back.
-     * Falls back to filling from the remaining ranked pool when diversity can't
-     * be satisfied, so we never return fewer than available.
+     * Take up to $size tracks from a single (already score-sorted) pool,
+     * spreading artists so the same one doesn't play back-to-back when avoidable.
+     *
+     * Diversity is BEST-EFFORT and never drops a track or reaches outside this
+     * pool: if every remaining track shares the last artist (e.g. a catalog
+     * where one artist dominates a language), they are still returned in score
+     * order. This keeps same-language results from leaking into other languages.
      */
     private function pickWithDiversity($scored, int $size): array
     {
-        $picked  = [];
-        $deferred = [];
+        $remaining = $scored->all();   // ordered rows: ['track'=>, 'score'=>]
+        $picked     = [];
         $lastArtist = null;
 
-        foreach ($scored as $row) {
-            if (count($picked) >= $size) {
-                break;
+        while (count($picked) < $size && $remaining !== []) {
+            $idx = null;
+            // Prefer the highest-scored remaining track by a different artist.
+            foreach ($remaining as $i => $row) {
+                $artist = $this->lower((string) $row['track']->artist);
+                if ($artist === '' || $artist !== $lastArtist) {
+                    $idx = $i;
+                    break;
+                }
             }
-            $artist = $this->lower((string) $row['track']->artist);
-            if ($artist !== '' && $artist === $lastArtist) {
-                $deferred[] = $row;
-                continue;
+            // None differ — accept the top remaining track anyway.
+            if ($idx === null) {
+                $idx = array_key_first($remaining);
             }
-            $picked[]   = $row['track'];
-            $lastArtist = $artist;
-        }
 
-        // Backfill from deferred (and anything still unranked) to reach $size.
-        foreach (array_merge($deferred, $scored->slice(count($picked) + count($deferred))->all()) as $row) {
-            if (count($picked) >= $size) {
-                break;
-            }
-            $track = $row['track'];
-            if (! in_array($track->id, array_map(fn ($t) => $t->id, $picked), true)) {
-                $picked[] = $track;
-            }
+            $row = $remaining[$idx];
+            unset($remaining[$idx]);
+            $picked[]   = $row['track'];
+            $lastArtist = $this->lower((string) $row['track']->artist);
         }
 
         return $picked;
@@ -158,6 +173,12 @@ class MusicRecommendationService
         $size = $size ?? $max;
 
         return max($min, min($max, $size));
+    }
+
+    /** Admin-configured minimum playlist size (the cross-language fill floor). */
+    private function minSize(): int
+    {
+        return max(1, (int) Setting::get('music.min_playlist', 5));
     }
 
     private function lower(string $value): string

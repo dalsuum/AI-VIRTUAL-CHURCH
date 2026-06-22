@@ -130,8 +130,8 @@ function isActive(item) {
   .nav-page { display: none; }
   .nav-label-full { display: none; }
   .nav-label-short { display: inline; }
-  /* Logo-only brand to free up width for the nav + theme toggle. */
-  .brand-name { display: none; }
+  /* Page links now live in the bottom nav, so the freed width lets the
+     brand wordmark stay beside the hamburger + logo. */
   .topbar { gap: 0.5rem; padding: 0.7rem 0.85rem; }
   /* Keep the nav from squeezing the theme toggle off-screen: let it scroll. */
   .topbar-right { gap: 0.5rem; min-width: 0; }

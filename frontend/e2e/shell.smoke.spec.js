@@ -16,6 +16,9 @@ test.describe("global layout shell", () => {
   for (const hash of ROUTES) {
     test(`route "${hash || "/"}" renders exactly one header and one footer`, async ({ page }) => {
       await goto(page, hash);
+      // Exactly one shell — guards against a nested AppLayout regression
+      // (a page reintroducing global chrome inside the route content).
+      await expect(page.locator('[data-layout="app"]')).toHaveCount(1);
       await expect(page.locator("header.topbar")).toHaveCount(1);
       await expect(page.locator("footer.site-footer")).toHaveCount(1);
       // The single <main> shell wraps the route content.

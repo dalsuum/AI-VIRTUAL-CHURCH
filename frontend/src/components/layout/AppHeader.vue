@@ -14,20 +14,20 @@ const props = defineProps({
   stickersEnabled: { type: Boolean, default: false },
 });
 
-defineEmits(["logout"]);
+defineEmits(["logout", "toggle-journey"]);
 
 // Single source of truth for the primary nav. `show` gates visibility,
 // `prefix` matches sub-routes (e.g. #pastor?session=…), `responsive` renders a
 // full/short label pair that collapses to the short form (or icon) on phones.
 const navItems = computed(() =>
   [
-    { href: "#lyrics", label: "🎵 သီချင်း" },
     { href: "#bible", label: "📖 Bible" },
     { href: "#bible-study", label: "💬 Bible Study" },
-    { href: "#worship", label: "🎶 Worship" },
     { href: "#pastor", label: "💬 Pastor", prefix: true },
-    { href: "#journey", label: "📊 Journey", prefix: true, show: props.isAuthed },
+    { href: "#worship", label: "🎶 Worship" },
+    { href: "#lyrics", label: "🎵 သီချင်း" },
     { href: "#vocabulary", label: "📖 Vocabulary" },
+    { href: "#journey", label: "📊 Journey", prefix: true, show: props.isAuthed },
     {
       href: "#fathers-day", icon: "💙", labelFull: props.fdTitle, labelShort: "MV",
       responsive: true, show: props.fathersDayEnabled,
@@ -50,6 +50,13 @@ function isActive(item) {
 
 <template>
   <header class="topbar">
+    <button
+      v-if="isAuthed"
+      class="hamburger"
+      type="button"
+      aria-label="Toggle My Journey"
+      @click="$emit('toggle-journey')"
+    >☰</button>
     <a class="brand" href="#">
       <span class="brand-mark" aria-hidden="true">✝</span>
       <span class="brand-name">AI Virtual Church</span>
@@ -60,7 +67,7 @@ function isActive(item) {
           v-for="item in navItems"
           :key="item.href"
           :href="item.href"
-          class="nav-link"
+          class="nav-link nav-page"
           :class="{ active: isActive(item) }"
         >
           <template v-if="item.responsive">
@@ -96,6 +103,13 @@ function isActive(item) {
   backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--border);
 }
+.hamburger {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; flex: 0 0 auto;
+  background: none; border: 1px solid var(--border); border-radius: 8px;
+  color: var(--text); font-size: 1.05rem; line-height: 1; cursor: pointer;
+}
+.hamburger:hover { color: var(--primary); border-color: var(--primary); }
 .topbar-right { display: flex; align-items: center; gap: 0.75rem; }
 .topbar-nav { display: flex; align-items: center; gap: 0.25rem; }
 .nav-link {
@@ -111,6 +125,9 @@ function isActive(item) {
 .nav-link.active { color: var(--primary); background: var(--primary-soft); border-color: var(--primary); font-weight: 600; }
 .nav-label-short { display: none; }
 @media (max-width: 640px) {
+  /* Mobile shell uses the bottom nav for page navigation, so the header only
+     keeps identity controls (Login / Register / Logout). Hide the page links. */
+  .nav-page { display: none; }
   .nav-label-full { display: none; }
   .nav-label-short { display: inline; }
   /* Logo-only brand to free up width for the nav + theme toggle. */

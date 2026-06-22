@@ -161,6 +161,8 @@ async function playCurrent() {
           if (e.data === window.YT.PlayerState.PLAYING) playing.value = true;
           if (e.data === window.YT.PlayerState.PAUSED) playing.value = false;
         },
+        // Dead/unavailable/embedding-disabled video → don't get stuck, skip on.
+        onError: () => playNext(),
       },
     });
   } else {

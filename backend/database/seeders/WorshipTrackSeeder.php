@@ -28,8 +28,9 @@ class WorshipTrackSeeder extends Seeder
 
     private function tracks(): array
     {
-        $yt = fn (string $id) => "https://www.youtube.com/watch?v={$id}";
-
+        // Links are NOT hand-seeded (guessed ids break with "Video unavailable").
+        // Populate real, embeddable, content-filtered links with:
+        //   php artisan worship:backfill-links --all
         return [
             // ── English ──────────────────────────────────────────────────────
             [
@@ -37,7 +38,7 @@ class WorshipTrackSeeder extends Seeder
                 'genre' => 'worship', 'duration' => 600,
                 'themes' => ['peace', 'trust', 'comfort', 'faith'],
                 'moods' => ['anxiety', 'peace', 'sad'],
-                'scriptures' => ['Isaiah 26:3'], 'youtube_url' => $yt('Rsd7y3CrAk0'),
+                'scriptures' => ['Isaiah 26:3'],
                 'popularity' => 90, 'lyrics_available' => true,
             ],
             [
@@ -45,7 +46,7 @@ class WorshipTrackSeeder extends Seeder
                 'genre' => 'worship', 'duration' => 420,
                 'themes' => ['faith', 'hope', 'promise', 'presence'],
                 'moods' => ['hopeful', 'seeking', 'need prayer'],
-                'scriptures' => ['Isaiah 43:19'], 'youtube_url' => $yt('iJCV_2H9xD0'),
+                'scriptures' => ['Isaiah 43:19'],
                 'popularity' => 95, 'lyrics_available' => true,
             ],
             [
@@ -53,7 +54,7 @@ class WorshipTrackSeeder extends Seeder
                 'genre' => 'worship', 'duration' => 300,
                 'themes' => ['gratitude', 'thanksgiving', 'faithfulness', 'praise'],
                 'moods' => ['thankful', 'grateful', 'happy'],
-                'scriptures' => ['Psalm 23:6'], 'youtube_url' => $yt('n0FBb6hnwTo'),
+                'scriptures' => ['Psalm 23:6'],
                 'popularity' => 88, 'lyrics_available' => true,
             ],
             [
@@ -61,7 +62,7 @@ class WorshipTrackSeeder extends Seeder
                 'genre' => 'worship', 'duration' => 340,
                 'themes' => ['love', 'identity', 'grace', 'restoration'],
                 'moods' => ['depression', 'broken heart', 'lonely'],
-                'scriptures' => ['Luke 15:4'], 'youtube_url' => $yt('Sc6SSHuZvQE'),
+                'scriptures' => ['Luke 15:4'],
                 'popularity' => 80, 'lyrics_available' => true,
             ],
             [
@@ -69,7 +70,7 @@ class WorshipTrackSeeder extends Seeder
                 'genre' => 'worship', 'duration' => 360,
                 'themes' => ['peace', 'rest', 'trust', 'fear'],
                 'moods' => ['anxiety', 'tired', 'peace'],
-                'scriptures' => ['Mark 4:39'], 'youtube_url' => $yt('5OmHd9h_Oag'),
+                'scriptures' => ['Mark 4:39'],
                 'popularity' => 70, 'lyrics_available' => true,
             ],
             [
@@ -77,7 +78,7 @@ class WorshipTrackSeeder extends Seeder
                 'genre' => 'worship', 'duration' => 380,
                 'themes' => ['praise', 'faith', 'fire', 'surrender'],
                 'moods' => ['revival', 'happy', 'hopeful'],
-                'scriptures' => ['2 Chronicles 20:22'], 'youtube_url' => $yt('NhB3aAQuvIs'),
+                'scriptures' => ['2 Chronicles 20:22'],
                 'popularity' => 82, 'lyrics_available' => true,
             ],
             [
@@ -85,7 +86,7 @@ class WorshipTrackSeeder extends Seeder
                 'genre' => 'worship', 'duration' => 320,
                 'themes' => ['praise', 'gratitude', 'breath', 'thanksgiving'],
                 'moods' => ['thankful', 'grateful', 'joyful'],
-                'scriptures' => ['Psalm 145:3'], 'youtube_url' => $yt('uYpDodPDmsc'),
+                'scriptures' => ['Psalm 145:3'],
                 'popularity' => 75, 'lyrics_available' => true,
             ],
             [
@@ -93,7 +94,7 @@ class WorshipTrackSeeder extends Seeder
                 'genre' => 'worship', 'duration' => 290,
                 'themes' => ['forgiveness', 'grace', 'mercy', 'surrender'],
                 'moods' => ['repentance', 'need prayer', 'seeking'],
-                'scriptures' => ['Psalm 51:10'], 'youtube_url' => $yt('jcVl0XYj_Vc'),
+                'scriptures' => ['Psalm 51:10'],
                 'popularity' => 72, 'lyrics_available' => true,
             ],
 

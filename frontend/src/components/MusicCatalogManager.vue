@@ -33,6 +33,9 @@ const editing = ref(false);
 
 const settings = ref({ min_playlist: 5, max_playlist: 10, mood_dictionary: "" });
 
+// YouTube search (content-filtered, reuses the sermon blocklist).
+const yt = ref({ open: false, query: "", loading: false, results: [], error: "" });
+
 onMounted(() => { load(); loadSettings(); });
 
 async function load() {
@@ -106,6 +109,30 @@ async function save() {
   } catch (e) {
     error.value = e?.message || "Save failed (check the URLs are http/https).";
   }
+}
+
+async function ytSearch() {
+  const q = (yt.value.query || `${form.value.title} ${form.value.artist}`).trim();
+  if (!q) { yt.value.error = "Enter a search term."; return; }
+  yt.value.loading = true; yt.value.error = ""; yt.value.results = [];
+  try {
+    const res = await api.worshipYoutubeSearch(q);
+    yt.value.results = res.results || [];
+    if (!yt.value.results.length) yt.value.error = "No clean results — try another search.";
+  } catch (e) {
+    yt.value.error = e?.message || "YouTube search unavailable (is YOUTUBE_API_KEY set?).";
+  } finally {
+    yt.value.loading = false;
+  }
+}
+function ytAttach(r) {
+  form.value.youtube_url = r.url;
+  if (!form.value.cover_image && r.thumbnail) form.value.cover_image = r.thumbnail;
+  yt.value.open = false;
+}
+function ytOpen() {
+  yt.value.open = true; yt.value.error = ""; yt.value.results = [];
+  yt.value.query = `${form.value.title} ${form.value.artist}`.trim();
 }
 
 async function remove(t) {
@@ -184,8 +211,34 @@ async function saveSettings() {
         <label>Scriptures <input v-model="form.scriptures" placeholder="Isaiah 26:3" /></label>
       </div>
       <div class="row">
-        <label>YouTube URL <input v-model="form.youtube_url" type="url" /></label>
+        <label>YouTube URL
+          <span class="yt-field">
+            <input v-model="form.youtube_url" type="url" />
+            <button class="btn" type="button" @click="ytOpen">🔎 Find</button>
+          </span>
+        </label>
         <label>Spotify URL <input v-model="form.spotify_url" type="url" /></label>
+      </div>
+
+      <!-- Content-filtered YouTube search (reuses the sermon blocklist). -->
+      <div v-if="yt.open" class="yt-search">
+        <div class="yt-bar">
+          <input v-model="yt.query" placeholder="Search worship songs on YouTube"
+            @keyup.enter.prevent="ytSearch" />
+          <button class="btn primary" type="button" :disabled="yt.loading" @click="ytSearch">
+            {{ yt.loading ? "Searching…" : "Search" }}
+          </button>
+          <button class="btn" type="button" @click="yt.open = false">Close</button>
+        </div>
+        <p v-if="yt.error" class="msg err">{{ yt.error }}</p>
+        <p class="hint">Results are screened through the same content filter sermons use.</p>
+        <ul class="yt-results">
+          <li v-for="r in yt.results" :key="r.video_id">
+            <img v-if="r.thumbnail" :src="r.thumbnail" alt="" />
+            <span class="yt-meta"><strong>{{ r.title }}</strong><small>{{ r.channel }}</small></span>
+            <button class="btn primary" type="button" @click="ytAttach(r)">Use</button>
+          </li>
+        </ul>
       </div>
       <div class="row">
         <label>Apple Music URL <input v-model="form.apple_music_url" type="url" /></label>
@@ -254,6 +307,19 @@ input, select, textarea { padding: .45rem .6rem; border: 1px solid var(--border)
 .btn { padding: .45rem .9rem; border: 1px solid var(--border); border-radius: var(--radius-sm);
   background: var(--surface); color: var(--text); cursor: pointer; }
 .btn.primary { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
+
+.yt-field { display: flex; gap: .4rem; }
+.yt-field input { flex: 1; }
+.yt-search { border: 1px solid var(--primary); border-radius: var(--radius); padding: .8rem; background: var(--surface); }
+.yt-bar { display: flex; gap: .5rem; }
+.yt-bar input { flex: 1; }
+.yt-results { list-style: none; margin: .5rem 0 0; padding: 0; display: flex; flex-direction: column; gap: .4rem; }
+.yt-results li { display: flex; align-items: center; gap: .6rem; padding: .4rem; border: 1px solid var(--border);
+  border-radius: var(--radius-sm); }
+.yt-results img { width: 80px; height: 45px; object-fit: cover; border-radius: var(--radius-sm); }
+.yt-meta { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.yt-meta strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.yt-meta small { color: var(--text-muted); }
 
 .grid { width: 100%; border-collapse: collapse; }
 .grid th, .grid td { text-align: left; padding: .5rem .6rem; border-bottom: 1px solid var(--border); font-size: .9rem; }

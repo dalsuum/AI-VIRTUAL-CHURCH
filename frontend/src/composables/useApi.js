@@ -231,6 +231,8 @@ export const api = {
 
   // ── AI Worship Radio (admin / Music tab) ─────────────────────────────────
   worshipTracks: (params = "") => request(`/admin/worship-tracks${params}`),
+  worshipYoutubeSearch: (q) =>
+    request(`/admin/worship-tracks/youtube-search?q=${encodeURIComponent(q)}`),
   worshipTrackCreate: (payload) =>
     request("/admin/worship-tracks", { method: "POST", body: payload }),
   worshipTrackUpdate: (id, payload) =>

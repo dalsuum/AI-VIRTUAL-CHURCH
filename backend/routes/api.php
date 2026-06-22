@@ -197,6 +197,7 @@ Route::middleware('auth:sanctum')->group(function () {
         // Worship Radio catalog CRUD + settings — each enforces `music.manage`.
         Route::get('/music-settings',    [\App\Http\Controllers\WorshipTrackAdminController::class, 'settings']);
         Route::patch('/music-settings',  [\App\Http\Controllers\WorshipTrackAdminController::class, 'updateSettings']);
+        Route::get('/worship-tracks/youtube-search',  [\App\Http\Controllers\WorshipTrackAdminController::class, 'youtubeSearch']);
         Route::get('/worship-tracks',                 [\App\Http\Controllers\WorshipTrackAdminController::class, 'index']);
         Route::post('/worship-tracks',                [\App\Http\Controllers\WorshipTrackAdminController::class, 'store']);
         Route::get('/worship-tracks/{worshipTrack}',  [\App\Http\Controllers\WorshipTrackAdminController::class, 'show']);

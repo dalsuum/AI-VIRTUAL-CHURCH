@@ -6,6 +6,7 @@ use App\Models\Setting;
 use App\Models\WorshipTrack;
 use App\Services\MusicRecommendationService;
 use App\Services\PermissionService;
+use App\Services\YoutubeSongSearchService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -74,6 +75,26 @@ class WorshipTrackAdminController extends Controller
         $worshipTrack->delete();
 
         return response()->json(['ok' => true]);
+    }
+
+    /**
+     * Search YouTube for embeddable worship uploads, screened through the same
+     * content filter the sermon pipeline uses. Returns clean candidates the
+     * admin can attach to a track.
+     */
+    public function youtubeSearch(Request $request, YoutubeSongSearchService $yt): JsonResponse
+    {
+        PermissionService::require($request->user(), 'music.manage');
+
+        $data = $request->validate([
+            'q' => ['required', 'string', 'max:200'],
+        ]);
+
+        if (! $yt->isConfigured()) {
+            return response()->json(['ok' => false, 'message' => 'YouTube search is not configured (set YOUTUBE_API_KEY).'], 503);
+        }
+
+        return response()->json(['ok' => true, 'results' => $yt->search($data['q'])]);
     }
 
     /** Read the playlist-size + mood-dictionary settings. */

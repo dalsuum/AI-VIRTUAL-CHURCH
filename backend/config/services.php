@@ -51,4 +51,14 @@ return [
         'currency'       => env('STRIPE_CURRENCY', 'USD'),
     ],
 
+    /*
+     * YouTube Data API v3 — used by the Worship Radio admin tool to search for
+     * official worship-song uploads and attach embeddable links to catalog
+     * tracks. Reuses the same key the workers use; set YOUTUBE_API_KEY in the
+     * backend .env too (it currently only lives in workers/.env).
+     */
+    'youtube' => [
+        'key' => env('YOUTUBE_API_KEY'),
+    ],
+
 ];

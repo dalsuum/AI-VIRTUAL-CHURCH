@@ -5,6 +5,7 @@ use App\Http\Controllers\AdminController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\BibleController;
 use App\Http\Controllers\ConfigController;
+use App\Http\Controllers\MusicController;
 use App\Http\Controllers\OfferingController;
 use App\Http\Controllers\ServiceController;
 use App\Http\Controllers\SongController;
@@ -25,6 +26,10 @@ Route::get('/config', [ConfigController::class, 'show']);
 
 // Public worship song library — feeds the front song panel (my/td).
 Route::get('/songs', [SongController::class, 'index']);
+
+// AI Worship Radio — public mood-based recommendations (#worship page).
+Route::get('/music/moods', [MusicController::class, 'moods'])->middleware('throttle:120,1');
+Route::post('/music/recommend', [MusicController::class, 'recommend'])->middleware('throttle:30,1');
 
 // Public Zolai ↔ Burmese ↔ English vocabulary reference (#vocabulary page).
 Route::get('/vocabulary', [VocabularyController::class, 'index']);
@@ -188,6 +193,15 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/permissions',  [AdminController::class, 'getPermissions']);
         Route::get('/grammar-review',  [AdminController::class, 'grammarReview']);
         Route::post('/grammar-review', [AdminController::class, 'grammarReviewSave']);
+
+        // Worship Radio catalog CRUD + settings — each enforces `music.manage`.
+        Route::get('/music-settings',    [\App\Http\Controllers\WorshipTrackAdminController::class, 'settings']);
+        Route::patch('/music-settings',  [\App\Http\Controllers\WorshipTrackAdminController::class, 'updateSettings']);
+        Route::get('/worship-tracks',                 [\App\Http\Controllers\WorshipTrackAdminController::class, 'index']);
+        Route::post('/worship-tracks',                [\App\Http\Controllers\WorshipTrackAdminController::class, 'store']);
+        Route::get('/worship-tracks/{worshipTrack}',  [\App\Http\Controllers\WorshipTrackAdminController::class, 'show']);
+        Route::patch('/worship-tracks/{worshipTrack}',[\App\Http\Controllers\WorshipTrackAdminController::class, 'update']);
+        Route::delete('/worship-tracks/{worshipTrack}',[\App\Http\Controllers\WorshipTrackAdminController::class, 'destroy']);
 
         // Song library CRUD — each method enforces the `lyrics.manage` permission.
         Route::post('/songs/import',   [SongController::class, 'import']);

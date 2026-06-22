@@ -394,6 +394,34 @@ Doors open the instant all required steps check off — no fixed countdown to dr
 
 ---
 
+## AI Worship Radio (mood-based worship companion)
+
+A worship-music companion reached at `#worship`. A worshipper states a mood — either a
+chip (😰 Anxiety, 💔 Broken Heart, 🔥 Revival, 🙏 Need Prayer, …) or free text
+("I feel lonely and tired") — and a language (English / Burmese / Zolai). The app builds a
+mood-matched playlist, explains *why* it chose those songs, and **plays continuously** until
+the worshipper presses Stop, fetching a fresh batch (with no recent repeats) each time the
+queue runs low.
+
+**Phase 1 (shipped).** Deterministic, no-LLM recommendation engine:
+
+| Piece | Role |
+| --- | --- |
+| `worship_tracks` table / `WorshipTrack` model | Metadata-only catalog (title, artist, language, themes/moods/scriptures JSON, official YouTube/Spotify/Apple links, popularity). **No hosted audio** — copyright-safe. |
+| `MoodExpansionService` | Expands a mood/chip/free-text into spiritual theme tags via a built-in dictionary + optional admin JSON override (`music.mood_dictionary`). |
+| `MusicRecommendationService` | The "Music Recommendation Agent". Weighted scoring — **language 40 / mood 30 / theme 20 / popularity 10** — with recent-50 no-repeat exclusion, artist diversity, and a 5–10 song clamp (`music.min_playlist` / `music.max_playlist`). |
+| `MusicController` | Public `GET /api/music/moods` + `POST /api/music/recommend` (throttled, no auth). |
+| `WorshipTrackAdminController` | `music.manage`-gated CRUD + playlist settings; http(s)-only URL validation. |
+| `WorshipRadio.vue` | `#worship` page: mood selector, language picker, AI-reason banner, song cards, YouTube IFrame player with auto-advance + continuous autoplay. |
+| `MusicCatalogManager.vue` | Admin **Worship Radio** tab: catalog CRUD + playlist settings. |
+
+Seed a demo catalog (en/my/td) with
+`php artisan db:seed --class="Database\Seeders\WorshipTrackSeeder"`.
+
+**Deferred to Phase 2:** feedback/learning loop, saved & shared playlists, per-user
+personalization, multi-provider streaming fallback, AI-pastor→worship handoff, and
+devotional/sleep/24-7 radio modes. The schema is forward-compatible with these.
+
 ## AI Bible Study (multi-agent discussion)
 
 A live, multi-pastor Bible discussion built on a reusable **AI Core platform** so future

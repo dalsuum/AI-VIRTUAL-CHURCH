@@ -9,6 +9,7 @@ import VoiceStudio from "./VoiceStudio.vue";
 import PermissionsMatrix from "./PermissionsMatrix.vue";
 import AdsManager from "./AdsManager.vue";
 import AdminLyricsManager from "./AdminLyricsManager.vue";
+import MusicCatalogManager from "./MusicCatalogManager.vue";
 import VocabularyManager from "./VocabularyManager.vue";
 import SpecialSundaysManager from "./SpecialSundaysManager.vue";
 import FathersDayManager from "./FathersDayManager.vue";
@@ -46,6 +47,7 @@ const TABS = [
   { name: "bible",          label: "Bible",            can: () => can("settings.view"),        load: loadSettings },
   { name: "content-filter", label: "Content Filter",   can: () => isAdminUser.value,           load: loadContentFilter },
   { name: "music-pool",     label: "AI Music Pool",    can: () => can("music_pool.view"),      load: loadMusicTracks },
+  { name: "worship-radio",  label: "Worship Radio",    can: () => can("music.manage"),         load: null },
   { name: "voice-studio",   label: "Voice Studio",     can: () => can("voice_studio.view"),    load: null },
   { name: "voice-training", label: "Voice Training",   can: () => can("voice_training.view"),  load: () => { loadVoiceTrainingStatus(); scheduleVoiceTrainingPoll(); } },
   { name: "ads",            label: "Ads",              can: () => can("ads.view"),             load: null },
@@ -1771,6 +1773,11 @@ onUnmounted(() => {
       <!-- Lyrics Manager -->
       <section v-else-if="tab === 'lyrics' && can('lyrics.manage')">
         <AdminLyricsManager />
+      </section>
+
+      <!-- Worship Radio catalog -->
+      <section v-else-if="tab === 'worship-radio' && can('music.manage')">
+        <MusicCatalogManager />
       </section>
 
       <!-- Vocabulary Manager -->

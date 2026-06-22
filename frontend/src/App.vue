@@ -12,6 +12,7 @@ import FathersDay from "./components/FathersDay.vue";
 import LiveSticker from "./components/LiveSticker.vue";
 import BibleReader from "./components/BibleReader.vue";
 import BibleStudy from "./components/BibleStudy.vue";
+import WorshipRadio from "./components/WorshipRadio.vue";
 import AuthPanel from "./components/AuthPanel.vue";
 import AccountSettings from "./components/AccountSettings.vue";
 import { api } from "./composables/useApi";
@@ -22,6 +23,7 @@ const isVocabRoute  = ref(window.location.hash === "#vocabulary");
 const isLyricsRoute = ref(window.location.hash === "#lyrics");
 const isBibleRoute  = ref(window.location.hash === "#bible");
 const isStudyRoute  = ref(window.location.hash === "#bible-study");
+const isWorshipRoute = ref(window.location.hash === "#worship");
 // Account + auth entry points (hash-routed like the rest of the app).
 const isLoginRoute    = ref(window.location.hash === "#login");
 const isRegisterRoute = ref(window.location.hash === "#register");
@@ -51,6 +53,7 @@ window.addEventListener("hashchange", () => {
   isLyricsRoute.value = window.location.hash === "#lyrics";
   isBibleRoute.value  = window.location.hash === "#bible";
   isStudyRoute.value  = window.location.hash === "#bible-study";
+  isWorshipRoute.value = window.location.hash === "#worship";
   isFathersDayRoute.value = window.location.hash === "#fathers-day";
   isStickerRoute.value = window.location.hash === "#stickers";
   isLoginRoute.value    = window.location.hash === "#login";
@@ -341,6 +344,7 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
   <LiveSticker v-else-if="isStickerRoute" />
   <BibleReader v-else-if="isBibleRoute" />
   <BibleStudy v-else-if="isStudyRoute" />
+  <WorshipRadio v-else-if="isWorshipRoute" />
 
   <div v-else class="page">
     <header class="topbar">
@@ -353,6 +357,7 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
           <a href="#lyrics" class="nav-link" :class="{ active: isLyricsRoute }">🎵 သီချင်း</a>
           <a href="#bible" class="nav-link" :class="{ active: isBibleRoute }">📖 Bible</a>
           <a href="#bible-study" class="nav-link" :class="{ active: isStudyRoute }">💬 Bible Study</a>
+          <a href="#worship" class="nav-link" :class="{ active: isWorshipRoute }">🎶 Worship</a>
           <a href="#vocabulary" class="nav-link" :class="{ active: isVocabRoute }">📖 Vocabulary</a>
           <a v-if="fathersDayEnabled" href="#fathers-day" class="nav-link" :class="{ active: isFathersDayRoute }">💙 <span class="nav-label-full">{{ fdTitle }}</span><span class="nav-label-short">MV</span></a>
           <a v-if="stickersEnabled" href="#stickers" class="nav-link" :class="{ active: isStickerRoute }">🎨 Stickers</a>

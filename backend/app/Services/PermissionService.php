@@ -31,6 +31,8 @@ class PermissionService
         'settings.view',
         'music_pool.view',
         'lyrics.manage',
+        // AI Worship Radio recommendation catalog + settings.
+        'music.manage',
         'vocabulary.manage',
         'voice_training.view',
         'permissions.view',

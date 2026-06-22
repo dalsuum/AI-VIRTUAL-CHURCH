@@ -224,6 +224,23 @@ export const api = {
   studyEmail: (id, email) =>
     request(`/v1/study/sessions/${id}/email`, { method: "POST", body: email ? { email } : {} }),
 
+  // ── AI Worship Radio (worshipper) ────────────────────────────────────────
+  musicMoods: () => request("/music/moods"),
+  musicRecommend: (payload) =>
+    request("/music/recommend", { method: "POST", body: payload }),
+
+  // ── AI Worship Radio (admin / Music tab) ─────────────────────────────────
+  worshipTracks: (params = "") => request(`/admin/worship-tracks${params}`),
+  worshipTrackCreate: (payload) =>
+    request("/admin/worship-tracks", { method: "POST", body: payload }),
+  worshipTrackUpdate: (id, payload) =>
+    request(`/admin/worship-tracks/${id}`, { method: "PATCH", body: payload }),
+  worshipTrackDelete: (id) =>
+    request(`/admin/worship-tracks/${id}`, { method: "DELETE" }),
+  musicSettings: () => request("/admin/music-settings"),
+  musicSettingsSave: (payload) =>
+    request("/admin/music-settings", { method: "PATCH", body: payload }),
+
   // ── AI Bible Study (admin / AI Core console) ─────────────────────────────
   studyAdminPersonas: () => request("/v1/admin/study/personas"),
   studyAdminCreatePersona: (payload) =>

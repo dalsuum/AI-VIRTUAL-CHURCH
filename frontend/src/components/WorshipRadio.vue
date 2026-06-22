@@ -110,13 +110,28 @@ async function start() {
   }
 }
 
-/** Fetch another playlist (excluding recently played) and append it. */
+/**
+ * Fetch another batch in the SAME language and append it. The server only ever
+ * returns same-language tracks, so when a small catalogue is exhausted the
+ * excluded request comes back empty — at that point we recycle (clear the
+ * no-repeat window except the current song) so the radio loops within the
+ * chosen language instead of stopping or pulling another language.
+ */
 async function refill() {
   try {
-    const res = await api.musicRecommend(payload({ exclude: recentIds.slice(-RECENT_CAP) }));
-    const fresh = (res.playlist || []).filter(
+    let res = await api.musicRecommend(payload({ exclude: recentIds.slice(-RECENT_CAP) }));
+    let fresh = (res.playlist || []).filter(
       (t) => !recentIds.includes(t.id) && !queue.value.some((q) => q.id === t.id),
     );
+
+    if (fresh.length === 0) {
+      // Catalogue for this language is exhausted — recycle to keep looping.
+      recentIds.length = 0;
+      if (current.value) recentIds.push(current.value.id);
+      res = await api.musicRecommend(payload({ exclude: current.value ? [current.value.id] : [] }));
+      fresh = (res.playlist || []).filter((t) => !queue.value.some((q) => q.id === t.id));
+    }
+
     queue.value.push(...fresh);
   } catch { /* keep playing what we have */ }
 }

@@ -57,21 +57,14 @@ class MusicRecommendationService
             ->sortByDesc('score')
             ->values();
 
-        // The requested language is a HARD preference: build the playlist from
-        // same-language tracks first and only top up with other languages when
-        // there aren't even $min of them. This stops a small catalog from
-        // padding (e.g.) a Burmese request with English songs.
+        // Language is a HARD filter: a worshipper who chose English must only
+        // ever hear English worship — never a Burmese/Zolai track mixed in,
+        // even once the same-language catalogue runs low. We therefore return
+        // ONLY same-language tracks (possibly fewer than $size); the client
+        // loops/recycles within the language when it exhausts the catalogue.
         $sameLang = $scored->filter(fn ($r) => $r['track']->language === $language)->values();
-        $others   = $scored->filter(fn ($r) => $r['track']->language !== $language)->values();
 
         $playlist = $this->pickWithDiversity($sameLang, $size);
-
-        $min = $this->minSize();
-        if (count($playlist) < $min) {
-            foreach ($this->pickWithDiversity($others, $min - count($playlist)) as $track) {
-                $playlist[] = $track;
-            }
-        }
 
         return [
             'playlist' => $playlist,
@@ -173,12 +166,6 @@ class MusicRecommendationService
         $size = $size ?? $max;
 
         return max($min, min($max, $size));
-    }
-
-    /** Admin-configured minimum playlist size (the cross-language fill floor). */
-    private function minSize(): int
-    {
-        return max(1, (int) Setting::get('music.min_playlist', 5));
     }
 
     private function lower(string $value): string

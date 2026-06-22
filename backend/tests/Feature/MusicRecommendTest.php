@@ -71,10 +71,12 @@ class MusicRecommendTest extends TestCase
         $this->assertSame(['my'], array_values(array_unique($langs)));
     }
 
-    public function test_cross_language_fills_only_below_minimum(): void
+    public function test_language_is_a_hard_filter_never_cross_fills(): void
     {
-        // Only 2 Zolai tracks exist (< min 5): the playlist tops up to the min
-        // with other languages rather than returning a too-short list.
+        // Only 2 Zolai tracks exist and plenty of English: a Zolai request must
+        // return ONLY those 2 Zolai tracks — never pad with English, even though
+        // that leaves the playlist below the usual minimum. (The client loops
+        // within the language instead.)
         WorshipTrack::create(['title' => 'td one', 'language' => 'td', 'moods' => ['anxiety'], 'active' => true]);
         WorshipTrack::create(['title' => 'td two', 'language' => 'td', 'moods' => ['anxiety'], 'active' => true]);
         foreach (range(1, 6) as $i) {
@@ -83,9 +85,25 @@ class MusicRecommendTest extends TestCase
 
         $playlist = $this->postJson('/api/music/recommend', ['language' => 'td', 'mood' => 'Anxiety'])->json('playlist');
 
-        $this->assertCount(5, $playlist);
-        $this->assertSame('td', $playlist[0]['language'], 'same-language tracks rank first');
-        $this->assertSame(2, count(array_filter($playlist, fn ($t) => $t['language'] === 'td')));
+        $this->assertCount(2, $playlist);
+        $this->assertSame(['td'], array_values(array_unique(array_column($playlist, 'language'))));
+    }
+
+    public function test_continuation_excluding_all_same_language_returns_empty_not_other_language(): void
+    {
+        // Simulate the "kept pressing Next" case: exclude every English id. The
+        // server must NOT substitute Burmese/Zolai — it returns an empty list and
+        // the client recycles within English.
+        $this->seedCatalog();
+        $allEnglish = WorshipTrack::where('language', 'en')->pluck('id')->all();
+
+        $playlist = $this->postJson('/api/music/recommend', [
+            'language' => 'en',
+            'mood'     => 'Anxiety',
+            'exclude'  => $allEnglish,
+        ])->json('playlist');
+
+        $this->assertSame([], $playlist, 'no other-language tracks leak in when English is exhausted');
     }
 
     public function test_exclude_ids_are_not_returned(): void

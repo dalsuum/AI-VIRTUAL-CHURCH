@@ -13,4 +13,10 @@ return [
     // granted the member package immediately; when true they must verify by email like
     // a self-service registrant.
     'admin_requires_verification' => (bool) env('ADMIN_USERS_REQUIRE_VERIFICATION', false),
+
+    // Where the SPA lives. The API (APP_URL) and the SPA are on different hosts
+    // (api.aivirtual.church vs aivirtual.church), so user-facing links — like the
+    // "Continue to Login" button on the activation result page — must target the
+    // frontend, not the API domain. Falls back to APP_URL for single-host deploys.
+    'frontend_url' => env('FRONTEND_URL', env('APP_URL')),
 ];

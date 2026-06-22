@@ -16,7 +16,7 @@ class ActivationController extends Controller
 {
     public function activate(Request $request, AccountActivationService $activation): View
     {
-        $loginUrl = rtrim((string) config('app.url'), '/') . '/#login';
+        $loginUrl = rtrim((string) config('account.frontend_url'), '/') . '/#login';
         $token    = (string) $request->query('token', '');
 
         // Activation tokens are exactly 64 chars (Str::random(64)). Reject anything else

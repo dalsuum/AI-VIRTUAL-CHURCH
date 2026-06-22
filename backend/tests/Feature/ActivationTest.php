@@ -43,6 +43,19 @@ class ActivationTest extends TestCase
         ]);
     }
 
+    public function test_continue_to_login_targets_the_frontend_not_the_api(): void
+    {
+        // The SPA and API are on different hosts; the result page must link to the SPA.
+        config(['account.frontend_url' => 'https://app.example.test']);
+
+        $user  = $this->pendingUser();
+        $token = app(AccountActivationService::class)->issueToken($user);
+
+        $this->get('/activate?token=' . $token)
+            ->assertOk()
+            ->assertSee('https://app.example.test/#login');
+    }
+
     public function test_invalid_token_is_rejected(): void
     {
         $result = app(AccountActivationService::class)->activate(str_repeat('z', 64));

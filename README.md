@@ -1000,6 +1000,40 @@ hashes of three signals — IP, a browser fingerprint, and a long-lived `guest_i
 [`GuestUsageService`](backend/app/Services/GuestUsageService.php)). Enforced by the
 `guest.limit:{service}` middleware; members/premium fall through to `tokens:{service}`.
 
+#### Charge-before-enrichment execution order
+
+Every AI service endpoint (worship `intake`, Bible `study`, Pastor chat) follows one
+ordering rule: **the quota/usage write is the first irreversible side-effect, and all
+best-effort enrichment runs after it, isolated.** Concretely, in
+[`ServiceController::intake`](backend/app/Http/Controllers/ServiceController.php) and
+[`StudyController`](backend/app/Http/Controllers/StudyController.php):
+
+1. **Hard path** (any failure aborts the request): validate → crisis check → persist
+   intake → **charge/record quota** → execute the primary action (dispatch the pipeline).
+2. **Soft path** (best-effort, never affects the response or billing): the unified
+   **history mirror** (`*_session_meta` + `chat_sessions`) is wrapped in `try/catch` and
+   only logs on failure.
+
+This order exists because the inverse once shipped a real bug: the history mirror sat
+*ahead* of the quota write, so when its tables were missing every `intake` threw before
+recording usage — leaving `guest_tracking` empty and letting guests reuse a service after
+a refresh instead of getting `402 guest_limit`. **An enrichment failure must never skip
+the quota write or break the user response.** See the "Degrade, never block" philosophy
+above — quota/billing is the one exception that must complete *before* enrichment, not
+after.
+
+#### Concurrency guarantees
+
+Guest usage is recorded under a row lock: `GuestUsageService::record()` wraps its
+read-modify-write of the `services_used` JSON map in `DB::transaction()` +
+`lockForUpdate()`, so two requests from the same visitor firing at once (e.g. study +
+service) serialize instead of clobbering each other's keys. The unique
+`(ip_hash, fingerprint_hash)` index is the database-level backstop against duplicate
+rows; the insert race is caught and merged into the winning row rather than 500ing.
+`chargeService()` is idempotent — the member token spend is guarded by the
+`token_ledger` reference and guest usage is keyed per-service — so a duplicate intake on
+the same session never double-charges.
+
 ### Ad suppression
 
 Server-authoritative: `GET /ads/active` returns `[]` for any ad-free plan, so the

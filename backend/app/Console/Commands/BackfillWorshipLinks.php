@@ -47,8 +47,23 @@ class BackfillWorshipLinks extends Command
         $filled = 0;
         $missed = 0;
         foreach ($tracks as $track) {
-            $q = trim(sprintf('%s %s %s worship song', $track->title, $track->artist, self::LANG_HINT[$track->language] ?? ''));
-            $results = $yt->search($q, 3);
+            $hint = self::LANG_HINT[$track->language] ?? '';
+
+            // Try progressively looser queries: the seed artists are invented, so
+            // a title+artist search often finds nothing — fall back to title-only.
+            $queries = array_unique(array_filter([
+                trim(sprintf('%s %s %s worship song', $track->title, $track->artist, $hint)),
+                trim(sprintf('%s %s worship song', $track->title, $hint)),
+                trim(sprintf('%s %s', $track->title, $hint)),
+            ]));
+
+            $results = [];
+            foreach ($queries as $q) {
+                $results = $yt->search($q, 3);
+                if ($results !== []) {
+                    break;
+                }
+            }
 
             if ($results === []) {
                 $missed++;

@@ -141,7 +141,10 @@ function isActive(item) {
   /* The theme toggle must always stay visible. */
   .theme-toggle, .topbar-right > :last-child { flex: 0 0 auto; }
 }
-.brand { display: inline-flex; align-items: center; gap: 0.55rem; text-decoration: none; color: var(--text); font-weight: 600; }
+/* Keep logo + wordmark hugging the left (next to the hamburger); the auto
+   margin pushes the auth controls + theme toggle to the far right instead of
+   space-between spreading the brand into the centre. */
+.brand { display: inline-flex; align-items: center; gap: 0.55rem; margin-right: auto; text-decoration: none; color: var(--text); font-weight: 600; }
 .brand-mark {
   display: inline-flex; align-items: center; justify-content: center;
   width: 30px; height: 30px; border-radius: 9px;

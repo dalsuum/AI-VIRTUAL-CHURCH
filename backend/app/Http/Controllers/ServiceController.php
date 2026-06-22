@@ -9,6 +9,7 @@ use App\Models\Setting;
 use App\Notifications\ServiceScheduledNotification;
 use App\Services\CrisisInterceptService;
 use App\Services\GuestUsageService;
+use App\Services\Pipeline\Worship\WorshipServicePipeline;
 use App\Services\TokenService;
 use App\Services\UsageLogger;
 use Illuminate\Http\JsonResponse;
@@ -28,36 +29,6 @@ class ServiceController extends Controller
         private UsageLogger $usage,
         private \App\Services\HistoryService $history,
     ) {}
-
-    /**
-     * Charge one worship-service generation. Members/premium spend a token; guests
-     * record their single free use. Idempotent per session via the `service:{id}`
-     * reference + the caller's already-active guard, so a retried intake never
-     * double-charges. Eligibility was already verified by the route middleware.
-     */
-    private function chargeService(Request $request, ServiceSession $session): void
-    {
-        $user = $request->user();
-
-        if ($user->isGuestAccount()) {
-            $this->guests->record($request, 'service');
-
-            return;
-        }
-
-        // Don't charge twice if this session was already paid for (e.g. scheduled then
-        // dispatched, or a duplicate intake).
-        $already = $user->tokenLedger()
-            ->where('reference', "service:{$session->id}")
-            ->whereIn('type', ['spend', 'reservation'])
-            ->exists();
-        if (! $already) {
-            $this->tokens->spend($user, 'service', "service:{$session->id}");
-        }
-
-        $cost = $user->isGuestAccount() ? 0 : $this->tokens->cost('service');
-        $this->usage->record($user, 'service', 'ok', $cost, "service:{$session->id}");
-    }
 
     /** Create a session. The media source is locked from the user's preference now. */
     public function start(Request $request): JsonResponse
@@ -80,150 +51,14 @@ class ServiceController extends Controller
     }
 
     /**
-     * Receive the intake (mood + optional prayer text). Runs the crisis check first.
-     * If clean, persists the intake and dispatches the AI pipeline.
+     * Receive the intake (mood + optional prayer text). The full hard-path (validate →
+     * crisis → charge → dispatch) and best-effort enrichment (history mirror, scheduled
+     * confirmation email) are owned by the shared pipeline, so the ordering and failure
+     * isolation can't drift. See App\Services\Pipeline\Worship\WorshipServicePipeline.
      */
     public function intake(Request $request, string $token): JsonResponse
     {
-        $session = ServiceSession::where('session_token', $token)
-            ->where('user_id', $request->user()->id)
-            ->firstOrFail();
-
-        $data = $request->validate([
-            'mood'          => ['required', 'string', 'max:100'],
-            // Service language ('en' | 'my' | 'td'), chosen on the intake form's
-            // language tab. Locked per session like music_source; the worker keys
-            // the LLM output language, Bible translation, hymn library, and TTS
-            // voice off it.
-            'language'      => ['nullable', 'string', 'in:en,my,td'],
-            // User-supplied single-word feeling, stored for admin review only.
-            'custom_mood'   => ['nullable', 'string', 'max:50', 'regex:/^[A-Za-z]+$/'],
-            'prayer_text'   => ['nullable', 'string', 'max:5000'],
-            // Optional: hold the service until a chosen future moment.
-            'scheduled_at'  => ['nullable', 'date', 'after:now'],
-            // Contact email supplied at scheduling time; used to update a guest
-            // account that still has a synthetic @guest.local address.
-            'contact_email' => ['nullable', 'email', 'max:255'],
-        ]);
-
-        // Lock the service language now, alongside the already-locked music source.
-        $session->update(['language' => $data['language'] ?? 'en']);
-
-        // A future time is only honoured while scheduling is enabled; otherwise the
-        // service begins now (the UI hides the option, this guards direct calls).
-        if (! empty($data['scheduled_at']) && ! Setting::schedulingEnabled()) {
-            unset($data['scheduled_at']);
-        }
-
-        $user = $request->user();
-
-        // A scheduled service requires a notification address. Accept either the
-        // user's stored real email or a contact_email supplied with this request.
-        // We store contact_email on the session so it survives regardless of whether
-        // the guest account's email field could be updated.
-        $contactEmail = $data['contact_email'] ?? null;
-        $notifyEmail  = $contactEmail
-            ?: (str_ends_with($user->email, '@guest.local') ? null : $user->email);
-
-        if (! empty($data['scheduled_at']) && ! $notifyEmail) {
-            return response()->json([
-                'message' => 'Please provide your email so we can send you a reminder when your service begins.',
-            ], 422);
-        }
-
-        // SAFETY GATE — before anything is queued.
-        $check = $this->crisis->inspect($session->session_token, $data['prayer_text'] ?? null);
-        if ($check['intercepted']) {
-            $session->update(['status' => 'abandoned']);
-            return response()->json([
-                'intercepted' => true,
-                'resource'    => $check['resource'],
-            ], 200);
-        }
-
-        $intake = ServiceIntake::updateOrCreate(
-            ['session_id' => $session->id],
-            [
-                'mood'        => $data['mood'],
-                'custom_mood' => $data['custom_mood'] ?? null,
-                'prayer_text' => $data['prayer_text'] ?? null,
-            ],
-        );
-
-        // Record the guest's free use / spend the member token FIRST. The quota is the
-        // one irreversible side-effect that must never be skipped by a later best-effort
-        // step (a history-mirror failure once aborted the request before this ran, letting
-        // guests reuse the service). chargeService() is idempotent — the token spend is
-        // guarded by the ledger and guest usage is a per-service key in a JSON map — so
-        // duplicate intakes on the same session never double-charge.
-        $this->chargeService($request, $session);
-
-        // Mirror into unified history (best-effort enrichment, one row per generated
-        // service, idempotent per service_session). Isolated in try/catch: this must never
-        // break the service flow or undo the quota write above.
-        try {
-            if (! \App\Models\ServiceSessionMeta::where('service_session_id', $session->id)->exists()) {
-                $chat = $this->history->startSession($user, 'service', [
-                    'language' => $session->language,
-                    'mood'     => $data['mood'],
-                    'title'    => ucwords($data['mood']) . ' Service',
-                ]);
-                \App\Models\ServiceSessionMeta::create([
-                    'chat_session_id'    => $chat->id,
-                    'service_session_id' => $session->id,
-                    'service_name'       => ucwords($data['mood']) . ' Worship Service',
-                ]);
-            }
-        } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::warning('Service history mirror failed', [
-                'service_session_id' => $session->id,
-                'error'              => $e->getMessage(),
-            ]);
-        }
-
-        // Scheduled for later: hold it for the scheduler (see DispatchDueServices).
-        // Otherwise dispatch now and fan out to the Python workers immediately.
-        if (! empty($data['scheduled_at'])) {
-            $session->update([
-                'status'        => 'scheduled',
-                'scheduled_at'  => $data['scheduled_at'],
-                'contact_email' => $contactEmail,
-            ]);
-
-            // Send an immediate booking confirmation to the notification address.
-            if ($notifyEmail) {
-                \Illuminate\Support\Facades\Notification::route('mail', $notifyEmail)
-                    ->notify(new ServiceScheduledNotification($session, $user->name, $notifyEmail));
-            }
-
-            return response()->json([
-                'intercepted'   => false,
-                'session_token' => $session->session_token,
-                'intake_id'     => $intake->id,
-                'status'        => 'scheduled',
-                'scheduled_at'  => $session->scheduled_at?->toIso8601String(),
-            ], 202);
-        }
-
-        // Guard: if this session already triggered the pipeline, don't burn a second GPU job.
-        if (in_array($session->status, ['active', 'processing', 'complete'])) {
-            return response()->json([
-                'intercepted'   => false,
-                'session_token' => $session->session_token,
-                'intake_id'     => $intake->id,
-                'status'        => $session->status,
-            ], 202);
-        }
-
-        $session->update(['status' => 'active', 'scheduled_at' => null]);
-        DispatchServiceJob::dispatch($session->id);
-
-        return response()->json([
-            'intercepted'   => false,
-            'session_token' => $session->session_token,
-            'intake_id'     => $intake->id,
-            'status'        => 'active',
-        ], 202);
+        return app(WorshipServicePipeline::class)->forToken($token)->handle($request);
     }
 
     /**

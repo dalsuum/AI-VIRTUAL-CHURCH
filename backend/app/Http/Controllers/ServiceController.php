@@ -26,6 +26,7 @@ class ServiceController extends Controller
         private TokenService $tokens,
         private GuestUsageService $guests,
         private UsageLogger $usage,
+        private \App\Services\HistoryService $history,
     ) {}
 
     /**
@@ -149,6 +150,37 @@ class ServiceController extends Controller
             ],
         );
 
+        // Record the guest's free use / spend the member token FIRST. The quota is the
+        // one irreversible side-effect that must never be skipped by a later best-effort
+        // step (a history-mirror failure once aborted the request before this ran, letting
+        // guests reuse the service). chargeService() is idempotent — the token spend is
+        // guarded by the ledger and guest usage is a per-service key in a JSON map — so
+        // duplicate intakes on the same session never double-charge.
+        $this->chargeService($request, $session);
+
+        // Mirror into unified history (best-effort enrichment, one row per generated
+        // service, idempotent per service_session). Isolated in try/catch: this must never
+        // break the service flow or undo the quota write above.
+        try {
+            if (! \App\Models\ServiceSessionMeta::where('service_session_id', $session->id)->exists()) {
+                $chat = $this->history->startSession($user, 'service', [
+                    'language' => $session->language,
+                    'mood'     => $data['mood'],
+                    'title'    => ucwords($data['mood']) . ' Service',
+                ]);
+                \App\Models\ServiceSessionMeta::create([
+                    'chat_session_id'    => $chat->id,
+                    'service_session_id' => $session->id,
+                    'service_name'       => ucwords($data['mood']) . ' Worship Service',
+                ]);
+            }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Service history mirror failed', [
+                'service_session_id' => $session->id,
+                'error'              => $e->getMessage(),
+            ]);
+        }
+
         // Scheduled for later: hold it for the scheduler (see DispatchDueServices).
         // Otherwise dispatch now and fan out to the Python workers immediately.
         if (! empty($data['scheduled_at'])) {
@@ -157,9 +189,6 @@ class ServiceController extends Controller
                 'scheduled_at'  => $data['scheduled_at'],
                 'contact_email' => $contactEmail,
             ]);
-
-            // Scheduling commits to a generation, so charge now.
-            $this->chargeService($request, $session);
 
             // Send an immediate booking confirmation to the notification address.
             if ($notifyEmail) {
@@ -185,8 +214,6 @@ class ServiceController extends Controller
                 'status'        => $session->status,
             ], 202);
         }
-
-        $this->chargeService($request, $session);
 
         $session->update(['status' => 'active', 'scheduled_at' => null]);
         DispatchServiceJob::dispatch($session->id);

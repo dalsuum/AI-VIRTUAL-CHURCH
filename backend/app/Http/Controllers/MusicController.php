@@ -29,6 +29,7 @@ class MusicController extends Controller
     public function __construct(
         private MusicRecommendationService $recommender,
         private MoodExpansionService $moods,
+        private \App\Services\HistoryService $history,
     ) {}
 
     /** Mood selector options (label + emoji) for the front Worship page. */
@@ -61,11 +62,58 @@ class MusicController extends Controller
             $data['exclude'] ?? [],
         );
 
+        // Record into unified history for signed-in worshippers (route is public, so
+        // the user is resolved softly). Sessions are grouped per day + mood + language.
+        // Best-effort: a mirror failure must never deny the worshipper their playlist.
+        try {
+            $this->recordHistory($request, $data['language'], $data['mood'], $result['playlist']);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Worship history mirror failed', [
+                'error' => $e->getMessage(),
+            ]);
+        }
+
         return response()->json([
             'playlist' => array_map([$this, 'present'], $result['playlist']),
             'reason'   => $result['reason'],
             'themes'   => $result['themes'],
         ]);
+    }
+
+    /** Upsert today's worship session for this user+mood and append the playlist. */
+    private function recordHistory(Request $request, string $language, string $mood, array $playlist): void
+    {
+        $user = auth('sanctum')->user();
+        if (! $user) {
+            return;
+        }
+
+        $songIds = array_values(array_filter(array_map(fn ($s) => $s['id'] ?? null, $playlist)));
+
+        $session = \App\Models\ChatSession::forUser((int) $user->id)
+            ->where('session_type', 'music')
+            ->where('mood', $mood)
+            ->where('language', $language)
+            ->whereDate('started_at', now()->toDateString())
+            ->first();
+
+        if (! $session) {
+            $session = $this->history->startSession($user, 'music', [
+                'language' => $language,
+                'mood'     => $mood,
+                'title'    => ucwords($mood) . ' Worship',
+            ]);
+            \App\Models\MusicSessionMeta::create([
+                'chat_session_id' => $session->id,
+                'playlist'        => $songIds,
+                'songs_played'    => $songIds,
+            ]);
+        } else {
+            $meta = \App\Models\MusicSessionMeta::firstOrCreate(['chat_session_id' => $session->id]);
+            $played = array_values(array_unique(array_merge($meta->songs_played ?? [], $songIds)));
+            $meta->update(['playlist' => $songIds, 'songs_played' => $played]);
+            $this->history->touch($session);
+        }
     }
 
     /** Public-safe track shape for the player (no internal columns leaked). */

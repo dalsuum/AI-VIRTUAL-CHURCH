@@ -41,6 +41,8 @@ class User extends Authenticatable
         'role', 'password_reset_token', 'password_reset_expires_at',
         'subscription_plan', 'subscription_expires_at', 'stripe_customer_id',
         'stripe_subscription_id', 'token_balance', 'monthly_allowance', 'tokens_refilled_at',
+        'fav_language', 'fav_bible_version', 'fav_worship_language', 'fav_pastor',
+        'fav_worship_style', 'fav_books', 'fav_topics', 'spiritual_goals', 'ai_memory_enabled',
     ];
     protected $hidden = ['password', 'remember_token', 'password_reset_token', 'activation_token', 'stripe_customer_id', 'stripe_subscription_id'];
 
@@ -61,6 +63,9 @@ class User extends Authenticatable
         'is_blocked'               => 'boolean',
         'token_balance'            => 'integer',
         'monthly_allowance'        => 'integer',
+        'fav_books'                => 'array',
+        'fav_topics'               => 'array',
+        'ai_memory_enabled'        => 'boolean',
     ];
 
     public function role(): string

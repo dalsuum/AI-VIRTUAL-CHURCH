@@ -288,6 +288,43 @@ export const api = {
   tokenBalance: () => request("/tokens/balance"),
   tokenHistory: () => request("/tokens/history"),
 
+  // ── Unified Conversation & Spiritual History ─────────────────────────────
+  history: (params = "") => request(`/history${params}`),
+  historyShow: (id) => request(`/history/${id}`),
+  historySearch: (payload) =>
+    request("/history/search", { method: "POST", body: payload }),
+  historyUpdate: (id, payload) =>
+    request(`/history/${id}`, { method: "PATCH", body: payload }),
+  historyDelete: (id) => request(`/history/${id}`, { method: "DELETE" }),
+  historyRestore: (id) => request(`/history/${id}/restore`, { method: "POST" }),
+  historyShare: (id, payload = {}) =>
+    request(`/history/${id}/share`, { method: "POST", body: payload }),
+  historyRevokeShare: (id) => request(`/history/${id}/share`, { method: "DELETE" }),
+  historyStats: () => request("/history/stats"),
+  historyTimeline: (year) => request(`/history/timeline${year ? `?year=${year}` : ""}`),
+  historyExportUrl: (id, format) => `${BASE_URL}/history/${id}/export?format=${format}`,
+  historyExportAllUrl: (format) => `${BASE_URL}/history/export-all?format=${format}`,
+  sharedView: (token, password) =>
+    request(`/shared/${token}${password ? `?password=${encodeURIComponent(password)}` : ""}`),
+
+  // ── Spiritual Journal ────────────────────────────────────────────────────
+  journalGenerate: (sessionId) =>
+    request(`/history/${sessionId}/journal`, { method: "POST" }),
+  journalList: (params = "") => request(`/journal${params}`),
+  journalShow: (id) => request(`/journal/${id}`),
+  journalDelete: (id) => request(`/journal/${id}`, { method: "DELETE" }),
+
+  // ── AI Pastor Chat ───────────────────────────────────────────────────────
+  pastorStart: (payload) =>
+    request("/pastor/sessions", { method: "POST", body: payload }),
+  pastorMessages: (id) => request(`/pastor/sessions/${id}/messages`),
+  pastorPostMessage: (id, message) =>
+    request(`/pastor/sessions/${id}/messages`, { method: "POST", body: { message } }),
+
+  // Spiritual-profile preferences (account page).
+  updateProfile: (payload) =>
+    request("/me/profile", { method: "PATCH", body: payload }),
+
   // Public app configuration (intake/preparing options). Optional context narrows
   // countdown cards by service mood/language once a session poll is available.
   getConfig: (context = {}) => {

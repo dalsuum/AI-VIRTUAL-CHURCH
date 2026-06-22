@@ -6,10 +6,7 @@
 import { onMounted, onBeforeUnmount, reactive, ref, computed, watch } from "vue";
 import { api } from "../composables/useApi";
 import { useStudyStream } from "../composables/useStudyStream";
-import ThemeToggle from "./ThemeToggle.vue";
 import AdCarousel from "./AdCarousel.vue";
-
-const year = new Date().getFullYear();
 
 // Bible translations offered per language. The first entry is that language's
 // DEFAULT (its own version where available); English versions are offered as a
@@ -49,6 +46,24 @@ const bubbles = ref([]);            // { turn, persona_id, name, role, text, ref
 const notice = ref("");
 const inputOpen = ref(false);
 const followUp = ref("");
+const composerInput = ref(null);
+
+// Grow the follow-up box with its content, up to the CSS max-height.
+function autoGrow() {
+  const el = composerInput.value;
+  if (!el) return;
+  el.style.height = "auto";
+  el.style.height = `${el.scrollHeight}px`;
+}
+
+// On mobile, the soft keyboard covers the focused field. Scroll it into
+// view above the keyboard once the keyboard animation has settled.
+function focusScroll(e) {
+  const el = e.target;
+  setTimeout(() => {
+    el?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, 300);
+}
 const summary = ref(null);
 
 // Active ads for the box below the Bible Study setup form.
@@ -175,6 +190,7 @@ async function send() {
   if (text.length < 2) return;
   inputOpen.value = false;
   followUp.value = "";
+  if (composerInput.value) composerInput.value.style.height = "auto";
   pushUserBubble(text);                      // echo the follow-up into the thread
   try {
     await api.studyPostMessage(session.value.id, text);
@@ -264,21 +280,42 @@ async function emailSummary() {
   }
 }
 
+// In-app browsers (Facebook/Instagram/Line/etc.) are WebViews that block the
+// programmatic `<a download>` click html2pdf uses to save — so a normal
+// download silently fails. Detect them and fall back to opening the PDF in a
+// new tab, where the user can save/print it manually.
+function isInAppBrowser() {
+  const ua = navigator.userAgent || "";
+  return /FBAN|FBAV|FB_IAB|Instagram|Line\/|Messenger|Twitter|KAKAOTALK|; wv\)/i.test(ua);
+}
+
 async function exportPdf() {
   const el = document.getElementById("study-summary-print");
   if (!el) return;
   const { default: html2pdf } = await import("html2pdf.js");
   el.classList.add("pdf-mode");   // force dark-on-white for a legible PDF
+  const filename = `bible-study-${session.value?.id || "summary"}.pdf`;
+  const worker = html2pdf().set({
+    margin: 12,
+    filename,
+    html2canvas: { scale: 2, backgroundColor: "#ffffff" },
+    jsPDF: { unit: "mm", format: "a4" },
+  }).from(el);
   try {
-    await html2pdf()
-      .set({
-        margin: 12,
-        filename: `bible-study-${session.value?.id || "summary"}.pdf`,
-        html2canvas: { scale: 2, backgroundColor: "#ffffff" },
-        jsPDF: { unit: "mm", format: "a4" },
-      })
-      .from(el)
-      .save();
+    if (isInAppBrowser()) {
+      // Open the rendered PDF in a new tab instead of triggering a download.
+      const blob = await worker.outputPdf("blob");
+      const url = URL.createObjectURL(blob);
+      const win = window.open(url, "_blank");
+      if (!win) {
+        flash("Tap ••• and choose “Open in browser” to save the PDF.");
+      }
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } else {
+      await worker.save();
+    }
+  } catch {
+    flash("Could not export the PDF — try opening this page in your browser.");
   } finally {
     el.classList.remove("pdf-mode");
   }
@@ -298,21 +335,8 @@ function goHome() { window.location.hash = ""; }
 
 <template>
   <div class="study-page">
-    <!-- Shared site header (matches the rest of the app) -->
-    <header class="topbar">
-      <a class="brand" href="#">
-        <span class="brand-mark" aria-hidden="true">✝</span>
-        <span class="brand-name">AI Virtual Church</span>
-      </a>
-      <div class="topbar-right">
-        <nav class="topbar-nav">
-          <a href="#bible" class="nav-link">📖 Bible</a>
-          <a href="#bible-study" class="nav-link active">💬 Bible Study</a>
-        </nav>
-        <ThemeToggle />
-      </div>
-    </header>
-
+    <!-- Global site header/footer are provided by the app layout (App.vue);
+         this view only renders its own content. -->
     <main class="study">
     <header class="study-head">
       <h1>AI Bible Study</h1>
@@ -347,7 +371,7 @@ function goHome() { window.location.hash = ""; }
         <span v-if="config?.tier === 'guest'">Register for more.</span>
       </p>
       <label>Your question
-        <textarea v-model="form.question" rows="3" placeholder="e.g. What does John 3:16 mean for me?"></textarea>
+        <textarea v-model="form.question" rows="3" placeholder="e.g. What does John 3:16 mean for me?" @focus="focusScroll"></textarea>
       </label>
       <button class="primary" :disabled="loading" @click="start">
         {{ loading ? "Starting…" : "Begin Discussion →" }}
@@ -385,7 +409,15 @@ function goHome() { window.location.hash = ""; }
       </div>
 
       <div v-if="inputOpen" class="composer">
-        <input v-model="followUp" placeholder="Ask a follow-up…" @keyup.enter="send" />
+        <textarea
+          ref="composerInput"
+          v-model="followUp"
+          placeholder="Ask a follow-up…"
+          rows="1"
+          @keydown.enter.exact.prevent="send"
+          @input="autoGrow"
+          @focus="focusScroll"
+        ></textarea>
         <button class="primary" @click="send">Send →</button>
       </div>
     </section>
@@ -433,42 +465,13 @@ function goHome() { window.location.hash = ""; }
       </div>
     </section>
     </main>
-
-    <footer class="site-footer">
-      <span>✝ AI Virtual Church</span>
-      <span class="sep">·</span>
-      <span>AI Bible Study</span>
-      <span class="sep">·</span>
-      <span>© {{ year }}</span>
-    </footer>
   </div>
 </template>
 
 <style scoped>
 .study-page { min-height: 100vh; display: flex; flex-direction: column; background: var(--bg); }
 
-.topbar {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 0.75rem; padding: 0.8rem 1.1rem;
-  background: var(--surface); border-bottom: 1px solid var(--border);
-}
-.topbar-right { display: flex; align-items: center; gap: 0.75rem; }
-.topbar-nav { display: flex; align-items: center; gap: 0.4rem; }
-.brand { display: inline-flex; align-items: center; gap: 0.55rem; text-decoration: none; color: var(--text); font-weight: 600; }
-.brand-mark { font-size: 1.15rem; }
-.nav-link { text-decoration: none; color: var(--text-muted); padding: 0.35rem 0.6rem; border-radius: var(--radius-sm); font-size: 0.92rem; }
-.nav-link:hover { background: var(--surface-2); color: var(--text); }
-.nav-link.active { background: var(--primary-soft); color: var(--text); }
-
-.site-footer {
-  margin-top: auto; display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5rem;
-  padding: 1.1rem; color: var(--text-muted); font-size: 0.85rem;
-  border-top: 1px solid var(--border); background: var(--surface);
-}
-.site-footer .sep { opacity: 0.5; }
-
-.study { max-width: 760px; margin: 0 auto; padding: 1rem; color: var(--text); width: 100%; box-sizing: border-box; flex: 1; }
-@media (max-width: 600px) { .brand-name { display: none; } }
+.study { max-width: 760px; margin: 0 auto; padding: 1rem; padding-bottom: 40vh; color: var(--text); width: 100%; box-sizing: border-box; flex: 1; }
 .study-head h1 { margin: 0; color: var(--text); }
 .sub { color: var(--text-muted); }
 .err { color: var(--danger); }
@@ -488,6 +491,7 @@ function goHome() { window.location.hash = ""; }
   background: var(--surface-2); color: var(--text);
   border: 1px solid var(--border); border-radius: var(--radius-sm);
   font: inherit;
+  scroll-margin-bottom: 40vh; /* keep field above the mobile keyboard on focus */
 }
 .setup input::placeholder, .setup textarea::placeholder { color: var(--text-faint); }
 
@@ -534,8 +538,11 @@ function goHome() { window.location.hash = ""; }
 .verse-card { background: var(--primary-soft); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0.2rem 0.55rem; font-size: 0.9em; }
 .verse-card em { color: var(--text-muted); }
 
-.composer { display: flex; gap: 0.5rem; margin-top: 0.9rem; position: sticky; bottom: 0; background: var(--bg); padding-top: 0.5rem; }
-.composer input { flex: 1; padding: 0.6rem; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm); font: inherit; }
+.composer { display: flex; align-items: flex-end; gap: 0.5rem; margin-top: 0.9rem; position: sticky; bottom: 0; background: var(--bg); padding-top: 0.5rem; }
+.composer textarea { flex: 1; padding: 0.7rem 0.85rem; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-md, 12px); font: inherit; line-height: 1.45; resize: none; min-height: 2.75rem; max-height: 11rem; overflow-y: auto; }
+.composer textarea:focus { outline: none; border-color: var(--accent, #3b82f6); }
+.composer textarea::placeholder { color: var(--text-faint); }
+.composer .primary { align-self: stretch; white-space: nowrap; }
 
 .summary h2, .summary h3 { color: var(--text); }
 .summary .block { margin: 0.9rem 0; }

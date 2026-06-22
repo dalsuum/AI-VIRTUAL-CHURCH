@@ -32,6 +32,7 @@ class StudyController extends Controller
         private readonly TokenService $tokens,
         private readonly GuestUsageService $guests,
         private readonly UsageLogger $usage,
+        private readonly \App\Services\HistoryService $history,
     ) {}
 
     /** Record a request-level usage row (model-turn telemetry lives in ai_usage_ledger). */
@@ -111,6 +112,28 @@ class StudyController extends Controller
             'role'       => 'user',
             'content'    => $question,
         ]);
+
+        // Mirror into the unified history spine so this study appears in the sidebar.
+        // The live multi-agent engine still runs off study_sessions; this is a 1:1 bridge.
+        // Best-effort enrichment, isolated so a history failure can never abort the run
+        // before the quota/usage is charged below.
+        try {
+            $chat = $this->history->startSession($user, 'bible_study', [
+                'language' => $session->language,
+                'title'    => mb_substr($question, 0, 120),
+                'mood'     => $session->mood,
+            ]);
+            \App\Models\BibleSessionMeta::create([
+                'chat_session_id'  => $chat->id,
+                'study_session_id' => $session->id,
+                'translation'      => $session->translation,
+            ]);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Study history mirror failed', [
+                'study_session_id' => $session->id,
+                'error'            => $e->getMessage(),
+            ]);
+        }
 
         // Charge the session. Members/premium reserve a token (refunded if dispatch
         // fails); guests have no wallet — their single free use is recorded instead.

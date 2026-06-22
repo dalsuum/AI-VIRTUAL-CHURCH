@@ -163,6 +163,16 @@ class AuthController extends Controller
             // Whether self-serve upgrades are possible in this deployment, so the
             // account UI can degrade gracefully when billing is unconfigured.
             'billing_enabled'   => self::billingEnabled(),
+            // Spiritual-profile preferences (account page + history personalization).
+            'fav_language'         => $user->fav_language,
+            'fav_bible_version'    => $user->fav_bible_version,
+            'fav_worship_language' => $user->fav_worship_language,
+            'fav_pastor'           => $user->fav_pastor,
+            'fav_worship_style'    => $user->fav_worship_style,
+            'fav_books'            => $user->fav_books,
+            'fav_topics'           => $user->fav_topics,
+            'spiritual_goals'      => $user->spiritual_goals,
+            'ai_memory_enabled'    => $user->ai_memory_enabled !== false,
         ];
     }
 
@@ -183,6 +193,28 @@ class AuthController extends Controller
         $request->user()->update(['name' => $data['name'], 'name_provided' => true]);
 
         return response()->json(['ok' => true, 'name' => $data['name']]);
+    }
+
+    /** Update spiritual-profile preferences shown on the account page. */
+    public function updateProfile(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'fav_language'         => ['sometimes', 'nullable', 'string', 'max:12'],
+            'fav_bible_version'    => ['sometimes', 'nullable', 'string', 'max:12'],
+            'fav_worship_language' => ['sometimes', 'nullable', 'string', 'max:12'],
+            'fav_pastor'           => ['sometimes', 'nullable', 'string', 'max:80'],
+            'fav_worship_style'    => ['sometimes', 'nullable', 'string', 'max:40'],
+            'fav_books'            => ['sometimes', 'nullable', 'array', 'max:66'],
+            'fav_books.*'          => ['string', 'max:40'],
+            'fav_topics'           => ['sometimes', 'nullable', 'array', 'max:30'],
+            'fav_topics.*'         => ['string', 'max:40'],
+            'spiritual_goals'      => ['sometimes', 'nullable', 'string', 'max:2000'],
+            'ai_memory_enabled'    => ['sometimes', 'boolean'],
+        ]);
+
+        $request->user()->update($data);
+
+        return response()->json(['ok' => true, 'profile' => $request->user()->only(array_keys($data))]);
     }
 
     /**

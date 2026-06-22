@@ -821,8 +821,9 @@ onMounted(() => {
    bar and Prev/Next footer stay frozen and ONLY the verse list scrolls — a real
    Excel-style freeze-panes layout that doesn't depend on position:sticky. */
 .bible-page.reading {
-  height: 100vh;          /* fallback for browsers without dvh */
-  height: 100dvh;
+  /* Fill the space the app layout allots between the global header and footer
+     (the parent .app-main stretches this view with flex), so the Prev/Next bar
+     stays frozen on screen instead of being pushed below the viewport. */
   min-height: 0;
   padding-bottom: 0;
   overflow: hidden;

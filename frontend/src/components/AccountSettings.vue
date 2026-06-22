@@ -19,6 +19,40 @@
       <p v-if="nameMsg" class="acct-msg" :class="nameMsgClass">{{ nameMsg }}</p>
     </section>
 
+    <!-- Spiritual profile preferences (registered users only) -->
+    <section class="acct-section" v-if="!isGuest">
+      <h3>Spiritual Profile</h3>
+      <form @submit.prevent="saveProfile" class="acct-form col">
+        <label class="acct-label">Favorite language
+          <select v-model="profile.fav_language" class="acct-input">
+            <option value="">—</option><option value="en">English</option>
+            <option value="my">Burmese</option><option value="td">Tedim (Zolai)</option>
+          </select>
+        </label>
+        <label class="acct-label">Favorite Bible version
+          <input v-model="profile.fav_bible_version" class="acct-input" maxlength="12" placeholder="e.g. BSB" />
+        </label>
+        <label class="acct-label">Favorite worship language
+          <select v-model="profile.fav_worship_language" class="acct-input">
+            <option value="">—</option><option value="en">English</option>
+            <option value="my">Burmese</option><option value="td">Tedim (Zolai)</option>
+          </select>
+        </label>
+        <label class="acct-label">Spiritual goals
+          <textarea v-model="profile.spiritual_goals" class="acct-input" rows="2" maxlength="2000"
+            placeholder="What are you seeking in this season?"></textarea>
+        </label>
+        <label class="acct-checkbox">
+          <input type="checkbox" v-model="profile.ai_memory_enabled" />
+          Allow AI to reference my past sessions ("Last week we studied…")
+        </label>
+        <button type="submit" class="acct-btn" :disabled="savingProfile">
+          {{ savingProfile ? 'Saving…' : 'Save Profile' }}
+        </button>
+      </form>
+      <p v-if="profileMsg" class="acct-msg" :class="profileMsgClass">{{ profileMsg }}</p>
+    </section>
+
     <!-- Change password (registered users only) -->
     <section class="acct-section" v-if="!isGuest">
       <h3>Change Password</h3>
@@ -116,6 +150,15 @@ const savingName = ref(false);
 const nameMsg    = ref("");
 const nameMsgClass = ref("ok");
 
+// Spiritual profile preferences.
+const profile = ref({
+  fav_language: "", fav_bible_version: "", fav_worship_language: "",
+  spiritual_goals: "", ai_memory_enabled: true,
+});
+const savingProfile = ref(false);
+const profileMsg = ref("");
+const profileMsgClass = ref("ok");
+
 const currentPw = ref("");
 const newPw     = ref("");
 const confirmPw = ref("");
@@ -203,9 +246,32 @@ onMounted(async () => {
     role.value    = res.user.role || "member";
     isGuest.value = res.user.is_guest || false;
     nameVal.value = res.user.name || "";
+    const u = res.user;
+    profile.value = {
+      fav_language: u.fav_language || "",
+      fav_bible_version: u.fav_bible_version || "",
+      fav_worship_language: u.fav_worship_language || "",
+      spiritual_goals: u.spiritual_goals || "",
+      ai_memory_enabled: u.ai_memory_enabled !== false,
+    };
   } catch { /* stay with defaults */ }
   if (!isGuest.value) await loadSubscription();
 });
+
+async function saveProfile() {
+  savingProfile.value = true;
+  profileMsg.value = "";
+  try {
+    await api.updateProfile(profile.value);
+    profileMsg.value = "Profile saved.";
+    profileMsgClass.value = "ok";
+  } catch (e) {
+    profileMsg.value = e.data?.message || "Failed to save profile.";
+    profileMsgClass.value = "err";
+  } finally {
+    savingProfile.value = false;
+  }
+}
 
 async function saveName() {
   if (!nameVal.value.trim()) return;

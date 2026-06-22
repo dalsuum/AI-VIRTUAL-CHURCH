@@ -16,7 +16,7 @@ class AiMemory extends Model
     public $timestamps = false; // created_at only
 
     protected $fillable = [
-        'module', 'session_id', 'user_id', 'guest_session_id', 'kind', 'content', 'embedding',
+        'module', 'session_id', 'chat_session_id', 'user_id', 'guest_session_id', 'kind', 'content', 'embedding',
     ];
 
     protected $casts = [

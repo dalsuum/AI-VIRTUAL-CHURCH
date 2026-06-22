@@ -13,6 +13,9 @@ import LiveSticker from "./components/LiveSticker.vue";
 import BibleReader from "./components/BibleReader.vue";
 import BibleStudy from "./components/BibleStudy.vue";
 import WorshipRadio from "./components/WorshipRadio.vue";
+import PastorChat from "./components/PastorChat.vue";
+import SpiritualJourney from "./components/SpiritualJourney.vue";
+import HistorySidebar from "./components/HistorySidebar.vue";
 import AuthPanel from "./components/AuthPanel.vue";
 import AccountSettings from "./components/AccountSettings.vue";
 import { api } from "./composables/useApi";
@@ -24,6 +27,9 @@ const isLyricsRoute = ref(window.location.hash === "#lyrics");
 const isBibleRoute  = ref(window.location.hash === "#bible");
 const isStudyRoute  = ref(window.location.hash === "#bible-study");
 const isWorshipRoute = ref(window.location.hash === "#worship");
+// Pastor Chat + Spiritual Journey carry an optional ?session= suffix, so match the prefix.
+const isPastorRoute = ref(window.location.hash.startsWith("#pastor"));
+const isJourneyRoute = ref(window.location.hash.startsWith("#journey"));
 // Account + auth entry points (hash-routed like the rest of the app).
 const isLoginRoute    = ref(window.location.hash === "#login");
 const isRegisterRoute = ref(window.location.hash === "#register");
@@ -54,6 +60,8 @@ window.addEventListener("hashchange", () => {
   isBibleRoute.value  = window.location.hash === "#bible";
   isStudyRoute.value  = window.location.hash === "#bible-study";
   isWorshipRoute.value = window.location.hash === "#worship";
+  isPastorRoute.value = window.location.hash.startsWith("#pastor");
+  isJourneyRoute.value = window.location.hash.startsWith("#journey");
   isFathersDayRoute.value = window.location.hash === "#fathers-day";
   isStickerRoute.value = window.location.hash === "#stickers";
   isLoginRoute.value    = window.location.hash === "#login";
@@ -337,16 +345,13 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
 </script>
 
 <template>
-  <AdminConsole v-if="isAdminRoute" />
-  <ZolaiVocabulary v-else-if="isVocabRoute" />
-  <MyanmarLyrics v-else-if="isLyricsRoute" />
-  <FathersDay v-else-if="isFathersDayRoute" />
-  <LiveSticker v-else-if="isStickerRoute" />
-  <BibleReader v-else-if="isBibleRoute" />
-  <BibleStudy v-else-if="isStudyRoute" />
-  <WorshipRadio v-else-if="isWorshipRoute" />
-
-  <div v-else class="page">
+ <div class="root-layout">
+  <!-- Unified history rail — only for registered users; collapses on mobile. -->
+  <HistorySidebar v-if="isAuthed" :authed="isAuthed" />
+  <div class="root-content">
+  <!-- Global app layout: the header + footer render once and persist across
+       every route. Only the <main> content swaps when navigating. -->
+  <div class="page">
     <header class="topbar">
       <a class="brand" href="#">
         <span class="brand-mark" aria-hidden="true">✝</span>
@@ -358,6 +363,8 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
           <a href="#bible" class="nav-link" :class="{ active: isBibleRoute }">📖 Bible</a>
           <a href="#bible-study" class="nav-link" :class="{ active: isStudyRoute }">💬 Bible Study</a>
           <a href="#worship" class="nav-link" :class="{ active: isWorshipRoute }">🎶 Worship</a>
+          <a href="#pastor" class="nav-link" :class="{ active: isPastorRoute }">💬 Pastor</a>
+          <a v-if="isAuthed" href="#journey" class="nav-link" :class="{ active: isJourneyRoute }">📊 Journey</a>
           <a href="#vocabulary" class="nav-link" :class="{ active: isVocabRoute }">📖 Vocabulary</a>
           <a v-if="fathersDayEnabled" href="#fathers-day" class="nav-link" :class="{ active: isFathersDayRoute }">💙 <span class="nav-label-full">{{ fdTitle }}</span><span class="nav-label-short">MV</span></a>
           <a v-if="stickersEnabled" href="#stickers" class="nav-link" :class="{ active: isStickerRoute }">🎨 Stickers</a>
@@ -373,7 +380,21 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
       </div>
     </header>
 
-    <main class="shell">
+    <main class="app-main">
+      <!-- Route views — rendered full-width inside the global layout. -->
+      <AdminConsole v-if="isAdminRoute" />
+      <ZolaiVocabulary v-else-if="isVocabRoute" />
+      <MyanmarLyrics v-else-if="isLyricsRoute" />
+      <FathersDay v-else-if="isFathersDayRoute" />
+      <LiveSticker v-else-if="isStickerRoute" />
+      <BibleReader v-else-if="isBibleRoute" />
+      <BibleStudy v-else-if="isStudyRoute" />
+      <WorshipRadio v-else-if="isWorshipRoute" />
+      <PastorChat v-else-if="isPastorRoute" />
+      <SpiritualJourney v-else-if="isJourneyRoute" />
+
+      <!-- Default intake / auth / account flow — constrained card width. -->
+      <div v-else class="shell">
       <!-- Public auth entry: #login / #register. -->
       <div v-if="isLoginRoute || isRegisterRoute" class="card">
         <AuthPanel :mode="isRegisterRoute ? 'register' : 'login'" @authed="onAuthed" />
@@ -454,6 +475,7 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
           @back="view = 'intake'"
         />
       </div>
+      </div>
     </main>
 
     <footer class="site-footer">
@@ -468,10 +490,22 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
       </a>
     </footer>
   </div>
+  </div>
+ </div>
 </template>
 
 <style scoped>
-.page { min-height: 100vh; }
+.root-layout { display: flex; align-items: stretch; min-height: 100vh; }
+.root-content { flex: 1; min-width: 0; }
+@media (max-width: 760px) { .root-layout { display: block; } }
+</style>
+<style scoped>
+.page { display: flex; flex-direction: column; min-height: 100vh; }
+/* Holds whichever route is active; grows so the footer stays at the bottom.
+   A flex column so a full-screen route view (e.g. the Bible reader) can fill
+   the remaining viewport between the sticky header and the footer. */
+.app-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.app-main > * { flex: 1 1 auto; min-height: 0; }
 
 .topbar {
   position: sticky;

@@ -39,6 +39,7 @@ return [
         'default' => 1,
         'study'   => 1,   // one AI Bible Study session
         'service' => 1,   // one generated worship service
+        'pastor'  => 1,   // one AI Pastor Chat session
     ],
 
     // How long a token reservation may stay pending before reservations:cleanup

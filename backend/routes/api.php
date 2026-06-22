@@ -77,6 +77,14 @@ Route::post('/internal/music-track', [WebhookController::class, 'musicTrack']);
 Route::post('/internal/study-turn', [\App\Http\Controllers\WebhookController::class, 'studyTurn']);
 Route::post('/internal/study-summary', [\App\Http\Controllers\WebhookController::class, 'studySummary']);
 
+// Unified-history worker callback (HMAC-signed, same scheme as study-turn).
+Route::post('/internal/history-callback', [WebhookController::class, 'historyCallback']);
+
+// Public read-only view of a shared session — token is the credential; throttled
+// to slow brute-forcing a leaked/guessed link. Password + expiry checked server-side.
+Route::get('/shared/{token}', [\App\Http\Controllers\HistoryController::class, 'viewShared'])
+    ->middleware('throttle:30,1');
+
 // Stripe offering webhook (Stripe-signature verified, no user auth)
 Route::post('/webhooks/stripe', [OfferingController::class, 'webhook']);
 
@@ -130,6 +138,45 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::patch('/me/music-source',     [AuthController::class, 'updateMusicSource']);
     Route::patch('/me/presenter-gender', [AuthController::class, 'updatePresenterGender']);
     Route::post('/me/change-password',   [AuthController::class, 'changePassword']);
+    // Spiritual-profile preferences (favorite language/version/pastor/goals + AI memory).
+    Route::patch('/me/profile',          [AuthController::class, 'updateProfile']);
+
+    // ── Unified Conversation & Spiritual History ──────────────────────────────
+    // Every route is owner-scoped inside the controller (findOwned → 404 on miss).
+    Route::get('/history',                 [\App\Http\Controllers\HistoryController::class, 'index']);
+    Route::get('/history/stats',           [\App\Http\Controllers\HistoryController::class, 'stats']);
+    Route::get('/history/timeline',        [\App\Http\Controllers\HistoryController::class, 'timeline']);
+    Route::post('/history/search',         [\App\Http\Controllers\HistoryController::class, 'search'])
+        ->middleware('throttle:60,1');
+    Route::get('/history/export-all',      [\App\Http\Controllers\HistoryController::class, 'exportAll'])
+        ->middleware('throttle:10,1');
+    Route::get('/history/{id}',            [\App\Http\Controllers\HistoryController::class, 'show']);
+    Route::get('/history/{id}/export',     [\App\Http\Controllers\HistoryController::class, 'export'])
+        ->middleware('throttle:20,1');
+    Route::patch('/history/{id}',          [\App\Http\Controllers\HistoryController::class, 'update'])
+        ->middleware('throttle:60,1');
+    Route::delete('/history/{id}',         [\App\Http\Controllers\HistoryController::class, 'destroy']);
+    Route::post('/history/{id}/restore',   [\App\Http\Controllers\HistoryController::class, 'restore']);
+    Route::post('/history/{id}/share',     [\App\Http\Controllers\HistoryController::class, 'share'])
+        ->middleware('throttle:20,1');
+    Route::delete('/history/{id}/share',   [\App\Http\Controllers\HistoryController::class, 'revokeShare']);
+
+    // ── Spiritual Journal (AI-written reflective entries) ─────────────────────
+    Route::post('/history/{id}/journal',   [\App\Http\Controllers\JournalController::class, 'generate'])
+        ->middleware('throttle:20,1');
+    Route::get('/journal',                 [\App\Http\Controllers\JournalController::class, 'index']);
+    Route::get('/journal/{id}',            [\App\Http\Controllers\JournalController::class, 'show'])->whereNumber('id');
+    Route::delete('/journal/{id}',         [\App\Http\Controllers\JournalController::class, 'destroy'])->whereNumber('id');
+
+    // ── AI Pastor Chat ────────────────────────────────────────────────────────
+    Route::prefix('pastor')->group(function () {
+        Route::post('/sessions', [\App\Http\Controllers\PastorChatController::class, 'start'])
+            ->middleware(['throttle:6,1', 'guest.limit:pastor', 'tokens:pastor']);
+        Route::get('/sessions/{id}/messages', [\App\Http\Controllers\PastorChatController::class, 'messages']);
+        Route::post('/sessions/{id}/messages', [\App\Http\Controllers\PastorChatController::class, 'postMessage'])
+            ->middleware('throttle:20,1');
+        Route::get('/sessions/{id}/stream', [\App\Http\Controllers\PastorChatController::class, 'stream']);
+    });
 
     // Subscription self-service (Stripe checkout / cancel) + token wallet (read-only).
     Route::get('/subscription',          [\App\Http\Controllers\SubscriptionController::class, 'status']);

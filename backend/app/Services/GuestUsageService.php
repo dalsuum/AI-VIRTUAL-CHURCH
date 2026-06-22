@@ -3,8 +3,10 @@
 namespace App\Services;
 
 use App\Models\GuestTracking;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Enforces the guest "one free use per service" rule across cookie clears. We never
@@ -41,13 +43,32 @@ class GuestUsageService
         ];
     }
 
-    /** Rows that plausibly belong to the same visitor. */
-    private function matches(?string $ip, ?string $fp, ?string $cookie)
+    /** Query for rows that plausibly belong to the same visitor (cookie OR ip+fingerprint). */
+    private function matchQuery(?string $ip, ?string $fp, ?string $cookie)
     {
         return GuestTracking::query()
             ->when($cookie, fn ($q) => $q->orWhere('cookie_hash', $cookie))
-            ->when($ip && $fp, fn ($q) => $q->orWhere(fn ($w) => $w->where('ip_hash', $ip)->where('fingerprint_hash', $fp)))
-            ->get();
+            ->when($ip && $fp, fn ($q) => $q->orWhere(fn ($w) => $w->where('ip_hash', $ip)->where('fingerprint_hash', $fp)));
+    }
+
+    /** Rows that plausibly belong to the same visitor. */
+    private function matches(?string $ip, ?string $fp, ?string $cookie)
+    {
+        return $this->matchQuery($ip, $fp, $cookie)->get();
+    }
+
+    /** Merge $service into a locked row's services_used map (idempotent per service). */
+    private function mergeService(GuestTracking $row, string $service, ?string $fp, ?string $cookie): void
+    {
+        $used = $row->services_used ?? [];
+        $used[$service] = $used[$service] ?? Carbon::now()->toIso8601String();
+
+        $row->update([
+            'services_used'    => $used,
+            // Backfill any signal that was missing when the row was first written.
+            'cookie_hash'      => $row->cookie_hash ?? $cookie,
+            'fingerprint_hash' => $row->fingerprint_hash ?? $fp,
+        ]);
     }
 
     /** Has this visitor already consumed their one free use of $service? */
@@ -64,32 +85,46 @@ class GuestUsageService
         return false;
     }
 
-    /** Record that this visitor has now used $service (idempotent per service). */
+    /**
+     * Record that this visitor has now used $service (idempotent per service).
+     *
+     * Wrapped in a transaction with a row lock so concurrent records for the same
+     * visitor (e.g. study + service fired together) serialize their read-modify-write
+     * of the services_used JSON map instead of clobbering each other's keys. The
+     * unique (ip_hash, fingerprint_hash) index guards against duplicate rows; if a
+     * concurrent request wins the insert race we catch the violation and merge instead.
+     */
     public function record(Request $request, string $service): void
     {
         [$ip, $fp, $cookie] = $this->identify($request);
 
-        $row = $this->matches($ip, $fp, $cookie)->first();
+        DB::transaction(function () use ($ip, $fp, $cookie, $service) {
+            $row = $this->matchQuery($ip, $fp, $cookie)->lockForUpdate()->first();
 
-        $used = $row->services_used ?? [];
-        $used[$service] = $used[$service] ?? Carbon::now()->toIso8601String();
+            if ($row) {
+                $this->mergeService($row, $service, $fp, $cookie);
 
-        if ($row) {
-            $row->update([
-                'services_used'    => $used,
-                // Backfill any signal that was missing when the row was first written.
-                'cookie_hash'      => $row->cookie_hash ?? $cookie,
-                'fingerprint_hash' => $row->fingerprint_hash ?? $fp,
-            ]);
+                return;
+            }
 
-            return;
-        }
+            try {
+                GuestTracking::create([
+                    'ip_hash'          => $ip ?? 'unknown',
+                    'fingerprint_hash' => $fp,
+                    'cookie_hash'      => $cookie,
+                    'services_used'    => [$service => Carbon::now()->toIso8601String()],
+                ]);
+            } catch (QueryException $e) {
+                // A concurrent request created the row first (unique ip_hash+fingerprint_hash).
+                // Re-select it under lock and merge this service in.
+                $row = $this->matchQuery($ip, $fp, $cookie)->lockForUpdate()->first();
+                if ($row) {
+                    $this->mergeService($row, $service, $fp, $cookie);
 
-        GuestTracking::create([
-            'ip_hash'          => $ip ?? 'unknown',
-            'fingerprint_hash' => $fp,
-            'cookie_hash'      => $cookie,
-            'services_used'    => $used,
-        ]);
+                    return;
+                }
+                throw $e;
+            }
+        });
     }
 }

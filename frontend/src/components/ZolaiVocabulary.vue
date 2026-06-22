@@ -167,12 +167,6 @@ function catColor(cat) {
       </table>
     </div>
 
-    <footer class="vocab-footer">
-      <p>
-        Reference: <em>Paunam Khenna Leh Kampau Luanzia</em> (Sia Cin Sian Pau) &nbsp;·&nbsp;
-        Lai Siangtho 1932 &nbsp;·&nbsp; Tedim Hymnal
-      </p>
-    </footer>
   </div>
 </template>
 
@@ -370,13 +364,6 @@ function catColor(cat) {
   border-radius: 999px;
   border: 1px solid;
   white-space: nowrap;
-}
-
-.vocab-footer {
-  padding: 2rem 1.5rem 0;
-  text-align: center;
-  font-size: 0.78rem;
-  color: var(--text-muted);
 }
 
 @media (max-width: 500px) {

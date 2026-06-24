@@ -364,7 +364,7 @@ function streamLink(t) {
 .wr-badge { font-size: .7rem; text-transform: uppercase; letter-spacing: .04em; color: var(--primary); font-weight: 700; }
 .wr-ext { color: var(--text-muted); text-decoration: none; font-size: 1.1rem; }
 
-.wr-player { position: fixed; left: 0; right: 0; bottom: 0; display: flex; align-items: center;
+.wr-player { position: fixed; left: 0; right: 0; bottom: 0; z-index: 41; display: flex; align-items: center;
   justify-content: space-between; gap: 1rem; padding: .75rem 1rem; background: var(--surface);
   border-top: 1px solid var(--border-strong); box-shadow: var(--shadow); }
 .wr-current { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
@@ -376,7 +376,9 @@ function streamLink(t) {
 
 @media (max-width: 640px) {
   .wr-free { flex-direction: column; }
-  .wr-player { flex-wrap: wrap; }
+  /* Sit the player bar directly above the fixed BottomNav so its
+     Play/Pause/Next/Stop controls aren't hidden behind it on phones. */
+  .wr-player { flex-wrap: wrap; bottom: var(--bottom-nav-h); }
   .wr-mood-tag { display: none; }
 }
 </style>

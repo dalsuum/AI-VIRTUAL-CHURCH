@@ -23,6 +23,23 @@ import { api } from "./composables/useApi";
 // The current hash, kept reactive so the data-driven nav can derive its active
 // state from a single source instead of a per-route boolean.
 const currentHash = ref(window.location.hash);
+
+// My Journey rail open/close — shared between the header hamburger and the rail.
+// Default: open on desktop, closed (off-canvas) on phones, unless the user has
+// set a preference. Push on desktop, overlay drawer on phones (see styles below).
+const journeyOpen = ref(
+  localStorage.getItem("history.open") != null
+    ? localStorage.getItem("history.open") === "1"
+    : window.innerWidth > 760
+);
+function toggleJourney() {
+  journeyOpen.value = !journeyOpen.value;
+  localStorage.setItem("history.open", journeyOpen.value ? "1" : "0");
+}
+function closeJourney() {
+  journeyOpen.value = false;
+  localStorage.setItem("history.open", "0");
+}
 // The admin console lives at #admin so it never collides with the worship flow.
 const isAdminRoute  = ref(window.location.hash === "#admin");
 const isVocabRoute  = ref(window.location.hash === "#vocabulary");
@@ -359,7 +376,7 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
 <template>
  <div class="root-layout">
   <!-- Unified history rail — only for registered users; collapses on mobile. -->
-  <HistorySidebar v-if="isAuthed" :authed="isAuthed" />
+  <HistorySidebar v-if="isAuthed" :authed="isAuthed" :open="journeyOpen" @close="closeJourney" />
   <div class="root-content">
   <!-- Global app shell: header + footer render once and persist across every
        route; only the slotted content swaps when navigating. -->
@@ -371,6 +388,7 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
     :fd-title="fdTitle"
     :stickers-enabled="stickersEnabled"
     @logout="logout"
+    @toggle-journey="toggleJourney"
   >
       <!-- Route views — rendered full-width inside the global layout. -->
       <AdminConsole v-if="isAdminRoute" />

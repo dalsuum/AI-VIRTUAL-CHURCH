@@ -1,0 +1,19 @@
+{
+  "name": "AI Virtual Church",
+  "short_name": "AI Church",
+  "description": "Mobile-first worship, hymns, Bible reading and study.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0d1117",
+  "theme_color": "#0d1117",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any maskable"
+    }
+  ]
+}

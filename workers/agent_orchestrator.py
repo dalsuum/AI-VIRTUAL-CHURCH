@@ -36,11 +36,11 @@ from strategies.youtube_strategy import find_sermon_video as _find_sermon_video 
 from tasks.celery_app import app as _celery_app    # noqa: E402
 
 
-_OPENROUTER_KEY  = os.environ["OPENROUTER_API_KEY"]
+_OPENROUTER_KEY  = os.environ.get("OPENROUTER_API_KEY", "")
 _OPENROUTER_URL  = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
-_LARAVEL_WEBHOOK = os.environ["LARAVEL_WEBHOOK_URL"]
-_WORKER_SECRET   = os.environ["WORKER_WEBHOOK_SECRET"]
-_MUSIC_WEBHOOK   = _LARAVEL_WEBHOOK.replace("asset-ready", "music-track")
+_LARAVEL_WEBHOOK = os.environ.get("LARAVEL_WEBHOOK_URL", "")
+_WORKER_SECRET   = os.environ.get("WORKER_WEBHOOK_SECRET", "")
+_MUSIC_WEBHOOK   = _LARAVEL_WEBHOOK.replace("asset-ready", "music-track") if _LARAVEL_WEBHOOK else ""
 
 # Model IDs used when the admin selects each provider.
 # Both go through OpenRouter so no extra API key is needed.

@@ -120,17 +120,18 @@ onBeforeUnmount(() => clearInterval(poll));
 .pastor-head h2 { margin: 0; }
 .pastor-head p { opacity: .7; margin: 4px 0 12px; }
 .pastor-thread { flex: 1; overflow-y: auto; min-height: 320px; padding: 8px;
-  border: 1px solid var(--border,#e3e3e3); border-radius: 12px; background: var(--panel,#fafafa); }
+  border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--text); }
 .pastor-empty { opacity: .6; text-align: center; margin-top: 40px; }
 .bubble { max-width: 80%; margin: 8px 0; padding: 8px 12px; border-radius: 12px; }
 .bubble .who { font-size: 11px; opacity: .6; }
 .bubble p { margin: 2px 0 0; white-space: pre-wrap; line-height: 1.45; }
-.bubble.user { margin-left: auto; background: var(--accent,#4f46e5); color: #fff; }
-.bubble.assistant { margin-right: auto; background: var(--hover,#ececff); }
+.bubble.user { margin-left: auto; background: var(--primary); color: var(--on-primary); }
+.bubble.assistant { margin-right: auto; background: var(--surface-2); color: var(--text); }
 .bubble.typing p { letter-spacing: 2px; }
-.pastor-err { color: #b91c1c; font-size: 13px; }
+.pastor-err { color: var(--danger); font-size: 13px; }
 .pastor-input { display: flex; gap: 8px; margin-top: 10px; }
-.pastor-input textarea { flex: 1; resize: none; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--border,#ddd); }
-.pastor-input button { padding: 0 18px; border-radius: 10px; border: none; background: var(--accent,#4f46e5); color: #fff; cursor: pointer; }
+.pastor-input textarea { flex: 1; resize: none; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); }
+.pastor-input textarea::placeholder { color: var(--text-faint); }
+.pastor-input button { padding: 0 18px; border-radius: 10px; border: none; background: var(--primary); color: var(--on-primary); cursor: pointer; }
 .pastor-input button:disabled { opacity: .5; cursor: default; }
 </style>

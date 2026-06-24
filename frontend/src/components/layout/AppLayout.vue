@@ -8,6 +8,7 @@
 import { onMounted, onUnmounted } from "vue";
 import AppHeader from "./AppHeader.vue";
 import AppFooter from "./AppFooter.vue";
+import BottomNav from "./BottomNav.vue";
 
 // Dev-only layout debugger: set `window.__layoutDebug = true` (or add
 // `?layoutDebug` to the URL) to outline the shell regions and log scroll state.
@@ -46,7 +47,7 @@ defineProps({
   stickersEnabled: { type: Boolean, default: false },
 });
 
-defineEmits(["logout"]);
+defineEmits(["logout", "toggle-journey"]);
 </script>
 
 <template>
@@ -59,6 +60,7 @@ defineEmits(["logout"]);
       :fd-title="fdTitle"
       :stickers-enabled="stickersEnabled"
       @logout="$emit('logout')"
+      @toggle-journey="$emit('toggle-journey')"
     />
 
     <main class="app-main">
@@ -66,6 +68,18 @@ defineEmits(["logout"]);
     </main>
 
     <AppFooter />
+
+    <!-- Mobile-only primary navigation (phones ≤640px). Additive: the desktop
+         top-bar nav remains primary on larger screens. See LAYOUT_CONTRACT.md. -->
+    <BottomNav
+      :current-hash="currentHash"
+      :is-authed="isAuthed"
+      :is-admin="isAdmin"
+      :fathers-day-enabled="fathersDayEnabled"
+      :fd-title="fdTitle"
+      :stickers-enabled="stickersEnabled"
+      @logout="$emit('logout')"
+    />
   </div>
 </template>
 
@@ -76,6 +90,12 @@ defineEmits(["logout"]);
    the remaining viewport between the sticky header and the footer. */
 .app-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .app-main > * { flex: 1 1 auto; min-height: 0; }
+
+/* On phones the fixed BottomNav overlays the viewport bottom; reserve space so
+   page content (and the footer) never hide behind it. */
+@media (max-width: 640px) {
+  .page { padding-bottom: var(--bottom-nav-h); }
+}
 </style>
 
 <!-- Global (unscoped) so it can outline child-component roots when the dev-only

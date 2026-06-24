@@ -6,6 +6,7 @@
 // Paite, Sizang, Mara, Matu). Read-only, no auth required.
 import { ref, computed, watch, onMounted, nextTick } from "vue";
 import { api } from "../composables/useApi.js";
+import AppIcon from "./AppIcon.vue";
 
 // Tab order: KJV, English, Hebrew, Burmese first, then the Chin/Zo Bibles
 // alphabetically by label.
@@ -545,9 +546,9 @@ onMounted(() => {
     <!-- While reading, the app header folds away with the controls so a
          collapsed panel leaves only the slim handle bar above the verses. -->
     <header v-show="!selectedBook || controlsOpen" class="bible-header">
-      <a href="#" class="back-link">&#8592; Back to worship</a>
+      <a href="#" class="back-link"><AppIcon name="mdi:arrow-left" size="18px" /> Back to worship</a>
       <div class="bible-title-block">
-        <h1 class="bible-title">📖 Online Bible</h1>
+        <h1 class="bible-title"><AppIcon name="mdi:book-cross" size="22px" /> Online Bible</h1>
         <p class="bible-sub">Read Scripture in English (King James Version &amp; Berean Standard Bible, 2020), Hebrew (Westminster Leningrad Codex — Tanakh), Burmese (Judson, 1835) and the Chin/Zo languages (Falam, Hakha, Mara, Matu, Mizo, Paite, Sizang, Tedim) — public-domain translations.</p>
       </div>
       <div class="lang-tabs" role="group" aria-label="Translation">
@@ -601,7 +602,7 @@ onMounted(() => {
       <div class="reader-top">
       <div class="reader-handle">
         <button class="link-btn" @click="backToBooks" aria-label="All books" title="All books">
-          <span aria-hidden="true">&#8592;</span><span class="btn-label"> All books</span>
+          <AppIcon name="mdi:arrow-left" size="18px" /><span class="btn-label"> All books</span>
         </button>
         <h2 class="reader-heading" :dir="isRtl ? 'rtl' : 'ltr'">{{ chapter?.name || selectedBook.name }} {{ chapterNum }}</h2>
         <button
@@ -612,7 +613,7 @@ onMounted(() => {
           :title="controlsOpen ? 'Hide controls' : 'Show controls'"
           @click="toggleControls"
         >
-          <span aria-hidden="true">{{ controlsOpen ? '▴' : '▾' }}</span>
+          <AppIcon :name="controlsOpen ? 'mdi:chevron-up' : 'mdi:chevron-down'" size="20px" />
           <span class="btn-label"> {{ controlsOpen ? 'Hide' : 'Controls' }}</span>
         </button>
       </div>
@@ -627,7 +628,7 @@ onMounted(() => {
             :title="loadingAudio ? 'Preparing audio' : 'Listen'"
             @click="listen"
           >
-            <span aria-hidden="true">{{ loadingAudio ? '⏳' : '🔊' }}</span>
+            <AppIcon :name="loadingAudio ? 'mdi:loading' : 'mdi:volume-high'" size="18px" :class="{ spin: loadingAudio }" />
             <span class="btn-label"> {{ loadingAudio ? 'Preparing…' : 'Listen' }}</span>
           </button>
           <button
@@ -640,7 +641,7 @@ onMounted(() => {
             :title="`Verse highlighting ${highlightEnabled ? 'on' : 'off'}`"
             @click="toggleHighlight"
           >
-            <span aria-hidden="true">✨</span><span class="btn-label"> Highlight: {{ highlightEnabled ? 'On' : 'Off' }}</span>
+            <AppIcon name="mdi:format-color-highlight" size="18px" /><span class="btn-label"> Highlight: {{ highlightEnabled ? 'On' : 'Off' }}</span>
           </button>
           <button
             v-if="canNarrate && feat('continuous')"
@@ -652,7 +653,7 @@ onMounted(() => {
             :title="`Read whole Bible continuously ${continuousRead ? 'on' : 'off'}`"
             @click="toggleContinuous"
           >
-            <span aria-hidden="true">📖</span><span class="btn-label"> Continuous: {{ continuousRead ? 'On' : 'Off' }}</span>
+            <AppIcon name="mdi:autorenew" size="18px" /><span class="btn-label"> Continuous: {{ continuousRead ? 'On' : 'Off' }}</span>
           </button>
           <button
             v-if="musicAvailable && feat('music')"
@@ -664,7 +665,7 @@ onMounted(() => {
             :title="`Background music ${bgMusicPref ? 'on' : 'off'}`"
             @click="toggleBgMusic"
           >
-            <span aria-hidden="true">🎵</span><span class="btn-label"> Music: {{ bgMusicPref ? 'On' : 'Off' }}</span>
+            <AppIcon name="mdi:music-note" size="18px" /><span class="btn-label"> Music: {{ bgMusicPref ? 'On' : 'Off' }}</span>
           </button>
           <!-- Background-music element lives here (not inside the narration audio
                wrapper) so it exists and can play on its own even when there's no
@@ -687,7 +688,7 @@ onMounted(() => {
             :title="`Select verses to copy ${selectMode ? 'on' : 'off'}`"
             @click="toggleSelectMode"
           >
-            <span aria-hidden="true">📋</span><span class="btn-label"> Select: {{ selectMode ? 'On' : 'Off' }}</span>
+            <AppIcon name="mdi:clipboard-check-outline" size="18px" /><span class="btn-label"> Select: {{ selectMode ? 'On' : 'Off' }}</span>
           </button>
           <select class="ch-select" :value="chapterNum" aria-label="Chapter" @change="goChapter(Number($event.target.value))">
             <option v-for="n in chapterList" :key="n" :value="n">Chapter {{ n }}</option>
@@ -790,19 +791,19 @@ onMounted(() => {
         <span class="copy-count">{{ selectedCount }} selected</span>
         <span v-if="copyStatus" class="copy-status">{{ copyStatus }}</span>
         <button type="button" class="copy-clear" @click="clearSelection">Clear</button>
-        <button type="button" class="copy-btn" @click="copySelection">📋 Copy</button>
+        <button type="button" class="copy-btn" @click="copySelection"><AppIcon name="mdi:content-copy" size="16px" /> Copy</button>
       </div>
 
       <div class="reader-nav">
         <button class="nav-btn" :disabled="chapterNum <= 1" @click="goChapter(chapterNum - 1)">
-          &#8592; Previous
+          <AppIcon name="mdi:chevron-left" size="20px" /> Previous
         </button>
         <button
           class="nav-btn"
           :disabled="chapterNum >= selectedBook.chapters"
           @click="goChapter(chapterNum + 1)"
         >
-          Next &#8594;
+          Next <AppIcon name="mdi:chevron-right" size="20px" />
         </button>
       </div>
     </div>
@@ -859,16 +860,19 @@ onMounted(() => {
   background: var(--surface);
 }
 .back-link {
-  display: inline-block;
-  font-size: 0.83rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
   color: var(--text-muted);
   text-decoration: none;
   margin-bottom: 0.6rem;
+  min-height: 44px;
   transition: color 0.15s;
 }
 .back-link:hover { color: var(--primary); }
 .bible-title-block { margin-bottom: 0.85rem; }
-.bible-title { font-size: 1.5rem; margin: 0 0 0.25rem; }
+.bible-title { display: flex; align-items: center; gap: 0.45rem; font-size: 1.5rem; margin: 0 0 0.25rem; }
 .bible-sub { margin: 0; color: var(--text-muted); font-size: 0.9rem; }
 .bible-version { margin: 0.4rem 0 0; color: var(--text-muted); font-size: 0.8rem; font-style: italic; }
 
@@ -970,6 +974,8 @@ onMounted(() => {
 }
 .collapse-btn {
   flex: 0 0 auto;
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  min-height: 44px;
   padding: 0.4rem 0.75rem;
   border: 1px solid var(--border);
   border-radius: 999px;
@@ -995,6 +1001,8 @@ onMounted(() => {
   margin-bottom: 0.75rem;
 }
 .link-btn {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  min-height: 44px;
   background: none;
   border: none;
   color: var(--primary);
@@ -1018,6 +1026,8 @@ onMounted(() => {
   flex-wrap: wrap;
 }
 .listen-btn {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  min-height: 44px;
   padding: 0.45rem 0.9rem;
   border: 1px solid var(--primary);
   border-radius: 999px;
@@ -1033,6 +1043,8 @@ onMounted(() => {
 .listen-btn:disabled { opacity: 0.6; cursor: default; }
 
 .icon-toggle {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  min-height: 44px;
   padding: 0.45rem 0.8rem;
   border: 1px solid var(--border);
   border-radius: 999px;
@@ -1045,6 +1057,10 @@ onMounted(() => {
   transition: border-color 0.15s, color 0.15s, background 0.15s;
 }
 .icon-toggle.active { border-color: var(--primary); color: var(--primary); background: var(--primary-soft, rgba(99,179,237,0.12)); }
+
+/* Spinner for the "Preparing…" listen state. */
+.spin { animation: bible-spin 0.9s linear infinite; }
+@keyframes bible-spin { to { transform: rotate(360deg); } }
 
 /* Phones: collapse the action/toggle buttons to icon-only so the whole bar
    fits without horizontal scroll. Labels return on wider screens. */
@@ -1162,6 +1178,8 @@ onMounted(() => {
   cursor: pointer;
 }
 .copy-btn {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  min-height: 44px;
   padding: 0.4rem 0.9rem;
   border: 1px solid var(--primary);
   border-radius: 999px;
@@ -1185,6 +1203,8 @@ onMounted(() => {
   border-top: 1px solid var(--border);
 }
 .nav-btn {
+  display: inline-flex; align-items: center; gap: 0.25rem;
+  min-height: 44px;
   padding: 0.55rem 1.1rem;
   border: 1px solid var(--border);
   border-radius: 10px;

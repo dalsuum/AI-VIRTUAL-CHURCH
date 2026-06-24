@@ -130,7 +130,7 @@ def _strip_formatting(text: str) -> str:
     # Stage directions / cues in brackets, with any wrapping emphasis: **[...]**, [pause]
     text = re.sub(r"\*{0,3}\[[^\]]*\]\*{0,3}", "", text)
     # Headings (leading #), and horizontal-rule lines (---, ***, ___)
-    text = re.sub(r"(?m)^\s{0,3}#{1,6}\s*", "", text)
+    text = re.sub(r"(?m)^\s*#{1,6}\s*", "", text)
     text = re.sub(r"(?m)^\s*([-*_])\1{2,}\s*$", "", text)
     # List markers at the start of a line (-, *, +, "1.")
     text = re.sub(r"(?m)^\s*(?:[-*+]|\d+\.)\s+", "", text)

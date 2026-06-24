@@ -29,14 +29,18 @@ from strategies import MusicResult, get_strategy  # noqa: E402
 from strategies.youtube_strategy import find_sermon_video  # noqa: E402
 from tasks.celery_app import app  # noqa: E402
 
-LARAVEL_WEBHOOK = os.environ["LARAVEL_WEBHOOK_URL"]  # e.g. https://api.host/api/internal/asset-ready
-WORKER_SECRET = os.environ["WORKER_WEBHOOK_SECRET"]
+LARAVEL_WEBHOOK = os.environ.get("LARAVEL_WEBHOOK_URL", "")  # e.g. https://api.host/api/internal/asset-ready
+WORKER_SECRET = os.environ.get("WORKER_WEBHOOK_SECRET", "")
 # Sibling internal endpoint that registers a freshly generated song in the reusable
 # mood pool. Same host/secret as the asset-ready webhook, different final path.
-MUSIC_TRACK_WEBHOOK = LARAVEL_WEBHOOK.replace("asset-ready", "music-track")
+MUSIC_TRACK_WEBHOOK = LARAVEL_WEBHOOK.replace("asset-ready", "music-track") if LARAVEL_WEBHOOK else ""
 
 
 def _post_asset(session_token: str, segment: str, **fields) -> None:
+    if not LARAVEL_WEBHOOK or not WORKER_SECRET:
+        raise RuntimeError(
+            "LARAVEL_WEBHOOK_URL and WORKER_WEBHOOK_SECRET must be set to post assets"
+        )
     payload = {"session_token": session_token, "segment": segment, **fields}
     requests.post(
         LARAVEL_WEBHOOK,

@@ -7,9 +7,11 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "icons:gen": "node scripts/gen-icons.mjs"
   },
   "dependencies": {
+    "@iconify/vue": "^5.0.1",
     "@stripe/stripe-js": "^5.4.0",
     "chordsheetjs": "^15.4.0",
     "cropperjs": "^1.6.2",
@@ -18,8 +20,13 @@
     "vue": "^3.5.13"
   },
   "devDependencies": {
+    "@iconify-json/mdi": "^1.2.3",
+    "@iconify/utils": "^3.1.3",
     "@playwright/test": "^1.61.0",
     "@vitejs/plugin-vue": "^5.2.1",
+    "autoprefixer": "^10.5.0",
+    "postcss": "^8.5.15",
+    "tailwindcss": "^3.4.19",
     "vite": "^6.0.7"
   }
 }

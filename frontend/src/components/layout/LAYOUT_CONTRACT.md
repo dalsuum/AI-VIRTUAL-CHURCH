@@ -42,6 +42,16 @@ this in CI — if you change the shell, run `npm run test:e2e`.
    the footer sits at the bottom on short pages and after the content on long
    ones — never floating mid-viewport.
 
+8. **Bottom nav is mobile-only and additive.** `BottomNav` is rendered once, by
+   `AppLayout`, and is the primary navigation on phones (≤640px). It is
+   `display:none` on ≥641px, where the `AppHeader` top-bar nav stays primary —
+   the two never show at once, so there is no mixed-navigation regression. It
+   has exactly four primary tabs (Home / Songs / Bible / Study) plus a "More"
+   bottom sheet for every secondary, permission-gated destination. Page content
+   reserves `--bottom-nav-h` of bottom padding on phones so nothing hides behind
+   the fixed bar. Icons are Iconify (mdi) via `AppIcon` — no emojis. (Smoke test
+   asserts one nav, 5 tabs at 390px, hidden at 1200px.)
+
 ## Adding a page
 
 1. Add a route flag + `v-else-if` branch in `App.vue`.

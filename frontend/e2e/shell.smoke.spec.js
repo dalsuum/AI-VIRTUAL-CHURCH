@@ -56,8 +56,50 @@ test.describe("global layout shell", () => {
     await goto(page, "");
     const footer = await page.locator("footer.site-footer").boundingBox();
     const vh = page.viewportSize().height;
-    // On a short page the sticky-footer layout keeps it at the bottom.
-    expect(footer.y + footer.height).toBeGreaterThanOrEqual(vh - 2);
+    // On phones the fixed bottom nav reserves space, so the footer sits just
+    // above it rather than flush with the viewport bottom. Account for it.
+    const navBox = await page.locator('nav[aria-label="Primary"]').boundingBox();
+    const navH = navBox && navBox.height ? navBox.height : 0;
+    expect(footer.y + footer.height).toBeGreaterThanOrEqual(vh - navH - 2);
+  });
+});
+
+test.describe("mobile bottom navigation", () => {
+  const PHONE = { width: 390, height: 780 };
+
+  test("shows exactly one bottom nav with 5 tabs on phones", async ({ page }) => {
+    await page.setViewportSize(PHONE);
+    await goto(page, "");
+    const nav = page.locator('nav[aria-label="Primary"]');
+    await expect(nav).toHaveCount(1);
+    await expect(nav).toBeVisible();
+    // Home / Songs / Bible / Study + More.
+    await expect(nav.locator(".bn-item")).toHaveCount(5);
+  });
+
+  test("bottom nav is hidden on desktop widths", async ({ page }) => {
+    await page.setViewportSize({ width: 1200, height: 800 });
+    await goto(page, "");
+    await expect(page.locator('nav[aria-label="Primary"]')).toBeHidden();
+  });
+
+  test('"More" opens a sheet of secondary destinations', async ({ page }) => {
+    await page.setViewportSize(PHONE);
+    await goto(page, "");
+    await page.getByRole("button", { name: "More" }).click();
+    const sheet = page.getByRole("menu", { name: "More" });
+    await expect(sheet).toBeVisible();
+    // Songs always shows (not permission-gated).
+    await expect(sheet.getByRole("menuitem", { name: "Songs" })).toBeVisible();
+  });
+
+  test("page does not overflow horizontally with the bottom nav at 390px", async ({ page }) => {
+    await page.setViewportSize(PHONE);
+    await goto(page, "#bible");
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(overflow).toBeLessThanOrEqual(1);
   });
 });
 

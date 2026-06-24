@@ -7,14 +7,17 @@
 import { ref, onMounted, computed } from "vue";
 import { api } from "../composables/useApi";
 
-const props = defineProps({ authed: { type: Boolean, default: false } });
+const props = defineProps({
+  authed: { type: Boolean, default: false },
+  open: { type: Boolean, default: true },
+});
+const emit = defineEmits(["close"]);
 
 const TYPE_ICON = {
   bible_study: "📖", prayer: "🙏", music: "🎵",
   service: "⛪", pastor: "💬", devotion: "📚", general: "🗒️",
 };
 
-const collapsed = ref(localStorage.getItem("history.collapsed") === "1");
 const loading = ref(false);
 const pinned = ref([]);
 const groups = ref({});            // { "Today": [...], ... }
@@ -86,6 +89,7 @@ function resume(item) {
   };
   window.location.hash = routes[item.type || item.session_type] || "#account";
   detail.value = null;
+  closeOnPhone();
 }
 
 async function rename(item) {
@@ -137,25 +141,23 @@ async function saveToJournal(item) {
   } catch { flash.value = "Could not start journal entry."; }
 }
 
-function toggleCollapse() {
-  collapsed.value = !collapsed.value;
-  localStorage.setItem("history.collapsed", collapsed.value ? "1" : "0");
+// On phones the rail is an overlay drawer; close it after navigating so the
+// destination view isn't left hidden behind the backdrop.
+function closeOnPhone() {
+  if (window.matchMedia("(max-width: 760px)").matches) emit("close");
 }
 
-function newPastor() { window.location.hash = "#pastor"; }
-function openJourney() { window.location.hash = "#journey"; }
+function newPastor() { window.location.hash = "#pastor"; closeOnPhone(); }
+function openJourney() { window.location.hash = "#journey"; closeOnPhone(); }
 
 onMounted(() => load(true));
 defineExpose({ reload: () => load(true) });
 </script>
 
 <template>
-  <aside v-if="authed" class="history-rail" :class="{ collapsed }">
-    <button class="hr-collapse" @click="toggleCollapse" :title="collapsed ? 'Expand' : 'Collapse'">
-      {{ collapsed ? "»" : "«" }}
-    </button>
-
-    <div v-if="!collapsed" class="hr-body">
+  <div v-if="authed && open" class="hr-backdrop" @click="emit('close')"></div>
+  <aside v-if="authed" class="history-rail" :class="{ open, closed: !open }">
+    <div class="hr-body">
       <div class="hr-head">
         <strong>📜 My Journey</strong>
         <button class="hr-mini" @click="openJourney" title="Spiritual Journey">📊</button>
@@ -176,7 +178,7 @@ defineExpose({ reload: () => load(true) });
         <p v-if="searching" class="hr-dim">Searching…</p>
         <p v-else-if="!searchResults.length" class="hr-dim">Nothing found.</p>
         <button v-for="it in searchResults" :key="it.id" class="hr-item" @click="openItem(it)">
-          <span class="hr-ic">{{ icon(it.type) }}</span><span class="hr-tt">{{ it.title }}</span>
+          <span class="hr-tt">{{ it.title }}</span>
         </button>
       </div>
 
@@ -185,14 +187,13 @@ defineExpose({ reload: () => load(true) });
         <div v-if="pinned.length" class="hr-section">
           <h4>📌 Pinned</h4>
           <button v-for="it in pinned" :key="it.id" class="hr-item" @click="openItem(it)">
-            <span class="hr-ic">{{ icon(it.type) }}</span><span class="hr-tt">{{ it.title }}</span>
+            <span class="hr-tt">{{ it.title }}</span>
           </button>
         </div>
 
         <div v-for="[label, items] in orderedGroups" :key="label" class="hr-section">
           <h4>{{ label }}</h4>
           <button v-for="it in items" :key="it.id" class="hr-item" @click="openItem(it)">
-            <span class="hr-ic">{{ icon(it.type) }}</span>
             <span class="hr-tt">{{ it.title }}</span>
             <span v-if="it.favorite" class="hr-star">★</span>
           </button>
@@ -247,49 +248,60 @@ defineExpose({ reload: () => load(true) });
 </template>
 
 <style scoped>
-.history-rail { width: 280px; flex: 0 0 280px; border-right: 1px solid var(--border, #e3e3e3);
-  background: var(--panel, #fafafa); height: 100vh; position: sticky; top: 0; overflow-y: auto; }
-.history-rail.collapsed { width: 40px; flex-basis: 40px; }
-.hr-collapse { position: sticky; top: 6px; left: 6px; margin: 6px; background: none; border: 1px solid var(--border,#ddd);
-  border-radius: 6px; cursor: pointer; width: 28px; height: 28px; }
+/* Desktop: the rail is part of the flex row and PUSHES content. Closing it
+   collapses its width to zero (content reclaims the space). */
+.history-rail { width: 280px; flex: 0 0 280px; border-right: 1px solid var(--border);
+  background: var(--surface); color: var(--text); height: 100vh; position: sticky; top: 0; overflow-y: auto;
+  transition: flex-basis .2s ease, width .2s ease; }
+.history-rail.closed { width: 0; flex-basis: 0; overflow: hidden; border-right: none; }
+/* Backdrop only exists for the phone overlay drawer; hidden on desktop. */
+.hr-backdrop { display: none; }
 .hr-body { padding: 6px 10px 40px; }
 .hr-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-.hr-new { width: 100%; padding: 8px; border-radius: 8px; border: 1px solid var(--border,#ddd);
-  background: var(--accent,#4f46e5); color: #fff; cursor: pointer; margin-bottom: 8px; }
+.hr-new { width: 100%; padding: 8px; border-radius: 8px; border: 1px solid var(--primary);
+  background: var(--primary); color: var(--on-primary); cursor: pointer; margin-bottom: 8px; }
 .hr-search { display: flex; gap: 4px; margin-bottom: 8px; }
-.hr-search input { flex: 1; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--border,#ddd); }
-.hr-mini { background: none; border: 1px solid var(--border,#ddd); border-radius: 6px; cursor: pointer; padding: 2px 7px; }
+.hr-search input { flex: 1; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--surface-2); color: var(--text); }
+.hr-search input::placeholder { color: var(--text-faint); }
+.hr-mini { background: none; border: 1px solid var(--border); border-radius: 6px; cursor: pointer; padding: 2px 7px; color: var(--text); }
 .hr-section { margin-bottom: 12px; }
 .hr-section h4 { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; opacity: .6; margin: 8px 0 4px; }
 .hr-item { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left; padding: 7px 8px;
-  border: none; background: none; border-radius: 8px; cursor: pointer; font-size: 13px; }
-.hr-item:hover { background: var(--hover, #eee); }
+  border: none; background: none; border-radius: 8px; cursor: pointer; font-size: 13px; color: var(--text); }
+.hr-item:hover { background: var(--surface-3); }
 .hr-ic { flex: 0 0 auto; }
 .hr-tt { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hr-star { color: #eab308; }
-.hr-more { width: 100%; padding: 6px; margin-top: 4px; border: 1px dashed var(--border,#ccc);
-  border-radius: 8px; background: none; cursor: pointer; }
+.hr-more { width: 100%; padding: 6px; margin-top: 4px; border: 1px dashed var(--border);
+  border-radius: 8px; background: none; cursor: pointer; color: var(--text); }
 .hr-dim { opacity: .55; font-size: 12px; padding: 4px 8px; }
 .hr-flash { font-size: 12px; background: #fef9c3; border-radius: 6px; padding: 5px 8px; cursor: pointer; }
 .hr-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; justify-content: center;
   align-items: center; z-index: 1000; }
-.hr-panel { background: var(--panel,#fff); width: min(680px, 92vw); max-height: 86vh; overflow-y: auto;
+.hr-panel { background: var(--surface); color: var(--text); width: min(680px, 92vw); max-height: 86vh; overflow-y: auto;
   border-radius: 14px; padding: 16px; }
 .hr-panel header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .hr-panel header strong { flex: 1; }
 .hr-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
-.hr-actions button { padding: 4px 9px; border-radius: 7px; border: 1px solid var(--border,#ddd);
-  background: none; cursor: pointer; font-size: 12px; }
-.hr-actions .danger { color: #b91c1c; border-color: #fca5a5; }
-.hr-summary { font-style: italic; opacity: .8; border-left: 3px solid var(--accent,#4f46e5); padding-left: 8px; }
+.hr-actions button { padding: 4px 9px; border-radius: 7px; border: 1px solid var(--border);
+  background: none; cursor: pointer; font-size: 12px; color: var(--text); }
+.hr-actions .danger { color: var(--danger); border-color: var(--danger); }
+.hr-summary { font-style: italic; opacity: .8; border-left: 3px solid var(--primary); padding-left: 8px; }
 .hr-tags { display: flex; flex-wrap: wrap; gap: 5px; margin: 6px 0; }
-.hr-tag { font-size: 11px; background: var(--hover,#eee); border-radius: 999px; padding: 1px 8px; }
+.hr-tag { font-size: 11px; background: var(--surface-3); border-radius: 999px; padding: 1px 8px; }
 .hr-transcript { margin-top: 10px; }
 .hr-msg { margin: 6px 0; line-height: 1.4; }
 .hr-msg.user { text-align: right; }
 @media (max-width: 760px) {
-  .history-rail { position: fixed; bottom: 0; top: auto; width: 100%; height: 46vh; z-index: 900;
-    border-top: 1px solid var(--border,#ddd); }
-  .history-rail.collapsed { height: 40px; width: 100%; flex-basis: 40px; }
+  /* Phone: off-canvas drawer that slides in from the left OVER the content,
+     with a dimming backdrop. */
+  .history-rail { position: fixed; top: 0; left: 0; bottom: auto; height: 100vh; width: 280px;
+    flex-basis: 280px; z-index: 950; border-right: 1px solid var(--border);
+    transform: translateX(-100%); transition: transform .25s ease; }
+  .history-rail.open { transform: translateX(0); }
+  .history-rail.closed { transform: translateX(-100%); width: 280px; flex-basis: 280px; }
+  .hr-backdrop { display: block; position: fixed; inset: 0; z-index: 940;
+    background: rgba(0,0,0,.45); }
 }
 </style>

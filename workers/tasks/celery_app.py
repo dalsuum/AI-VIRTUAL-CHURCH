@@ -49,6 +49,11 @@ app.conf.update(
         # AI Bible Study multi-agent discussion rounds — own queue so a long round
         # never blocks the worship pipeline.
         "tasks.study_discuss": {"queue": "ai:study"},
+        # Unified history jobs (pastor_reply | title_summary). Conversational LLM
+        # work, so it shares the ai:study worker pool. NOTE: it must NOT use the
+        # "ai:history" name — that key is the raw Laravel->bridge intake list, and
+        # reusing it would make the bridge and this worker race on the same key.
+        "tasks.history_job": {"queue": "ai:study"},
     },
     task_acks_late=True,
     worker_prefetch_multiplier=1,

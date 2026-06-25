@@ -58,3 +58,41 @@ app.conf.update(
     task_acks_late=True,
     worker_prefetch_multiplier=1,
 )
+
+from celery.signals import task_prerun, task_postrun
+
+@task_prerun.connect
+def setup_telemetry(task_id, task, args, kwargs, **_):
+    import sys, os
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from core.telemetry import set_correlation_id, set_session_id, trace_id_var, span_id_var, Span
+    
+    if args and isinstance(args[0], dict):
+        job = args[0]
+        cid = job.get("correlation_id")
+        set_correlation_id(cid)
+        trace_id_var.set(cid)
+        set_session_id(str(job.get("session_id", "")))
+        
+        parent_span_id = job.get("parent_span_id")
+        if parent_span_id:
+            # We seed the current context so the new Span thinks of it as the parent
+            span_id_var.set(parent_span_id)
+        
+        # Instantiate Root Span
+        span = Span(
+            component="celery",
+            layer_hint="orchestration",
+            decision_source="system",
+            metadata={"task_name": task.name}
+        )
+        task.request.span_instance = span
+        span.__enter__()
+
+@task_postrun.connect
+def teardown_telemetry(task_id, task, args, kwargs, retval, state, **_):
+    span = getattr(task.request, "span_instance", None)
+    if span:
+        exc_type = type(retval) if isinstance(retval, Exception) else None
+        exc_val = retval if isinstance(retval, Exception) else None
+        span.__exit__(exc_type, exc_val, None)

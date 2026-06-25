@@ -143,6 +143,48 @@ Config: `config/{inference,chat,guardrails,knowledge,observability}.php`. Servic
 providers: `Inference`, `Observability`, `Chat`, `Guardrail`, `Knowledge` (registered in
 `bootstrap/providers.php`, in dependency order).
 
+### Ingesting sermon PDFs (incl. Burmese / Tedim)
+
+PDFs are chunked, embedded and indexed **out of band** (CLI/worker, never the web request).
+English sermons live in `backend/storage/app/knowledge/sermons/`. To add other languages,
+keep them in **per-language folders** so the right `--lang` tag is stamped on every chunk:
+
+```bash
+# 1. Upload the PDFs to the box (scp / rsync / VS Code Remote-SSH file explorer)
+mkdir -p backend/storage/app/knowledge/sermons_my   # Burmese (Myanmar)
+mkdir -p backend/storage/app/knowledge/sermons_td   # Tedim (Zolai)
+scp '*.pdf' user@host:/opt/ai-church/backend/storage/app/knowledge/sermons_my/
+
+# 2. Ingest each language (run on the WORKER box with Qdrant + worker embedding active,
+#    or the index lives in-memory and never reaches chat retrieval)
+cd backend
+php artisan knowledge:ingest sermon storage/app/knowledge/sermons_my --chunker=text --lang=my
+php artisan knowledge:ingest sermon storage/app/knowledge/sermons_td --chunker=text --lang=td
+```
+
+The directory form parses every `*.pdf` inside; a corrupt/unreadable file is **skipped with a
+warning**, never aborting the batch. Required infra env (backend `.env`):
+
+```
+KNOWLEDGE_ENABLED=true
+KNOWLEDGE_VECTOR=qdrant
+KNOWLEDGE_EMBEDDING=worker
+KNOWLEDGE_WORKER_URL=http://127.0.0.1:8001   # workers/knowledge_embed_service.py (api:app)
+KNOWLEDGE_EMBEDDING_DIMS=384                  # MUST match the embed model's output dim
+```
+
+**Two prerequisites for Burmese / Tedim specifically** (the default setup is English-only):
+
+1. **Use a multilingual embedding model.** The worker defaults to `all-MiniLM-L6-v2`
+   (English-centric — it embeds Myanmar/Tedim poorly). Set
+   `KNOWLEDGE_EMBED_MODEL=paraphrase-multilingual-MiniLM-L12-v2` in the worker env (same
+   384 dims, drop-in) and restart the worker. Vectors from two different models cannot be
+   mixed in one collection — **re-ingest all corpora** after switching models.
+2. **Verify PDF text extraction first.** `pdftotext` can mangle Myanmar script for
+   image-based PDFs. Spot-check one file before bulk ingest:
+   `pdftotext -layout -enc UTF-8 sermons_my/<file>.pdf - | head -40`. If the text is
+   garbled/tofu, OCR it first: `ocrmypdf -l mya in.pdf out.pdf`.
+
 ---
 
 ## The service flow, end to end

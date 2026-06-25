@@ -165,6 +165,21 @@ Route::middleware(['auth:sanctum', 'account.usable'])->group(function () {
     Route::post('/history/{id}/share',     [\App\Http\Controllers\HistoryController::class, 'share'])
         ->middleware('throttle:20,1');
     Route::delete('/history/{id}/share',   [\App\Http\Controllers\HistoryController::class, 'revokeShare']);
+    // Branch a session at a node into a new graph-session (SessionStateStore fork).
+    Route::post('/history/{id}/fork',      [\App\Http\Controllers\HistoryController::class, 'fork'])
+        ->middleware('throttle:30,1');
+    // File a session into a folder (or out when folder_id is null).
+    Route::patch('/history/{id}/folder',   [\App\Http\Controllers\FolderController::class, 'assign'])
+        ->middleware('throttle:60,1');
+
+    // ── Sidebar folders ───────────────────────────────────────────────────────
+    Route::get('/folders',                 [\App\Http\Controllers\FolderController::class, 'index']);
+    Route::post('/folders',                [\App\Http\Controllers\FolderController::class, 'store'])
+        ->middleware('throttle:30,1');
+    Route::patch('/folders/{id}',          [\App\Http\Controllers\FolderController::class, 'update'])
+        ->whereNumber('id')->middleware('throttle:60,1');
+    Route::delete('/folders/{id}',         [\App\Http\Controllers\FolderController::class, 'destroy'])
+        ->whereNumber('id');
 
     // ── Spiritual Journal (AI-written reflective entries) ─────────────────────
     Route::post('/history/{id}/journal',   [\App\Http\Controllers\JournalController::class, 'generate'])
@@ -222,6 +237,7 @@ Route::middleware(['auth:sanctum', 'account.usable'])->group(function () {
     // PermissionService::require(), so entry here doesn't grant blanket access.
     Route::prefix('admin')->middleware('staff')->group(function () {
         Route::get('/dashboard', [AdminController::class, 'dashboard']);
+        Route::get('/analytics', [\App\Http\Controllers\HistoryAdminController::class, 'churchAnalytics']);
 
         Route::get('/services', [AdminController::class, 'services']);
         Route::post('/services/{service}/resume-link', [AdminController::class, 'serviceResumeLink']);

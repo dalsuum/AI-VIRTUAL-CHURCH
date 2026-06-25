@@ -23,6 +23,7 @@ class PastorReplyDispatcher
             ->map(fn ($m) => ['role' => $m->sender, 'content' => $m->content])->all();
 
         $job = [
+            'correlation_id' => (string) \Illuminate\Support\Str::uuid(),
             'mode'       => 'pastor_reply',
             'session_id' => $session->id,
             'language'   => $session->language,

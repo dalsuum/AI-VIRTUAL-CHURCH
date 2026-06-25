@@ -37,6 +37,7 @@ class StudyDispatchService
         abort_unless($manifest && $manifest->isActive(), 503, 'Bible Study is not available.');
 
         $job = [
+            'correlation_id' => (string) \Illuminate\Support\Str::uuid(),
             'mode'          => 'discuss',
             'session_id'    => $session->id,
             'language'      => $session->language,
@@ -67,6 +68,7 @@ class StudyDispatchService
         $manifest = ModuleManifest::where('key', $this->module)->first();
 
         $job = [
+            'correlation_id' => (string) \Illuminate\Support\Str::uuid(),
             'mode'          => 'summary',
             'session_id'    => $session->id,
             'language'      => $session->language,

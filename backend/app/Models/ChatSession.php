@@ -50,11 +50,6 @@ class ChatSession extends Model
         return $this->belongsTo(User::class);
     }
 
-    public function messages(): HasMany
-    {
-        return $this->hasMany(ChatMessage::class, 'session_id')->orderBy('created_at');
-    }
-
     public function tags(): HasMany
     {
         return $this->hasMany(ChatSessionTag::class, 'chat_session_id');

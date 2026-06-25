@@ -39,20 +39,14 @@ class HistoryController extends Controller
     }
 
     /**
-     * Phase 3 read switch: hydrate a session's `messages` for serialization. When
-     * `history.read_from_nodes` is on (default), messages are derived from session_nodes
-     * (the durable truth); otherwise the legacy chat_messages projection is loaded. The
-     * dual-write from Phases 1-2 keeps the two equivalent, so this is instantly reversible.
+     * Hydrate a session's `messages` for serialization from session_nodes — the sole
+     * durable record since Phase 4 dropped the legacy chat_messages projection.
      */
     private function withMessages(ChatSession $session): ChatSession
     {
-        if (config('history.read_from_nodes', true)) {
-            $session->setRelation('messages', $this->state->messageDtos($session));
+        $session->setRelation('messages', $this->state->messageDtos($session));
 
-            return $session;
-        }
-
-        return $session->load('messages');
+        return $session;
     }
 
     /** Sidebar list — grouped by date bucket, cursor-paginated, optional filters. */

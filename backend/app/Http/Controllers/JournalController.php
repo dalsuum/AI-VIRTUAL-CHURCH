@@ -2,9 +2,9 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\ChatMessage;
 use App\Models\ChatSession;
 use App\Models\JournalEntry;
+use App\Services\SessionState\SessionStateStore;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Redis;
@@ -41,10 +41,7 @@ class JournalController extends Controller
         ]);
 
         // Compose the job server-side: only conversation text + the session summary.
-        $turns = ChatMessage::where('session_id', $session->id)
-            ->orderBy('created_at')->limit(30)
-            ->get(['sender', 'content'])
-            ->map(fn ($m) => ['sender' => $m->sender, 'content' => $m->content])->all();
+        $turns = app(SessionStateStore::class)->messageTurns($session, 30);
 
         Redis::rpush(self::QUEUE, json_encode([
             'correlation_id' => (string) \Illuminate\Support\Str::uuid(),

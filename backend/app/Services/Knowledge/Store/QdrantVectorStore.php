@@ -2,6 +2,7 @@
 
 namespace App\Services\Knowledge\Store;
 
+use App\Services\Knowledge\Contracts\ManagesCollections;
 use App\Services\Knowledge\Contracts\VectorStore;
 use App\Services\Knowledge\Data\Chunk;
 use App\Services\Knowledge\Data\ChunkMetadata;
@@ -16,7 +17,7 @@ use Illuminate\Http\Client\Factory as Http;
  *
  * Collections map 1:1 to corpora. The API key (if any) is injected, never logged.
  */
-final class QdrantVectorStore implements VectorStore
+final class QdrantVectorStore implements VectorStore, ManagesCollections
 {
     public function __construct(
         private readonly Http $http,
@@ -24,6 +25,40 @@ final class QdrantVectorStore implements VectorStore
         private readonly ?string $apiKey = null,
         private readonly int $timeout = 30,
     ) {}
+
+    public function ensureCollection(string $collection, int $dimensions): void
+    {
+        // Already provisioned? (GET 200) → nothing to do.
+        if ($this->exists($collection)) {
+            return;
+        }
+
+        // Create the collection with cosine-distance vectors of the embedder's dimensionality.
+        $this->request('put', "/collections/{$collection}", [
+            'vectors' => ['size' => $dimensions, 'distance' => 'Cosine'],
+        ]);
+
+        // Full-text index on the chunk text → powers the persistent keyword branch
+        // (QdrantKeywordIndex) so hybrid search works across processes.
+        $this->request('put', "/collections/{$collection}/index", [
+            'field_name'   => 'text',
+            'field_schema' => 'text',
+        ]);
+    }
+
+    private function exists(string $collection): bool
+    {
+        try {
+            $req = $this->http->timeout($this->timeout);
+            if ($this->apiKey) {
+                $req = $req->withHeaders(['api-key' => $this->apiKey]);
+            }
+
+            return $req->get("{$this->baseUrl}/collections/{$collection}")->successful();
+        } catch (\Throwable) {
+            return false;
+        }
+    }
 
     public function upsert(string $collection, array $chunks): void
     {

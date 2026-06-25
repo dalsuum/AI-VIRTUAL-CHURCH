@@ -43,6 +43,12 @@ final class IngestionPipeline
             return 0;
         }
 
+        // Self-provisioning: a store that owns its collections (Qdrant) creates the collection
+        // with the embedder's dimensionality + a text index before the first upsert.
+        if ($this->vectors instanceof \App\Services\Knowledge\Contracts\ManagesCollections) {
+            $this->vectors->ensureCollection($collection, $this->embeddings->dimensions());
+        }
+
         foreach (array_chunk($allChunks, $this->batchSize) as $batch) {
             $vectors = $this->embeddings->embed(array_map(static fn ($c) => $c->text, $batch));
             $embedded = [];

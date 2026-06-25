@@ -27,6 +27,7 @@ from mms_asr_service import router as mms_asr_router
 from bible_router import router as bible_router
 from burmese_router import router as burmese_router
 from goldfish_service import router as goldfish_router
+from knowledge_embed_service import router as knowledge_embed_router
 from mms_tts_service import router as mms_tts_router
 from tedim_router import router as tedim_router
 from chin_router import ROUTERS as chin_routers
@@ -47,6 +48,7 @@ app.include_router(bible_router)
 app.include_router(burmese_router)
 app.include_router(mms_tts_router)
 app.include_router(mms_asr_router)
+app.include_router(knowledge_embed_router)  # POST /knowledge/embed for the RAG layer
 
 
 @app.get("/health")

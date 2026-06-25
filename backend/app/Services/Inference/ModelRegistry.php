@@ -6,6 +6,7 @@ use App\Models\AiProviderProfile;
 use App\Services\Inference\Contracts\InferenceProvider;
 use App\Services\Inference\Providers\ClaudeProvider;
 use App\Services\Inference\Providers\OllamaProvider;
+use App\Services\Inference\Providers\OpenAiCompatibleProvider;
 use Illuminate\Contracts\Cache\Repository as Cache;
 use Illuminate\Http\Client\Factory as Http;
 use InvalidArgumentException;
@@ -73,20 +74,32 @@ class ModelRegistry
                 $cfg['model'] ?? 'claude-sonnet-4-6',
                 (int) ($cfg['timeout'] ?? 120),
             ),
+            'openai', 'openrouter' => new OpenAiCompatibleProvider(
+                $this->http, $name,
+                (string) ($cfg['base_url'] ?? 'https://openrouter.ai/api/v1'),
+                (string) ($cfg['key'] ?: throw new InvalidArgumentException("API key missing for [{$name}]")),
+                (string) ($cfg['model'] ?? ''),
+                (int) ($cfg['timeout'] ?? 120),
+                (array) ($cfg['headers'] ?? []),
+            ),
             default => throw new InvalidArgumentException("Unsupported driver [{$cfg['driver']}] for [{$name}]"),
         };
     }
 
     private function fromProfile(AiProviderProfile $profile): InferenceProvider
     {
-        // 'ollama' | 'openai_compatible' | 'runpod' | 'lmstudio' map to the Ollama-style
-        // wire format the FastAPI worker exposes; 'openrouter'/claude use the hosted API.
+        // OpenRouter + generic OpenAI-compatible backends (LM Studio/vLLM/DeepSeek) all speak
+        // the OpenAI chat-completions schema → one adapter, configured from the profile.
         return match ($profile->type) {
-            'ollama', 'lmstudio', 'runpod', 'openai_compatible' => new OllamaProvider(
-                $this->http, $profile->name, (string) $profile->base_url, (string) $profile->model,
+            'openrouter', 'openai_compatible', 'lmstudio', 'runpod' => new OpenAiCompatibleProvider(
+                $this->http, $profile->name,
+                (string) $profile->base_url,
+                (string) ($profile->resolveKey() ?: throw new InvalidArgumentException("API key missing for [{$profile->name}]")),
+                (string) $profile->model,
             ),
-            'openrouter' => new ClaudeProvider(
-                $this->http, (string) $profile->resolveKey(), (string) $profile->model,
+            // Native Ollama HTTP wrapper exposed by the FastAPI worker.
+            'ollama' => new OllamaProvider(
+                $this->http, $profile->name, (string) $profile->base_url, (string) $profile->model,
             ),
             default => throw new InvalidArgumentException("Unsupported profile type [{$profile->type}]"),
         };

@@ -19,6 +19,7 @@ use App\Services\Knowledge\Retrieval\ResultMerger;
 use App\Services\Knowledge\Retrieval\RetrievalOrchestrator;
 use App\Services\Knowledge\Store\InMemoryKeywordIndex;
 use App\Services\Knowledge\Store\InMemoryVectorStore;
+use App\Services\Knowledge\Store\QdrantKeywordIndex;
 use App\Services\Knowledge\Store\QdrantVectorStore;
 use Illuminate\Http\Client\Factory as Http;
 use Illuminate\Support\ServiceProvider;
@@ -53,7 +54,15 @@ final class KnowledgeServiceProvider extends ServiceProvider
                 : new InMemoryVectorStore();
         });
 
-        $this->app->singleton(KeywordIndex::class, InMemoryKeywordIndex::class);
+        // Keyword branch must persist when vectors do — back it by Qdrant's full-text index so
+        // hybrid search works across processes; in-memory only for the dev/memory driver.
+        $this->app->singleton(KeywordIndex::class, function ($app) {
+            $cfg = config('knowledge.vector');
+
+            return $cfg['driver'] === 'qdrant'
+                ? new QdrantKeywordIndex($app->make(Http::class), $cfg['qdrant']['url'], $cfg['qdrant']['key'])
+                : new InMemoryKeywordIndex();
+        });
         $this->app->singleton(Reranker::class, HeuristicReranker::class);
         $this->app->singleton(QueryNormalizer::class);
         $this->app->singleton(ResultMerger::class, fn () => new ResultMerger((int) config('knowledge.retrieval.rrf_k', 60)));

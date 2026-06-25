@@ -36,14 +36,18 @@ return [
         ],
     ],
 
-    // language → ordered provider fallback chain.
+    /*
+     * language → ordered provider fallback chain. Names resolve against the static providers
+     * above OR an enabled ai_provider_profiles row of the same name. English (and the hosted
+     * fallback for local models) routes to the configured OpenRouter profile by default.
+     */
     'routing' => [
-        'td' => ['ollama_tedim', 'claude'],
-        'my' => ['ollama_burmese', 'claude'],
-        'en' => ['claude'],
+        'td' => ['ollama_tedim', env('INFERENCE_HOSTED_PROVIDER', 'OpenRouter (default)')],
+        'my' => ['ollama_burmese', env('INFERENCE_HOSTED_PROVIDER', 'OpenRouter (default)')],
+        'en' => [env('INFERENCE_HOSTED_PROVIDER', 'OpenRouter (default)')],
     ],
 
-    'default_chain' => ['claude'],
+    'default_chain' => [env('INFERENCE_HOSTED_PROVIDER', 'OpenRouter (default)')],
 
     'circuit' => [
         'failure_threshold' => (int) env('INFERENCE_CB_THRESHOLD', 5),

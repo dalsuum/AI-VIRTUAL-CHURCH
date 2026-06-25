@@ -49,7 +49,7 @@ Redis queue so neither has to know the other's serializer.
 
 ```
 ┌────────────┐    HTTPS/JSON     ┌──────────────────┐   rpush JSON    ┌─────────────┐
-│  Vue 3 SPA │ ───────────────▶  │  Laravel 11 API  │ ──────────────▶ │ Redis list  │
+│  Vue 3 SPA │ ───────────────▶  │  Laravel 12 API  │ ──────────────▶ │ Redis list  │
 │ (frontend) │ ◀───────────────  │   (backend)      │   ai:intake     │ ai:intake   │
 └────────────┘   poll / WS       └──────────────────┘                 └─────────────┘
       ▲                                  ▲                                    │ BLPOP
@@ -85,6 +85,63 @@ Redis queue so neither has to know the other's serializer.
 task serializer. `DispatchServiceJob` just `rpush`es a language-agnostic JSON blob onto
 `ai:intake`; `bridge.py` `BLPOP`s it and hands it to the Celery orchestrator. The
 contract between the two worlds is "a JSON object on a list," nothing more.
+
+---
+
+## AI Platform kernel (Inference · Chat · Guardrails · Knowledge · Observability)
+
+A layered, controller-thin execution engine for AI surfaces. Controllers call **one**
+thing — the Chat Orchestrator — and every concern lives behind a stable interface, so
+layers swap by binding and roll back by flag. Each layer is dark-by-default; production
+behaviour is unchanged until the corresponding flag is enabled.
+
+```
+Controller → ChatOrchestrator
+   ├─ Input Guardrails  (Chain of Responsibility: crisis, injection, abuse, PII, rate-limit)
+   ├─ Knowledge (Hybrid RAG)  → KnowledgeContext only
+   ├─ Prompt Builder  (receives KnowledgeContext; never queries storage)
+   ├─ Inference Gateway  (provider abstraction + circuit breaker + fallback)
+   ├─ Output Guardrails  (HTML/markdown/username sanitisers, moderation, hallucination,
+   │                      citation, theology — policy externalised from execution)
+   ├─ Persistence  (unified history spine)
+   └─ Telemetry / Tracing  (one trace per request)
+```
+
+| Layer | Namespace | Key seam | Flag |
+|---|---|---|---|
+| Inference | `App\Services\Inference` | `InferenceGateway` | — (always on) |
+| Chat Orchestrator | `App\Services\Chat` | `ChatOrchestrator` | — |
+| Guardrails | `App\Services\Chat\Guardrails` | `InputGuardrail` / `OutputGuardrail` pipelines | bind in `GuardrailServiceProvider` |
+| Knowledge (RAG) | `App\Services\Knowledge` | `KnowledgeRetriever → KnowledgeContext` | `KNOWLEDGE_ENABLED` |
+| Observability | `App\Services\Observability` | `Tracer` (Null by default) | `OBSERVABILITY_TRACING` |
+
+**Design invariants (test-backed):**
+- **Inference resilience** — per-provider retry + circuit breaker (`ResilientProvider`),
+  cross-provider fallback chains by language (`config/inference.php`). Adding OpenAI/
+  Gemini/DeepSeek = one `InferenceProvider` class.
+- **Hybrid retrieval** — keyword + vector fused by Reciprocal Rank Fusion, then reranked
+  and budget-bounded into a `KnowledgeContext`. Vector store abstracted (`VectorStore`):
+  in-memory/FAISS-via-worker now, **Qdrant** for scale — swap by binding.
+- **Failure contract** — retrieval degrades, never cascades: a vector/embedding outage
+  falls back to keyword; total outage yields `EMPTY_DUE_TO_FAILURE` (distinct from a
+  clean `EMPTY_DUE_TO_NO_MATCH`); corrupt chunks are dropped before they reach the prompt.
+  *Vector failure never becomes chat failure.*
+- **Guardrails** — composable chain with per-capability enable/disable and policy in
+  `config/guardrails.php` (not in guard code). Output guards thread/sanitise text;
+  validators short-circuit. Knowledge-backed surfaces can fail closed when retrieval is
+  down.
+- **Observability** — `OBSERVABILITY_TRACING=true` emits one trace per request
+  (`chat.request → guardrails.pre → retrieval.hybrid{rrf.fusion, rerank, context.build}
+  → inference.llm → guardrails.post → persistence.write`), persisted by correlation id
+  and materialised (never re-run) at `GET /api/v1/chat/debug/{correlationId}` (staff only).
+
+**First end-to-end slice:** `POST /api/v1/chat/study` (Bible Study capability) runs the
+full pipeline; the controller depends only on `ChatOrchestrator`. Ingestion is CLI/worker
+side via `php artisan knowledge:ingest {collection} {file} --chunker=bible|text`.
+
+Config: `config/{inference,chat,guardrails,knowledge,observability}.php`. Service
+providers: `Inference`, `Observability`, `Chat`, `Guardrail`, `Knowledge` (registered in
+`bootstrap/providers.php`, in dependency order).
 
 ---
 
@@ -140,7 +197,7 @@ contract between the two worlds is "a JSON object on a list," nothing more.
 
 ### Backend (Laravel)
 
-Laravel 11 (PHP 8.2+), Sanctum auth, Stripe PHP SDK. Owns everything stateful and
+Laravel 12 (PHP 8.2+), Sanctum auth, Stripe PHP SDK. Owns everything stateful and
 everything that must be trustworthy: users, sessions, the safety gate, the money ledger,
 moderation, and the admin console.
 
@@ -493,14 +550,26 @@ Chat, so a single left sidebar, a single search, and a single timeline cover eve
 Future AI modules drop in by writing to the same spine.
 
 **Data model.** `chat_sessions` (UUID id, `session_type`, title, summary, mood, language,
-pinned/favorite/archived, soft-deletes) is canonical; `chat_messages` holds chat turns
-(content encrypted at rest). Type-specific detail lives in `bible_sessions`,
+`folder_id`, pinned/favorite/archived, soft-deletes, plus the graph columns
+`root_session_id`/`parent_session_id`/`parent_node_id`/`active_node_id`) is canonical.
+Conversation turns live in **`session_nodes`** (the durable truth — see *SessionStateStore*
+below; content encrypted at rest). Type-specific detail lives in `bible_sessions`,
 `music_sessions`, `service_sessions_meta`, `prayer_sessions`, each 1:1 with a session.
 `chat_session_tags` carries auto + user tags; `chat_session_shares` stores read-only
-share links (token sha256-hashed, optional bcrypt password, expiry). The existing
+share links (token sha256-hashed, optional bcrypt password, expiry); `folders` group
+sessions in the sidebar (delete un-files, never deletes, via nullOnDelete). The existing
 multi-agent `study_sessions` engine is **bridged** (1:1 link) rather than replaced, so
 the live SSE study path is untouched. Backfill historical studies with
 `php artisan history:backfill-study`.
+
+**SessionStateStore.** A session is a graph of nodes with an explicit active pointer and
+rehydratable checkpoints (design: `docs/session-state-store.md`). `session_nodes` is the
+**sole durable record** of turns (a message is just `type=message`; service milestones,
+music playback and study rounds are `type=system_event`); `session_checkpoints` snapshot
+module state. The legacy `chat_messages` projection has been fully retired (Phases 1→4
+complete). `App\Services\SessionState\SessionStateStore` is the single graph API
+(`appendNode`/`fork`/`checkpoint`/`resume`/`messageDtos`); every read and write goes
+through it.
 
 **API** (all owner-scoped, `auth:sanctum`): `GET /api/history` (date-grouped:
 Today / Yesterday / Previous 7 / 30 / Older, cursor-paginated, Redis-cached first page),
@@ -511,6 +580,21 @@ Today / Yesterday / Previous 7 / 30 / Older, cursor-paginated, Redis-cached firs
 `GET /api/history/stats` and `/timeline` (Spiritual Journey dashboard), and
 `PATCH /api/me/profile` for favorite language/version/pastor/goals + an **AI-memory
 opt-in**. Ownership is validated on every request; deletes/shares are audit-logged.
+
+**Power features.**
+- **Folders** — `GET/POST /api/folders`, `PATCH/DELETE /api/folders/{id}`, file a session
+  with `PATCH /api/history/{id}/folder`, list a folder with `GET /api/history?folder_id=…`.
+- **Branching** — `POST /api/history/{id}/fork` opens a new branch-session at the active
+  (or a given) node via `SessionStateStore::fork()`, sharing root/parent lineage; the
+  parent is untouched.
+- **Message-body search** — `POST /api/history/search` with `scope=all` also matches inside
+  message content. Node content is encrypted at rest, so the match runs in PHP over the
+  owner's nodes (bounded per user, hard-capped) and is OR-ed into the title/summary LIKE;
+  `scope=meta` (default) searches title/summary only. Cross-user/global relevance search is
+  reserved for a future OpenSearch backend.
+- **Church analytics** — staff-gated `GET /api/admin/analytics` returns cross-user
+  aggregates (users total/new/active, sessions total + by type, message turns, journal
+  entries) for the admin console.
 
 **AI Pastor Chat** (`#pastor`) is a single-assistant streaming companion. Titles,
 2–5 sentence summaries, and auto-tags are generated by the worker
@@ -532,7 +616,9 @@ groups, per-type icons 📖🙏🎵⛪💬📚, transcript overlay with rename/p
 journal/delete, mobile bottom-drawer), `PastorChat.vue` (`#pastor`), and
 `SpiritualJourney.vue` (`#journey` stats + streak + timeline + 📔 journal entries).
 Account settings gains the spiritual-profile fields. Rebuild with `npm run build` in
-`frontend/`.
+`frontend/`. *Note:* the **folders / branching / message-body search / church-analytics**
+endpoints above are live on the API; their sidebar/console UI wiring is the next frontend
+task.
 
 ---
 

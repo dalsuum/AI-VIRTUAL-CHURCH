@@ -2,8 +2,8 @@
 
 namespace App\Services;
 
-use App\Models\ChatMessage;
 use App\Models\ChatSession;
+use App\Services\SessionState\SessionStateStore;
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Str;
 
@@ -32,12 +32,7 @@ class HistoryTitleService
             $session->forceFill(['title' => $this->fallbackTitle($session)])->save();
         }
 
-        $turns = ChatMessage::where('session_id', $session->id)
-            ->orderBy('created_at')
-            ->limit(8)
-            ->get(['sender', 'content'])
-            ->map(fn (ChatMessage $m) => ['sender' => $m->sender, 'content' => $m->content])
-            ->all();
+        $turns = app(SessionStateStore::class)->messageTurns($session, 8);
 
         $job = [
             'correlation_id' => (string) \Illuminate\Support\Str::uuid(),
@@ -55,10 +50,8 @@ class HistoryTitleService
     /** A readable, non-empty title derived from the first user turn or the type. */
     public function fallbackTitle(ChatSession $session): string
     {
-        $first = ChatMessage::where('session_id', $session->id)
-            ->where('sender', 'user')
-            ->orderBy('created_at')
-            ->value('content');
+        $first = collect(app(SessionStateStore::class)->messageTurns($session))
+            ->firstWhere('sender', 'user')['content'] ?? null;
 
         if ($first) {
             return Str::limit(trim(preg_replace('/\s+/', ' ', $first)), 48, '…');

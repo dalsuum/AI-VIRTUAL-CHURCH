@@ -39,20 +39,14 @@ class HistoryController extends Controller
     }
 
     /**
-     * Phase 3 read switch: hydrate a session's `messages` for serialization. When
-     * `history.read_from_nodes` is on (default), messages are derived from session_nodes
-     * (the durable truth); otherwise the legacy chat_messages projection is loaded. The
-     * dual-write from Phases 1-2 keeps the two equivalent, so this is instantly reversible.
+     * Hydrate a session's `messages` for serialization from session_nodes — the sole
+     * durable record since Phase 4 dropped the legacy chat_messages projection.
      */
     private function withMessages(ChatSession $session): ChatSession
     {
-        if (config('history.read_from_nodes', true)) {
-            $session->setRelation('messages', $this->state->messageDtos($session));
+        $session->setRelation('messages', $this->state->messageDtos($session));
 
-            return $session;
-        }
-
-        return $session->load('messages');
+        return $session;
     }
 
     /** Sidebar list — grouped by date bucket, cursor-paginated, optional filters. */
@@ -62,9 +56,10 @@ class HistoryController extends Controller
         $type   = $request->query('type');
         $archived = $request->boolean('archived');
         $cursor = $request->query('cursor');
+        $folderId = $request->query('folder_id');
 
         // First, unfiltered page is hot — cache it briefly per user.
-        $cacheable = ! $type && ! $archived && ! $cursor;
+        $cacheable = ! $type && ! $archived && ! $cursor && $folderId === null;
         if ($cacheable && ($hit = Cache::get("history:list:{$userId}"))) {
             return response()->json($hit);
         }
@@ -73,6 +68,7 @@ class HistoryController extends Controller
             ->with('tags')
             ->where('archived', $archived)
             ->when($type, fn ($q) => $q->where('session_type', $type))
+            ->when($folderId !== null, fn ($q) => $q->where('folder_id', $folderId ?: null))
             ->orderByDesc('last_activity_at');
 
         $page = $query->cursorPaginate(30, ['*'], 'cursor', $cursor);
@@ -105,6 +101,28 @@ class HistoryController extends Controller
         return response()->json(['session' => $session]);
     }
 
+    /**
+     * Fork a session at a node into a new branch-session (SessionStateStore graph).
+     * Defaults to the active node. The new session shares root/parent lineage; the
+     * caller continues the conversation on the child without touching the parent.
+     */
+    public function fork(Request $request, string $id): JsonResponse
+    {
+        $session = $this->findOwned($request, $id);
+        $data = $request->validate(['from_node_id' => ['nullable', 'string']]);
+
+        $fromNodeId = $data['from_node_id'] ?? $session->active_node_id;
+        abort_if($fromNodeId === null, 422, 'Nothing to fork from yet — this session has no nodes.');
+
+        $childId = $this->state->fork($session->id, $fromNodeId);
+        $this->history->forgetListCache((int) $request->user()->id);
+        $this->audit($request, 'history.fork', $session->id);
+
+        $child = ChatSession::find($childId);
+
+        return response()->json(['session' => $child], Response::HTTP_CREATED);
+    }
+
     /** Search across the journal (FULLTEXT on MySQL, LIKE fallback elsewhere). */
     public function search(Request $request): JsonResponse
     {
@@ -113,22 +131,31 @@ class HistoryController extends Controller
             'type'      => ['nullable', 'in:' . implode(',', ChatSession::TYPES)],
             'language'  => ['nullable', 'string', 'max:12'],
             'mood'      => ['nullable', 'string', 'max:40'],
+            'scope'     => ['nullable', 'in:meta,all'],
             'date_from' => ['nullable', 'date'],
             'date_to'   => ['nullable', 'date'],
         ]);
 
         $q = trim((string) ($data['q'] ?? ''));
-        $query = ChatSession::forUser((int) $request->user()->id)->with('tags');
+        $userId = (int) $request->user()->id;
+        $query = ChatSession::forUser($userId)->with('tags');
 
         if ($q !== '') {
-            // The query is already owner-scoped (forUser), so the LIKE scan is bounded
-            // to a single user's sessions via the (user_id, *) index — fast even with a
-            // huge global table, and exact (no FULLTEXT min-token / stopword surprises).
-            // The chat_sessions FULLTEXT index is reserved for future cross-user/admin
-            // search where a global relevance scan is needed.
+            // The query is already owner-scoped (forUser), so the LIKE scan is bounded to a
+            // single user's sessions via the (user_id, *) index — fast and exact (no FULLTEXT
+            // min-token / stopword surprises). scope=all additionally matches inside message
+            // bodies: node content is encrypted at rest (no SQL LIKE), so we decrypt the
+            // owner's message nodes in PHP (bounded to one user) and OR-in the matching ids.
+            $bodyIds = ($data['scope'] ?? 'meta') === 'all'
+                ? $this->messageBodyMatches($userId, $q)
+                : [];
             $like = '%' . addcslashes($q, '%_\\') . '%';
-            $query->where(fn ($w) => $w->where('title', 'like', $like)
-                ->orWhere('summary', 'like', $like));
+            $query->where(function ($w) use ($like, $bodyIds) {
+                $w->where('title', 'like', $like)->orWhere('summary', 'like', $like);
+                if ($bodyIds !== []) {
+                    $w->orWhereIn('id', $bodyIds);
+                }
+            });
         }
 
         $query->when($data['type'] ?? null, fn ($x, $v) => $x->where('session_type', $v))
@@ -140,6 +167,36 @@ class HistoryController extends Controller
         return response()->json([
             'results' => $this->summaryList($query->orderByDesc('last_activity_at')->limit(50)->get()),
         ]);
+    }
+
+    /**
+     * Session ids (owner-scoped) whose message-node content contains $q. Node content is
+     * encrypted at rest, so the match is done in PHP after decryption — bounded to one
+     * user's sessions, with a hard cap on nodes scanned to keep it predictable.
+     *
+     * @return array<int,string>
+     */
+    private function messageBodyMatches(int $userId, string $q): array
+    {
+        $sessionIds = ChatSession::forUser($userId)->pluck('id');
+        if ($sessionIds->isEmpty()) {
+            return [];
+        }
+
+        $needle = mb_strtolower($q);
+        $matched = [];
+        \App\Models\SessionNode::whereIn('session_id', $sessionIds)
+            ->where('type', 'message')
+            ->orderByDesc('id')
+            ->limit(5000)                                    // safety cap on per-user scan
+            ->get(['session_id', 'content'])
+            ->each(function ($n) use (&$matched, $needle) {
+                if ($n->content !== null && str_contains(mb_strtolower($n->content), $needle)) {
+                    $matched[$n->session_id] = true;
+                }
+            });
+
+        return array_keys($matched);
     }
 
     /** Rename / favorite / pin / archive / rate / set tags. */

@@ -26,7 +26,7 @@ class ChatSession extends Model
     ];
 
     protected $fillable = [
-        'user_id', 'session_type', 'title', 'language', 'status', 'summary', 'mood',
+        'user_id', 'folder_id', 'session_type', 'title', 'language', 'status', 'summary', 'mood',
         'pinned', 'favorite', 'archived', 'rating', 'stream_token',
         'started_at', 'last_activity_at', 'ended_at',
         // SessionStateStore graph columns (docs/session-state-store.md).
@@ -50,9 +50,9 @@ class ChatSession extends Model
         return $this->belongsTo(User::class);
     }
 
-    public function messages(): HasMany
+    public function folder(): BelongsTo
     {
-        return $this->hasMany(ChatMessage::class, 'session_id')->orderBy('created_at');
+        return $this->belongsTo(Folder::class);
     }
 
     public function tags(): HasMany

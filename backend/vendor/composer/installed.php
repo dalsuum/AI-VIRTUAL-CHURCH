@@ -3,7 +3,7 @@
         'name' => 'ai-church/backend',
         'pretty_version' => 'dev-main',
         'version' => 'dev-main',
-        'reference' => '2748dd418b25ce6914ce1428d83cffd6c49506bd',
+        'reference' => '6dabb5e4e9494dc69ef24042c60c18f87d383052',
         'type' => 'project',
         'install_path' => __DIR__ . '/../../',
         'aliases' => array(),
@@ -13,7 +13,7 @@
         'ai-church/backend' => array(
             'pretty_version' => 'dev-main',
             'version' => 'dev-main',
-            'reference' => '2748dd418b25ce6914ce1428d83cffd6c49506bd',
+            'reference' => '6dabb5e4e9494dc69ef24042c60c18f87d383052',
             'type' => 'project',
             'install_path' => __DIR__ . '/../../',
             'aliases' => array(),
@@ -748,8 +748,8 @@
         'psr/log-implementation' => array(
             'dev_requirement' => false,
             'provided' => array(
-                0 => '3.0.0',
-                1 => '1.0|2.0|3.0',
+                0 => '1.0|2.0|3.0',
+                1 => '3.0.0',
             ),
         ),
         'psr/simple-cache' => array(

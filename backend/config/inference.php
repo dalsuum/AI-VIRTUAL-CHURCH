@@ -1,0 +1,57 @@
+<?php
+
+/**
+ * Inference Provider Layer configuration.
+ *
+ * `providers` are statically-known backends (local Ollama endpoints + Claude). Anything
+ * credentialed and admin-managed lives in the ai_provider_profiles table instead and is
+ * resolved by name at runtime — both sources feed the same ModelRegistry.
+ *
+ * `routing` maps a request language to an ordered fallback CHAIN of provider names. The
+ * gateway tries each in order. Local models are preferred for their native languages,
+ * with Claude as the always-available safety net.
+ */
+
+return [
+    'metrics_channel' => env('INFERENCE_METRICS_CHANNEL', 'stack'),
+
+    'providers' => [
+        'ollama_tedim' => [
+            'driver'   => 'ollama',
+            'base_url' => env('TEDIM_LLM_URL', 'http://127.0.0.1:8001'),
+            'model'    => env('TEDIM_LLM_MODEL', 'tedim-zolai'),
+            'timeout'  => 600,
+        ],
+        'ollama_burmese' => [
+            'driver'   => 'ollama',
+            'base_url' => env('BURMESE_LLM_URL', 'http://127.0.0.1:8002'),
+            'model'    => env('BURMESE_LLM_MODEL', 'burmese-myanmar'),
+            'timeout'  => 600,
+        ],
+        'claude' => [
+            'driver'  => 'claude',
+            'key'     => env('ANTHROPIC_API_KEY'),
+            'model'   => env('CLAUDE_MODEL', 'claude-sonnet-4-6'),
+            'timeout' => 120,
+        ],
+    ],
+
+    // language → ordered provider fallback chain.
+    'routing' => [
+        'td' => ['ollama_tedim', 'claude'],
+        'my' => ['ollama_burmese', 'claude'],
+        'en' => ['claude'],
+    ],
+
+    'default_chain' => ['claude'],
+
+    'circuit' => [
+        'failure_threshold' => (int) env('INFERENCE_CB_THRESHOLD', 5),
+        'cooldown_seconds'  => (int) env('INFERENCE_CB_COOLDOWN', 30),
+    ],
+
+    'retry' => [
+        'max'        => (int) env('INFERENCE_RETRY_MAX', 2),
+        'backoff_ms' => (int) env('INFERENCE_RETRY_BACKOFF_MS', 250),
+    ],
+];

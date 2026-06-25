@@ -20,4 +20,14 @@ final class SessionNodeData
     {
         return new self('message', $sender, $content, $metadata, $tokenUsage);
     }
+
+    /**
+     * A non-message graph event (Phase 2): service milestones, music playback events,
+     * study round markers. `event` is stored as the node content; `metadata` carries the
+     * structured payload. `sender` defaults to 'system'.
+     */
+    public static function systemEvent(string $event, ?array $metadata = null, string $sender = 'system'): self
+    {
+        return new self('system_event', $sender, $event, $metadata, null);
+    }
 }

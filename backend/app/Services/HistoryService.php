@@ -75,6 +75,39 @@ class HistoryService
         return $message;
     }
 
+    /**
+     * Record a non-message graph event (Phase 2): a service milestone, music playback
+     * event or study round marker. Unlike recordMessage this writes ONLY a session_node
+     * (system_event) — there is no legacy chat_messages projection for non-chat events.
+     * Best-effort by design: node failures must never abort the charged module flow, so
+     * callers wrap this in try/catch exactly like the existing history mirrors.
+     */
+    public function recordEvent(ChatSession $session, string $event, array $metadata = []): string
+    {
+        $nodeId = $this->state->appendNode(
+            $session->id,
+            SessionNodeData::systemEvent($event, $metadata ?: null)
+        );
+        $this->touch($session);
+
+        return $nodeId;
+    }
+
+    /**
+     * Snapshot rehydratable module state at the session's active node (Phase 2):
+     * study round/engine state, music playback position, service-state milestones.
+     * Returns the checkpoint id.
+     */
+    public function checkpoint(ChatSession $session, array $state): string
+    {
+        // Read the active pointer from the DB — the caller's in-memory model may be stale
+        // after a preceding recordEvent/recordMessage advanced it.
+        $nodeId = $session->fresh()?->active_node_id
+            ?? $this->state->appendNode($session->id, SessionNodeData::systemEvent('checkpoint'));
+
+        return $this->state->checkpoint($session->id, $nodeId, $state);
+    }
+
     /** Update last activity (and invalidate the cached sidebar page). */
     public function touch(ChatSession $session): void
     {

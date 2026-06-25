@@ -109,4 +109,38 @@ class SessionStateStoreTest extends TestCase
         $this->assertSame('Pray for my family', $node->content);
         $this->assertSame($node->id, $session->fresh()->active_node_id);
     }
+
+    public function test_record_event_writes_system_event_node_without_legacy_message(): void
+    {
+        $user = $this->makeUser();
+        $session = app(HistoryService::class)->startSession($user, 'music');
+
+        $nodeId = app(HistoryService::class)->recordEvent($session, 'playlist_recommended', [
+            'mood' => 'hopeful', 'track_ids' => [1, 2, 3],
+        ]);
+
+        // Phase 2 events are graph-only — no chat_messages projection.
+        $this->assertSame(0, ChatMessage::where('session_id', $session->id)->count());
+        $node = SessionNode::find($nodeId);
+        $this->assertSame('system_event', $node->type);
+        $this->assertSame('playlist_recommended', $node->content);
+        $this->assertSame([1, 2, 3], $node->metadata['track_ids']);
+        // The event advances the active pointer like any append.
+        $this->assertSame($nodeId, $session->fresh()->active_node_id);
+    }
+
+    public function test_checkpoint_helper_snapshots_at_active_node(): void
+    {
+        $user = $this->makeUser();
+        $session = app(HistoryService::class)->startSession($user, 'music');
+        $history = app(HistoryService::class);
+
+        $eventNode = $history->recordEvent($session, 'playlist_recommended', ['track_ids' => [7]]);
+        $history->checkpoint($session, ['queue' => [7], 'track_id' => 7, 'position' => 0]);
+
+        $state = $this->store()->resume($session->id);
+        $this->assertNotNull($state->latestCheckpoint);
+        $this->assertSame($eventNode, $state->latestCheckpoint->node_id, 'checkpoint binds to the active node');
+        $this->assertSame([7], $state->latestCheckpoint->state_blob['queue']);
+    }
 }

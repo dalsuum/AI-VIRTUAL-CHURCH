@@ -114,6 +114,25 @@ class MusicController extends Controller
             $meta->update(['playlist' => $songIds, 'songs_played' => $played]);
             $this->history->touch($session);
         }
+
+        // Phase 2 (SessionStateStore): record the playlist event as a graph node and
+        // snapshot playback state as a checkpoint. Best-effort — never abort the response.
+        try {
+            $this->history->recordEvent($session, 'playlist_recommended', [
+                'mood'     => $mood,
+                'language' => $language,
+                'track_ids' => $songIds,
+            ]);
+            $this->history->checkpoint($session, [
+                'queue'    => $songIds,
+                'track_id' => $songIds[0] ?? null,
+                'position' => 0,
+                'shuffle'  => false,
+                'volume'   => null,
+            ]);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('music history node/checkpoint failed', ['e' => $e->getMessage()]);
+        }
     }
 
     /** Public-safe track shape for the player (no internal columns leaked). */

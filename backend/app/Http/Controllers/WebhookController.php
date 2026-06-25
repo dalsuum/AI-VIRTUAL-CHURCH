@@ -81,6 +81,28 @@ class WebhookController extends Controller
         // Broadcast to the client over WebSockets (Laravel Reverb / Echo).
         // event(new AssetReady($session->session_token, $asset));
 
+        // Phase 2 (SessionStateStore): record each ready segment as a service-milestone
+        // graph node on the bridged unified-history session, and checkpoint which segments
+        // are ready so far. Best-effort — never fail the asset webhook.
+        try {
+            $bridge = \App\Models\ServiceSessionMeta::where('service_session_id', $session->id)->first();
+            if ($bridge?->chat_session_id) {
+                $chat = \App\Models\ChatSession::find($bridge->chat_session_id);
+                if ($chat) {
+                    $history = app(\App\Services\HistoryService::class);
+                    $history->recordEvent($chat, 'service_segment_ready', [
+                        'segment'    => $data['segment'],
+                        'asset_type' => $asset->asset_type,
+                    ]);
+                    $ready = ServiceAsset::where('session_id', $session->id)
+                        ->where('status', 'ready')->pluck('segment')->all();
+                    $history->checkpoint($chat, ['ready_segments' => $ready, 'language' => $session->language]);
+                }
+            }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('service milestone node/checkpoint failed', ['e' => $e->getMessage()]);
+        }
+
         // Myanmar/Tedim services are now generated directly in their target language
         // by the Python worker. Do not dispatch the old post-generation localization
         // jobs here: they can run for many minutes and block DispatchServiceJob on the
@@ -188,6 +210,32 @@ class WebhookController extends Controller
 
         $session->update(['last_activity_at' => now()]);
 
+        // Phase 2 (SessionStateStore): mirror content-bearing discussion turns onto the
+        // bridged unified-history session as graph nodes, and checkpoint round position so
+        // a study can be resumed/rehydrated from nodes. Best-effort — never fail the turn.
+        try {
+            $content = trim((string) ($data['content'] ?? ''));
+            $bridge = \App\Models\BibleSessionMeta::where('study_session_id', $session->id)->first();
+            if ($content !== '' && $bridge?->chat_session_id
+                && in_array($data['role'], ['pastor', 'synthesis', 'moderator'], true)) {
+                $chat = \App\Models\ChatSession::find($bridge->chat_session_id);
+                if ($chat) {
+                    $history = app(\App\Services\HistoryService::class);
+                    $history->recordEvent($chat, 'study_turn', [
+                        'turn'         => $data['turn'],
+                        'role'         => $data['role'],
+                        'persona_id'   => $data['persona_id'] ?? null,
+                        'display_name' => $data['display_name'] ?? null,
+                        'content'      => $content,
+                        'scripture_refs' => $data['scripture_refs'] ?? null,
+                    ]);
+                    $history->checkpoint($chat, ['turn' => $data['turn'], 'role' => $data['role'], 'state' => 'in_progress']);
+                }
+            }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('study turn node/checkpoint failed', ['e' => $e->getMessage()]);
+        }
+
         return response()->json(['ok' => true]);
     }
 
@@ -231,6 +279,17 @@ class WebhookController extends Controller
                 \Illuminate\Support\Facades\Cache::forget(
                     'history:list:' . (\App\Models\ChatSession::find($bridge->chat_session_id)->user_id ?? 0)
                 );
+                // Phase 2: mark the end-of-discussion as a graph milestone + final checkpoint.
+                try {
+                    $chat = \App\Models\ChatSession::find($bridge->chat_session_id);
+                    if ($chat) {
+                        $history = app(\App\Services\HistoryService::class);
+                        $history->recordEvent($chat, 'study_summarized', ['key_verses' => $s['key_verses'] ?? null]);
+                        $history->checkpoint($chat, ['state' => 'summarized']);
+                    }
+                } catch (\Throwable $e) {
+                    \Illuminate\Support\Facades\Log::warning('study summary node/checkpoint failed', ['e' => $e->getMessage()]);
+                }
             }
         }
 

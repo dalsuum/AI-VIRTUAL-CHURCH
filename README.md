@@ -88,6 +88,63 @@ contract between the two worlds is "a JSON object on a list," nothing more.
 
 ---
 
+## AI Platform kernel (Inference · Chat · Guardrails · Knowledge · Observability)
+
+A layered, controller-thin execution engine for AI surfaces. Controllers call **one**
+thing — the Chat Orchestrator — and every concern lives behind a stable interface, so
+layers swap by binding and roll back by flag. Each layer is dark-by-default; production
+behaviour is unchanged until the corresponding flag is enabled.
+
+```
+Controller → ChatOrchestrator
+   ├─ Input Guardrails  (Chain of Responsibility: crisis, injection, abuse, PII, rate-limit)
+   ├─ Knowledge (Hybrid RAG)  → KnowledgeContext only
+   ├─ Prompt Builder  (receives KnowledgeContext; never queries storage)
+   ├─ Inference Gateway  (provider abstraction + circuit breaker + fallback)
+   ├─ Output Guardrails  (HTML/markdown/username sanitisers, moderation, hallucination,
+   │                      citation, theology — policy externalised from execution)
+   ├─ Persistence  (unified history spine)
+   └─ Telemetry / Tracing  (one trace per request)
+```
+
+| Layer | Namespace | Key seam | Flag |
+|---|---|---|---|
+| Inference | `App\Services\Inference` | `InferenceGateway` | — (always on) |
+| Chat Orchestrator | `App\Services\Chat` | `ChatOrchestrator` | — |
+| Guardrails | `App\Services\Chat\Guardrails` | `InputGuardrail` / `OutputGuardrail` pipelines | bind in `GuardrailServiceProvider` |
+| Knowledge (RAG) | `App\Services\Knowledge` | `KnowledgeRetriever → KnowledgeContext` | `KNOWLEDGE_ENABLED` |
+| Observability | `App\Services\Observability` | `Tracer` (Null by default) | `OBSERVABILITY_TRACING` |
+
+**Design invariants (test-backed):**
+- **Inference resilience** — per-provider retry + circuit breaker (`ResilientProvider`),
+  cross-provider fallback chains by language (`config/inference.php`). Adding OpenAI/
+  Gemini/DeepSeek = one `InferenceProvider` class.
+- **Hybrid retrieval** — keyword + vector fused by Reciprocal Rank Fusion, then reranked
+  and budget-bounded into a `KnowledgeContext`. Vector store abstracted (`VectorStore`):
+  in-memory/FAISS-via-worker now, **Qdrant** for scale — swap by binding.
+- **Failure contract** — retrieval degrades, never cascades: a vector/embedding outage
+  falls back to keyword; total outage yields `EMPTY_DUE_TO_FAILURE` (distinct from a
+  clean `EMPTY_DUE_TO_NO_MATCH`); corrupt chunks are dropped before they reach the prompt.
+  *Vector failure never becomes chat failure.*
+- **Guardrails** — composable chain with per-capability enable/disable and policy in
+  `config/guardrails.php` (not in guard code). Output guards thread/sanitise text;
+  validators short-circuit. Knowledge-backed surfaces can fail closed when retrieval is
+  down.
+- **Observability** — `OBSERVABILITY_TRACING=true` emits one trace per request
+  (`chat.request → guardrails.pre → retrieval.hybrid{rrf.fusion, rerank, context.build}
+  → inference.llm → guardrails.post → persistence.write`), persisted by correlation id
+  and materialised (never re-run) at `GET /api/v1/chat/debug/{correlationId}` (staff only).
+
+**First end-to-end slice:** `POST /api/v1/chat/study` (Bible Study capability) runs the
+full pipeline; the controller depends only on `ChatOrchestrator`. Ingestion is CLI/worker
+side via `php artisan knowledge:ingest {collection} {file} --chunker=bible|text`.
+
+Config: `config/{inference,chat,guardrails,knowledge,observability}.php`. Service
+providers: `Inference`, `Observability`, `Chat`, `Guardrail`, `Knowledge` (registered in
+`bootstrap/providers.php`, in dependency order).
+
+---
+
 ## The service flow, end to end
 
 1. **Auth.** The worshipper registers, logs in, or starts as a **guest** (an anonymous

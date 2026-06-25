@@ -6,6 +6,7 @@ use App\Jobs\DispatchServiceJob;
 use App\Models\ServiceIntake;
 use App\Models\ServiceSession;
 use App\Models\Setting;
+use App\Models\User;
 use App\Notifications\ServiceScheduledNotification;
 use App\Services\CrisisInterceptService;
 use App\Services\GuestUsageService;
@@ -14,7 +15,6 @@ use App\Services\TokenService;
 use App\Services\UsageLogger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Str;
 
@@ -62,13 +62,13 @@ class ServiceController extends Controller
     }
 
     /**
-     * Public endpoint used by email links. Accepts the 64-char session token,
-     * establishes an HttpOnly session cookie for the session owner, and returns
-     * service metadata so the SPA can jump straight into the service — even on
-     * a different device or after browser storage was cleared.
+     * Public endpoint used by email links. Accepts a short-lived, single-use
+     * resume token, establishes a service-scoped session, and returns service
+     * metadata so the SPA can jump straight into this service only — even on a
+     * different device or after browser storage was cleared.
      *
-     * The session token is a 64-char random string and acts as the credential
-     * here; only the person who received the email can guess it.
+     * This intentionally does not Auth::login() the service owner: a forwarded
+     * service link must never become a full account login link.
      */
     public function resume(Request $request, string $token): JsonResponse
     {
@@ -78,11 +78,18 @@ class ServiceController extends Controller
             ], 400);
         }
 
-        $session = ServiceSession::where('session_token', $token)->firstOrFail();
-        $user    = $session->user;
+        abort_unless(strlen($token) === 64, 404);
 
-        Auth::login($user);
+        $session = ServiceSession::where('resume_token_hash', hash('sha256', $token))
+            ->whereNull('resume_token_used_at')
+            ->where('resume_token_expires_at', '>', now())
+            ->firstOrFail();
+
+        $this->authorizeServiceOwnerUsable($session);
+
+        $session->consumeResumeToken();
         $request->session()->regenerate();
+        $request->session()->put(ServiceSession::RESUME_SESSION_ID_KEY, $session->id);
 
         return response()->json([
             'session_token' => $session->session_token,
@@ -119,8 +126,9 @@ class ServiceController extends Controller
     {
         $session = ServiceSession::with(['intake', 'assets'])
             ->where('session_token', $token)
-            ->where('user_id', $request->user()->id)
             ->firstOrFail();
+
+        $this->authorizeServiceView($request, $session);
 
         $assets = $session->assets;
 
@@ -257,6 +265,7 @@ class ServiceController extends Controller
             }
 
             Redis::rpush('ai:narration-repair', json_encode([
+                'correlation_id' => (string) \Illuminate\Support\Str::uuid(),
                 'session_id'        => $session->id,
                 'session_token'     => $session->session_token,
                 'language'          => $language,
@@ -270,5 +279,45 @@ class ServiceController extends Controller
         } catch (\Throwable $e) {
             report($e);
         }
+    }
+
+    private function authorizeServiceView(Request $request, ServiceSession $session): void
+    {
+        $this->authorizeServiceOwnerUsable($session);
+
+        if ($this->authenticatedOwnerMayView($request, $session)) {
+            return;
+        }
+
+        if ($request->hasSession()
+            && (int) $request->session()->get(ServiceSession::RESUME_SESSION_ID_KEY) === (int) $session->id) {
+            return;
+        }
+
+        abort(404);
+    }
+
+    private function authenticatedOwnerMayView(Request $request, ServiceSession $session): bool
+    {
+        $user = $request->user();
+        if (! $user || (int) $user->id !== (int) $session->user_id) {
+            return false;
+        }
+
+        if (! $request->hasSession()) {
+            return true;
+        }
+
+        $key = User::AUTH_SESSION_VERSION_KEY;
+
+        return $request->session()->has($key)
+            && (int) $request->session()->get($key) === (int) $user->auth_session_version;
+    }
+
+    private function authorizeServiceOwnerUsable(ServiceSession $session): void
+    {
+        $owner = $session->user;
+
+        abort_unless($owner && $owner->isActive() && ! $owner->is_blocked, 403);
     }
 }

@@ -78,7 +78,7 @@ class AdminController extends Controller
                 'total'      => User::count(),
                 'registered' => User::where('email', 'not like', $guestPattern)->count(),
                 'visitors'   => User::where('email', 'like', $guestPattern)->count(),
-                'admins'     => User::where('is_admin', true)->count(),
+                'admins'     => User::where('role', User::ROLE_ADMIN)->count(),
             ],
             'musicgen' => [
                 'total' => ServiceSession::where('music_source', 'musicgen')->count(),
@@ -165,6 +165,21 @@ class AdminController extends Controller
                 'sermon_topic'  => $s->intake?->scripture_ref,
                 'music_source'  => $s->music_source,
             ]),
+        ]);
+    }
+
+    /** Create a fresh, scoped service resume link for staff-assisted sharing. */
+    public function serviceResumeLink(ServiceSession $service): JsonResponse
+    {
+        PermissionService::require(request()->user(), 'services.view');
+        abort_unless($service->user && $service->user->isActive() && ! $service->user->is_blocked, 403);
+
+        $token = $service->issueResumeToken();
+        $url = rtrim((string) config('church.frontend_url'), '/') . '?session=' . $token;
+
+        return response()->json([
+            'url'        => $url,
+            'expires_at' => $service->fresh()->resume_token_expires_at?->toIso8601String(),
         ]);
     }
 
@@ -306,7 +321,7 @@ class AdminController extends Controller
             ->withMax('sessions', 'created_at')
             ->latest()
             ->limit(200)
-            ->get(['id', 'name', 'email', 'is_admin', 'is_blocked', 'music_source', 'presenter_gender', 'created_at', 'subscription_plan', 'token_balance']);
+            ->get(['id', 'name', 'email', 'role', 'is_admin', 'is_blocked', 'music_source', 'presenter_gender', 'created_at', 'subscription_plan', 'token_balance']);
 
         $userIds = $users->pluck('id')->all();
         $customMoods  = $this->allCustomMoodsByUser($userIds);
@@ -1483,7 +1498,7 @@ class AdminController extends Controller
             return response()->json(['message' => 'You cannot delete your own account.'], 422);
         }
 
-        if ($user->is_admin && User::where('is_admin', true)->count() <= 1) {
+        if ($user->isAdmin() && User::where('role', User::ROLE_ADMIN)->count() <= 1) {
             return response()->json(['message' => 'Cannot delete the last admin account.'], 422);
         }
 
@@ -1537,9 +1552,21 @@ class AdminController extends Controller
             return response()->json(['message' => 'You cannot revoke your own admin access.'], 422);
         }
 
-        $user->update(['is_admin' => $data['is_admin']]);
+        if (! $data['is_admin'] && $user->isAdmin()
+            && User::where('role', User::ROLE_ADMIN)->where('id', '!=', $user->id)->doesntExist()) {
+            return response()->json(['message' => 'Cannot revoke the last admin account.'], 422);
+        }
 
-        return response()->json(['ok' => true, 'is_admin' => $user->is_admin]);
+        $user->update([
+            'is_admin' => $data['is_admin'],
+            'role'     => $data['is_admin'] ? User::ROLE_ADMIN : User::ROLE_MEMBER,
+        ]);
+
+        return response()->json([
+            'ok'       => true,
+            'is_admin' => (bool) $data['is_admin'],
+            'role'     => $data['is_admin'] ? User::ROLE_ADMIN : User::ROLE_MEMBER,
+        ]);
     }
 
     /** Assign a role to a user. Guards against demoting yourself from admin. */

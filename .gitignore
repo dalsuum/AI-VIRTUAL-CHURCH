@@ -80,3 +80,7 @@ partner-activities/
 /ops/logs/
 /ops/node_modules/
 /ops/package-lock.json
+
+# One-off codemod scripts / test artifacts (do not commit)
+/patch_correlation.py
+/test-results/

@@ -383,8 +383,8 @@ export const api = {
   updateMusicSource: (music_source) =>
     request("/me/music-source", { method: "PATCH", body: { music_source } }),
 
-  // Email-link resume: server establishes the session via the URL token and sets
-  // the HttpOnly cookie; frontend marks session established and reads metadata.
+  // Email-link resume: server exchanges the URL token for a service-scoped session
+  // cookie; it does not sign the browser into the owner's account.
   resumeSession: (sessionToken) =>
     fetch(`${BASE_URL}/service/${sessionToken}/resume`, {
       credentials: "include",
@@ -392,7 +392,6 @@ export const api = {
     }).then(async (r) => {
       const data = await r.json();
       if (!r.ok) throw new Error(data.message || "Resume failed");
-      markSession();
       return data;
     }),
 
@@ -419,6 +418,8 @@ export const api = {
   adminDashboard: () => request("/admin/dashboard"),
   adminFreezeStatus: () => request("/admin/freeze/status"),
   adminServices: () => request("/admin/services"),
+  adminServiceResumeLink: (id) =>
+    request(`/admin/services/${id}/resume-link`, { method: "POST" }),
   adminRetryService: (id) => request(`/admin/services/${id}/retry`, { method: "POST" }),
   adminDeleteService: (id) => request(`/admin/services/${id}`, { method: "DELETE" }),
   adminBulkDeleteServices: (service_ids) =>

@@ -125,27 +125,27 @@ onMounted(load);
 .journey-exports button { padding: 3px 9px; border-radius: 7px; border: 1px solid var(--border,#ddd); background: none; cursor: pointer; }
 .journey-err { color: #b91c1c; }
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; margin: 16px 0; }
-.card { border: 1px solid var(--border,#e3e3e3); border-radius: 12px; padding: 14px; text-align: center; background: var(--panel,#fafafa); }
+.card { border: 1px solid var(--border); border-radius: 12px; padding: 14px; text-align: center; background: var(--surface); }
 .card b { display: block; font-size: 24px; }
 .card span { font-size: 12px; opacity: .7; }
-.card.highlight { background: #fff7ed; border-color: #fed7aa; }
+.card.highlight { background: var(--danger-soft); border-color: var(--danger); }
 .topics { margin: 14px 0; }
-.topic { display: inline-block; background: var(--hover,#eee); border-radius: 999px; padding: 2px 10px; margin: 3px; font-size: 12px; }
+.topic { display: inline-block; background: var(--surface-3); border-radius: 999px; padding: 2px 10px; margin: 3px; font-size: 12px; }
 .timeline-head { display: flex; align-items: center; justify-content: space-between; }
 .yearnav { display: flex; gap: 8px; align-items: center; }
 .yearnav button { border: 1px solid var(--border,#ddd); background: none; border-radius: 6px; width: 26px; height: 26px; cursor: pointer; }
 .month h4 { margin: 12px 0 4px; opacity: .8; }
 .month ul { list-style: none; padding: 0; margin: 0; }
-.month li { padding: 5px 8px; border-left: 2px solid var(--accent,#4f46e5); margin: 3px 0; }
+.month li { padding: 5px 8px; border-left: 2px solid var(--primary); margin: 3px 0; }
 .month li em { opacity: .55; font-style: normal; }
 .journey-dim { opacity: .55; }
 .journal { margin: 18px 0; }
-.entry { border: 1px solid var(--border,#e3e3e3); border-radius: 12px; padding: 12px 14px; margin: 8px 0; background: var(--panel,#fafafa); }
+.entry { border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin: 8px 0; background: var(--surface); }
 .entry header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .entry header b { flex: 1; }
-.entry .ref { font-size: 12px; background: var(--hover,#eee); border-radius: 999px; padding: 1px 8px; }
+.entry .ref { font-size: 12px; background: var(--surface-3); border-radius: 999px; padding: 1px 8px; }
 .entry .del { border: none; background: none; cursor: pointer; opacity: .5; }
 .entry p { margin: 4px 0; line-height: 1.45; }
 .entry .pending { opacity: .7; font-style: italic; }
-.entry .pending button { border: none; background: none; color: var(--accent,#4f46e5); cursor: pointer; text-decoration: underline; }
+.entry .pending button { border: none; background: none; color: var(--primary); cursor: pointer; text-decoration: underline; }
 </style>

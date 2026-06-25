@@ -920,14 +920,17 @@ async function confirmBulkDelete() {
 // popover with copy-link, WhatsApp, Email, and Telegram buttons.
 const sharePopover = ref(null); // { token, link } or null
 
-function serviceLink(token) {
-  return `${window.location.origin}/?session=${token}`;
-}
-
 async function shareService(s) {
-  const link = serviceLink(s.session_token);
   const title = "Your AI Virtual Church service";
   const text  = s.mood ? `A personalized worship service (${s.mood})` : "A personalized worship service";
+  let link = "";
+
+  try {
+    link = (await api.adminServiceResumeLink(s.id)).url;
+  } catch (e) {
+    notice.value = e?.data?.message || "Could not create share link.";
+    return;
+  }
 
   if (navigator.share) {
     try {
@@ -938,9 +941,9 @@ async function shareService(s) {
     return;
   }
   // Desktop fallback: show the inline popover.
-  sharePopover.value = sharePopover.value?.token === s.session_token
+  sharePopover.value = sharePopover.value?.token === s.id
     ? null
-    : { token: s.session_token, link };
+    : { token: s.id, link };
 }
 
 async function copyLink(link) {
@@ -1572,7 +1575,7 @@ onUnmounted(() => {
                 </td>
               </tr>
               <!-- Inline share popover — appears below the row when native share is unavailable -->
-              <tr v-if="sharePopover && sharePopover.token === s.session_token" class="share-row">
+              <tr v-if="sharePopover && sharePopover.token === s.id" class="share-row">
                 <td colspan="9">
                   <div class="share-popover">
                     <span class="share-link-text">{{ sharePopover.link }}</span>

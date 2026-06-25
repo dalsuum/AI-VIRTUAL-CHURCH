@@ -468,41 +468,41 @@ def _call_runpod_api(api_key: str, base_url: str, model_name: str, system: str, 
     return "".join(parts).strip()
 
 
-def _call_chat_api(api_key: str, base_url: str, model_name: str, system: str, user: str, max_tokens: int, provider_name: str) -> str:
-    resp = requests.post(
-        f"{base_url}/chat/completions",
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        json={
-            "model": model_name,
-            "max_tokens": max_tokens,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-        },
-        timeout=120,
-    )
-    resp.raise_for_status()
-    data = resp.json()
+def _call_chat_api(api_key: str, base_url: str, model_name: str, system: str, user: str, max_tokens: int, provider_name: str, prompt_version: str | None = "legacy_hardcoded") -> str:
+    from core.guardrails import validate_input, validate_output
+    from core.ai_gateway import generate_response
     
-    usage = data.get("usage", {})
+    # 1. Input Guardrails
+    is_safe_in, reason_in = validate_input(user)
+    if not is_safe_in:
+        print(f"[guardrails] Blocked input: {reason_in}", flush=True)
+        return ""
+        
+    # 2. AI Gateway Generation
+    try:
+        text, usage = generate_response(
+            model=model_name,
+            system_prompt=system,
+            messages=[{"role": "user", "content": user}],
+            base_url=base_url,
+            api_key=api_key,
+            max_tokens=max_tokens,
+            prompt_version=prompt_version,
+            enable_evaluator=True
+        )
+    except Exception as e:
+        print(f"[llm] {provider_name} via gateway failed: {e}", flush=True)
+        raise e
+
     if usage:
         p_tok = usage.get("prompt_tokens", 0)
         c_tok = usage.get("completion_tokens", 0)
-        m_used = data.get("model", model_name)
+        m_used = usage.get("model", model_name)
         print(f"[llm] {provider_name} used {p_tok} prompt + {c_tok} completion tokens (model: {m_used})", flush=True)
         session_prompt_tokens.set(session_prompt_tokens.get() + p_tok)
         session_completion_tokens.set(session_completion_tokens.get() + c_tok)
 
-    choices = data.get("choices", [])
-    if not choices:
-        print(f"[llm] {provider_name} returned empty choices array: {data}", flush=True)
-        return ""
-        
-    return (choices[0]["message"].get("content", "") or "").strip()
+    return text
 
 
 def _complete(system: str, user: str, max_tokens: int = 1500, language: str = "en") -> str:

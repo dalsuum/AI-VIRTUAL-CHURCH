@@ -21,7 +21,11 @@ class DispatchServiceJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public function __construct(public int $sessionId) {}
+    public string $correlationId;
+
+    public function __construct(public int $sessionId) {
+        $this->correlationId = (string) \Illuminate\Support\Str::uuid();
+    }
 
     public function handle(): void
     {
@@ -30,6 +34,7 @@ class DispatchServiceJob implements ShouldQueue
         $language = $session->language ?? 'en';
 
         $payload = json_encode([
+            'correlation_id' => $this->correlationId,
             'session_id'   => $session->id,
             'session_token'=> $session->session_token,
             'music_source' => $session->music_source, // 'hymn_sung' | 'hymn' | 'suno' | 'youtube'

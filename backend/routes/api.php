@@ -63,10 +63,15 @@ Route::middleware('throttle:auth')->group(function () {
     Route::post('/reset-password', [AuthController::class, 'resetPassword']);
 });
 
-// Email-link session resume — public, session token acts as the credential.
+// Email-link service resume — public, one-time resume token acts as the credential.
 // Throttled to limit repeated token exchange from a leaked link.
 Route::get('/service/{token}/resume', [ServiceController::class, 'resume'])
     ->middleware('throttle:5,1');
+
+// Service playback read. The controller allows either the authenticated owner or
+// a service-scoped resume session; the service token alone is not enough.
+Route::get('/service/{token}', [ServiceController::class, 'show'])
+    ->middleware('throttle:120,1');
 
 // Internal worker callbacks (shared-secret protected, no user auth)
 Route::post('/internal/asset-ready', [WebhookController::class, 'assetReady']);
@@ -130,7 +135,7 @@ Route::get('/stickers/image/{jobId}/{n}', [\App\Http\Controllers\StickerControll
     ->whereNumber('n');
 
 // Authenticated user routes
-Route::middleware('auth:sanctum')->group(function () {
+Route::middleware(['auth:sanctum', 'account.usable'])->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me', [AuthController::class, 'me']);
     Route::patch('/me/name',             [AuthController::class, 'updateName']);
@@ -193,8 +198,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/service/{token}/intake', [ServiceController::class, 'intake'])
         // Guests: one free service; members/premium: must hold a token (charged in handler).
         ->middleware(['throttle:intake', 'guest.limit:service', 'tokens:service']);
-    Route::get('/service/{token}', [ServiceController::class, 'show']);
-
     // Offering segment — open a PaymentIntent; the browser confirms with Stripe.
     Route::post('/service/{token}/offering', [OfferingController::class, 'createIntent']);
 
@@ -221,6 +224,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/dashboard', [AdminController::class, 'dashboard']);
 
         Route::get('/services', [AdminController::class, 'services']);
+        Route::post('/services/{service}/resume-link', [AdminController::class, 'serviceResumeLink']);
         Route::post('/services/{service}/retry', [AdminController::class, 'retryService']);
         Route::delete('/services/{service}', [AdminController::class, 'deleteService']);
 
@@ -393,7 +397,7 @@ Route::get('/v1/study/config', [StudyController::class, 'config'])->middleware('
 
 // Worshipper-facing endpoints. Guests are authenticated users (@guest.local), so
 // the whole surface sits behind sanctum; every handler is owner-scoped.
-Route::middleware('auth:sanctum')->prefix('v1/study')->group(function () {
+Route::middleware(['auth:sanctum', 'account.usable'])->prefix('v1/study')->group(function () {
     Route::post('/sessions', [StudyController::class, 'createSession'])
         // Guests: one free study; members/premium: must hold a token. The handler
         // reserves/commits the token and records guest usage on success.
@@ -410,7 +414,7 @@ Route::middleware('auth:sanctum')->prefix('v1/study')->group(function () {
 
 // AI Core / Bible Study admin console. Entry gated by `staff`; each method enforces
 // study.view (reads) or study.manage (writes) via PermissionService + audit log.
-Route::middleware(['auth:sanctum', 'staff'])->prefix('v1/admin/study')->group(function () {
+Route::middleware(['auth:sanctum', 'account.usable', 'staff'])->prefix('v1/admin/study')->group(function () {
     Route::get('/personas',  [StudyAdminController::class, 'personas']);
     Route::post('/personas', [StudyAdminController::class, 'storePersona']);
     Route::patch('/personas/{persona}',  [StudyAdminController::class, 'updatePersona']);

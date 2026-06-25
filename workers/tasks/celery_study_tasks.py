@@ -15,4 +15,9 @@ from tasks.celery_app import app
 def study_discuss(job: dict) -> None:
     """Run one Bible Study discussion round. `job` is composed server-side by Laravel
     (selected personas, role templates, provider model, prior turns, question)."""
+    if not isinstance(job, dict) or not job.get("session_id"):
+        keys = sorted(job.keys()) if isinstance(job, dict) else []
+        print(f"[bible_study] ignoring malformed job without session_id; keys={keys}", flush=True)
+        return
+
     driver.run(job)

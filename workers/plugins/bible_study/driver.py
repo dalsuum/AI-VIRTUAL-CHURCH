@@ -39,26 +39,23 @@ class OpenRouterLLM:
         self._model = model or _DEFAULT_MODEL
 
     def complete(self, *, system, messages, temperature, max_tokens, role=None):
-        full = [{"role": "system", "content": system}, *messages]
-        last_exc = None
-        for attempt in range(1, 4):
-            try:
-                resp = requests.post(
-                    f"{_OPENROUTER_URL}/chat/completions",
-                    headers={"Authorization": f"Bearer {_OPENROUTER_KEY}",
-                             "Content-Type": "application/json"},
-                    json={"model": self._model, "messages": full,
-                          "temperature": temperature, "max_tokens": max_tokens},
-                    timeout=120,
-                )
-                resp.raise_for_status()
-                data = resp.json()
-                text = data["choices"][0]["message"]["content"]
-                return text, data.get("usage", {})
-            except requests.exceptions.RequestException as exc:
-                last_exc = exc
-                time.sleep(2 ** attempt)
-        raise RuntimeError(f"OpenRouter call failed after retries: {last_exc}")
+        from core.ai_gateway import generate_response
+
+        try:
+            # We use prompt_version=role or "legacy_plugin" to track what prompt this is
+            text, usage = generate_response(
+                model=self._model,
+                system_prompt=system,
+                messages=messages,  # ai_gateway expects messages without system prompt
+                base_url=_OPENROUTER_URL,
+                api_key=_OPENROUTER_KEY,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                prompt_version=f"plugin_hardcoded_{role}" if role else "plugin_hardcoded"
+            )
+            return text, usage
+        except Exception as e:
+            raise RuntimeError(f"Gateway generation failed: {e}")
 
 
 def _signed_post(url: str, payload: dict) -> None:

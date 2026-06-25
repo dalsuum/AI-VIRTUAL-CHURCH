@@ -47,6 +47,7 @@ class JournalController extends Controller
             ->map(fn ($m) => ['sender' => $m->sender, 'content' => $m->content])->all();
 
         Redis::rpush(self::QUEUE, json_encode([
+            'correlation_id' => (string) \Illuminate\Support\Str::uuid(),
             'mode'             => 'journal',
             'journal_entry_id' => $entry->id,
             'language'         => $session->language,

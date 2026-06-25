@@ -21,6 +21,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'admin'       => \App\Http\Middleware\EnsureAdmin::class,
             'staff'       => \App\Http\Middleware\EnsureStaff::class,
             'role'        => \App\Http\Middleware\EnsureRole::class,
+            'account.usable' => \App\Http\Middleware\EnsureAccountIsUsable::class,
             'guest.limit' => \App\Http\Middleware\GuestRateLimiter::class,
             'tokens'      => \App\Http\Middleware\RequireTokens::class,
         ]);

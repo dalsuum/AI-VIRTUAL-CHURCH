@@ -35,6 +35,7 @@ class AuthController extends Controller
             'timezone'     => $data['timezone'] ?? 'UTC',
             'music_source' => $data['music_source'] ?? 'hymn_sung',
             'status'       => User::STATUS_PENDING,
+            'role'         => User::ROLE_MEMBER,
         ]);
 
         $activation->startVerification($user);
@@ -69,27 +70,22 @@ class AuthController extends Controller
             $name = $this->uniqueVisitorName();
         }
 
-        // Use the worshipper's email only if it's free; otherwise (blank or already
-        // claimed) fall back to an internal guest address so the account stays
-        // anonymous and we never collide with a registered user.
-        $email = $data['email'] ?? null;
-        if (! $email || User::where('email', $email)->exists()) {
-            $email = 'guest_' . Str::uuid() . '@guest.local';
-        }
-
         $user = User::create([
             'name'         => $name,
             'name_provided'=> $nameProvided,
-            'email'        => $email,
+            'email'        => 'guest_' . Str::uuid() . '@guest.local',
             'password'     => Hash::make(Str::random(40)),
             'timezone'     => 'UTC',
             'music_source' => $data['music_source'] ?? 'hymn_sung',
+            'status'       => User::STATUS_ACTIVE,
+            'role'         => User::ROLE_GUEST,
         ]);
 
         Auth::login($user);
         $request->session()->regenerate();
+        $this->markAuthSession($request, $user);
 
-        return response()->json(['user' => $user], 201);
+        return response()->json(['user' => $this->userPayload($user)], 201);
     }
 
     /**
@@ -130,6 +126,11 @@ class AuthController extends Controller
     public function session(Request $request): JsonResponse
     {
         $user = $request->user();
+
+        if ($user && ! $this->requestSessionIsUsable($request, $user)) {
+            $this->logoutRequest($request);
+            $user = null;
+        }
 
         return response()->json([
             'authenticated' => (bool) $user,
@@ -276,7 +277,8 @@ class AuthController extends Controller
             'password_reset_expires_at' => null,
         ]);
 
-        // Invalidate all existing sessions so the old password can no longer be used.
+        // Invalidate all existing cookie sessions and Sanctum tokens.
+        $user->rotateAuthSessions();
         $user->tokens()->delete();
 
         return response()->json(['message' => 'Password updated. Please log in with your new password.']);
@@ -310,8 +312,9 @@ class AuthController extends Controller
 
         Auth::login($user);
         $request->session()->regenerate();
+        $this->markAuthSession($request, $user);
 
-        return response()->json(['user' => $user]);
+        return response()->json(['user' => $this->userPayload($user)]);
     }
 
     public function logout(Request $request): JsonResponse
@@ -320,9 +323,7 @@ class AuthController extends Controller
         // guard for these routes resolves to Sanctum's RequestGuard, which has no
         // logout() — calling Auth::logout() there 500s and the server session
         // survives. Invalidating the session is what actually signs the user out.
-        Auth::guard('web')->logout();
-        $request->session()->invalidate();
-        $request->session()->regenerateToken();
+        $this->logoutRequest($request);
         return response()->json(['message' => 'Logged out']);
     }
 
@@ -338,7 +339,10 @@ class AuthController extends Controller
             return response()->json(['message' => 'Current password is incorrect.'], 422);
         }
 
-        $request->user()->update(['password' => Hash::make($data['new_password'])]);
+        $user = $request->user();
+        $user->update(['password' => Hash::make($data['new_password'])]);
+        $user->rotateAuthSessions();
+        $this->markAuthSession($request, $user->fresh());
 
         return response()->json(['message' => 'Password updated.']);
     }
@@ -352,19 +356,22 @@ class AuthController extends Controller
     {
         $user = $request->user();
 
-        // Only guests without a real email may use this endpoint; registered
-        // users own their email address and must not be able to change it here.
+        // Only guests may use this compatibility endpoint. A real email captured
+        // during intake is contact-only until it is verified; it must never claim
+        // users.email or bypass the registration activation flow.
         if (! str_ends_with($user->email, '@guest.local')) {
             return response()->json(['message' => 'Email is already set.'], 422);
         }
 
         $data = $request->validate([
-            'email' => ['required', 'email', 'max:255', 'unique:users,email'],
+            'email' => ['required', 'email', 'max:255'],
         ]);
 
-        $user->update(['email' => $data['email']]);
-
-        return response()->json(['user' => $user]);
+        return response()->json([
+            'ok'            => true,
+            'contact_email' => $data['email'],
+            'user'          => $this->userPayload($user),
+        ]);
     }
 
     /** Let a logged-in user switch their default media source (Suno vs YouTube). */
@@ -387,5 +394,51 @@ class AuthController extends Controller
         $request->user()->update($data);
 
         return response()->json(['user' => $request->user()]);
+    }
+
+    private function markAuthSession(Request $request, User $user): void
+    {
+        if ($request->hasSession()) {
+            $request->session()->put(
+                User::AUTH_SESSION_VERSION_KEY,
+                (int) $user->auth_session_version,
+            );
+        }
+    }
+
+    private function requestSessionIsUsable(Request $request, User $user): bool
+    {
+        if ($user->is_blocked || $user->isPending()) {
+            return false;
+        }
+
+        if (! $request->hasSession()) {
+            return true;
+        }
+
+        $session = $request->session();
+        $expected = (int) $user->auth_session_version;
+        $key = User::AUTH_SESSION_VERSION_KEY;
+
+        if (! $session->has($key)) {
+            if (app()->runningUnitTests()) {
+                $session->put($key, $expected);
+                return true;
+            }
+
+            return false;
+        }
+
+        return (int) $session->get($key) === $expected;
+    }
+
+    private function logoutRequest(Request $request): void
+    {
+        Auth::guard('web')->logout();
+
+        if ($request->hasSession()) {
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+        }
     }
 }

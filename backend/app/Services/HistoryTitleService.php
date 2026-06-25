@@ -40,6 +40,7 @@ class HistoryTitleService
             ->all();
 
         $job = [
+            'correlation_id' => (string) \Illuminate\Support\Str::uuid(),
             'mode'       => 'title_summary',
             'session_id' => $session->id,
             'language'   => $session->language,

@@ -11,6 +11,8 @@ class User extends Authenticatable
 {
     use HasApiTokens, Notifiable;
 
+    public const AUTH_SESSION_VERSION_KEY = 'auth_session_version';
+
     // Role hierarchy (lowest → highest privilege).
     public const ROLE_GUEST     = 'guest';
     public const ROLE_MEMBER    = 'member';
@@ -35,7 +37,7 @@ class User extends Authenticatable
     ];
 
     protected $fillable = [
-        'name', 'name_provided', 'email', 'password', 'timezone',
+        'name', 'name_provided', 'email', 'password', 'auth_session_version', 'timezone',
         'music_source', 'presenter_gender', 'is_admin', 'is_blocked',
         'status', 'activation_token', 'activation_expires_at',
         'role', 'password_reset_token', 'password_reset_expires_at',
@@ -61,6 +63,7 @@ class User extends Authenticatable
         'is_admin'                 => 'boolean',
         'name_provided'            => 'boolean',
         'is_blocked'               => 'boolean',
+        'auth_session_version'     => 'integer',
         'token_balance'            => 'integer',
         'monthly_allowance'        => 'integer',
         'fav_books'                => 'array',
@@ -71,7 +74,9 @@ class User extends Authenticatable
     public function role(): string
     {
         return $this->attributes['role'] ?? (
-            $this->is_admin ? self::ROLE_ADMIN : self::ROLE_MEMBER
+            $this->isGuestAccount() ? self::ROLE_GUEST : (
+                $this->is_admin ? self::ROLE_ADMIN : self::ROLE_MEMBER
+            )
         );
     }
 
@@ -83,6 +88,12 @@ class User extends Authenticatable
     /** Account has completed email activation (or never required it). */
     public function isActive(): bool  { return ($this->status ?? self::STATUS_ACTIVE) === self::STATUS_ACTIVE; }
     public function isPending(): bool { return ($this->status ?? self::STATUS_ACTIVE) === self::STATUS_PENDING; }
+
+    /** Rotate this value to make every existing cookie session fail the next auth check. */
+    public function rotateAuthSessions(): void
+    {
+        $this->increment('auth_session_version');
+    }
 
     public function sessions(): HasMany
     {

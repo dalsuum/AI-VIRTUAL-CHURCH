@@ -50,6 +50,18 @@ def _post_asset(session_token: str, segment: str, **fields) -> None:
     ).raise_for_status()
 
 
+def _post_token_telemetry(session_token: str, segment: str, prompt_tokens: int, completion_tokens: int) -> None:
+    """Best-effort token telemetry; never block service composition."""
+    if prompt_tokens <= 0 and completion_tokens <= 0:
+        return
+
+    print(
+        f"[telemetry] {segment} session={session_token[:8]}... "
+        f"prompt_tokens={prompt_tokens} completion_tokens={completion_tokens}",
+        flush=True,
+    )
+
+
 def _post_music_track(*, mood: str, language: str, provider_ref: str, storage_key: str, title: str | None, lyrics: str | None = None) -> None:
     """Register a fresh Suno track in the reusable mood pool. Best-effort: the pool is
     an optimization for *future* services, so a failure here must never break this one."""
@@ -301,8 +313,7 @@ def _orchestrate_pipeline(job: dict) -> None:
 
     p_tok = llm_engine.session_prompt_tokens.get()
     c_tok = llm_engine.session_completion_tokens.get()
-    if p_tok > 0 or c_tok > 0:
-        _post_asset(token, "telemetry_plan", asset_type="telemetry", prompt_tokens=p_tok, completion_tokens=c_tok)
+    _post_token_telemetry(token, "telemetry_plan", p_tok, c_tok)
 
     # 1b. Registered worshippers get a short, mood-aware "welcome back" greeting up
     # front so the countdown screen has something personal to show while the heavier
@@ -468,8 +479,7 @@ def generate_text_segments(job: dict, plan: dict) -> None:
 
     p_tok = llm_engine.session_prompt_tokens.get()
     c_tok = llm_engine.session_completion_tokens.get()
-    if p_tok > 0 or c_tok > 0:
-        _post_asset(token, "telemetry_segments", asset_type="telemetry", prompt_tokens=p_tok, completion_tokens=c_tok)
+    _post_token_telemetry(token, "telemetry_segments", p_tok, c_tok)
 
 
 @app.task(name="tasks.repair_missing_narration")

@@ -27,6 +27,7 @@ class HistoryController extends Controller
     public function __construct(
         private readonly HistoryService $history,
         private readonly HistoryExportService $exporter,
+        private readonly \App\Services\SessionState\SessionStateStore $state,
     ) {}
 
     /** Load a session owned by the caller, or 404. */
@@ -35,6 +36,23 @@ class HistoryController extends Controller
         return ChatSession::forUser((int) $request->user()->id)
             ->whereKey($id)
             ->firstOr(fn () => abort(Response::HTTP_NOT_FOUND));
+    }
+
+    /**
+     * Phase 3 read switch: hydrate a session's `messages` for serialization. When
+     * `history.read_from_nodes` is on (default), messages are derived from session_nodes
+     * (the durable truth); otherwise the legacy chat_messages projection is loaded. The
+     * dual-write from Phases 1-2 keeps the two equivalent, so this is instantly reversible.
+     */
+    private function withMessages(ChatSession $session): ChatSession
+    {
+        if (config('history.read_from_nodes', true)) {
+            $session->setRelation('messages', $this->state->messageDtos($session));
+
+            return $session;
+        }
+
+        return $session->load('messages');
     }
 
     /** Sidebar list — grouped by date bucket, cursor-paginated, optional filters. */
@@ -79,7 +97,7 @@ class HistoryController extends Controller
     /** Full session for resume: messages + type metadata. */
     public function show(Request $request, string $id): JsonResponse
     {
-        $session = $this->findOwned($request, $id)->load('tags', 'messages');
+        $session = $this->withMessages($this->findOwned($request, $id)->load('tags'));
         if ($rel = $session->metaRelation()) {
             $session->load($rel);
         }
@@ -182,7 +200,7 @@ class HistoryController extends Controller
     public function export(Request $request, string $id)
     {
         $format = (string) $request->query('format', 'md');
-        $session = $this->findOwned($request, $id)->load('tags', 'messages');
+        $session = $this->withMessages($this->findOwned($request, $id)->load('tags'));
 
         return $this->stream($this->exporter->export($session, $format));
     }
@@ -191,7 +209,8 @@ class HistoryController extends Controller
     {
         $format = (string) $request->query('format', 'md');
         $sessions = ChatSession::forUser((int) $request->user()->id)
-            ->with('tags', 'messages')->orderBy('started_at')->get();
+            ->with('tags')->orderBy('started_at')->get()
+            ->each(fn ($s) => $this->withMessages($s));
 
         return $this->stream($this->exporter->export($sessions, $format));
     }
@@ -245,7 +264,7 @@ class HistoryController extends Controller
         abort_unless($share && $share->isActive(), Response::HTTP_NOT_FOUND);
         abort_unless($share->checkPassword($request->query('password')), Response::HTTP_FORBIDDEN, 'Password required.');
 
-        $session = ChatSession::with('messages', 'tags')->findOrFail($share->chat_session_id);
+        $session = $this->withMessages(ChatSession::with('tags')->findOrFail($share->chat_session_id));
 
         return response()->json([
             'session' => [

@@ -5,6 +5,7 @@ namespace App\Services\SessionState;
 use App\Models\ChatSession;
 use App\Models\SessionCheckpoint;
 use App\Models\SessionNode;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -117,6 +118,35 @@ class SessionStateStore
         ]);
 
         return (string) $checkpoint->id;
+    }
+
+    /**
+     * Phase 3 read path: the active branch's message-type nodes mapped to the legacy
+     * chat_messages DTO shape, so callers can serialize history straight from nodes (the
+     * durable truth) without a chat_messages query. system_event/checkpoint nodes are
+     * excluded — they are not chat turns. Order is by branch seq (== chronological).
+     *
+     * @return \Illuminate\Support\Collection<int,array<string,mixed>>
+     */
+    public function messageDtos(ChatSession $session): Collection
+    {
+        // Read the active pointer from the DB — a caller's in-memory model may be stale
+        // after a write advanced it within the same request.
+        $session = $session->fresh() ?? $session;
+
+        return $this->activeBranchNodes($session)
+            ->where('type', 'message')
+            ->values()
+            ->map(fn (SessionNode $n) => new \Illuminate\Support\Fluent([
+                'id'           => $n->id,
+                'session_id'   => $n->session_id,
+                'sender'       => $n->sender,
+                'message_type' => $n->metadata['message_type'] ?? 'text',
+                'content'      => $n->content,
+                'metadata'     => $n->metadata,
+                'token_usage'  => $n->token_usage,
+                'created_at'   => $n->created_at,
+            ]));
     }
 
     /** Nodes of the active branch, in order. Empty collection when nothing recorded yet. */

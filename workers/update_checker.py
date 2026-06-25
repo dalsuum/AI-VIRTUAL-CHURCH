@@ -141,10 +141,24 @@ def build_report(*, pull: bool = False) -> dict:
 
 
 def write_cache(data: dict) -> None:
-    tmp = CACHE_FILE + ".tmp"
-    with open(tmp, "w") as f:
-        json.dump(data, f)
-    os.replace(tmp, CACHE_FILE)
+    payload = json.dumps(data)
+    try:
+        tmp = CACHE_FILE + ".tmp"
+        with open(tmp, "w") as f:
+            f.write(payload)
+        os.replace(tmp, CACHE_FILE)
+    except OSError:
+        # /tmp carries the sticky bit, so a rename-replace fails when the
+        # existing file is owned by the web user (www-data). Fall back to an
+        # in-place rewrite, which only needs group-write permission.
+        with open(CACHE_FILE, "w") as f:
+            f.write(payload)
+    # Keep the snapshot group-writable so the PHP side (www-data) can also
+    # update it — both users share the www-data group.
+    try:
+        os.chmod(CACHE_FILE, 0o664)
+    except OSError:
+        pass
 
 
 def main() -> None:

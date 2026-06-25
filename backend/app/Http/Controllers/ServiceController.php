@@ -6,11 +6,15 @@ use App\Jobs\DispatchServiceJob;
 use App\Models\ServiceIntake;
 use App\Models\ServiceSession;
 use App\Models\Setting;
+use App\Models\User;
 use App\Notifications\ServiceScheduledNotification;
 use App\Services\CrisisInterceptService;
+use App\Services\GuestUsageService;
+use App\Services\Pipeline\Worship\WorshipServicePipeline;
+use App\Services\TokenService;
+use App\Services\UsageLogger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Str;
 
@@ -18,7 +22,13 @@ class ServiceController extends Controller
 {
     private const NARRATED_SEGMENTS = ['opening_prayer', 'scripture', 'sermon', 'benediction'];
 
-    public function __construct(private CrisisInterceptService $crisis) {}
+    public function __construct(
+        private CrisisInterceptService $crisis,
+        private TokenService $tokens,
+        private GuestUsageService $guests,
+        private UsageLogger $usage,
+        private \App\Services\HistoryService $history,
+    ) {}
 
     /** Create a session. The media source is locked from the user's preference now. */
     public function start(Request $request): JsonResponse
@@ -41,129 +51,24 @@ class ServiceController extends Controller
     }
 
     /**
-     * Receive the intake (mood + optional prayer text). Runs the crisis check first.
-     * If clean, persists the intake and dispatches the AI pipeline.
+     * Receive the intake (mood + optional prayer text). The full hard-path (validate →
+     * crisis → charge → dispatch) and best-effort enrichment (history mirror, scheduled
+     * confirmation email) are owned by the shared pipeline, so the ordering and failure
+     * isolation can't drift. See App\Services\Pipeline\Worship\WorshipServicePipeline.
      */
     public function intake(Request $request, string $token): JsonResponse
     {
-        $session = ServiceSession::where('session_token', $token)
-            ->where('user_id', $request->user()->id)
-            ->firstOrFail();
-
-        $data = $request->validate([
-            'mood'          => ['required', 'string', 'max:100'],
-            // Service language ('en' | 'my' | 'td'), chosen on the intake form's
-            // language tab. Locked per session like music_source; the worker keys
-            // the LLM output language, Bible translation, hymn library, and TTS
-            // voice off it.
-            'language'      => ['nullable', 'string', 'in:en,my,td'],
-            // User-supplied single-word feeling, stored for admin review only.
-            'custom_mood'   => ['nullable', 'string', 'max:50', 'regex:/^[A-Za-z]+$/'],
-            'prayer_text'   => ['nullable', 'string', 'max:5000'],
-            // Optional: hold the service until a chosen future moment.
-            'scheduled_at'  => ['nullable', 'date', 'after:now'],
-            // Contact email supplied at scheduling time; used to update a guest
-            // account that still has a synthetic @guest.local address.
-            'contact_email' => ['nullable', 'email', 'max:255'],
-        ]);
-
-        // Lock the service language now, alongside the already-locked music source.
-        $session->update(['language' => $data['language'] ?? 'en']);
-
-        // A future time is only honoured while scheduling is enabled; otherwise the
-        // service begins now (the UI hides the option, this guards direct calls).
-        if (! empty($data['scheduled_at']) && ! Setting::schedulingEnabled()) {
-            unset($data['scheduled_at']);
-        }
-
-        $user = $request->user();
-
-        // A scheduled service requires a notification address. Accept either the
-        // user's stored real email or a contact_email supplied with this request.
-        // We store contact_email on the session so it survives regardless of whether
-        // the guest account's email field could be updated.
-        $contactEmail = $data['contact_email'] ?? null;
-        $notifyEmail  = $contactEmail
-            ?: (str_ends_with($user->email, '@guest.local') ? null : $user->email);
-
-        if (! empty($data['scheduled_at']) && ! $notifyEmail) {
-            return response()->json([
-                'message' => 'Please provide your email so we can send you a reminder when your service begins.',
-            ], 422);
-        }
-
-        // SAFETY GATE — before anything is queued.
-        $check = $this->crisis->inspect($session->session_token, $data['prayer_text'] ?? null);
-        if ($check['intercepted']) {
-            $session->update(['status' => 'abandoned']);
-            return response()->json([
-                'intercepted' => true,
-                'resource'    => $check['resource'],
-            ], 200);
-        }
-
-        $intake = ServiceIntake::updateOrCreate(
-            ['session_id' => $session->id],
-            [
-                'mood'        => $data['mood'],
-                'custom_mood' => $data['custom_mood'] ?? null,
-                'prayer_text' => $data['prayer_text'] ?? null,
-            ],
-        );
-
-        // Scheduled for later: hold it for the scheduler (see DispatchDueServices).
-        // Otherwise dispatch now and fan out to the Python workers immediately.
-        if (! empty($data['scheduled_at'])) {
-            $session->update([
-                'status'        => 'scheduled',
-                'scheduled_at'  => $data['scheduled_at'],
-                'contact_email' => $contactEmail,
-            ]);
-
-            // Send an immediate booking confirmation to the notification address.
-            if ($notifyEmail) {
-                \Illuminate\Support\Facades\Notification::route('mail', $notifyEmail)
-                    ->notify(new ServiceScheduledNotification($session, $user->name, $notifyEmail));
-            }
-
-            return response()->json([
-                'intercepted'   => false,
-                'session_token' => $session->session_token,
-                'intake_id'     => $intake->id,
-                'status'        => 'scheduled',
-                'scheduled_at'  => $session->scheduled_at?->toIso8601String(),
-            ], 202);
-        }
-
-        // Guard: if this session already triggered the pipeline, don't burn a second GPU job.
-        if (in_array($session->status, ['active', 'processing', 'complete'])) {
-            return response()->json([
-                'intercepted'   => false,
-                'session_token' => $session->session_token,
-                'intake_id'     => $intake->id,
-                'status'        => $session->status,
-            ], 202);
-        }
-
-        $session->update(['status' => 'active', 'scheduled_at' => null]);
-        DispatchServiceJob::dispatch($session->id);
-
-        return response()->json([
-            'intercepted'   => false,
-            'session_token' => $session->session_token,
-            'intake_id'     => $intake->id,
-            'status'        => 'active',
-        ], 202);
+        return app(WorshipServicePipeline::class)->forToken($token)->handle($request);
     }
 
     /**
-     * Public endpoint used by email links. Accepts the 64-char session token,
-     * establishes an HttpOnly session cookie for the session owner, and returns
-     * service metadata so the SPA can jump straight into the service — even on
-     * a different device or after browser storage was cleared.
+     * Public endpoint used by email links. Accepts a short-lived, single-use
+     * resume token, establishes a service-scoped session, and returns service
+     * metadata so the SPA can jump straight into this service only — even on a
+     * different device or after browser storage was cleared.
      *
-     * The session token is a 64-char random string and acts as the credential
-     * here; only the person who received the email can guess it.
+     * This intentionally does not Auth::login() the service owner: a forwarded
+     * service link must never become a full account login link.
      */
     public function resume(Request $request, string $token): JsonResponse
     {
@@ -173,11 +78,18 @@ class ServiceController extends Controller
             ], 400);
         }
 
-        $session = ServiceSession::where('session_token', $token)->firstOrFail();
-        $user    = $session->user;
+        abort_unless(strlen($token) === 64, 404);
 
-        Auth::login($user);
+        $session = ServiceSession::where('resume_token_hash', hash('sha256', $token))
+            ->whereNull('resume_token_used_at')
+            ->where('resume_token_expires_at', '>', now())
+            ->firstOrFail();
+
+        $this->authorizeServiceOwnerUsable($session);
+
+        $session->consumeResumeToken();
         $request->session()->regenerate();
+        $request->session()->put(ServiceSession::RESUME_SESSION_ID_KEY, $session->id);
 
         return response()->json([
             'session_token' => $session->session_token,
@@ -214,8 +126,9 @@ class ServiceController extends Controller
     {
         $session = ServiceSession::with(['intake', 'assets'])
             ->where('session_token', $token)
-            ->where('user_id', $request->user()->id)
             ->firstOrFail();
+
+        $this->authorizeServiceView($request, $session);
 
         $assets = $session->assets;
 
@@ -352,6 +265,7 @@ class ServiceController extends Controller
             }
 
             Redis::rpush('ai:narration-repair', json_encode([
+                'correlation_id' => (string) \Illuminate\Support\Str::uuid(),
                 'session_id'        => $session->id,
                 'session_token'     => $session->session_token,
                 'language'          => $language,
@@ -365,5 +279,45 @@ class ServiceController extends Controller
         } catch (\Throwable $e) {
             report($e);
         }
+    }
+
+    private function authorizeServiceView(Request $request, ServiceSession $session): void
+    {
+        $this->authorizeServiceOwnerUsable($session);
+
+        if ($this->authenticatedOwnerMayView($request, $session)) {
+            return;
+        }
+
+        if ($request->hasSession()
+            && (int) $request->session()->get(ServiceSession::RESUME_SESSION_ID_KEY) === (int) $session->id) {
+            return;
+        }
+
+        abort(404);
+    }
+
+    private function authenticatedOwnerMayView(Request $request, ServiceSession $session): bool
+    {
+        $user = $request->user();
+        if (! $user || (int) $user->id !== (int) $session->user_id) {
+            return false;
+        }
+
+        if (! $request->hasSession()) {
+            return true;
+        }
+
+        $key = User::AUTH_SESSION_VERSION_KEY;
+
+        return $request->session()->has($key)
+            && (int) $request->session()->get($key) === (int) $user->auth_session_version;
+    }
+
+    private function authorizeServiceOwnerUsable(ServiceSession $session): void
+    {
+        $owner = $session->user;
+
+        abort_unless($owner && $owner->isActive() && ! $owner->is_blocked, 403);
     }
 }

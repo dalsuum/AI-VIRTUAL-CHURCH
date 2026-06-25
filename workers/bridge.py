@@ -17,21 +17,27 @@ import os
 
 import redis
 
-from tasks import orchestrate, repair_missing_narration
+from tasks import history_job, orchestrate, repair_missing_narration, study_discuss
 
 r = redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"))
 
 
 def main() -> None:
-    print("Bridge consumer listening on ai:intake and ai:narration-repair ...")
+    print("Bridge consumer listening on ai:intake, ai:narration-repair, ai:study, ai:history ...")
     while True:
-        queue, raw = r.blpop(["ai:intake", "ai:narration-repair"])
+        queue, raw = r.blpop(["ai:intake", "ai:narration-repair", "ai:study", "ai:history"])
         try:
             job = json.loads(raw)
             queue_name = queue.decode() if isinstance(queue, bytes) else str(queue)
             if queue_name == "ai:narration-repair":
                 repair_missing_narration.delay(job)
                 print(f"dispatched narration repair for session {job.get('session_token', job.get('session_id'))}")
+            elif queue_name == "ai:study":
+                study_discuss.delay(job)
+                print(f"dispatched study discussion for session {job.get('session_id')}")
+            elif queue_name == "ai:history":
+                history_job.delay(job)
+                print(f"dispatched history job ({job.get('mode')}) for session {job.get('session_id')}")
             else:
                 orchestrate.delay(job)
                 print(f"dispatched session {job.get('session_token', job.get('session_id'))}")

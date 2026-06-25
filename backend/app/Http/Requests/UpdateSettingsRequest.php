@@ -26,6 +26,38 @@ class UpdateSettingsRequest extends FormRequest
             'narration_mode_en'  => ['sometimes', 'string', 'in:' . implode(',', Setting::NARRATION_MODES)],
             'narration_mode_my'  => ['sometimes', 'string', 'in:edge_tts,mms_tts,off'],
             'narration_mode_td'  => ['sometimes', 'string', 'in:edge_tts,mms_tts,off'],
+            // Online Bible reader "Listen" voice — same provider set as the live
+            // service, per language. Unset inherits the service narration voice.
+            // English & KJV (English text) support every provider; Myanmar & Tedim
+            // add the native local MMS-TTS voice; Hebrew uses its he-IL Edge voice;
+            // the Chin/Zo Bibles have no native voice so they read phonetically via
+            // the English Edge voice (edge_tts) or stay silent (off).
+            'bible_narration_mode_en'  => ['sometimes', 'string', 'in:' . implode(',', Setting::NARRATION_MODES)],
+            'bible_narration_mode_kjv' => ['sometimes', 'string', 'in:' . implode(',', Setting::NARRATION_MODES)],
+            'bible_narration_mode_my'  => ['sometimes', 'string', 'in:edge_tts,mms_tts,off'],
+            'bible_narration_mode_td'  => ['sometimes', 'string', 'in:edge_tts,mms_tts,off'],
+            'bible_narration_mode_he'  => ['sometimes', 'string', 'in:edge_tts,off'],
+            // Falam, Hakha & Matu have native Meta MMS-TTS voices (mms-tts-cfm / -cnh / -hlt).
+            'bible_narration_mode_cfm' => ['sometimes', 'string', 'in:edge_tts,mms_tts,off'],
+            'bible_narration_mode_cnh' => ['sometimes', 'string', 'in:edge_tts,mms_tts,off'],
+            'bible_narration_mode_mrh' => ['sometimes', 'string', 'in:edge_tts,off'],
+            'bible_narration_mode_hlt' => ['sometimes', 'string', 'in:edge_tts,mms_tts,off'],
+            'bible_narration_mode_lus' => ['sometimes', 'string', 'in:edge_tts,off'],
+            'bible_narration_mode_pck' => ['sometimes', 'string', 'in:edge_tts,off'],
+            'bible_narration_mode_csy' => ['sometimes', 'string', 'in:edge_tts,off'],
+            // Highlight verses in the Bible reader as narration plays.
+            'bible_text_highlight_enabled' => ['sometimes', 'boolean'],
+            // Background music behind Bible narration: off | static mp3 | AI-generated.
+            'bible_bg_music_mode'   => ['sometimes', 'string', 'in:' . implode(',', Setting::BIBLE_BG_MUSIC_MODES)],
+            'bible_bg_music_engine' => ['sometimes', 'string', 'in:' . implode(',', Setting::BIBLE_BG_MUSIC_ENGINES)],
+            'bible_bg_music_url'    => ['sometimes', 'nullable', 'string', 'url', 'max:2048'],
+            'bible_bg_music_volume' => ['sometimes', 'numeric', 'min:0', 'max:1'],
+            // Per-version reader feature matrix (show/hide tab + enable/disable each
+            // feature button). Setting::setBibleFeatures() is the authoritative
+            // whitelist of codes/feature keys, so unknown keys are dropped safely.
+            'bible_features'        => ['sometimes', 'array'],
+            'bible_features.*'      => ['array'],
+            'bible_features.*.*'    => ['boolean'],
             // When on, a worshipper new to a mood is served a random song already
             // composed for it instead of generating (and paying for) a fresh one.
             'music_reuse'     => ['sometimes', 'boolean'],
@@ -60,6 +92,11 @@ class UpdateSettingsRequest extends FormRequest
             'narration_en'        => ['sometimes', 'boolean'],
             'narration_my'        => ['sometimes', 'boolean'],
             'narration_td'        => ['sometimes', 'boolean'],
+            // Goldfish LLM narrators for the Bible-only Chin/Zo languages
+            // (Mizo lus, Paite pck). Toggling writes a Redis flag the worker
+            // goldfish_service consults; off → fall back to curated content.
+            'narration_lus'       => ['sometimes', 'boolean'],
+            'narration_pck'       => ['sometimes', 'boolean'],
             // Which service languages appear as tabs in the intake form.
             'lang_en'             => ['sometimes', 'boolean'],
             'lang_my'             => ['sometimes', 'boolean'],

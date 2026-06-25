@@ -31,6 +31,9 @@ app.conf.update(
         "tasks.generate_text_segments": {"queue": "ai:sermon"},
         "tasks.generate_welcome": {"queue": "ai:sermon"},
         "tasks.generate_music": {"queue": "ai:music"},
+        # AI background music for the online Bible reader — shares the music
+        # worker pool and its MusicGen Redis lock so generations never overlap.
+        "tasks.generate_bible_bg": {"queue": "ai:music"},
         "tasks.render_avatar": {"queue": "ai:avatar"},
         "tasks.narrate": {"queue": "ai:narration"},
         "tasks.repair_missing_narration": {"queue": "ai:narration"},
@@ -43,7 +46,53 @@ app.conf.update(
         # Serialized by the semaphore in burmese_router.py.
         "tasks.localize_segment_burmese": {"queue": "ai:sermon"},
         "tasks.narrate_burmese": {"queue": "ai:narration"},
+        # AI Bible Study multi-agent discussion rounds — own queue so a long round
+        # never blocks the worship pipeline.
+        "tasks.study_discuss": {"queue": "ai:study"},
+        # Unified history jobs (pastor_reply | title_summary). Conversational LLM
+        # work, so it shares the ai:study worker pool. NOTE: it must NOT use the
+        # "ai:history" name — that key is the raw Laravel->bridge intake list, and
+        # reusing it would make the bridge and this worker race on the same key.
+        "tasks.history_job": {"queue": "ai:study"},
     },
     task_acks_late=True,
     worker_prefetch_multiplier=1,
 )
+
+from celery.signals import task_prerun, task_postrun
+
+@task_prerun.connect
+def setup_telemetry(task_id, task, args, kwargs, **_):
+    import sys, os
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from core.telemetry import set_correlation_id, set_session_id, trace_id_var, span_id_var, Span
+    
+    if args and isinstance(args[0], dict):
+        job = args[0]
+        cid = job.get("correlation_id")
+        set_correlation_id(cid)
+        trace_id_var.set(cid)
+        set_session_id(str(job.get("session_id", "")))
+        
+        parent_span_id = job.get("parent_span_id")
+        if parent_span_id:
+            # We seed the current context so the new Span thinks of it as the parent
+            span_id_var.set(parent_span_id)
+        
+        # Instantiate Root Span
+        span = Span(
+            component="celery",
+            layer_hint="orchestration",
+            decision_source="system",
+            metadata={"task_name": task.name}
+        )
+        task.request.span_instance = span
+        span.__enter__()
+
+@task_postrun.connect
+def teardown_telemetry(task_id, task, args, kwargs, retval, state, **_):
+    span = getattr(task.request, "span_instance", None)
+    if span:
+        exc_type = type(retval) if isinstance(retval, Exception) else None
+        exc_val = retval if isinstance(retval, Exception) else None
+        span.__exit__(exc_type, exc_val, None)

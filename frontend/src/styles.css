@@ -1,3 +1,9 @@
+/* Tailwind utility layer. Preflight is disabled (see tailwind.config.js) so
+   these directives add utilities + components only, leaving the hand-authored
+   styles below untouched. */
+@tailwind components;
+@tailwind utilities;
+
 /* Design tokens. Light is the default; [data-theme="dark"] overrides the same
    variable names so every component can paint from var(--…) and theme for free.
    The `useTheme` composable sets data-theme on <html> and `color-scheme` lets the
@@ -29,6 +35,9 @@
 
   --radius: 14px;
   --radius-sm: 8px;
+  /* Fixed mobile bottom-nav height (incl. iOS safe-area inset). Pages add
+     padding-bottom of this on phones so content never hides under the bar. */
+  --bottom-nav-h: calc(58px + env(safe-area-inset-bottom, 0px));
   --shadow: 0 1px 2px rgba(16, 24, 40, 0.05), 0 10px 30px rgba(16, 24, 40, 0.06);
   --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06);
 

@@ -29,6 +29,16 @@ VOICE_STUDIO_BASE_DIR = "/opt/ai-church/backend/storage/app/voice-studio"
 DEFAULT_MODELS = {
     "tedim": os.getenv("MMS_TTS_MODEL_TD", "facebook/mms-tts-ctd"),
     "burmese": os.getenv("MMS_TTS_MODEL_MY", "facebook/mms-tts-mya"),
+    # Meta MMS-TTS narrator voices for the Lai/Chin languages. Mizo (lus), Paite
+    # (pck), Sizang (csy), Mara (mrh) and Zou (zom) have no MMS-TTS repo upstream,
+    # so they remain text-only (LLM + Bible, phonetic Edge read at most).
+    "falam": os.getenv("MMS_TTS_MODEL_CFM", "facebook/mms-tts-cfm"),
+    "hakha": os.getenv("MMS_TTS_MODEL_CNH", "facebook/mms-tts-cnh"),
+    # Matu (hlt) has both a vendored Bible and a native MMS-TTS voice, so it is
+    # Bible-narratable. Thadou (tcz) has a native MMS-TTS voice but no Bible/LLM
+    # text source yet, so the model is registered but not reachable via /bible.
+    "matu": os.getenv("MMS_TTS_MODEL_HLT", "facebook/mms-tts-hlt"),
+    "thadou": os.getenv("MMS_TTS_MODEL_TCZ", "facebook/mms-tts-tcz"),
 }
 
 _cache: dict[str, tuple[Any, Any]] = {}
@@ -39,6 +49,41 @@ class TTSIn(BaseModel):
     text: str
     lang: str  # "tedim" | "burmese"
     seed: int = 42
+
+
+# Max characters fed to a single VITS forward pass. The whole input used to be
+# synthesised at once, which on a small (2GB) host OOM-kills the worker mid-request
+# for long inputs like a full Bible chapter ("Remote end closed connection"). We
+# split on sentence boundaries and concatenate the waveforms instead, bounding peak
+# memory per pass while keeping the audio gapless.
+_MMS_MAX_CHARS = int(os.getenv("MMS_TTS_MAX_CHARS", "280"))
+
+# Sentence terminators: Latin (Tedim) plus Burmese section/comma marks (။ ၊).
+_SENTENCE_SPLIT = re.compile(r"(?<=[.!?။၊])\s+|(?<=[။၊])")
+
+
+def _chunk_text(text: str, max_chars: int = _MMS_MAX_CHARS) -> list[str]:
+    """Split text into <= max_chars pieces on sentence boundaries, never mid-word."""
+    pieces: list[str] = []
+    for sentence in _SENTENCE_SPLIT.split(text):
+        sentence = sentence.strip()
+        if not sentence:
+            continue
+        if len(sentence) <= max_chars:
+            pieces.append(sentence)
+            continue
+        # A single oversized sentence: fall back to word-boundary packing.
+        cur = ""
+        for word in sentence.split():
+            candidate = f"{cur} {word}".strip()
+            if len(candidate) > max_chars and cur:
+                pieces.append(cur)
+                cur = word
+            else:
+                cur = candidate
+        if cur:
+            pieces.append(cur)
+    return pieces or ([text] if text else [])
 
 
 @router.get("/languages")
@@ -128,16 +173,22 @@ async def speak(body: TTSIn) -> Response:
     except ImportError as exc:
         raise _missing_dependency(exc) from exc
 
-    model, tokenizer = _load(body.lang)
-    inputs = tokenizer(text, return_tensors="pt")
+    import numpy as np
 
-    def _generate():
+    model, tokenizer = _load(body.lang)
+    chunks = _chunk_text(text)
+
+    def _generate(chunk: str):
+        inputs = tokenizer(chunk, return_tensors="pt")
         with torch.no_grad():
             return model(**inputs).waveform[0].cpu().numpy()
 
     async with _lock:
         torch.manual_seed(body.seed)
-        wav = await asyncio.to_thread(_generate)
+        segments = []
+        for chunk in chunks:
+            segments.append(await asyncio.to_thread(_generate, chunk))
+    wav = np.concatenate(segments) if len(segments) > 1 else segments[0]
 
     buf = io.BytesIO()
     scipy.io.wavfile.write(buf, rate=model.config.sampling_rate, data=wav)

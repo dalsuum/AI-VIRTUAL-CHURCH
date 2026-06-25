@@ -15,7 +15,7 @@ use Illuminate\Validation\Rules\Password;
 
 class AuthController extends Controller
 {
-    public function register(Request $request): JsonResponse
+    public function register(Request $request, \App\Services\AccountActivationService $activation): JsonResponse
     {
         $data = $request->validate([
             'name'         => ['required', 'string', 'max:255'],
@@ -25,18 +25,24 @@ class AuthController extends Controller
             'music_source' => ['nullable', 'in:' . implode(',', Setting::MUSIC_SOURCES)],
         ]);
 
+        // Provision a PENDING account: it exists but cannot log in until the user clicks
+        // the activation link emailed below. No auto-login, no tokens granted yet — the
+        // Member package is granted on activation (App\Services\AccountActivationService).
         $user = User::create([
             'name'         => $data['name'],
             'email'        => $data['email'],
             'password'     => Hash::make($data['password']),
             'timezone'     => $data['timezone'] ?? 'UTC',
             'music_source' => $data['music_source'] ?? 'hymn_sung',
+            'status'       => User::STATUS_PENDING,
+            'role'         => User::ROLE_MEMBER,
         ]);
 
-        Auth::login($user);
-        $request->session()->regenerate();
+        $activation->startVerification($user);
 
-        return response()->json(['user' => $user], 201);
+        return response()->json([
+            'message' => 'Please check your email to activate your account.',
+        ], 201);
     }
 
     /**
@@ -64,27 +70,22 @@ class AuthController extends Controller
             $name = $this->uniqueVisitorName();
         }
 
-        // Use the worshipper's email only if it's free; otherwise (blank or already
-        // claimed) fall back to an internal guest address so the account stays
-        // anonymous and we never collide with a registered user.
-        $email = $data['email'] ?? null;
-        if (! $email || User::where('email', $email)->exists()) {
-            $email = 'guest_' . Str::uuid() . '@guest.local';
-        }
-
         $user = User::create([
             'name'         => $name,
             'name_provided'=> $nameProvided,
-            'email'        => $email,
+            'email'        => 'guest_' . Str::uuid() . '@guest.local',
             'password'     => Hash::make(Str::random(40)),
             'timezone'     => 'UTC',
             'music_source' => $data['music_source'] ?? 'hymn_sung',
+            'status'       => User::STATUS_ACTIVE,
+            'role'         => User::ROLE_GUEST,
         ]);
 
         Auth::login($user);
         $request->session()->regenerate();
+        $this->markAuthSession($request, $user);
 
-        return response()->json(['user' => $user], 201);
+        return response()->json(['user' => $this->userPayload($user)], 201);
     }
 
     /**
@@ -113,21 +114,74 @@ class AuthController extends Controller
     /** The currently authenticated user — used by the SPA to greet returnees. */
     public function me(Request $request): JsonResponse
     {
+        return response()->json(['user' => $this->userPayload($request->user())]);
+    }
+
+    /**
+     * Public "who am I" probe for the SPA's initial load. Unlike /me (behind
+     * auth:sanctum, which 401s for anonymous visitors and litters the console),
+     * this returns 200 with user:null when there's no session — so the frontend
+     * can resolve auth state cleanly without an expected-error round-trip.
+     */
+    public function session(Request $request): JsonResponse
+    {
         $user = $request->user();
-        $isGuest = str_ends_with($user->email, '@guest.local');
+
+        if ($user && ! $this->requestSessionIsUsable($request, $user)) {
+            $this->logoutRequest($request);
+            $user = null;
+        }
 
         return response()->json([
-            'user' => [
-                'id'           => $user->id,
-                'name'         => $user->name,
-                'email'        => $isGuest ? null : $user->email,
-                'is_admin'     => $user->isAdmin(),
-                'role'         => $user->role(),
-                'is_guest'     => $isGuest,
-                'music_source' => $user->music_source,
-                'permissions'  => PermissionService::forUser($user),
-            ],
+            'authenticated' => (bool) $user,
+            'user'          => $user ? $this->userPayload($user) : null,
         ]);
+    }
+
+    /** The identity + entitlements payload shared by /me and /auth/session. */
+    private function userPayload(User $user): array
+    {
+        $isGuest  = str_ends_with($user->email, '@guest.local');
+        $features = \App\Services\FeatureService::for($user);
+
+        return [
+            'id'             => $user->id,
+            'name'           => $user->name,
+            'email'          => $isGuest ? null : $user->email,
+            'is_admin'       => $user->isAdmin(),
+            'role'           => $user->role(),
+            'is_guest'       => $isGuest,
+            'music_source'   => $user->music_source,
+            'permissions'    => PermissionService::forUser($user),
+            // Subscription + wallet, so the SPA can hide ads, show the token gauge,
+            // and surface upgrade prompts without an extra round-trip.
+            'plan'              => $user->plan()->value,
+            'subscription'      => $user->subscriptionStatus()->value,
+            'is_premium'        => $user->isPremium(),
+            'shows_ads'         => $features->showsAds(),
+            'token_balance'     => (int) $user->token_balance,
+            'monthly_allowance' => $features->monthlyAllowance(),
+            // Whether self-serve upgrades are possible in this deployment, so the
+            // account UI can degrade gracefully when billing is unconfigured.
+            'billing_enabled'   => self::billingEnabled(),
+            // Spiritual-profile preferences (account page + history personalization).
+            'fav_language'         => $user->fav_language,
+            'fav_bible_version'    => $user->fav_bible_version,
+            'fav_worship_language' => $user->fav_worship_language,
+            'fav_pastor'           => $user->fav_pastor,
+            'fav_worship_style'    => $user->fav_worship_style,
+            'fav_books'            => $user->fav_books,
+            'fav_topics'           => $user->fav_topics,
+            'spiritual_goals'      => $user->spiritual_goals,
+            'ai_memory_enabled'    => $user->ai_memory_enabled !== false,
+        ];
+    }
+
+    /** True only when a payment provider is fully configured (key + price id). */
+    public static function billingEnabled(): bool
+    {
+        return filled(config('services.stripe.secret'))
+            && filled(config('tokens.stripe_premium_price'));
     }
 
     /** Let a registered user update their display name. */
@@ -140,6 +194,28 @@ class AuthController extends Controller
         $request->user()->update(['name' => $data['name'], 'name_provided' => true]);
 
         return response()->json(['ok' => true, 'name' => $data['name']]);
+    }
+
+    /** Update spiritual-profile preferences shown on the account page. */
+    public function updateProfile(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'fav_language'         => ['sometimes', 'nullable', 'string', 'max:12'],
+            'fav_bible_version'    => ['sometimes', 'nullable', 'string', 'max:12'],
+            'fav_worship_language' => ['sometimes', 'nullable', 'string', 'max:12'],
+            'fav_pastor'           => ['sometimes', 'nullable', 'string', 'max:80'],
+            'fav_worship_style'    => ['sometimes', 'nullable', 'string', 'max:40'],
+            'fav_books'            => ['sometimes', 'nullable', 'array', 'max:66'],
+            'fav_books.*'          => ['string', 'max:40'],
+            'fav_topics'           => ['sometimes', 'nullable', 'array', 'max:30'],
+            'fav_topics.*'         => ['string', 'max:40'],
+            'spiritual_goals'      => ['sometimes', 'nullable', 'string', 'max:2000'],
+            'ai_memory_enabled'    => ['sometimes', 'boolean'],
+        ]);
+
+        $request->user()->update($data);
+
+        return response()->json(['ok' => true, 'profile' => $request->user()->only(array_keys($data))]);
     }
 
     /**
@@ -201,7 +277,8 @@ class AuthController extends Controller
             'password_reset_expires_at' => null,
         ]);
 
-        // Invalidate all existing sessions so the old password can no longer be used.
+        // Invalidate all existing cookie sessions and Sanctum tokens.
+        $user->rotateAuthSessions();
         $user->tokens()->delete();
 
         return response()->json(['message' => 'Password updated. Please log in with your new password.']);
@@ -224,17 +301,29 @@ class AuthController extends Controller
             return response()->json(['message' => 'This account has been suspended.'], 403);
         }
 
+        // Gate unverified accounts: a registrant who has not yet clicked the activation
+        // link must not be able to sign in. Checked after the credential check so this
+        // never reveals whether an email exists for a wrong password.
+        if ($user->isPending()) {
+            return response()->json([
+                'message' => 'Please activate your account from the email we sent.',
+            ], 403);
+        }
+
         Auth::login($user);
         $request->session()->regenerate();
+        $this->markAuthSession($request, $user);
 
-        return response()->json(['user' => $user]);
+        return response()->json(['user' => $this->userPayload($user)]);
     }
 
     public function logout(Request $request): JsonResponse
     {
-        Auth::logout();
-        $request->session()->invalidate();
-        $request->session()->regenerateToken();
+        // SPA session logout must go through the stateful "web" guard. The default
+        // guard for these routes resolves to Sanctum's RequestGuard, which has no
+        // logout() — calling Auth::logout() there 500s and the server session
+        // survives. Invalidating the session is what actually signs the user out.
+        $this->logoutRequest($request);
         return response()->json(['message' => 'Logged out']);
     }
 
@@ -250,7 +339,10 @@ class AuthController extends Controller
             return response()->json(['message' => 'Current password is incorrect.'], 422);
         }
 
-        $request->user()->update(['password' => Hash::make($data['new_password'])]);
+        $user = $request->user();
+        $user->update(['password' => Hash::make($data['new_password'])]);
+        $user->rotateAuthSessions();
+        $this->markAuthSession($request, $user->fresh());
 
         return response()->json(['message' => 'Password updated.']);
     }
@@ -264,19 +356,22 @@ class AuthController extends Controller
     {
         $user = $request->user();
 
-        // Only guests without a real email may use this endpoint; registered
-        // users own their email address and must not be able to change it here.
+        // Only guests may use this compatibility endpoint. A real email captured
+        // during intake is contact-only until it is verified; it must never claim
+        // users.email or bypass the registration activation flow.
         if (! str_ends_with($user->email, '@guest.local')) {
             return response()->json(['message' => 'Email is already set.'], 422);
         }
 
         $data = $request->validate([
-            'email' => ['required', 'email', 'max:255', 'unique:users,email'],
+            'email' => ['required', 'email', 'max:255'],
         ]);
 
-        $user->update(['email' => $data['email']]);
-
-        return response()->json(['user' => $user]);
+        return response()->json([
+            'ok'            => true,
+            'contact_email' => $data['email'],
+            'user'          => $this->userPayload($user),
+        ]);
     }
 
     /** Let a logged-in user switch their default media source (Suno vs YouTube). */
@@ -299,5 +394,51 @@ class AuthController extends Controller
         $request->user()->update($data);
 
         return response()->json(['user' => $request->user()]);
+    }
+
+    private function markAuthSession(Request $request, User $user): void
+    {
+        if ($request->hasSession()) {
+            $request->session()->put(
+                User::AUTH_SESSION_VERSION_KEY,
+                (int) $user->auth_session_version,
+            );
+        }
+    }
+
+    private function requestSessionIsUsable(Request $request, User $user): bool
+    {
+        if ($user->is_blocked || $user->isPending()) {
+            return false;
+        }
+
+        if (! $request->hasSession()) {
+            return true;
+        }
+
+        $session = $request->session();
+        $expected = (int) $user->auth_session_version;
+        $key = User::AUTH_SESSION_VERSION_KEY;
+
+        if (! $session->has($key)) {
+            if (app()->runningUnitTests()) {
+                $session->put($key, $expected);
+                return true;
+            }
+
+            return false;
+        }
+
+        return (int) $session->get($key) === $expected;
+    }
+
+    private function logoutRequest(Request $request): void
+    {
+        Auth::guard('web')->logout();
+
+        if ($request->hasSession()) {
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+        }
     }
 }

@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from "vue";
 import { ChordProParser, HtmlDivFormatter } from "chordsheetjs";
 import { api } from "../composables/useApi.js";
+import AppIcon from "./AppIcon.vue";
 
 // ── Data loading ────────────────────────────────────────────────────────────
 // Two sources: the static classic/modern hymn corpus (hymns_my.json: 852 hymns,
@@ -211,8 +212,12 @@ async function exportPptx() {
   <div class="lyrics-page">
     <!-- Header -->
     <header class="lyrics-header">
-      <a v-if="!activeSong" href="#" class="back-link">&#8592; ဝတ်ပြုပွဲသို့ ပြန်သွားမည်</a>
-      <button v-else class="back-link as-button" @click="selectedId = null">&#8592; စာရင်းသို့ ပြန်သွားမည်</button>
+      <a v-if="!activeSong" href="#" class="back-link">
+        <AppIcon name="mdi:arrow-left" size="18px" /> ဝတ်ပြုပွဲသို့ ပြန်သွားမည်
+      </a>
+      <button v-else class="back-link as-button" @click="selectedId = null">
+        <AppIcon name="mdi:arrow-left" size="18px" /> စာရင်းသို့ ပြန်သွားမည်
+      </button>
       <div class="title-block">
         <h1 class="lyrics-title">မြန်မာ ဝတ်ပြုသီချင်း</h1>
         <p class="lyrics-sub">
@@ -229,20 +234,25 @@ async function exportPptx() {
 
     <!-- ── LIST VIEW ── -->
     <template v-else-if="!activeSong">
+      <!-- Sticky search + horizontally-scrollable category chips. -->
       <div class="controls">
-        <input
-          v-model="search"
-          class="search-input"
-          type="search"
-          placeholder="ခေါင်းစဉ် သို့ စာသားဖြင့် ရှာပါ…"
-          aria-label="Search songs"
-          @input="onSearch"
-        />
-        <div class="source-tabs" role="tablist">
+        <div class="search-wrap">
+          <AppIcon class="search-icon" name="mdi:magnify" size="20px" />
+          <input
+            v-model="search"
+            class="search-input"
+            type="search"
+            placeholder="ခေါင်းစဉ် သို့ စာသားဖြင့် ရှာပါ…"
+            aria-label="Search songs"
+            @input="onSearch"
+          />
+        </div>
+        <div class="source-tabs" role="tablist" aria-label="Categories">
           <button
             v-for="(label, key) in SOURCE_LABELS"
             :key="key"
             role="tab"
+            :aria-selected="activeSource === key"
             class="src-tab"
             :class="{ active: activeSource === key }"
             @click="setSource(key)"
@@ -268,27 +278,34 @@ async function exportPptx() {
           class="song-card"
           @click="selectedId = song.id"
         >
+          <span class="song-card-icon"><AppIcon name="mdi:music-note" size="20px" /></span>
           <span class="song-title">{{ song.title }}</span>
           <span class="src-badge" :class="song.source">{{ SOURCE_LABELS[song.source] }}</span>
         </button>
       </div>
 
       <div v-if="totalPages > 1" class="pagination">
-        <button class="page-btn" :disabled="page === 1" @click="prevPage">&#8592; နောက်ဆုတ်</button>
+        <button class="page-btn" :disabled="page === 1" aria-label="Previous page" @click="prevPage">
+          <AppIcon name="mdi:chevron-left" size="20px" /> နောက်ဆုတ်
+        </button>
         <span class="page-info">{{ page }} / {{ totalPages }}</span>
-        <button class="page-btn" :disabled="page === totalPages" @click="nextPage">ရှေ့ဆက် &#8594;</button>
+        <button class="page-btn" :disabled="page === totalPages" aria-label="Next page" @click="nextPage">
+          ရှေ့ဆက် <AppIcon name="mdi:chevron-right" size="20px" />
+        </button>
       </div>
     </template>
 
     <!-- ── DETAIL VIEW ── -->
     <template v-else>
       <div class="toolbar">
-        <button class="tool-btn" @click="exportTxt">Export .TXT</button>
+        <button class="tool-btn" @click="exportTxt">
+          <AppIcon name="mdi:file-document-outline" size="18px" /> .TXT
+        </button>
         <button class="tool-btn primary" :disabled="pdfBusy" @click="exportPdf">
-          {{ pdfBusy ? "Generating…" : "Download PDF" }}
+          <AppIcon name="mdi:file-pdf-box" size="18px" /> {{ pdfBusy ? "Generating…" : "PDF" }}
         </button>
         <button class="tool-btn primary" :disabled="pptxBusy" @click="exportPptx">
-          {{ pptxBusy ? "Generating…" : "Download PPTX" }}
+          <AppIcon name="mdi:file-powerpoint-box" size="18px" /> {{ pptxBusy ? "Generating…" : "PPTX" }}
         </button>
       </div>
 
@@ -341,11 +358,14 @@ async function exportPptx() {
   background: var(--surface);
 }
 .back-link {
-  display: inline-block;
-  font-size: 0.83rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
   color: var(--text-muted);
   text-decoration: none;
   margin-bottom: 0.5rem;
+  min-height: 44px; /* touch target */
   transition: color 0.15s;
 }
 .back-link.as-button { border: none; background: none; cursor: pointer; font: inherit; padding: 0; }
@@ -354,12 +374,12 @@ async function exportPptx() {
 .lyrics-title { font-size: 1.45rem; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 0.2rem; }
 .lyrics-sub { font-size: 0.83rem; color: var(--text-muted); margin: 0; }
 
-/* Controls */
+/* Controls — sticky search + horizontally-scrollable category chips */
 .controls {
-  padding: 0.85rem 1.5rem;
+  padding: 16px 24px;
   display: flex;
   flex-direction: column;
-  gap: 0.65rem;
+  gap: 16px;
   position: sticky;
   top: 0;
   z-index: 5;
@@ -367,32 +387,54 @@ async function exportPptx() {
   backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--border);
 }
+/* Search field with a leading magnify icon. One search bar per screen. */
+.search-wrap { position: relative; width: 100%; max-width: 480px; }
+.search-icon {
+  position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+  color: var(--text-faint); pointer-events: none;
+}
 .search-input {
   width: 100%;
-  max-width: 420px;
-  padding: 0.5rem 0.85rem;
+  min-height: 44px; /* touch target */
+  padding: 0.5rem 0.85rem 0.5rem 40px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
   color: var(--text);
   font: inherit;
-  font-size: 0.9rem;
+  font-size: 1rem;
   outline: none;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
-.search-input:focus { border-color: var(--primary); }
-.source-tabs { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.search-input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+
+/* Chips scroll horizontally as one strip — never wrap into multiple rows. */
+.source-tabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  scroll-snap-type: x proximity;
+  margin: 0 -24px; /* bleed to screen edges */
+  padding: 2px 24px;
+}
+.source-tabs::-webkit-scrollbar { display: none; }
 .src-tab {
-  display: inline-flex; align-items: center; gap: 0.3rem;
-  padding: 0.3rem 0.8rem;
-  font-size: 0.8rem; font-family: inherit;
+  flex: 0 0 auto;
+  scroll-snap-align: start;
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  min-height: 44px; /* touch target */
+  padding: 0.45rem 0.95rem;
+  font-size: 0.88rem; font-family: inherit;
   border: 1px solid var(--border); border-radius: 999px;
-  background: transparent; color: var(--text-muted); cursor: pointer;
+  background: var(--surface); color: var(--text-muted); cursor: pointer;
+  white-space: nowrap;
   transition: all 0.12s;
 }
 .src-tab:hover { border-color: var(--primary); color: var(--primary); }
 .src-tab.active { background: var(--primary); border-color: var(--primary); color: var(--on-primary); font-weight: 600; }
-.src-count { font-size: 0.72rem; opacity: 0.75; }
+.src-count { font-size: 0.74rem; opacity: 0.75; }
 
 .results-info {
   padding: 0.55rem 1.5rem;
@@ -400,27 +442,43 @@ async function exportPptx() {
   border-bottom: 1px solid var(--border);
 }
 
-/* List grid */
+/* List grid — single-column card list on phones, multi-column on wider screens */
 .song-grid {
-  padding: 1rem 1.5rem 0;
+  padding: 16px 24px 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 0.6rem;
+  grid-template-columns: 1fr;
+  gap: 8px;
 }
-.empty { grid-column: 1 / -1; text-align: center; color: var(--text-muted); padding: 2.5rem 0; font-size: 0.9rem; }
+@media (min-width: 560px) {
+  .song-grid { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+}
+.empty { grid-column: 1 / -1; text-align: center; color: var(--text-muted); padding: 2.5rem 0; font-size: 0.95rem; }
+/* Card: leading music glyph, large readable title, single category badge. */
 .song-card {
-  display: flex; flex-direction: column; gap: 0.4rem;
-  text-align: left; padding: 0.85rem 1rem;
-  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  min-height: 44px;
+  padding: 16px;
+  border: 1px solid var(--border); border-radius: var(--radius);
   background: var(--surface); color: var(--text); cursor: pointer;
-  transition: border-color 0.12s, box-shadow 0.12s;
+  transition: border-color 0.12s, box-shadow 0.12s, transform 0.06s;
 }
 .song-card:hover { border-color: var(--primary); box-shadow: var(--shadow); }
-.song-title { font-weight: 500; font-size: 0.92rem; line-height: 1.5; }
+.song-card:active { transform: scale(0.995); }
+.song-card-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px; flex: 0 0 auto;
+  border-radius: var(--radius-sm);
+  background: var(--primary-soft); color: var(--primary);
+}
+.song-title { font-weight: 600; font-size: 1.05rem; line-height: 1.6; min-width: 0; }
 .src-badge {
-  align-self: flex-start;
-  font-size: 0.68rem; font-weight: 600;
-  padding: 0.12rem 0.5rem; border-radius: 999px; border: 1px solid;
+  flex: 0 0 auto;
+  font-size: 0.7rem; font-weight: 600; white-space: nowrap;
+  padding: 0.2rem 0.6rem; border-radius: 999px; border: 1px solid;
 }
 .src-badge.hymnal { color: #7c3aed; border-color: #7c3aed; }
 .src-badge.modern { color: #059669; border-color: #059669; }
@@ -438,10 +496,12 @@ async function exportPptx() {
 .chord-sheet :deep(.comment) { font-weight: 700; color: var(--text-muted); margin: 0.5rem 0 0.3rem; }
 
 /* Pagination */
-.pagination { display: flex; align-items: center; justify-content: center; gap: 1rem; padding: 1.5rem; }
+.pagination { display: flex; align-items: center; justify-content: center; gap: 1rem; padding: 24px; }
 .page-btn {
-  padding: 0.45rem 1rem; border: 1px solid var(--border); border-radius: var(--radius-sm);
-  background: var(--surface); color: var(--text); font: inherit; font-size: 0.85rem; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 0.25rem;
+  min-height: 44px; padding: 0.45rem 1rem;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface); color: var(--text); font: inherit; font-size: 0.9rem; cursor: pointer;
   transition: border-color 0.12s, color 0.12s;
 }
 .page-btn:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
@@ -451,7 +511,8 @@ async function exportPptx() {
 /* Detail toolbar */
 .toolbar { display: flex; justify-content: flex-end; gap: 0.6rem; padding: 1rem 1.5rem 0; max-width: 760px; margin: 0 auto; width: 100%; box-sizing: border-box; }
 .tool-btn {
-  padding: 0.4rem 0.9rem; font-size: 0.82rem; font-family: inherit;
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  min-height: 44px; padding: 0.4rem 0.9rem; font-size: 0.85rem; font-family: inherit;
   border: 1px solid var(--border); border-radius: var(--radius-sm);
   background: var(--surface); color: var(--text); cursor: pointer; transition: all 0.12s;
 }
@@ -491,8 +552,10 @@ async function exportPptx() {
 .lyrics-footer { padding: 2rem 1.5rem 0; text-align: center; font-size: 0.75rem; color: var(--text-muted); }
 
 @media (max-width: 500px) {
-  .lyrics-header, .controls, .song-grid { padding-left: 1rem; padding-right: 1rem; }
-  .lyrics-title { font-size: 1.2rem; }
-  .lyrics-sheet { margin-left: 1rem; margin-right: 1rem; }
+  .lyrics-header, .controls, .song-grid { padding-left: 16px; padding-right: 16px; }
+  .source-tabs { margin-left: -16px; margin-right: -16px; padding-left: 16px; padding-right: 16px; }
+  .lyrics-title { font-size: 1.25rem; }
+  .lyrics-sheet { margin-left: 16px; margin-right: 16px; }
+  .toolbar { flex-wrap: wrap; }
 }
 </style>

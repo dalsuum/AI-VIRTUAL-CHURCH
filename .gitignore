@@ -3,12 +3,20 @@
 **/.env
 !.env.example
 !**/.env.example
+# Local-only server credential file (sudo password) — NEVER commit
+.srvcred
+
+# Server-hardening docs/scripts — contain admin IP, VPN subnets, firewall
+# whitelist and Wazuh enrollment. Repo is PUBLIC; never expose defensive posture.
+/SECURITY_FAIL2BAN.md
+/security/
 
 # Python
 __pycache__/
 *.py[cod]
 *.egg-info/
 .venv/
+.venv-demucs/
 venv/
 
 # Logs / runtime output
@@ -17,13 +25,24 @@ venv/
 
 # Large seeded data files (generated at deploy from public repos/tools)
 workers/data/bsb.json
+workers/data/kjv.json
 workers/data/judson1835.json
 workers/data/tedim1932.json
+workers/data/wlc.json
+# Chin/Zo language Bibles from the Bible Society of Myanmar (dalsuum/bible)
+workers/data/falam1973.json
+workers/data/hakha1920.json
+workers/data/mizo1917.json
+workers/data/paite1971.json
+workers/data/sizang1932.json
+workers/data/mara2011.json
+workers/data/matu2009.json
 workers/data/hymns_my.json
 workers/data/books_en.json
 workers/data/burmese_church_vocab.json
 workers/data/eng_myan_dict.db
 workers/data/*.jsonl
+workers/data/grammar_review.json
 # hymns_td.json is committed directly — not ignored
 
 # Laravel storage symlink (regenerated via `php artisan storage:link`)
@@ -54,3 +73,14 @@ workers/nllb-200-distilled-600M/
 /gemini.md
 .ai/
 .claude/settings.json
+partner-activities/
+
+# Freeze monitoring harness — secrets, logs, local deps (scripts are committed)
+/ops/.freeze_env
+/ops/logs/
+/ops/node_modules/
+/ops/package-lock.json
+
+# One-off codemod scripts / test artifacts (do not commit)
+/patch_correlation.py
+/test-results/

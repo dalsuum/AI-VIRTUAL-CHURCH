@@ -31,6 +31,9 @@ class PermissionService
         'settings.view',
         'music_pool.view',
         'lyrics.manage',
+        // AI Worship Radio recommendation catalog + settings.
+        'music.manage',
+        'vocabulary.manage',
         'voice_training.view',
         'permissions.view',
         'language_review.view',
@@ -38,6 +41,11 @@ class PermissionService
         'ads.view',
         'ads.manage',
         'ads.analytics',
+        'special_sundays.view',
+        'special_sundays.manage',
+        // AI Bible Study (AI Core console).
+        'study.view',
+        'study.manage',
     ];
 
     /** Only these roles appear in the permissions matrix. Admin is always full access. */
@@ -56,6 +64,7 @@ class PermissionService
             'voice_studio.view',
             'ads.view',
             'ads.analytics',
+            'special_sundays.view',
         ],
         'presenter' => [
             'dashboard.view',

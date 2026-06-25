@@ -1,26 +1,71 @@
 <script setup>
-import { ref, computed } from "vue";
-import vocab from "../data/zolai_vocabulary.json";
+import { ref, computed, onMounted } from "vue";
+import { api } from "../composables/useApi.js";
+
+// Vocabulary is served from the DB (admin-editable) — see VocabularyManager.
+const vocab = ref([]);
+const loading = ref(true);
+const loadError = ref("");
 
 const search = ref("");
 const activeCategory = ref("All");
 
+// Languages the worshipper can read each word in. `zolai` is the default;
+// the dropdown swaps which ethnic tongue is the primary (left-most) column.
+// Codes match the column names on the vocabularies table.
+const LANGUAGES = [
+  { code: "zolai",   label: "Zolai (Tedim)" },
+  { code: "falam",   label: "Falam" },
+  { code: "hakha",   label: "Hakha" },
+  { code: "matu",    label: "Matu" },
+  { code: "mizo",    label: "Mizo" },
+  { code: "paite",   label: "Paite" },
+  { code: "sizang",  label: "Sizang" },
+  { code: "burmese", label: "Burmese" },
+  { code: "hebrew",  label: "Hebrew", dir: "rtl", lang: "he" },
+  { code: "english", label: "English" },
+];
+
+const primaryLang = ref("zolai");
+
+const primaryMeta = computed(
+  () => LANGUAGES.find((l) => l.code === primaryLang.value) || LANGUAGES[0],
+);
+
+// Reference columns shown after the primary one — English and Hebrew always
+// help orient, and Burmese stays as a gloss. Drop whichever the user already
+// picked as the primary so it isn't shown twice.
+const referenceCols = computed(() =>
+  [
+    { code: "burmese", label: "Burmese" },
+    { code: "hebrew",  label: "Hebrew", dir: "rtl", lang: "he" },
+    { code: "english", label: "English" },
+  ].filter((c) => c.code !== primaryLang.value),
+);
+
+onMounted(async () => {
+  try {
+    const res = await api.getVocabulary();
+    vocab.value = res.vocabulary || [];
+  } catch (e) {
+    loadError.value = "Could not load the vocabulary list.";
+  } finally {
+    loading.value = false;
+  }
+});
+
 const categories = computed(() => {
-  const cats = [...new Set(vocab.map((w) => w.category))];
+  const cats = [...new Set(vocab.value.map((w) => w.category).filter(Boolean))];
   return ["All", ...cats];
 });
 
 const filtered = computed(() => {
   const q = search.value.trim().toLowerCase();
-  return vocab.filter((w) => {
+  return vocab.value.filter((w) => {
     const catOk = activeCategory.value === "All" || w.category === activeCategory.value;
     if (!catOk) return false;
     if (!q) return true;
-    return (
-      w.zolai.toLowerCase().includes(q) ||
-      w.english.toLowerCase().includes(q) ||
-      w.notes.toLowerCase().includes(q)
-    );
+    return LANGUAGES.some((l) => (w[l.code] || "").toLowerCase().includes(q));
   });
 });
 
@@ -43,25 +88,32 @@ function catColor(cat) {
 <template>
   <div class="vocab-page">
     <header class="vocab-header">
-      <a href="#" class="back-link">&#8592; Back to worship</a>
+      <!-- No back-link: the global header nav handles navigation now. -->
       <div class="vocab-title-block">
-        <h1 class="vocab-title">Zolai ↔ English Vocabulary</h1>
+        <h1 class="vocab-title">Vocabulary</h1>
         <p class="vocab-sub">
-          Tedim Chin (Zolai / Zomi pau) reference — {{ vocab.length }} words &amp; phrases.
-          Correct any word below and update
-          <code>frontend/src/data/zolai_vocabulary.json</code>.
+          Chin/Zo ↔ Burmese ↔ Hebrew ↔ English reference — {{ vocab.length }} words &amp; phrases.
+          Pick your language above; Zolai (Tedim) is the default.
         </p>
       </div>
     </header>
 
     <div class="controls">
-      <input
-        v-model="search"
-        class="search-input"
-        type="search"
-        placeholder="Search Zolai or English…"
-        aria-label="Search vocabulary"
-      />
+      <div class="controls-row">
+        <input
+          v-model="search"
+          class="search-input"
+          type="search"
+          placeholder="Search any language…"
+          aria-label="Search vocabulary"
+        />
+        <label class="lang-picker">
+          <span class="lang-picker-label">Language</span>
+          <select v-model="primaryLang" class="lang-select" aria-label="Choose display language">
+            <option v-for="l in LANGUAGES" :key="l.code" :value="l.code">{{ l.label }}</option>
+          </select>
+        </label>
+      </div>
       <div class="cat-filters" role="group" aria-label="Filter by category">
         <button
           v-for="cat in categories"
@@ -76,39 +128,43 @@ function catColor(cat) {
       </div>
     </div>
 
-    <p v-if="filtered.length === 0" class="empty">No matches found.</p>
+    <p v-if="loading" class="empty">Loading…</p>
+    <p v-else-if="loadError" class="empty">{{ loadError }}</p>
+    <p v-else-if="filtered.length === 0" class="empty">No matches found.</p>
 
     <div v-else class="table-wrap">
       <table class="vocab-table">
         <thead>
           <tr>
-            <th>Zolai (Tedim)</th>
-            <th>English</th>
+            <th>{{ primaryMeta.label }}</th>
+            <th v-for="col in referenceCols" :key="col.code">{{ col.label }}</th>
             <th>Category</th>
-            <th>Notes</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="(word, i) in filtered" :key="i">
-            <td class="zolai-word">{{ word.zolai }}</td>
-            <td>{{ word.english }}</td>
+            <td
+              class="primary-word"
+              :dir="primaryMeta.dir || null"
+              :lang="primaryMeta.lang || null"
+            >{{ word[primaryLang] || "—" }}</td>
+            <td
+              v-for="col in referenceCols"
+              :key="col.code"
+              :dir="col.dir || null"
+              :lang="col.lang || null"
+              :class="{ 'hebrew-word': col.code === 'hebrew', 'burmese-word': col.code === 'burmese' }"
+            >{{ word[col.code] || "—" }}</td>
             <td>
               <span class="cat-badge" :style="{ color: catColor(word.category), borderColor: catColor(word.category) }">
                 {{ word.category }}
               </span>
             </td>
-            <td class="notes-cell">{{ word.notes }}</td>
           </tr>
         </tbody>
       </table>
     </div>
 
-    <footer class="vocab-footer">
-      <p>
-        Reference: <em>Paunam Khenna Leh Kampau Luanzia</em> (Sia Cin Sian Pau) &nbsp;·&nbsp;
-        Lai Siangtho 1932 &nbsp;·&nbsp; Tedim Hymnal
-      </p>
-    </footer>
   </div>
 </template>
 
@@ -126,15 +182,6 @@ function catColor(cat) {
   background: var(--surface);
 }
 
-.back-link {
-  display: inline-block;
-  font-size: 0.83rem;
-  color: var(--text-muted);
-  text-decoration: none;
-  margin-bottom: 0.6rem;
-  transition: color 0.15s;
-}
-.back-link:hover { color: var(--primary); }
 
 .vocab-title-block { margin-bottom: 0.75rem; }
 .vocab-title {
@@ -169,6 +216,37 @@ function catColor(cat) {
   backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--border);
 }
+
+.controls-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+}
+
+.lang-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.lang-picker-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+.lang-select {
+  padding: 0.5rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.9rem;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.lang-select:focus { border-color: var(--primary); }
 
 .search-input {
   width: 100%;
@@ -246,11 +324,25 @@ function catColor(cat) {
   background: color-mix(in srgb, var(--primary) 5%, transparent);
 }
 
-.zolai-word {
+.primary-word {
   font-weight: 600;
   font-size: 0.95rem;
   letter-spacing: 0.01em;
   color: var(--text);
+}
+
+.burmese-word {
+  font-size: 0.95rem;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.hebrew-word {
+  font-size: 1.05rem;
+  color: var(--text);
+  white-space: nowrap;
+  text-align: right;
+  direction: rtl;
 }
 
 .cat-badge {
@@ -261,19 +353,6 @@ function catColor(cat) {
   border-radius: 999px;
   border: 1px solid;
   white-space: nowrap;
-}
-
-.notes-cell {
-  color: var(--text-muted);
-  font-size: 0.82rem;
-  font-style: italic;
-}
-
-.vocab-footer {
-  padding: 2rem 1.5rem 0;
-  text-align: center;
-  font-size: 0.78rem;
-  color: var(--text-muted);
 }
 
 @media (max-width: 500px) {

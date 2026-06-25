@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+         cacheDirectory=".phpunit.cache"
+         failOnWarning="true">
+    <testsuites>
+        <testsuite name="Unit">
+            <directory>tests/Unit</directory>
+        </testsuite>
+        <testsuite name="Feature">
+            <directory>tests/Feature</directory>
+        </testsuite>
+    </testsuites>
+    <source>
+        <include>
+            <directory>app</directory>
+        </include>
+    </source>
+    <php>
+        <env name="APP_ENV" value="testing"/>
+        <env name="APP_URL" value="http://localhost"/>
+        <env name="APP_KEY" value="base64:hsWZzcuN2abMrWXY+8YrtUrHvIdUcSzrwvCVx5G8F1k="/>
+        <!-- Dedicated MySQL test database (matches the production engine). Provision with:
+             CREATE DATABASE ai_church_test; GRANT ALL ON ai_church_test.* TO 'ai_church'@'localhost'; -->
+        <env name="DB_CONNECTION" value="mysql"/>
+        <env name="DB_HOST" value="127.0.0.1"/>
+        <env name="DB_PORT" value="3306"/>
+        <env name="DB_DATABASE" value="ai_church_test"/>
+        <!-- DB_USERNAME / DB_PASSWORD inherited from the environment / .env.testing -->
+        <env name="CACHE_STORE" value="array"/>
+        <env name="QUEUE_CONNECTION" value="sync"/>
+        <env name="SESSION_DRIVER" value="array"/>
+        <env name="MAIL_MAILER" value="array"/>
+        <env name="BCRYPT_ROUNDS" value="4"/>
+        <env name="TELESCOPE_ENABLED" value="false"/>
+        <!-- Deterministic plan economy for assertions. -->
+        <env name="MEMBER_MONTHLY_TOKENS" value="100"/>
+        <env name="EMAIL_VERIFICATION_EXPIRES_HOURS" value="24"/>
+        <env name="ADMIN_USERS_REQUIRE_VERIFICATION" value="false"/>
+    </php>
+</phpunit>

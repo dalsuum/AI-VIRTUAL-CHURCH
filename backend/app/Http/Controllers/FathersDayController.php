@@ -1,0 +1,803 @@
+<?php
+
+namespace App\Http\Controllers;
+
+/**
+ * ============================================================================
+ *  Father's Day (Special Day) Music-Video generator — SELF-CONTAINED & REMOVABLE
+ * ============================================================================
+ * A standalone feature that lets a visitor pick one of several admin-provided
+ * songs, upload photo(s) of their father, and download a vertical 720x1280 MP4
+ * set to that song + its lyrics.
+ *
+ * Nothing here touches the worship pipeline. To remove the whole feature:
+ *   1. delete this controller + App\Jobs\RenderFathersDayJob + DetectVocalStartJob
+ *   2. delete the "Father's Day MV" route blocks in routes/api.php
+ *   3. delete storage/app/fathersday/
+ *   4. delete frontend FathersDay.vue + FathersDayManager.vue + their wiring
+ *
+ * Config + admin-uploaded assets live in storage/app/fathersday/ as plain files
+ * (config.json + songs/<songId>.<ext>) — no DB migration. Each song carries its
+ * own lyrics, sync mode and detected vocal-onset. Renders run on the dedicated
+ * 'fathersday' queue.
+ */
+
+use App\Jobs\DetectVocalStartJob;
+use App\Jobs\RenderFathersDayJob;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
+
+class FathersDayController extends Controller
+{
+    private const DIR        = 'fathersday';
+    private const CONFIG     = 'fathersday/config.json';
+    private const MAX_PHOTOS = 6;
+    private const MAX_SONGS  = 20;
+    private const EFFECTS    = ['slide', 'fade', 'kenburns'];
+    // Hard ceiling for the whole feature's storage tree. A cleanup bug must not
+    // be able to take the host down — past this, new renders are refused.
+    private const MAX_FEATURE_BYTES = 5368709120; // 5 GB
+    // Identical (same photos + same settings) renders within this window reuse
+    // the existing job instead of burning CPU/ffmpeg/disk on a duplicate.
+    private const DEDUP_WINDOW = 86400; // 24h
+    private const INDEX        = 'fathersday/render_index.json';
+
+    // ---- Config helpers ----------------------------------------------------
+
+    private function config(): array
+    {
+        $defaults = [
+            'enabled'        => false,
+            // Auto YouTube mode: play the active Special Sunday's curated YouTube
+            // song(s) with a share button only (no MV creation). Mutually
+            // exclusive with the manual MV library above — only one is ever on.
+            'auto_youtube_enabled' => false,
+            'title'          => 'Happy Father\'s Day',
+            'subtitle'       => 'Make a music video for your father',
+            'default_effect' => 'slide',
+            'songs'          => [],   // [{id,title,ext,lyrics,sync_enabled,vocal_start,vocal_start_status,community_original}]
+            // Brand tag: a short "aivirtual.church" audio ident overlaid at the very
+            // start of every rendered MV so the audio is identifiably ours (helps
+            // visitors avoid Facebook copyright blocks on community-original songs).
+            'brand_tag_enabled' => false,
+            'brand_tag_ext'     => null,
+            'updated_at'     => null,
+        ];
+
+        $data = Storage::exists(self::CONFIG)
+            ? json_decode((string) Storage::get(self::CONFIG), true)
+            : [];
+        $config = is_array($data) ? array_merge($defaults, $data) : $defaults;
+        $config = $this->migrateLegacy($config);
+        $this->healSongPerms();
+
+        return $config;
+    }
+
+    /**
+     * Keep the songs dir + files readable by the render worker (a different OS
+     * user in the shared www-data group). Storage::makeDirectory/move create them
+     * private (0700/0600); open dir to 0775 and files to 0664. Idempotent + cheap;
+     * runs as www-data so it can fix anything this app created.
+     */
+    private function healSongPerms(): void
+    {
+        $dir = Storage::path(self::DIR . '/songs');
+        if (! is_dir($dir)) {
+            return;
+        }
+        @chmod($dir, 0775);
+        foreach (glob($dir . '/*') ?: [] as $f) {
+            @chmod($f, 0664);
+        }
+    }
+
+    /** Convert the old single-song config into a one-entry songs[] library. */
+    private function migrateLegacy(array $c): array
+    {
+        if (! empty($c['songs']) || empty($c['song_ext'])) {
+            return $c;
+        }
+        $id  = (string) Str::uuid();
+        $ext = $c['song_ext'];
+        $from = self::DIR . "/song.{$ext}";
+        if (Storage::exists($from)) {
+            Storage::makeDirectory(self::DIR . '/songs');
+            Storage::move($from, self::DIR . "/songs/{$id}.{$ext}");
+        }
+        $c['songs'] = [[
+            'id'                 => $id,
+            'title'              => $c['title'] ?? 'Song 1',
+            'ext'                => $ext,
+            'lyrics'             => $c['lyrics'] ?? '',
+            'sync_enabled'       => (bool) ($c['sync_enabled'] ?? false),
+            'vocal_start'        => (float) ($c['vocal_start'] ?? 0.0),
+            'vocal_start_status' => $c['vocal_start_status'] ?? 'none',
+        ]];
+        unset($c['song_ext'], $c['lyrics'], $c['sync_enabled'], $c['vocal_start'], $c['vocal_start_status']);
+        $this->saveConfig($c);
+
+        return $c;
+    }
+
+    private function saveConfig(array $config): void
+    {
+        $config['updated_at'] = now()->toIso8601String();
+        Storage::put(self::CONFIG, json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+        @chmod(Storage::path(self::CONFIG), 0664);
+    }
+
+    private function findSong(array $c, ?string $id): ?array
+    {
+        foreach ($c['songs'] as $s) {
+            if (($s['id'] ?? null) === $id) {
+                return $s;
+            }
+        }
+        return null;
+    }
+
+    // ---- Public ------------------------------------------------------------
+
+    /**
+     * Resolve the curated YouTube songs for the CURRENTLY active Special Sunday
+     * (or null when no observance window is open). Reads the hardcoded
+     * config/special_day_songs.php map keyed by observance key, dropping entries
+     * without a valid 11-char YouTube id.
+     *
+     * @return array{occasion: string, songs: array<int, array{title: string, youtube_id: string, watch_url: string}>}|null
+     */
+    private function autoYoutubePayload(\App\Services\SpecialSundayResolver $resolver): ?array
+    {
+        $observance = $resolver->currentPayload('en');
+        if (! $observance || empty($observance['key'])) {
+            return null;
+        }
+
+        $map  = config('special_day_songs', []);
+        $list = is_array($map[$observance['key']] ?? null) ? $map[$observance['key']] : [];
+
+        $songs = [];
+        foreach ($list as $entry) {
+            $id = (string) ($entry['youtube_id'] ?? '');
+            // Accept only a plausible YouTube id so a typo can't yield a broken iframe.
+            if (! preg_match('/^[A-Za-z0-9_-]{11}$/', $id)) {
+                continue;
+            }
+            $songs[] = [
+                'title'      => (string) ($entry['title'] ?? 'Song'),
+                'youtube_id' => $id,
+                'watch_url'  => "https://www.youtube.com/watch?v={$id}",
+            ];
+        }
+
+        if ($songs === []) {
+            return null;
+        }
+
+        return ['occasion' => (string) ($observance['title'] ?? ''), 'songs' => $songs];
+    }
+
+    /** A short, warm invitation appended to the YouTube link when sharing. */
+    private function shareInvite(string $occasion): string
+    {
+        $occasion = trim($occasion);
+        $lead = $occasion !== ''
+            ? "🎵 A song for {$occasion} — listen and be blessed."
+            : '🎵 Listen to this song and be blessed.';
+
+        return "{$lead} Come worship with us at aivirtual.church 🙏";
+    }
+
+    /** What the public page needs: mode flag, and either the MV menu or auto songs. */
+    public function publicConfig(\App\Services\SpecialSundayResolver $resolver): JsonResponse
+    {
+        $c = $this->config();
+        $songs = array_values(array_map(
+            fn ($s) => [
+                'id'           => $s['id'],
+                'title'        => $s['title'],
+                // Admin-suggested chorus/hook clip — the visitor can use it, pick
+                // their own range, or choose the full song.
+                'clip_enabled' => (bool) ($s['clip_enabled'] ?? false),
+                'clip_start'   => (float) ($s['clip_start'] ?? 0.0),
+                'clip_end'     => (float) ($s['clip_end'] ?? 0.0),
+            ],
+            array_filter($c['songs'], fn ($s) => ! empty($s['ext']))
+        ));
+
+        $manualOn = (bool) $c['enabled'] && count($songs) > 0;
+        // Auto only when manual is off (mutually exclusive) and the active day has songs.
+        $auto = (! $manualOn && (bool) ($c['auto_youtube_enabled'] ?? false))
+            ? $this->autoYoutubePayload($resolver)
+            : null;
+
+        $mode = $manualOn ? 'manual' : ($auto !== null ? 'auto' : 'off');
+
+        return response()->json([
+            'mode'           => $mode,
+            // Back-compat: existing clients gate the page on `enabled`.
+            'enabled'        => $manualOn,
+            'title'          => $c['title'],
+            'subtitle'       => $c['subtitle'],
+            'default_effect' => in_array($c['default_effect'], self::EFFECTS, true) ? $c['default_effect'] : 'slide',
+            'effects'        => self::EFFECTS,
+            'max_photos'     => self::MAX_PHOTOS,
+            'songs'          => $songs,
+            'auto'           => $auto === null ? null : [
+                'occasion'    => $auto['occasion'],
+                'songs'       => $auto['songs'],
+                'share_invite' => $this->shareInvite($auto['occasion']),
+            ],
+        ]);
+    }
+
+    /** Accept uploaded photo(s) + an effect + chosen song, queue a render. */
+    public function render(Request $request): JsonResponse
+    {
+        $c = $this->config();
+        if (! $c['enabled'] || count($c['songs']) === 0) {
+            return response()->json(['message' => 'This feature is not available right now.'], 404);
+        }
+
+        $validated = $request->validate([
+            'photos'     => ['required', 'array', 'min:1', 'max:' . self::MAX_PHOTOS],
+            'photos.*'   => ['required', 'file', 'mimes:jpg,jpeg,png,webp', 'max:8192'],
+            'effect'     => ['nullable', 'in:' . implode(',', self::EFFECTS)],
+            'song_id'    => ['nullable', 'string'],
+            // Visitor's clip choice. full=1 forces the whole song; otherwise a
+            // clip_start/clip_end pair is used, falling back to the admin clip.
+            'full'       => ['nullable', 'boolean'],
+            'clip_start' => ['nullable', 'numeric', 'min:0', 'max:6000'],
+            'clip_end'   => ['nullable', 'numeric', 'min:0', 'max:6000'],
+        ]);
+
+        // Default to the first song when the client doesn't specify one.
+        $song = $this->findSong($c, $validated['song_id'] ?? null) ?? $c['songs'][0];
+        if (empty($song['ext'])) {
+            return response()->json(['message' => 'Selected song is unavailable.'], 422);
+        }
+
+        $effect = $validated['effect'] ?? $c['default_effect'];
+
+        // Resolve the clip range for this render: full song, the visitor's own
+        // pick, or the admin's suggested clip.
+        [$clipStart, $clipEnd] = [null, null];
+        if (! ($validated['full'] ?? false)) {
+            $us = $validated['clip_start'] ?? null;
+            $ue = $validated['clip_end'] ?? null;
+            if ($us !== null && $ue !== null && $ue - $us >= 1) {
+                [$clipStart, $clipEnd] = [(float) $us, (float) $ue];
+            } elseif (! empty($song['clip_enabled']) && (($song['clip_end'] ?? 0) - ($song['clip_start'] ?? 0)) >= 1) {
+                [$clipStart, $clipEnd] = [(float) $song['clip_start'], (float) $song['clip_end']];
+            }
+        }
+        // Opportunistic retention sweep so finished MVs/abandoned uploads don't
+        // accumulate unbounded between the daily scheduled prune (a public
+        // endpoint can otherwise fill the disk). Cheap dir-stat walk.
+        \App\Console\Commands\PruneSpecialDayMedia::sweep();
+
+        // Safety valve: even with cleanup, never let this feature grow past a hard
+        // ceiling (a cleanup bug must not be able to fill the host).
+        if ($this->featureBytes() > self::MAX_FEATURE_BYTES) {
+            \Log::warning('FathersDay storage ceiling hit; refusing new render.');
+            return response()->json([
+                'message' => 'We\'re a bit busy right now — please try again later.',
+            ], 503);
+        }
+
+        // Idempotency: an identical render (same photos + settings) already made
+        // recently is reused instead of re-encoding a duplicate. Guards against
+        // double-clicks, browser refresh and proxy retries.
+        $fingerprint = $this->fingerprint($request->file('photos'), $effect, $song['id'], $clipStart, $clipEnd);
+        if ($existing = $this->findFreshRender($fingerprint)) {
+            return response()->json(['job_id' => $existing, 'status' => 'queued', 'deduped' => true]);
+        }
+
+        $jobId  = (string) Str::uuid();
+        $jobDir = self::DIR . "/jobs/{$jobId}";
+
+        // Store each upload re-named (never trust client filenames). The render
+        // job re-encodes every image through ffmpeg, which strips EXIF/GPS and
+        // neutralises malformed-image payloads.
+        $i = 0;
+        foreach ($request->file('photos') as $photo) {
+            $ext = strtolower($photo->getClientOriginalExtension() ?: 'jpg');
+            $ext = in_array($ext, ['jpg', 'jpeg', 'png', 'webp'], true) ? $ext : 'jpg';
+            $photo->storeAs("{$jobDir}/src", sprintf('photo_%02d.%s', $i++, $ext));
+        }
+
+        Storage::put("{$jobDir}/status.json", json_encode([
+            'status'     => 'queued',
+            'progress'   => 0,
+            'stage'      => 'Queued',
+            'effect'     => $effect,
+            'song_id'    => $song['id'],
+            'created_at' => now()->toIso8601String(),
+        ]));
+
+        // www-data creates these private; the worker (other user, shared group)
+        // must read the photos and rewrite the status — open the tree.
+        $this->openPerms(Storage::path($jobDir));
+
+        RenderFathersDayJob::dispatch($jobId, $effect, $song['id'], $clipStart, $clipEnd);
+        $this->recordUse();
+        $this->recordRender($fingerprint, $jobId);
+
+        return response()->json(['job_id' => $jobId, 'status' => 'queued']);
+    }
+
+    public function status(string $jobId): JsonResponse
+    {
+        $jobId = $this->safeId($jobId);
+        $path  = self::DIR . "/jobs/{$jobId}/status.json";
+        if (! $jobId || ! Storage::exists($path)) {
+            return response()->json(['message' => 'Not found'], 404);
+        }
+
+        $data = json_decode((string) Storage::get($path), true) ?: ['status' => 'unknown'];
+        if (($data['status'] ?? null) === 'done') {
+            $data['download_url'] = url("/api/fathers-day/download/{$jobId}");
+        }
+
+        return response()->json($data);
+    }
+
+    public function download(string $jobId): BinaryFileResponse|JsonResponse
+    {
+        $jobId = $this->safeId($jobId);
+        $rel   = self::DIR . "/jobs/{$jobId}/output.mp4";
+        if (! $jobId || ! Storage::exists($rel)) {
+            return response()->json(['message' => 'Not found'], 404);
+        }
+
+        return response()->download(Storage::path($rel), 'fathers-day.mp4', [
+            'Content-Type' => 'video/mp4',
+        ]);
+    }
+
+    /** Public stream of a library song, for the visitor's clip-picker player. */
+    public function publicSong(string $songId): BinaryFileResponse|JsonResponse
+    {
+        $c = $this->config();
+        if (! $c['enabled']) {
+            return response()->json(['message' => 'Not available'], 404);
+        }
+        $song = $this->findSong($c, $this->safeId($songId) ? $songId : null);
+        if (! $song || empty($song['ext'])) {
+            return response()->json(['message' => 'No song'], 404);
+        }
+        $rel = self::DIR . "/songs/{$songId}.{$song['ext']}";
+        if (! Storage::exists($rel)) {
+            return response()->json(['message' => 'No song'], 404);
+        }
+
+        return response()->file(Storage::path($rel), [
+            'Content-Type' => $song['ext'] === 'wav' ? 'audio/wav' : 'audio/mpeg',
+        ]);
+    }
+
+    // ---- Admin: global settings -------------------------------------------
+
+    public function adminShow(?\App\Services\SpecialSundayResolver $resolver = null): JsonResponse
+    {
+        $c = $this->config();
+        $auto = $this->autoYoutubePayload($resolver ?? app(\App\Services\SpecialSundayResolver::class));
+
+        return response()->json([
+            'enabled'        => (bool) $c['enabled'],
+            'auto_youtube_enabled' => (bool) ($c['auto_youtube_enabled'] ?? false),
+            // Read-only preview of what Auto mode would play right now (today's
+            // active Special Sunday + its curated YouTube songs from config).
+            'auto_preview'   => $auto === null
+                ? null
+                : ['occasion' => $auto['occasion'], 'songs' => array_map(
+                    fn ($s) => ['title' => $s['title'], 'youtube_id' => $s['youtube_id']],
+                    $auto['songs']
+                )],
+            'title'          => $c['title'],
+            'subtitle'       => $c['subtitle'],
+            'default_effect' => $c['default_effect'],
+            'brand_tag_enabled' => (bool) ($c['brand_tag_enabled'] ?? false),
+            'has_brand_tag'     => ! empty($c['brand_tag_ext'])
+                                    && Storage::exists(self::DIR . "/brand_tag.{$c['brand_tag_ext']}"),
+            'songs'          => array_values(array_map(fn ($s) => [
+                'id'                 => $s['id'],
+                'title'              => $s['title'],
+                'has_song'           => ! empty($s['ext']),
+                'ext'                => $s['ext'] ?? null,
+                'lyrics'             => $s['lyrics'] ?? '',
+                'sync_enabled'       => (bool) ($s['sync_enabled'] ?? false),
+                'vocal_start'        => (float) ($s['vocal_start'] ?? 0.0),
+                'vocal_start_status' => $s['vocal_start_status'] ?? 'none',
+                'clip_enabled'       => (bool) ($s['clip_enabled'] ?? false),
+                'clip_start'         => (float) ($s['clip_start'] ?? 0.0),
+                'clip_end'           => (float) ($s['clip_end'] ?? 0.0),
+                'community_original' => (bool) ($s['community_original'] ?? false),
+            ], $c['songs'])),
+            'updated_at'     => $c['updated_at'],
+            'usage'          => $this->usageSummary($c),
+        ]);
+    }
+
+    /** Reset the visitor render counters (cumulative + today) back to zero. */
+    public function resetUsage(): JsonResponse
+    {
+        $c = $this->config();
+        $c['usage'] = ['total' => 0, 'today' => 0, 'date' => now()->toDateString()];
+        Storage::put(self::CONFIG, json_encode($c, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+        @chmod(Storage::path(self::CONFIG), 0664);
+
+        return $this->adminShow();
+    }
+
+    /** Normalise the stored usage counter for display (today resets daily). */
+    private function usageSummary(array $c): array
+    {
+        $u = is_array($c['usage'] ?? null) ? $c['usage'] : [];
+        $today = (($u['date'] ?? null) === now()->toDateString()) ? (int) ($u['today'] ?? 0) : 0;
+
+        return ['total' => (int) ($u['total'] ?? 0), 'today' => $today];
+    }
+
+    public function adminSave(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'enabled'        => ['required', 'boolean'],
+            'auto_youtube_enabled' => ['sometimes', 'boolean'],
+            'title'          => ['nullable', 'string', 'max:120'],
+            'subtitle'       => ['nullable', 'string', 'max:200'],
+            'default_effect' => ['required', 'in:' . implode(',', self::EFFECTS)],
+            'brand_tag_enabled' => ['sometimes', 'boolean'],
+        ]);
+
+        // The two delivery modes are mutually exclusive — only one can be on.
+        $autoEnabled = (bool) ($validated['auto_youtube_enabled'] ?? false);
+        if ($validated['enabled'] && $autoEnabled) {
+            return response()->json([
+                'message' => 'Only one mode can be active at a time. Turn off Auto YouTube before enabling the manual MV library (or vice-versa).',
+            ], 422);
+        }
+
+        $c = $this->config();
+        $c['enabled']        = $validated['enabled'];
+        $c['auto_youtube_enabled'] = $autoEnabled;
+        $c['title']          = $validated['title'] ?: 'Happy Father\'s Day';
+        $c['subtitle']       = $validated['subtitle'] ?: 'Make a music video for your father';
+        $c['default_effect'] = $validated['default_effect'];
+        if (array_key_exists('brand_tag_enabled', $validated)) {
+            $c['brand_tag_enabled'] = (bool) $validated['brand_tag_enabled'];
+        }
+        $this->saveConfig($c);
+
+        return $this->adminShow();
+    }
+
+    // ---- Admin: song library ----------------------------------------------
+
+    /** Add a song to the library (upload file + title), then detect its vocals. */
+    public function createSong(Request $request): JsonResponse
+    {
+        $request->validate([
+            'song'  => ['required', 'file', 'mimes:mp3,wav', 'max:51200'],
+            'title' => ['nullable', 'string', 'max:120'],
+        ]);
+
+        $c = $this->config();
+        if (count($c['songs']) >= self::MAX_SONGS) {
+            return response()->json(['message' => 'Song limit reached.'], 422);
+        }
+
+        $id  = (string) Str::uuid();
+        $ext = strtolower($request->file('song')->getClientOriginalExtension() ?: 'mp3');
+        $ext = in_array($ext, ['mp3', 'wav'], true) ? $ext : 'mp3';
+        $request->file('song')->storeAs(self::DIR . '/songs', "{$id}.{$ext}");
+        @chmod(Storage::path(self::DIR . "/songs/{$id}.{$ext}"), 0664);
+
+        $c['songs'][] = [
+            'id'                 => $id,
+            'title'              => $request->input('title') ?: ('Song ' . (count($c['songs']) + 1)),
+            'ext'                => $ext,
+            'lyrics'             => '',
+            'sync_enabled'       => false,
+            'vocal_start'        => 0.0,
+            'vocal_start_status' => 'detecting',
+            'clip_enabled'       => false,
+            'clip_start'         => 0.0,
+            'clip_end'           => 0.0,
+            'community_original' => false,
+        ];
+        $this->saveConfig($c);
+
+        DetectVocalStartJob::dispatch($id);
+
+        return $this->adminShow();
+    }
+
+    /** Update a song's title / lyrics / sync mode / vocal-onset override. */
+    public function updateSong(Request $request, string $songId): JsonResponse
+    {
+        $validated = $request->validate([
+            'title'        => ['sometimes', 'string', 'max:120'],
+            'lyrics'       => ['sometimes', 'nullable', 'string', 'max:20000'],
+            'sync_enabled' => ['sometimes', 'boolean'],
+            'vocal_start'  => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:600'],
+            'clip_enabled' => ['sometimes', 'boolean'],
+            'clip_start'   => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:6000'],
+            'clip_end'     => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:6000'],
+            'community_original' => ['sometimes', 'boolean'],
+        ]);
+
+        $c = $this->config();
+        $found = false;
+        foreach ($c['songs'] as &$s) {
+            if ($s['id'] !== $songId) {
+                continue;
+            }
+            $found = true;
+            if (array_key_exists('title', $validated) && $validated['title'] !== null) {
+                $s['title'] = $validated['title'];
+            }
+            if (array_key_exists('lyrics', $validated)) {
+                $s['lyrics'] = $validated['lyrics'] ?? '';
+            }
+            if (array_key_exists('sync_enabled', $validated)) {
+                $s['sync_enabled'] = (bool) $validated['sync_enabled'];
+            }
+            if (array_key_exists('vocal_start', $validated) && $validated['vocal_start'] !== null) {
+                $s['vocal_start']        = (float) $validated['vocal_start'];
+                $s['vocal_start_status'] = 'ready';
+            }
+            if (array_key_exists('clip_enabled', $validated)) {
+                $s['clip_enabled'] = (bool) $validated['clip_enabled'];
+            }
+            if (array_key_exists('clip_start', $validated) && $validated['clip_start'] !== null) {
+                $s['clip_start'] = (float) $validated['clip_start'];
+            }
+            if (array_key_exists('clip_end', $validated) && $validated['clip_end'] !== null) {
+                $s['clip_end'] = (float) $validated['clip_end'];
+            }
+            if (array_key_exists('community_original', $validated)) {
+                $s['community_original'] = (bool) $validated['community_original'];
+            }
+            break;
+        }
+        unset($s);
+
+        if (! $found) {
+            return response()->json(['message' => 'Song not found'], 404);
+        }
+        $this->saveConfig($c);
+
+        return $this->adminShow();
+    }
+
+    public function deleteSong(string $songId): JsonResponse
+    {
+        $c = $this->config();
+        $song = $this->findSong($c, $songId);
+        if (! $song) {
+            return response()->json(['message' => 'Song not found'], 404);
+        }
+        if (! empty($song['ext'])) {
+            Storage::delete(self::DIR . "/songs/{$songId}.{$song['ext']}");
+        }
+        $c['songs'] = array_values(array_filter($c['songs'], fn ($s) => $s['id'] !== $songId));
+        $this->saveConfig($c);
+
+        return $this->adminShow();
+    }
+
+    /** Stream a library song to the admin tap-to-sync player. */
+    public function adminSong(string $songId): BinaryFileResponse|JsonResponse
+    {
+        $song = $this->findSong($this->config(), $songId);
+        if (! $song || empty($song['ext'])) {
+            return response()->json(['message' => 'No song'], 404);
+        }
+        $rel = self::DIR . "/songs/{$songId}.{$song['ext']}";
+        if (! Storage::exists($rel)) {
+            return response()->json(['message' => 'No song'], 404);
+        }
+
+        return response()->file(Storage::path($rel), [
+            'Content-Type' => $song['ext'] === 'wav' ? 'audio/wav' : 'audio/mpeg',
+        ]);
+    }
+
+    // ---- Admin: brand audio tag -------------------------------------------
+
+    /**
+     * Upload the short "aivirtual.church" audio ident (≤6s recommended) that the
+     * renderer overlays at the very start of every MV. Stored as a single file
+     * (one tag for the whole feature) under fathersday/brand_tag.<ext>.
+     */
+    public function uploadBrandTag(Request $request): JsonResponse
+    {
+        $request->validate([
+            'tag' => ['required', 'file', 'mimes:mp3,wav', 'max:5120'],
+        ]);
+
+        $c = $this->config();
+        // Drop any previous tag (extension may differ).
+        if (! empty($c['brand_tag_ext'])) {
+            Storage::delete(self::DIR . "/brand_tag.{$c['brand_tag_ext']}");
+        }
+
+        $ext = strtolower($request->file('tag')->getClientOriginalExtension() ?: 'mp3');
+        $ext = in_array($ext, ['mp3', 'wav'], true) ? $ext : 'mp3';
+        $request->file('tag')->storeAs(self::DIR, "brand_tag.{$ext}");
+        @chmod(Storage::path(self::DIR . "/brand_tag.{$ext}"), 0664);
+
+        $c['brand_tag_ext'] = $ext;
+        $this->saveConfig($c);
+
+        return $this->adminShow();
+    }
+
+    public function deleteBrandTag(): JsonResponse
+    {
+        $c = $this->config();
+        if (! empty($c['brand_tag_ext'])) {
+            Storage::delete(self::DIR . "/brand_tag.{$c['brand_tag_ext']}");
+        }
+        $c['brand_tag_ext']     = null;
+        $c['brand_tag_enabled'] = false;
+        $this->saveConfig($c);
+
+        return $this->adminShow();
+    }
+
+    /**
+     * Bump the cumulative + today's render counter so the admin dashboard can
+     * show traffic for this feature. Preserves updated_at (a render isn't an
+     * admin edit). Re-reads fresh config to limit clobbering concurrent saves.
+     */
+    private function recordUse(): void
+    {
+        $c = $this->config();
+        $today = now()->toDateString();
+        $u = is_array($c['usage'] ?? null) ? $c['usage'] : [];
+        $u['total'] = (int) ($u['total'] ?? 0) + 1;
+        if (($u['date'] ?? null) !== $today) {
+            $u['date']  = $today;
+            $u['today'] = 0;
+        }
+        $u['today'] = (int) ($u['today'] ?? 0) + 1;
+        $c['usage'] = $u;
+
+        Storage::put(self::CONFIG, json_encode($c, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+        @chmod(Storage::path(self::CONFIG), 0664);
+    }
+
+    // ---- Abuse / resource guards ------------------------------------------
+
+    /** Total bytes under the feature's storage tree (for the hard ceiling). */
+    private function featureBytes(): int
+    {
+        $base = Storage::path(self::DIR);
+        if (! is_dir($base)) {
+            return 0;
+        }
+        $bytes = 0;
+        $it = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($base, \FilesystemIterator::SKIP_DOTS)
+        );
+        foreach ($it as $f) {
+            if ($f->isFile()) {
+                $bytes += $f->getSize();
+            }
+        }
+        return $bytes;
+    }
+
+    /**
+     * Stable fingerprint of a render request: the content hash of every uploaded
+     * photo (order-independent) plus the chosen effect/song/clip. Identical
+     * inputs always produce the same fingerprint.
+     */
+    private function fingerprint(array $photos, string $effect, string $songId, ?float $clipStart, ?float $clipEnd): string
+    {
+        $hashes = [];
+        foreach ($photos as $p) {
+            $real = $p->getRealPath();
+            $hashes[] = $real ? hash_file('sha256', $real) : '';
+        }
+        sort($hashes);
+        return hash('sha256', implode('|', [
+            implode(',', $hashes), $effect, $songId, (string) $clipStart, (string) $clipEnd,
+        ]));
+    }
+
+    /** Read the fingerprint→job index (small JSON map). */
+    private function renderIndex(): array
+    {
+        $data = Storage::exists(self::INDEX)
+            ? json_decode((string) Storage::get(self::INDEX), true)
+            : [];
+        return is_array($data) ? $data : [];
+    }
+
+    /**
+     * Return a recent job id for this fingerprint whose output still exists or is
+     * still in flight; null if none (so a fresh render is started).
+     */
+    private function findFreshRender(string $fingerprint): ?string
+    {
+        $idx = $this->renderIndex();
+        $e   = $idx[$fingerprint] ?? null;
+        if (! is_array($e) || (time() - (int) ($e['ts'] ?? 0)) > self::DEDUP_WINDOW) {
+            return null;
+        }
+        $jobId = (string) ($e['job_id'] ?? '');
+        if ($this->safeId($jobId) && Storage::exists(self::DIR . "/jobs/{$jobId}/status.json")) {
+            return $jobId;
+        }
+        return null;
+    }
+
+    /**
+     * Record a fingerprint→job mapping, pruning entries past the dedup window.
+     * Concurrent PHP-FPM requests can race here, so the whole read-modify-write
+     * runs under an exclusive flock — without it two simultaneous renders could
+     * clobber each other's entry (a lost entry only costs a duplicate render, but
+     * the lock keeps the index from corrupting).
+     */
+    private function recordRender(string $fingerprint, string $jobId): void
+    {
+        $path = Storage::path(self::INDEX);
+        @mkdir(dirname($path), 0775, true);
+        $fp = @fopen($path, 'c+');
+        if ($fp === false) {
+            return;
+        }
+        try {
+            if (! flock($fp, LOCK_EX)) {
+                return;
+            }
+            $raw = stream_get_contents($fp);
+            $idx = json_decode($raw ?: '[]', true);
+            $idx = is_array($idx) ? $idx : [];
+            $now = time();
+            foreach ($idx as $k => $e) {
+                if (! is_array($e) || ($now - (int) ($e['ts'] ?? 0)) > self::DEDUP_WINDOW) {
+                    unset($idx[$k]);
+                }
+            }
+            $idx[$fingerprint] = ['job_id' => $jobId, 'ts' => $now];
+
+            ftruncate($fp, 0);
+            rewind($fp);
+            fwrite($fp, json_encode($idx));
+            fflush($fp);
+            @chmod($path, 0664);
+        } finally {
+            flock($fp, LOCK_UN);
+            fclose($fp);
+        }
+    }
+
+    // ---- Guards ------------------------------------------------------------
+
+    private function safeId(string $id): ?string
+    {
+        return preg_match('/^[0-9a-f-]{36}$/i', $id) ? $id : null;
+    }
+
+    /**
+     * Recursively open a job tree to the queue worker (a different OS user in the
+     * shared www-data group): dirs 0775 (group create/delete temp files), files
+     * 0664 (worker rewrites status.json). The tree is ephemeral and not
+     * web-exposed, so group/other access is acceptable.
+     */
+    private function openPerms(string $path): void
+    {
+        @chmod($path, 0775);
+        foreach (glob(rtrim($path, '/') . '/*') ?: [] as $child) {
+            is_dir($child) ? $this->openPerms($child) : @chmod($child, 0664);
+        }
+    }
+}

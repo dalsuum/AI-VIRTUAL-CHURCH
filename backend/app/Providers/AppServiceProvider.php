@@ -14,13 +14,36 @@ class AppServiceProvider extends ServiceProvider
     {
         // One configured Stripe client, resolved wherever it's type-hinted
         // (e.g. OfferingService). Keeps the secret key out of the rest of the app.
+        // Pass the key inside an array config (not a bare string): the array form
+        // tolerates a null api_key, so the client still constructs when Stripe is
+        // unconfigured in this environment. Read-only paths (account/subscription
+        // status) then work; only calls that actually hit Stripe (checkout/webhook)
+        // fail — and only when invoked. A bare string/empty key throws on construct,
+        // which previously 500'd every endpoint whose controller type-hints billing.
         $this->app->singleton(StripeClient::class, function () {
-            return new StripeClient(config('services.stripe.secret'));
+            return new StripeClient(['api_key' => config('services.stripe.secret') ?: null]);
         });
+
+        // The billing seam resolves to Stripe today; swap here to add a provider.
+        $this->app->bind(
+            \App\Services\Billing\BillingProvider::class,
+            \App\Services\Billing\StripeProvider::class,
+        );
     }
 
     public function boot(): void
     {
+        // Deploy-time config sanity: surface a half-configured billing setup so a
+        // missing key is visible in deploy/cache logs rather than only failing at
+        // a user's checkout. Console-only so it never logs on every web request.
+        if ($this->app->runningInConsole()) {
+            $hasSecret = filled(config('services.stripe.secret'));
+            $hasPrice  = filled(config('tokens.stripe_premium_price'));
+            if ($hasSecret xor $hasPrice) {
+                logger()->warning('Billing partially configured: STRIPE_SECRET and STRIPE_PREMIUM_PRICE_ID must both be set; premium checkout is disabled until then.');
+            }
+        }
+
         // Auth endpoints — keyed by IP so unauthenticated callers are also covered.
         RateLimiter::for('auth', function (Request $request) {
             return Limit::perMinute(5)->by($request->ip());

@@ -27,7 +27,7 @@ class ServiceReminderNotification extends Notification implements ShouldQueue
     public function toMail(object $notifiable): MailMessage
     {
         $base = rtrim((string) config('church.frontend_url'), '/');
-        $url  = $base . '?session=' . $this->session->session_token;
+        $url  = $base . '?session=' . $this->session->issueResumeToken();
         $name = $this->recipientName
             ?: (property_exists($notifiable, 'name') ? ($notifiable->name ?: 'friend') : 'friend');
 

@@ -36,11 +36,11 @@ from strategies.youtube_strategy import find_sermon_video as _find_sermon_video 
 from tasks.celery_app import app as _celery_app    # noqa: E402
 
 
-_OPENROUTER_KEY  = os.environ["OPENROUTER_API_KEY"]
+_OPENROUTER_KEY  = os.environ.get("OPENROUTER_API_KEY", "")
 _OPENROUTER_URL  = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
-_LARAVEL_WEBHOOK = os.environ["LARAVEL_WEBHOOK_URL"]
-_WORKER_SECRET   = os.environ["WORKER_WEBHOOK_SECRET"]
-_MUSIC_WEBHOOK   = _LARAVEL_WEBHOOK.replace("asset-ready", "music-track")
+_LARAVEL_WEBHOOK = os.environ.get("LARAVEL_WEBHOOK_URL", "")
+_WORKER_SECRET   = os.environ.get("WORKER_WEBHOOK_SECRET", "")
+_MUSIC_WEBHOOK   = _LARAVEL_WEBHOOK.replace("asset-ready", "music-track") if _LARAVEL_WEBHOOK else ""
 
 # Model IDs used when the admin selects each provider.
 # Both go through OpenRouter so no extra API key is needed.
@@ -321,6 +321,46 @@ def _call_llm(system: str, messages: list[dict], tools: list[dict], model: str, 
 # Tool registry
 # ---------------------------------------------------------------------------
 
+def _special_sunday_theme(job: dict) -> str | None:
+    """Sermon-theme string from the special-Sunday bias on the job (English, LLM
+    steering only). Mirrors tasks._special_sunday_theme without importing tasks."""
+    special = job.get("special_sunday")
+    if not isinstance(special, dict):
+        return None
+    title = (special.get("title") or special.get("key") or "").strip()
+    tags = [t for t in (special.get("sermon_tags") or []) if isinstance(t, str) and t.strip()]
+    if not title and not tags:
+        return None
+    return f"{title}: {', '.join(tags)}" if tags else title
+
+
+def _special_sunday_manual(job: dict, segment: str) -> dict | None:
+    """Curated 'manual' content for a segment when the active special Sunday's
+    per-language mode is manual. Mirrors tasks._special_sunday_content."""
+    special = job.get("special_sunday")
+    if not isinstance(special, dict):
+        return None
+    content = special.get("content")
+    if not isinstance(content, dict):
+        return None
+    seg = content.get(segment)
+    if isinstance(seg, dict) and seg.get("mode") == "manual":
+        return seg
+    return None
+
+
+def _special_sunday_query(job: dict, base_query: str) -> str:
+    """Fold the observance's music_moods into a search query (sermon video)."""
+    special = job.get("special_sunday")
+    if not isinstance(special, dict):
+        return base_query
+    moods = [m for m in (special.get("music_moods") or []) if isinstance(m, str) and m.strip()]
+    if not moods:
+        return base_query
+    extra = " ".join(moods)
+    return f"{base_query} {extra}".strip() if base_query else extra
+
+
 def _build_tools(job: dict, plan: dict) -> tuple[list[dict], dict[str, callable]]:
     """Return (OpenAI-format tool schemas, {name: handler}) bound to this job."""
     token    = job["session_token"]
@@ -396,6 +436,9 @@ def _build_tools(job: dict, plan: dict) -> tuple[list[dict], dict[str, callable]
         return h_post_text_segment("opening_prayer", text)
 
     def h_generate_and_post_sermon(scripture_ref: str = "") -> dict:
+        manual = _special_sunday_manual(job, "sermon")
+        if manual and (manual.get("body") or "").strip():
+            return h_post_text_segment("sermon", manual["body"].strip())
         minutes = 5 if job.get("music_source") == "musicgen" else 8
         text = llm_engine.generate_sermon(
             user_name=job.get("user_name", ""),
@@ -405,6 +448,7 @@ def _build_tools(job: dict, plan: dict) -> tuple[list[dict], dict[str, callable]
             target_minutes=minutes,
             prayer_text=job.get("prayer_text"),
             user_history=job.get("user_history"),
+            theme=_special_sunday_theme(job),
         )
         return h_post_text_segment("sermon", text)
 
@@ -419,13 +463,19 @@ def _build_tools(job: dict, plan: dict) -> tuple[list[dict], dict[str, callable]
         return h_post_text_segment("benediction", text)
 
     def h_find_and_post_sermon_video(query: str = "") -> dict:
+        # A curated manual sermon overrides the YouTube sermon video too.
+        manual = _special_sunday_manual(job, "sermon")
+        if manual and (manual.get("body") or "").strip():
+            return h_post_text_segment("sermon", manual["body"].strip())
         query = query or ""
         past  = (job.get("user_history") or {}).get("past_video_ids", [])
         
         effective_query = query.strip() if query.strip() else plan.get("preaching_query", "")
         if effective_query != query:
             print(f"[agent] find_sermon_video missing/empty query. Falling back to plan: {effective_query!r}", flush=True)
-            
+        # A special Sunday biases the search toward the observance's moods.
+        effective_query = _special_sunday_query(job, effective_query)
+
         try:
             video = _find_sermon_video(mood=mood, query=effective_query, language=language, excluded_ids=past)
             return h_post_youtube_sermon(video["video_id"], video["title"])

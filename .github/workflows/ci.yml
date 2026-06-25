@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  backend-tests:
+    name: Backend (PHPUnit)
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: ai_church_test
+          MYSQL_USER: ai_church
+          MYSQL_PASSWORD: ai_church_secret
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      # phpunit.xml points at ai_church_test on 127.0.0.1; creds come from here.
+      DB_USERNAME: ai_church
+      DB_PASSWORD: ai_church_secret
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo, pdo_mysql, mbstring, bcmath, intl, redis
+          coverage: xdebug
+
+      - name: Cache Composer packages
+        uses: actions/cache@v4
+        with:
+          path: backend/vendor
+          key: composer-${{ hashFiles('backend/composer.lock') }}
+          restore-keys: composer-
+
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-interaction --no-progress
+
+      - name: Wait for MySQL
+        run: |
+          for i in $(seq 1 30); do
+            if mysqladmin ping -h 127.0.0.1 -uai_church -pai_church_secret --silent; then
+              echo "MySQL is up"; break
+            fi
+            echo "waiting for mysql..."; sleep 2
+          done
+
+      - name: Run migrations (test DB)
+        run: php artisan migrate --force
+        env:
+          APP_ENV: testing
+          APP_KEY: base64:hsWZzcuN2abMrWXY+8YrtUrHvIdUcSzrwvCVx5G8F1k=
+          DB_CONNECTION: mysql
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_DATABASE: ai_church_test
+
+      - name: Run PHPUnit with coverage
+        run: vendor/bin/phpunit --coverage-text
+
+  frontend-build:
+    name: Frontend (build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run build

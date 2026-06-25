@@ -9,6 +9,12 @@ import VoiceStudio from "./VoiceStudio.vue";
 import PermissionsMatrix from "./PermissionsMatrix.vue";
 import AdsManager from "./AdsManager.vue";
 import AdminLyricsManager from "./AdminLyricsManager.vue";
+import MusicCatalogManager from "./MusicCatalogManager.vue";
+import VocabularyManager from "./VocabularyManager.vue";
+import SpecialSundaysManager from "./SpecialSundaysManager.vue";
+import FathersDayManager from "./FathersDayManager.vue";
+import StickerManager from "./StickerManager.vue";
+import BibleStudyAdmin from "./BibleStudyAdmin.vue";
 
 const authed      = ref(false);
 const currentUser = ref(null); // { id, name, role, permissions: string[] }
@@ -35,15 +41,24 @@ const TABS = [
   { name: "testimonies",    label: "Testimonies",      can: () => can("testimonies.view"),     load: loadTestimonies },
   { name: "users",          label: "Users",            can: () => can("users.view"),           load: loadUsers },
   { name: "lyrics",         label: "Lyrics",           can: () => can("lyrics.manage"),        load: null },
+  { name: "vocabulary",     label: "Vocabulary",       can: () => can("vocabulary.manage"),    load: null },
   { name: "prayer",         label: "Prayer Requests",  can: () => can("prayer_requests.view"), load: loadPrayerRequests },
   { name: "settings",       label: "Settings",         can: () => can("settings.view"),        load: loadSettings },
+  { name: "bible",          label: "Bible",            can: () => can("settings.view"),        load: loadSettings },
+  { name: "content-filter", label: "Content Filter",   can: () => isAdminUser.value,           load: loadContentFilter },
   { name: "music-pool",     label: "AI Music Pool",    can: () => can("music_pool.view"),      load: loadMusicTracks },
+  { name: "worship-radio",  label: "Worship Radio",    can: () => can("music.manage"),         load: null },
   { name: "voice-studio",   label: "Voice Studio",     can: () => can("voice_studio.view"),    load: null },
   { name: "voice-training", label: "Voice Training",   can: () => can("voice_training.view"),  load: () => { loadVoiceTrainingStatus(); scheduleVoiceTrainingPoll(); } },
   { name: "ads",            label: "Ads",              can: () => can("ads.view"),             load: null },
+  { name: "special-sundays",label: "Special Sundays",  can: () => can("special_sundays.view"), load: null },
+  { name: "special-day-mv", label: "Special Day MV",   can: () => isAdminUser.value,           load: null },
+  { name: "bible-study",    label: "Bible Study",      can: () => can("study.view"),           load: null },
+  { name: "live-sticker",   label: "Live Sticker",     can: () => isAdminUser.value,           load: null },
   { name: "permissions",    label: "Permissions",      can: () => can("permissions.view"),     load: loadPermissions },
   { name: "grammar-review", label: "Language Review",  can: () => can("language_review.view"), load: () => { grData.value = null; loadGrammarReview(); } },
   { name: "system",         label: "System",           can: () => can("system.view"),          load: () => { loadUpdateStatus(); scheduleUpdatePoll(); loadVoiceboxStatus(); scheduleVoiceboxPoll(); } },
+  { name: "freeze",         label: "Freeze Monitor",   can: () => isAdminUser.value,           load: () => { loadFreeze(); scheduleFreezePoll(); } },
 ];
 
 function firstAllowedTab() {
@@ -132,6 +147,62 @@ const narrationModesTD = [
   { value: "off",      label: "Off",                    hint: "Segments stay as silent text — nothing is read aloud." },
 ];
 
+// Compact per-version "Listen" voice rows for the Bible page. English & KJV get
+// the full English provider set; Myanmar & Tedim reuse their native-aware lists;
+// Hebrew uses its he-IL Edge voice; Falam, Hakha & Matu have native MMS-TTS voices;
+// the remaining Chin/Zo Bibles read phonetically via the English Edge voice (or Off).
+const bibleVoiceEN = narrationModes.filter((x) => x.value !== "browser");
+const bibleVoiceHE = [
+  { value: "edge_tts", label: "Edge TTS (cloud, free)", hint: "Microsoft he-IL neural voice (Avri / Hila) — native Hebrew, no server needed." },
+  { value: "off",      label: "Off",                    hint: "No narration for this translation." },
+];
+const bibleVoicePhonetic = [
+  { value: "edge_tts", label: "Edge TTS (cloud, free)", hint: "No native voice — reads the Latin-script text phonetically with the English Edge voice. Free, but the accent is English." },
+  { value: "off",      label: "Off",                    hint: "No narration for this translation." },
+];
+// Edge-first ordering so every Bible row lines up: Edge TTS on the left, the
+// native MMS-TTS voice to its right, Off last. (The live-service Settings
+// section keeps its own native-first ordering via narrationModesMY/TD.)
+const bibleVoiceBurmese = [
+  { value: "edge_tts", label: "Edge TTS (cloud, free)", hint: "Microsoft my-MM-NilarNeural (female) / my-MM-ThihaNeural (male) — high-quality neural Burmese, no server needed." },
+  { value: "mms_tts",  label: "MMS-TTS (local, free)",  hint: "Local facebook/mms-tts-mya via the aivc-mms-tts service. Best offline quality; requires MMS speech on port 8003." },
+  { value: "off",      label: "Off",                    hint: "No narration for this translation." },
+];
+const bibleVoiceTedim = [
+  { value: "edge_tts", label: "Edge TTS (cloud, free)", hint: "No native Zolai cloud voice — reads Tedim text phonetically using EDGE_TTS_VOICE_TD (default en-US-AriaNeural). Free but the accent is English." },
+  { value: "mms_tts",  label: "MMS-TTS (local, free)",  hint: "Local facebook/mms-tts-ctd — the only native Zolai TTS. Requires MMS speech on port 8003." },
+  { value: "off",      label: "Off",                    hint: "No narration for this translation." },
+];
+const bibleVoiceFalam = [
+  { value: "edge_tts", label: "Edge TTS (cloud, free)", hint: "No native cloud voice — reads the Latin-script text phonetically with the English Edge voice." },
+  { value: "mms_tts",  label: "MMS-TTS (local, free)",  hint: "Local facebook/mms-tts-cfm — native Falam (Lai) voice. Requires MMS speech on port 8003." },
+  { value: "off",      label: "Off",                    hint: "No narration for this translation." },
+];
+const bibleVoiceHakha = [
+  { value: "edge_tts", label: "Edge TTS (cloud, free)", hint: "No native cloud voice — reads the Latin-script text phonetically with the English Edge voice." },
+  { value: "mms_tts",  label: "MMS-TTS (local, free)",  hint: "Local facebook/mms-tts-cnh — native Hakha (Lai) voice. Requires MMS speech on port 8003." },
+  { value: "off",      label: "Off",                    hint: "No narration for this translation." },
+];
+const bibleVoiceMatu = [
+  { value: "edge_tts", label: "Edge TTS (cloud, free)", hint: "No native cloud voice — reads the Latin-script text phonetically with the English Edge voice." },
+  { value: "mms_tts",  label: "MMS-TTS (local, free)",  hint: "Local facebook/mms-tts-hlt — native Matu voice. Requires MMS speech on port 8003." },
+  { value: "off",      label: "Off",                    hint: "No narration for this translation." },
+];
+const bibleVoiceLangs = [
+  { code: "kjv", label: "KJV (English)",  modes: bibleVoiceEN },
+  { code: "en",  label: "English (BSB)",  modes: bibleVoiceEN },
+  { code: "he",  label: "Hebrew (עברית)", modes: bibleVoiceHE },
+  { code: "my",  label: "Burmese (ဗမာ)",  modes: bibleVoiceBurmese },
+  { code: "td",  label: "Tedim (Zolai)",  modes: bibleVoiceTedim },
+  { code: "cfm", label: "Falam",          modes: bibleVoiceFalam },
+  { code: "cnh", label: "Hakha",          modes: bibleVoiceHakha },
+  { code: "mrh", label: "Mara",           modes: bibleVoicePhonetic },
+  { code: "hlt", label: "Matu",           modes: bibleVoiceMatu },
+  { code: "lus", label: "Mizo",           modes: bibleVoicePhonetic },
+  { code: "pck", label: "Paite",          modes: bibleVoicePhonetic },
+  { code: "csy", label: "Sizang",         modes: bibleVoicePhonetic },
+];
+
 const serviceLanguages = [
   { key: "lang_en", label: "English", hint: "Show the English tab in the intake form. Keep at least one language on." },
   { key: "lang_my", label: "Myanmar (မြန်မာ)", hint: "Show the Myanmar/Burmese tab. Enable once the Burmese LLM is running." },
@@ -156,8 +227,18 @@ const musicSourceOptions = [
 ];
 
 const newMood = ref("");
-const newFilterKeyword = ref("");
 const newCountdownBanner = ref({ text: "", source: "" });
+
+// ── Content Filter tab state ──────────────────────────────────────────────────
+const cfCategories = ref([]);      // [{ id, label, description, scope, type, keywords }]
+const cfScopes = ref(["both", "music", "sermon"]);
+const cfTypes = ref(["block", "allow"]);
+const cfBusy = ref(false);
+const cfNewKeyword = ref({});      // keyed by category id
+const cfNewCategory = ref({ label: "", scope: "both", type: "block", description: "" });
+const cfFileInput = ref(null);
+const cfScopeLabels = { both: "Worship + Sermon", music: "Worship only", sermon: "Sermon only" };
+const cfTypeLabels = { block: "Block", allow: "Allow" };
 const countdownSourceOptions = [
   { value: "all", label: "All sources", hint: "Rotate banners, approved testimonies, and mood-matched Scripture from the local Bible." },
   { value: "both", label: "Banners + testimonies", hint: "Rotate admin banners and approved testimonies." },
@@ -274,6 +355,7 @@ async function loadMusicTracks() {
 function show(name) {
   if (name !== "system")         { clearInterval(updateTimer); clearInterval(vbTimer); }
   if (name !== "voice-training") { clearInterval(voiceTrainingTimer); }
+  if (name !== "freeze")         { clearInterval(freezeTimer); }
   tab.value    = name;
   notice.value = "";
   const t = TABS.find(t => t.name === name);
@@ -310,12 +392,189 @@ function toggleServiceLanguage(key) {
   }
   saveSetting(key, !settings.value[key], "Service language updated.");
 }
+// Goldfish LLM text generators — the Bible-only Chin/Zo languages backed by the
+// goldfish-models monolingual LMs (Mizo lus, Paite pck). These generate native
+// worship *text* (no spoken voice), so they get their own toggle block separate
+// from the Bible reader voice. Off → curated fallback.
+const goldfishNarrators = [
+  { key: "narration_lus", label: "Mizo (Lushai)", hint: "goldfish-models/lus_latn_full — native Mizo text. Off → curated fallback." },
+  { key: "narration_pck", label: "Paite (Zomi)", hint: "goldfish-models/pck_latn_full — native Paite text. Off → curated fallback." },
+];
+const setGoldfishNarrator = (key, on) => saveSetting(key, on, "Goldfish text generator updated.");
+
 const setMusicReuse = (on) => saveSetting("music_reuse", on, "Music reuse updated.");
 const setAvatarEnabled = (on) => saveSetting("avatar_enabled", on, "D-ID avatar rendering updated.");
 const setLocalAvatarEnabled = (on) => saveSetting("local_avatar_enabled", on, "Local avatar rendering updated.");
 const setOrchestrationMode = (mode) => saveSetting("orchestration_mode", mode, "Orchestration mode updated.");
 const setAgentProvider = (provider) => saveSetting("agent_provider", provider, "Agent provider updated.");
 const setTextHighlightEnabled = (on) => saveSetting("text_highlight_enabled", on, "Text highlighting updated.");
+
+// Online Bible reader ("Listen" button) — its own per-language voice + highlight.
+const setBibleNarrationMode = (lang, mode) => saveSetting(`bible_narration_mode_${lang}`, mode, "Bible narration voice updated.");
+const setBibleTextHighlight = (on) => saveSetting("bible_text_highlight_enabled", on, "Bible highlighting updated.");
+const setBibleBgMusicMode = (mode) => saveSetting("bible_bg_music_mode", mode, "Bible background music mode updated.");
+const setBibleBgMusicEngine = (engine) => saveSetting("bible_bg_music_engine", engine, "Bible AI music engine updated.");
+const bibleBgStatus = ref(null);   // { ready, total } of the theme x tod matrix
+const bibleBgPregenLoading = ref(false);
+const refreshBibleBgStatus = async () => {
+  try { bibleBgStatus.value = await api.adminBibleBgMusicStatus(); }
+  catch (e) { bibleBgStatus.value = null; }
+};
+// Load the matrix status whenever the admin views/enables AI background mode.
+watch(
+  () => settings.value?.bible_bg_music_mode,
+  (mode) => { if (mode === "ai" && !bibleBgStatus.value) refreshBibleBgStatus(); }
+);
+const pregenerateBibleBg = async () => {
+  if (bibleBgPregenLoading.value) return;
+  bibleBgPregenLoading.value = true;
+  try {
+    const res = await api.adminBibleBgMusicPregenerate();
+    bibleBgStatus.value = { ready: res.ready, total: res.total };
+    notice.value = `Queued ${res.queued} track(s). ${res.ready}/${res.total} ready — generation runs in the background.`;
+  } catch (e) {
+    notice.value = e?.data?.message || "Could not queue background music.";
+  } finally {
+    bibleBgPregenLoading.value = false;
+  }
+};
+const saveBibleBgMusicUrl = () =>
+  saveSetting("bible_bg_music_url", (settings.value.bible_bg_music_url || "").trim(), "Bible background music updated.");
+// Background-music library: uploaded tracks + AI-generated loops. The admin can
+// upload, delete uploads, and pick which track plays (sets bible_bg_music_url).
+const bibleBgUploading = ref(false);
+const bibleBgFileInput = ref(null);
+const bibleBgTracks = ref([]);
+const bibleBgLibraryLoading = ref(false);
+// Mood + time-of-day vocabularies (mirror Setting/BibleBgMusicLibrary). 'any'
+// means the track fits every chapter / every time of day.
+const BIBLE_BG_THEMES = ["any", "comfort", "praise", "lament", "hope", "peace", "wisdom"];
+const BIBLE_BG_TODS = ["any", "morning", "afternoon", "evening", "night"];
+// Tags applied to the next upload.
+const bibleBgUploadTheme = ref("any");
+const bibleBgUploadTod = ref("any");
+const refreshBibleBgLibrary = async () => {
+  bibleBgLibraryLoading.value = true;
+  try {
+    const res = await api.adminBibleBgMusicLibrary();
+    bibleBgTracks.value = res.tracks || [];
+    if (typeof res.selected_url === "string") settings.value.bible_bg_music_url = res.selected_url;
+  } catch (e) {
+    bibleBgTracks.value = [];
+  } finally {
+    bibleBgLibraryLoading.value = false;
+  }
+};
+// Load the library when the admin switches into static mode.
+watch(
+  () => settings.value?.bible_bg_music_mode,
+  (mode) => { if (mode === "static" && !bibleBgTracks.value.length) refreshBibleBgLibrary(); }
+);
+const uploadBibleBgMusic = async (ev) => {
+  const file = ev?.target?.files?.[0];
+  if (!file || bibleBgUploading.value) return;
+  if (file.size > 10 * 1024 * 1024) {
+    notice.value = "That file is too large — please pick an .mp3/.ogg under 10 MB.";
+    if (bibleBgFileInput.value) bibleBgFileInput.value.value = "";
+    return;
+  }
+  bibleBgUploading.value = true;
+  try {
+    const res = await api.adminBibleBgMusicUpload(file, bibleBgUploadTheme.value, bibleBgUploadTod.value);
+    if (res.track?.selected) settings.value.bible_bg_music_url = res.track.url;
+    notice.value = "Track uploaded to the library.";
+    await refreshBibleBgLibrary();
+  } catch (e) {
+    notice.value = e?.data?.message || "Could not upload that file (use a small .mp3/.ogg).";
+  } finally {
+    bibleBgUploading.value = false;
+    if (bibleBgFileInput.value) bibleBgFileInput.value.value = "";
+  }
+};
+const selectBibleBgTrack = async (track) => {
+  try {
+    const res = await api.adminBibleBgMusicSelect(track.source, track.key);
+    settings.value.bible_bg_music_url = res.url || "";
+    notice.value = `Now playing: ${track.title}`;
+    await refreshBibleBgLibrary();
+  } catch (e) {
+    notice.value = e?.data?.message || "Could not select that track.";
+  }
+};
+const deleteBibleBgTrack = async (track) => {
+  if (!confirm(`Delete "${track.title}" from the library?`)) return;
+  try {
+    await api.adminBibleBgMusicDelete(track.id);
+    notice.value = "Track deleted.";
+    await refreshBibleBgLibrary();
+  } catch (e) {
+    notice.value = e?.data?.message || "Could not delete that track.";
+  }
+};
+// Save edited mood/time tags for an uploaded track (inline selects mutate the
+// track object directly; this persists the change).
+const saveBibleBgTags = async (track) => {
+  try {
+    await api.adminBibleBgMusicTags(track.id, track.theme, track.tod);
+    notice.value = "Tags saved.";
+  } catch (e) {
+    notice.value = e?.data?.message || "Could not save tags.";
+    await refreshBibleBgLibrary();
+  }
+};
+const setBibleBgMusicVolume = (v) =>
+  saveSetting("bible_bg_music_volume", Number(v), "Bible background music volume updated.");
+
+// Per-version Bible reader feature matrix (show/hide a translation tab + enable
+// or disable each reader feature button). Mirrors Setting::BIBLE_VERSIONS /
+// BIBLE_FEATURES and the controls in BibleReader.vue.
+const BIBLE_VERSIONS = [
+  { code: "kjv", label: "KJV" },
+  { code: "en",  label: "English (BSB)" },
+  { code: "he",  label: "Hebrew (עברית)" },
+  { code: "my",  label: "Burmese (ဗမာ)" },
+  { code: "cfm", label: "Falam" },
+  { code: "cnh", label: "Hakha" },
+  { code: "mrh", label: "Mara" },
+  { code: "hlt", label: "Matu" },
+  { code: "lus", label: "Mizo" },
+  { code: "pck", label: "Paite" },
+  { code: "csy", label: "Sizang" },
+  { code: "td",  label: "Tedim" },
+];
+const BIBLE_FEATURE_COLS = [
+  { key: "enabled",    label: "Show tab" },
+  { key: "listen",     label: "Listen" },
+  { key: "highlight",  label: "Highlight" },
+  { key: "continuous", label: "Continuous" },
+  { key: "music",      label: "Music" },
+  { key: "select",     label: "Select" },
+  { key: "speed",      label: "Speed" },
+  { key: "textsize",   label: "Size" },
+  { key: "color",      label: "Color" },
+];
+// Read a cell, defaulting to enabled when the matrix hasn't loaded a value yet.
+const bibleFeature = (code, key) => settings.value?.bible_features?.[code]?.[key] !== false;
+// Toggle one cell and persist the whole matrix (objects don't suit saveSetting's
+// value-equality check), with optimistic update + rollback on failure.
+async function toggleBibleFeature(code, key) {
+  if (!settings.value || settingsReadOnly.value || savingSettings.value) return;
+  const prev = settings.value.bible_features || {};
+  const next = JSON.parse(JSON.stringify(prev));
+  next[code] = next[code] || {};
+  next[code][key] = !(next[code][key] !== false);
+  settings.value.bible_features = next; // optimistic
+  savingSettings.value = true;
+  try {
+    await api.adminUpdateSettings({ bible_features: next });
+    notice.value = "Bible feature updated.";
+  } catch (e) {
+    settings.value.bible_features = prev; // roll back
+    notice.value = e?.data?.message || "Could not update setting.";
+  } finally {
+    savingSettings.value = false;
+  }
+}
 const setRunpodEnabled = (on) => saveSetting("runpod_enabled", on ? "1" : "0", "Premium GPU usage updated.");
 const setStorageBackend = (backend) => saveSetting("storage_backend", backend, "Storage backend updated.");
 const setAiChordsEnabled = (on) => saveSetting("ai_chords_enabled", on, "AI chord detection updated.");
@@ -364,31 +623,102 @@ function removeMood(m) {
   saveListSetting("moods", settings.value.moods.filter((x) => x !== m), `Removed mood "${m}".`);
 }
 
-function addFilterKeyword() {
-  const kw = newFilterKeyword.value.trim().toLowerCase();
-  if (!kw || !settings.value) return;
-  const current = Array.isArray(settings.value.content_filter_keywords)
-    ? settings.value.content_filter_keywords
-    : [];
-  if (current.includes(kw)) {
-    notice.value = `"${kw}" is already in the filter list.`;
-    newFilterKeyword.value = "";
-    return;
+// ── Content Filter tab ────────────────────────────────────────────────────────
+async function loadContentFilter() {
+  try {
+    const res = await api.cfList();
+    cfCategories.value = res.categories || [];
+    cfScopes.value = res.scopes || cfScopes.value;
+    cfTypes.value = res.types || cfTypes.value;
+  } catch (e) {
+    notice.value = e?.data?.message || "Could not load content filter.";
   }
-  saveListSetting("content_filter_keywords", [...current, kw], `Added filter keyword "${kw}".`);
-  newFilterKeyword.value = "";
 }
 
-function removeFilterKeyword(kw) {
-  if (!settings.value) return;
-  const current = Array.isArray(settings.value.content_filter_keywords)
-    ? settings.value.content_filter_keywords
-    : [];
-  saveListSetting(
-    "content_filter_keywords",
-    current.filter((x) => x !== kw),
-    `Removed filter keyword "${kw}".`,
-  );
+// Wrap a content-filter mutation: run it, refresh state from the response, surface a notice.
+async function cfRun(fn, ok) {
+  cfBusy.value = true;
+  try {
+    const res = await fn();
+    if (res?.categories) cfCategories.value = res.categories;
+    notice.value = ok;
+  } catch (e) {
+    notice.value = e?.data?.message || "Content filter update failed.";
+  } finally {
+    cfBusy.value = false;
+  }
+}
+
+function cfAddKeyword(cat) {
+  const kw = (cfNewKeyword.value[cat.id] || "").trim().toLowerCase();
+  if (!kw) return;
+  cfNewKeyword.value = { ...cfNewKeyword.value, [cat.id]: "" };
+  cfRun(() => api.cfAddKeyword(cat.id, kw), `Added "${kw}" to ${cat.label}.`);
+}
+
+function cfRemoveKeyword(cat, kw) {
+  cfRun(() => api.cfDeleteKeyword(cat.id, kw), `Removed "${kw}" from ${cat.label}.`);
+}
+
+function cfChangeScope(cat, scope) {
+  cfRun(() => api.cfUpdateCategory(cat.id, { scope }), `${cat.label} now applies to: ${cfScopeLabels[scope]}.`);
+}
+
+function cfChangeType(cat, type) {
+  cfRun(() => api.cfUpdateCategory(cat.id, { type }),
+    `${cat.label} is now an ${type === "allow" ? "allow (override)" : "block"} list.`);
+}
+
+function cfAddCategory() {
+  const label = cfNewCategory.value.label.trim();
+  if (!label) return;
+  const payload = { ...cfNewCategory.value, label };
+  cfNewCategory.value = { label: "", scope: "both", type: "block", description: "" };
+  cfRun(() => api.cfAddCategory(payload), `Added category "${label}".`);
+}
+
+function cfDeleteCategory(cat) {
+  if (!window.confirm(`Delete the "${cat.label}" category and its ${cat.keywords.length} keyword(s)?`)) return;
+  cfRun(() => api.cfDeleteCategory(cat.id), `Deleted category "${cat.label}".`);
+}
+
+function cfDownload(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function cfExport(format) {
+  try {
+    const stamp = new Date().toISOString().slice(0, 10);
+    if (format === "csv") {
+      cfDownload(await api.cfExportCsv(), `content-filter-${stamp}.csv`);
+    } else {
+      cfDownload(await api.cfExportJson(), `content-filter-${stamp}.json`);
+    }
+    notice.value = `Exported content filter as ${format.toUpperCase()}.`;
+  } catch (e) {
+    notice.value = e?.data?.message || "Export failed.";
+  }
+}
+
+async function cfImport(event) {
+  const file = event.target.files?.[0];
+  event.target.value = "";  // allow re-importing the same file
+  if (!file) return;
+  if (!window.confirm("Restore from this JSON file? This REPLACES the entire current filter.")) return;
+  try {
+    const text = await file.text();
+    const parsed = JSON.parse(text);
+    const categories = Array.isArray(parsed) ? parsed : parsed.categories;
+    if (!Array.isArray(categories)) throw new Error("No categories array found in file.");
+    await cfRun(() => api.cfReplace(categories), "Content filter restored from file.");
+  } catch (e) {
+    notice.value = e?.message ? `Import failed: ${e.message}` : "Import failed.";
+  }
 }
 
 function addCountdownBanner() {
@@ -590,14 +920,17 @@ async function confirmBulkDelete() {
 // popover with copy-link, WhatsApp, Email, and Telegram buttons.
 const sharePopover = ref(null); // { token, link } or null
 
-function serviceLink(token) {
-  return `${window.location.origin}/?session=${token}`;
-}
-
 async function shareService(s) {
-  const link = serviceLink(s.session_token);
   const title = "Your AI Virtual Church service";
   const text  = s.mood ? `A personalized worship service (${s.mood})` : "A personalized worship service";
+  let link = "";
+
+  try {
+    link = (await api.adminServiceResumeLink(s.id)).url;
+  } catch (e) {
+    notice.value = e?.data?.message || "Could not create share link.";
+    return;
+  }
 
   if (navigator.share) {
     try {
@@ -608,9 +941,9 @@ async function shareService(s) {
     return;
   }
   // Desktop fallback: show the inline popover.
-  sharePopover.value = sharePopover.value?.token === s.session_token
+  sharePopover.value = sharePopover.value?.token === s.id
     ? null
-    : { token: s.session_token, link };
+    : { token: s.id, link };
 }
 
 async function copyLink(link) {
@@ -656,6 +989,22 @@ async function toggleBlock(u) {
     loadUsers();
   } catch (e) {
     notice.value = e?.data?.message || "Could not update.";
+  }
+}
+async function grantTokens(u) {
+  const raw = prompt(`Grant how many tokens to "${u.name}"? (current: ${u.token_balance ?? 0})`);
+  if (raw === null) return; // cancelled
+  const amount = Number.parseInt(raw, 10);
+  if (!Number.isInteger(amount) || amount < 1) {
+    notice.value = "Enter a whole number of 1 or more.";
+    return;
+  }
+  try {
+    const res = await api.adminGrantTokens(u.id, amount);
+    u.token_balance = res.token_balance;
+    notice.value = `Granted ${amount} tokens to ${u.name}. New balance: ${res.token_balance}.`;
+  } catch (e) {
+    notice.value = e?.data?.message || "Could not grant tokens.";
   }
 }
 async function deleteUser(u) {
@@ -799,6 +1148,30 @@ const updateStatus   = ref(null);   // { checked_at, checking, packages, service
 const updateBusy     = ref(false);  // true while an action is in flight
 const updateNotice   = ref("");
 let   updateTimer    = null;
+
+// ─── Freeze Monitor (synthetic health harness) ─────────────────────────────────
+const freeze       = ref(null);   // full /admin/freeze/status payload
+const freezeError  = ref("");
+let   freezeTimer  = null;
+async function loadFreeze() {
+  try { freeze.value = await api.adminFreezeStatus(); freezeError.value = ""; }
+  catch (e) { freezeError.value = e?.data?.message || "Could not load freeze status."; }
+}
+function scheduleFreezePoll() {
+  clearInterval(freezeTimer);
+  freezeTimer = setInterval(loadFreeze, 10000);  // live refresh every 10s
+}
+function fmtAge(h) {
+  if (h == null) return "—";
+  const m = Math.round(h * 60);
+  return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m`;
+}
+function shortTime(ts) {
+  try { return new Date(ts).toISOString().slice(11, 19); } catch { return ts; }
+}
+function shortDateTime(ts) {
+  try { const i = new Date(ts).toISOString(); return i.slice(5, 10) + " " + i.slice(11, 16); } catch { return ts; }
+}
 
 // ─── Voicebox TTS Monitor ──────────────────────────────────────────────────────
 
@@ -987,7 +1360,7 @@ async function grApprove(key) {
     await api.adminGrammarReviewSave({ key, action: 'approve' });
     await loadGrammarReview();
   } catch (e) {
-    grError.value = e?.data?.message || 'Could not save.';
+    grError.value = e?.data?.error || e?.data?.message || 'Could not save.';
   } finally {
     grBusy.value = false;
   }
@@ -1002,7 +1375,7 @@ async function grSaveCorrection(key) {
     grCorrection.value = '';
     await loadGrammarReview();
   } catch (e) {
-    grError.value = e?.data?.message || 'Could not save.';
+    grError.value = e?.data?.error || e?.data?.message || 'Could not save.';
   } finally {
     grBusy.value = false;
   }
@@ -1014,7 +1387,7 @@ async function grReset(key) {
     await api.adminGrammarReviewSave({ key, action: 'reset' });
     await loadGrammarReview();
   } catch (e) {
-    grError.value = e?.data?.message || 'Could not reset.';
+    grError.value = e?.data?.error || e?.data?.message || 'Could not reset.';
   } finally {
     grBusy.value = false;
   }
@@ -1043,6 +1416,7 @@ onUnmounted(() => {
   clearInterval(updateTimer);
   clearInterval(vbTimer);
   clearInterval(voiceTrainingTimer);
+  clearInterval(freezeTimer);
 });
 </script>
 
@@ -1140,6 +1514,16 @@ onUnmounted(() => {
             <span class="lbl">MusicGen generations</span>
             <small>{{ stats.musicgen?.today ?? 0 }} today · ~{{ stats.musicgen?.audio_minutes ?? 0 }} min audio</small>
           </div>
+          <div v-if="stats.features?.special_day" class="card">
+            <span class="n">{{ stats.features.special_day.total }}</span>
+            <span class="lbl">Special Day MV</span>
+            <small>{{ stats.features.special_day.today }} today</small>
+          </div>
+          <div v-if="stats.features?.live_sticker" class="card">
+            <span class="n">{{ stats.features.live_sticker.total }}</span>
+            <span class="lbl">Live Stickers</span>
+            <small>{{ stats.features.live_sticker.today }} today</small>
+          </div>
           <div class="card">
             <span class="n">{{ stats.users.admins }}</span>
             <span class="lbl">Admins</span>
@@ -1191,7 +1575,7 @@ onUnmounted(() => {
                 </td>
               </tr>
               <!-- Inline share popover — appears below the row when native share is unavailable -->
-              <tr v-if="sharePopover && sharePopover.token === s.session_token" class="share-row">
+              <tr v-if="sharePopover && sharePopover.token === s.id" class="share-row">
                 <td colspan="9">
                   <div class="share-popover">
                     <span class="share-link-text">{{ sharePopover.link }}</span>
@@ -1337,7 +1721,7 @@ onUnmounted(() => {
           <thead>
             <tr>
               <th><input type="checkbox" :checked="allUsersSelected" @change="toggleAllUsers($event.target.checked)" /></th>
-              <th>Name</th><th>Email</th><th>Role</th><th>Last mood</th>
+              <th>Name</th><th>Email</th><th>Role</th><th>Plan</th><th>Tokens</th><th>Last mood</th>
               <th>Visits</th><th>Last seen</th><th>Actions</th>
             </tr>
           </thead>
@@ -1365,12 +1749,21 @@ onUnmounted(() => {
                 <span v-else class="tag">{{ u.is_guest ? 'guest' : u.role }}</span>
               </td>
               <td>
+                <span v-if="!u.is_guest" class="tag">{{ u.plan }}</span>
+                <span v-else class="muted-cell">—</span>
+              </td>
+              <td>
+                <span v-if="!u.is_guest">{{ u.token_balance ?? 0 }}</span>
+                <span v-else class="muted-cell">—</span>
+              </td>
+              <td>
                 <span v-if="u.last_mood" class="badge pending">{{ u.last_mood }}</span>
                 <span v-else class="muted-cell">—</span>
               </td>
               <td>{{ u.visits }}</td>
               <td><small>{{ fmtDate(u.last_seen) }}</small></td>
               <td class="actions">
+                <button v-if="isAdminUser && !u.is_guest" class="link" @click="grantTokens(u)">Grant tokens</button>
                 <button v-if="isAdminUser && !u.is_guest" class="link" @click="forceReset(u)">Reset pw</button>
                 <button v-if="isAdminUser" class="link" @click="toggleBlock(u)">{{ u.is_blocked ? "Unblock" : "Block" }}</button>
                 <button v-if="isAdminUser" class="link danger" @click="deleteUser(u)">Delete</button>
@@ -1383,6 +1776,16 @@ onUnmounted(() => {
       <!-- Lyrics Manager -->
       <section v-else-if="tab === 'lyrics' && can('lyrics.manage')">
         <AdminLyricsManager />
+      </section>
+
+      <!-- Worship Radio catalog -->
+      <section v-else-if="tab === 'worship-radio' && can('music.manage')">
+        <MusicCatalogManager />
+      </section>
+
+      <!-- Vocabulary Manager -->
+      <section v-else-if="tab === 'vocabulary' && can('vocabulary.manage')">
+        <VocabularyManager />
       </section>
 
       <!-- Prayer Requests -->
@@ -1719,47 +2122,11 @@ onUnmounted(() => {
         <div class="setting-block">
           <h2>Content Filter</h2>
           <p class="setting-desc">
-            Keywords rejected from YouTube search results to keep non-Christian religious
-            content out of services (Baptist / Assemblies of God context). Any video whose
-            title or channel name contains one of these words is skipped — even if the
-            search query already says "Christian". Add terms like <em>buddhism</em>,
-            <em>monk</em>, or <em>allah</em>; remove any that are too aggressive for your
-            congregation's content needs. Changes take effect within 5 minutes for running
-            workers.
+            The YouTube content filter now has its own
+            <button type="button" class="link-btn" @click="show('content-filter')">Content Filter</button>
+            tab, where keywords are grouped into categories (Other Religions, Occult, Secular Music,
+            Sermon-exclude, …) and you can export/import the whole list.
           </p>
-          <div v-if="settings" class="mood-editor">
-            <span
-              v-for="kw in settings.content_filter_keywords"
-              :key="kw"
-              class="mood-chip filter-chip"
-            >
-              {{ kw }}
-              <button
-                type="button"
-                class="chip-x"
-                :disabled="savingSettings || settingsReadOnly"
-                aria-label="Remove keyword"
-                @click="removeFilterKeyword(kw)"
-              >×</button>
-            </span>
-          </div>
-          <div v-if="settings" class="mood-add">
-            <input
-              v-model="newFilterKeyword"
-              type="text"
-              class="mood-input"
-              placeholder="Add a keyword to reject (e.g. shaman)"
-              :disabled="savingSettings || settingsReadOnly"
-              @keyup.enter="addFilterKeyword"
-            />
-            <button
-              type="button"
-              class="primary add-btn"
-              :disabled="savingSettings || settingsReadOnly || !newFilterKeyword.trim()"
-              @click="addFilterKeyword"
-            >Add</button>
-          </div>
-          <p v-else class="setting-desc">Loading…</p>
         </div>
 
         <div class="setting-block">
@@ -1781,6 +2148,33 @@ onUnmounted(() => {
             >
               <strong>{{ lang.label }} <span class="state">{{ settings[lang.key] ? "On" : "Off" }}</span></strong>
               <span>{{ lang.hint }}</span>
+            </button>
+          </div>
+          <p v-else class="setting-desc">Loading…</p>
+        </div>
+
+        <div class="setting-block">
+          <h2>Goldfish text generators</h2>
+          <p class="setting-desc">
+            Mizo and Paite have no instruction-tuned LLM and <strong>no spoken voice</strong>
+            upstream, so their generated worship <em>text</em> (prayers, sermon, lyrics) comes
+            from the <strong>goldfish-models</strong> monolingual language models on the worker.
+            This produces text, not audio — it is unrelated to the Bible reader voice. Off →
+            curated fallback for that language. Requires the goldfish service
+            (transformers + torch) on the LLM worker.
+          </p>
+          <div v-if="settings" class="choice-row">
+            <button
+              v-for="g in goldfishNarrators"
+              :key="g.key"
+              type="button"
+              class="choice"
+              :class="{ active: settings[g.key] === true }"
+              :disabled="savingSettings || settingsReadOnly"
+              @click="setGoldfishNarrator(g.key, !settings[g.key])"
+            >
+              <strong>{{ g.label }} <span class="state">{{ settings[g.key] ? "On" : "Off" }}</span></strong>
+              <span>{{ g.hint }}</span>
             </button>
           </div>
           <p v-else class="setting-desc">Loading…</p>
@@ -2168,6 +2562,457 @@ onUnmounted(() => {
         </div>
       </section>
 
+      <!-- Dedicated Bible page: every Online Bible reader setting in one place —
+           the per-version feature matrix (show/hide tabs + enable/disable each
+           feature button) plus the reader voice / highlight / background music. -->
+      <section v-else-if="tab === 'bible'" class="settings">
+        <div class="setting-block">
+          <h2>Bible reader features</h2>
+          <p class="setting-desc">
+            Control the online Bible reader per translation. <strong>Show tab</strong>
+            removes a version from the reader entirely (and blocks its API access);
+            the remaining columns enable or disable each feature button —
+            🔊 Listen, ✨ Highlight, 📖 Continuous, 🎵 Music, 📋 Select, playback
+            Speed, Aa text Size and Color themes. Everything is on by default.
+          </p>
+          <template v-if="settings && settings.bible_features">
+            <div class="bible-matrix-wrap">
+              <table class="bible-matrix">
+                <thead>
+                  <tr>
+                    <th class="bm-ver">Version</th>
+                    <th v-for="c in BIBLE_FEATURE_COLS" :key="c.key">{{ c.label }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="v in BIBLE_VERSIONS" :key="v.code">
+                    <th class="bm-ver" scope="row">{{ v.label }}</th>
+                    <td v-for="c in BIBLE_FEATURE_COLS" :key="c.key">
+                      <label class="bm-toggle" :title="`${v.label} — ${c.label}`">
+                        <input
+                          type="checkbox"
+                          :checked="bibleFeature(v.code, c.key)"
+                          :disabled="savingSettings || settingsReadOnly"
+                          @change="toggleBibleFeature(v.code, c.key)"
+                        />
+                      </label>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </template>
+          <p v-else class="setting-desc">Loading…</p>
+        </div>
+
+        <div class="setting-block">
+          <h2>Bible reader voice</h2>
+          <p class="setting-desc">
+            The voice used by the online Bible reader's <strong>🔊 Listen</strong> button,
+            per translation. Independent of the live-service narration. English &amp;
+            KJV support every provider; Burmese, Tedim, Falam, Hakha &amp; Matu add a
+            native local MMS-TTS voice; Hebrew uses its he-IL voice; the remaining
+            Chin/Zo Bibles (Mizo, Paite, Mara, Sizang) have no native voice,
+            so they read phonetically with the English Edge voice — or
+            set any translation to <strong>Off</strong> to disable narration there.
+            Hover a button for details.
+          </p>
+          <template v-if="settings">
+            <div class="voice-rows">
+              <div v-for="l in bibleVoiceLangs" :key="l.code" class="voice-row">
+                <span class="voice-row-lang">{{ l.label }}</span>
+                <div class="voice-row-modes">
+                  <button
+                    v-for="m in l.modes"
+                    :key="m.value"
+                    type="button"
+                    class="voice-chip"
+                    :class="{ active: settings['bible_narration_mode_' + l.code] === m.value }"
+                    :disabled="savingSettings || settingsReadOnly"
+                    :title="m.hint"
+                    @click="setBibleNarrationMode(l.code, m.value)"
+                  >{{ m.label }}</button>
+                </div>
+              </div>
+            </div>
+            <p class="setting-desc" style="margin-top:0.6rem">
+              The English Edge / Voicebox voice follows the live-service voice picked in Settings.
+            </p>
+
+            <!-- Highlight default -->
+            <p class="setting-desc" style="margin-top:1.5rem"><strong>Verse highlighting default</strong></p>
+            <p class="setting-desc">
+              The starting value for verse highlighting. Each reader can flip it
+              with the <strong>✨ Highlight</strong> switch in the Bible reader —
+              their choice is remembered on their own device and overrides this default.
+            </p>
+            <div class="choice-row">
+              <button
+                type="button"
+                class="choice"
+                :class="{ active: settings.bible_text_highlight_enabled === true }"
+                :disabled="savingSettings || settingsReadOnly"
+                @click="setBibleTextHighlight(true)"
+              >
+                <strong>On by default</strong>
+                <span>New readers see verses highlighted as the chapter is read aloud.</span>
+              </button>
+              <button
+                type="button"
+                class="choice"
+                :class="{ active: settings.bible_text_highlight_enabled === false }"
+                :disabled="savingSettings || settingsReadOnly"
+                @click="setBibleTextHighlight(false)"
+              >
+                <strong>Off by default</strong>
+                <span>New readers start without highlighting (they can still turn it on).</span>
+              </button>
+            </div>
+
+            <!-- Background music during narration -->
+            <p class="setting-desc" style="margin-top:1.5rem"><strong>Background music</strong></p>
+            <p class="setting-desc">
+              Play a soft instrumental track behind the spoken narration. Choose a
+              fixed uploaded track, or let AI compose one per chapter — matched to
+              the passage's mood and the reader's time of day (morning/evening/night).
+            </p>
+            <div class="choice-row">
+              <button
+                type="button"
+                class="choice"
+                :class="{ active: (settings.bible_bg_music_mode || 'off') === 'off' }"
+                :disabled="savingSettings || settingsReadOnly"
+                @click="setBibleBgMusicMode('off')"
+              >
+                <strong>Off</strong>
+                <span>Voice only — no background music.</span>
+              </button>
+              <button
+                type="button"
+                class="choice"
+                :class="{ active: settings.bible_bg_music_mode === 'static' }"
+                :disabled="savingSettings || settingsReadOnly"
+                @click="setBibleBgMusicMode('static')"
+              >
+                <strong>Static MP3</strong>
+                <span>Loop one fixed track you provide below.</span>
+              </button>
+              <button
+                type="button"
+                class="choice"
+                :class="{ active: settings.bible_bg_music_mode === 'ai' }"
+                :disabled="savingSettings || settingsReadOnly"
+                @click="setBibleBgMusicMode('ai')"
+              >
+                <strong>AI generated</strong>
+                <span>Compose per chapter mood + time of day.</span>
+              </button>
+            </div>
+
+            <!-- Static mode: the fixed track URL -->
+            <template v-if="settings.bible_bg_music_mode === 'static'">
+              <p class="setting-desc" style="margin-top:1rem">
+                Direct audio URL (.mp3/.ogg) served over HTTPS with CORS allowed.
+              </p>
+              <div class="bgm-row">
+                <input
+                  v-model="settings.bible_bg_music_url"
+                  type="url"
+                  class="pool-input"
+                  placeholder="https://example.com/ambient.mp3"
+                  :disabled="savingSettings || settingsReadOnly"
+                  @keyup.enter="saveBibleBgMusicUrl"
+                />
+                <button
+                  type="button"
+                  class="choice bgm-save"
+                  :disabled="savingSettings || settingsReadOnly"
+                  @click="saveBibleBgMusicUrl"
+                >
+                  Save
+                </button>
+              </div>
+
+              <p class="setting-desc" style="margin-top:1rem">
+                …or upload an .mp3/.ogg from this device (max 10&nbsp;MB) into the
+                library below. Uploaded tracks are served from this site — no
+                external hosting or CORS setup needed.
+              </p>
+              <div class="bgm-row">
+                <input
+                  ref="bibleBgFileInput"
+                  type="file"
+                  accept="audio/mpeg,audio/ogg,.mp3,.ogg"
+                  :disabled="bibleBgUploading || savingSettings || settingsReadOnly"
+                  @change="uploadBibleBgMusic"
+                />
+                <span v-if="bibleBgUploading" class="setting-desc">Uploading…</span>
+              </div>
+              <!-- Mood + time-of-day tags for the next upload. Leave both on
+                   "any" for a track that should play in all situations; tag them
+                   and the reader auto-picks the best fit per chapter + clock,
+                   exactly like AI mode. -->
+              <div class="bgm-row" style="margin-top:0.5rem; align-items:center; gap:0.6rem; flex-wrap:wrap">
+                <label class="setting-desc" style="margin:0">Tag upload —</label>
+                <label class="setting-desc" style="margin:0">Mood
+                  <select v-model="bibleBgUploadTheme" :disabled="bibleBgUploading">
+                    <option v-for="th in BIBLE_BG_THEMES" :key="th" :value="th">{{ th }}</option>
+                  </select>
+                </label>
+                <label class="setting-desc" style="margin:0">Time of day
+                  <select v-model="bibleBgUploadTod" :disabled="bibleBgUploading">
+                    <option v-for="d in BIBLE_BG_TODS" :key="d" :value="d">{{ d }}</option>
+                  </select>
+                </label>
+              </div>
+
+              <!-- The track library: uploaded tracks + AI-generated loops. Pick
+                   which one plays, preview it, or delete an uploaded one. -->
+              <p class="setting-desc" style="margin-top:1.25rem">
+                <strong>Music library</strong>
+                <button
+                  type="button"
+                  class="choice bgm-save"
+                  style="margin-left:0.6rem"
+                  :disabled="bibleBgLibraryLoading"
+                  @click="refreshBibleBgLibrary"
+                >
+                  {{ bibleBgLibraryLoading ? 'Loading…' : 'Refresh' }}
+                </button>
+              </p>
+              <p v-if="!bibleBgTracks.length && !bibleBgLibraryLoading" class="setting-desc">
+                No tracks yet. Upload one above, or generate some in AI mode.
+              </p>
+              <ul v-else class="bgm-library">
+                <li
+                  v-for="t in bibleBgTracks"
+                  :key="t.id"
+                  class="bgm-track"
+                  :class="{ selected: t.selected }"
+                >
+                  <span class="bgm-track-title">
+                    <span v-if="t.selected" aria-hidden="true">▶ </span>{{ t.title }}
+                    <small class="bgm-track-src">{{ t.source === 'ai' ? 'AI' : 'uploaded' }}</small>
+                    <!-- AI tracks are inherently tagged (read-only); uploaded
+                         tracks expose editable mood/time selects. -->
+                    <small v-if="t.source === 'ai'" class="bgm-track-src">· {{ t.theme }} · {{ t.tod }}</small>
+                    <template v-else>
+                      <select v-model="t.theme" class="bgm-tag" @change="saveBibleBgTags(t)" :disabled="settingsReadOnly">
+                        <option v-for="th in BIBLE_BG_THEMES" :key="th" :value="th">{{ th }}</option>
+                      </select>
+                      <select v-model="t.tod" class="bgm-tag" @change="saveBibleBgTags(t)" :disabled="settingsReadOnly">
+                        <option v-for="d in BIBLE_BG_TODS" :key="d" :value="d">{{ d }}</option>
+                      </select>
+                    </template>
+                  </span>
+                  <span class="bgm-track-actions">
+                    <a :href="t.url" target="_blank" rel="noopener" class="choice bgm-save">Preview</a>
+                    <button
+                      type="button"
+                      class="choice bgm-save"
+                      :disabled="t.selected || settingsReadOnly"
+                      @click="selectBibleBgTrack(t)"
+                    >
+                      {{ t.selected ? 'In use' : 'Use' }}
+                    </button>
+                    <button
+                      v-if="t.source !== 'ai'"
+                      type="button"
+                      class="choice bgm-save bgm-del"
+                      :disabled="settingsReadOnly"
+                      @click="deleteBibleBgTrack(t)"
+                    >
+                      Delete
+                    </button>
+                  </span>
+                </li>
+              </ul>
+            </template>
+
+            <!-- AI mode: which engine generates the loop -->
+            <template v-if="settings.bible_bg_music_mode === 'ai'">
+              <p class="setting-desc" style="margin-top:1rem">
+                The first reader to open a chapter at a given time of day triggers a
+                one-off generation (a few minutes on CPU); it's cached and reused for
+                everyone after that, so they hear music on a later visit.
+              </p>
+              <div class="choice-row">
+                <button
+                  type="button"
+                  class="choice"
+                  :class="{ active: (settings.bible_bg_music_engine || 'musicgen') === 'musicgen' }"
+                  :disabled="savingSettings || settingsReadOnly"
+                  @click="setBibleBgMusicEngine('musicgen')"
+                >
+                  <strong>MusicGen (CPU)</strong>
+                  <span>Local, free. Slower on a small box.</span>
+                </button>
+                <button
+                  type="button"
+                  class="choice"
+                  :class="{ active: settings.bible_bg_music_engine === 'local_ai' }"
+                  :disabled="savingSettings || settingsReadOnly"
+                  @click="setBibleBgMusicEngine('local_ai')"
+                >
+                  <strong>Local AI (GPU)</strong>
+                  <span>Same model, uses CUDA when available.</span>
+                </button>
+              </div>
+
+              <!-- Pre-generate the whole matrix so readers never wait -->
+              <p class="setting-desc" style="margin-top:1rem">
+                Generate every track ahead of time (6 moods × 4 times of day) so
+                readers always hear music instantly instead of waiting for the
+                first on-demand build.
+                <template v-if="bibleBgStatus">
+                  <strong>{{ bibleBgStatus.ready }}/{{ bibleBgStatus.total }} ready.</strong>
+                </template>
+              </p>
+              <div class="bgm-row">
+                <button
+                  type="button"
+                  class="choice bgm-save"
+                  :disabled="bibleBgPregenLoading || settingsReadOnly"
+                  @click="pregenerateBibleBg"
+                >
+                  {{ bibleBgPregenLoading ? "Queuing…" : "Generate all tracks" }}
+                </button>
+                <button
+                  type="button"
+                  class="choice bgm-save"
+                  :disabled="bibleBgPregenLoading"
+                  @click="refreshBibleBgStatus"
+                >
+                  Refresh status
+                </button>
+              </div>
+            </template>
+
+            <!-- Volume applies to both static and AI modes -->
+            <label
+              v-if="settings.bible_bg_music_mode && settings.bible_bg_music_mode !== 'off'"
+              class="setting-desc"
+              style="display:block;margin-top:0.75rem"
+            >
+              Volume: {{ Math.round((settings.bible_bg_music_volume ?? 0.15) * 100) }}%
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                style="width:100%"
+                :value="settings.bible_bg_music_volume ?? 0.15"
+                :disabled="savingSettings || settingsReadOnly"
+                @change="setBibleBgMusicVolume($event.target.value)"
+              />
+            </label>
+          </template>
+          <p v-else class="setting-desc">Loading…</p>
+        </div>
+      </section>
+
+      <section v-else-if="tab === 'content-filter'" class="settings">
+        <div class="setting-block">
+          <div class="cf-head">
+            <div>
+              <h2>Content Filter</h2>
+              <p class="setting-desc">
+                Keywords rejected from YouTube results so non-Christian or non-worship content stays
+                out of services (Baptist / Assemblies of God context). Any video whose <strong>title</strong>
+                or <strong>channel name</strong> contains a keyword is skipped — even if the search query
+                already says "Christian". Works like a firewall: <strong>Block</strong> categories reject
+                matching videos, while <strong>Allow</strong> categories rescue a video even if a block
+                keyword also matches (allow wins over block — use it for trusted channels, artists, or
+                ministries). Each category's <strong>scope</strong> controls whether it applies to
+                the worship/music search, the sermon search, or both. Changes take effect within 5 minutes
+                for running workers.
+              </p>
+            </div>
+            <div class="cf-actions">
+              <button type="button" class="chip" :disabled="cfBusy" @click="cfExport('json')">Export JSON</button>
+              <button type="button" class="chip" :disabled="cfBusy" @click="cfExport('csv')">Export CSV</button>
+              <button type="button" class="chip" :disabled="cfBusy" @click="cfFileInput?.click()">Restore JSON…</button>
+              <input ref="cfFileInput" type="file" accept="application/json,.json" class="cf-file" @change="cfImport" />
+            </div>
+          </div>
+
+          <p v-if="!cfCategories.length" class="setting-desc">Loading…</p>
+
+          <div v-for="cat in cfCategories" :key="cat.id" class="cf-category"
+               :class="{ 'cf-allow': (cat.type || 'block') === 'allow' }">
+            <div class="cf-cat-head">
+              <div class="cf-cat-title">
+                <h3>{{ cat.label }}</h3>
+                <span class="cf-badge" :class="(cat.type || 'block') === 'allow' ? 'cf-badge-allow' : 'cf-badge-block'">
+                  {{ cfTypeLabels[cat.type || 'block'] }}
+                </span>
+                <span class="cf-count">{{ cat.keywords.length }}</span>
+              </div>
+              <div class="cf-cat-controls">
+                <label class="cf-scope">
+                  Mode:
+                  <select :value="cat.type || 'block'" :disabled="cfBusy" @change="cfChangeType(cat, $event.target.value)">
+                    <option v-for="t in cfTypes" :key="t" :value="t">{{ cfTypeLabels[t] || t }}</option>
+                  </select>
+                </label>
+                <label class="cf-scope">
+                  Applies to:
+                  <select :value="cat.scope" :disabled="cfBusy" @change="cfChangeScope(cat, $event.target.value)">
+                    <option v-for="s in cfScopes" :key="s" :value="s">{{ cfScopeLabels[s] || s }}</option>
+                  </select>
+                </label>
+                <button type="button" class="chip-x cf-del-cat" :disabled="cfBusy"
+                        title="Delete category" @click="cfDeleteCategory(cat)">Delete</button>
+              </div>
+            </div>
+            <p v-if="cat.description" class="setting-desc cf-cat-desc">{{ cat.description }}</p>
+
+            <div class="mood-editor">
+              <span v-for="kw in cat.keywords" :key="kw" class="mood-chip"
+                    :class="(cat.type || 'block') === 'allow' ? 'allow-chip' : 'filter-chip'">
+                {{ kw }}
+                <button type="button" class="chip-x" :disabled="cfBusy"
+                        aria-label="Remove keyword" @click="cfRemoveKeyword(cat, kw)">×</button>
+              </span>
+              <span v-if="!cat.keywords.length" class="cf-empty">No keywords yet.</span>
+            </div>
+
+            <div class="mood-add">
+              <input
+                :value="cfNewKeyword[cat.id] || ''"
+                type="text"
+                class="mood-input"
+                :placeholder="(cat.type || 'block') === 'allow' ? 'Add a trusted keyword to always allow (e.g. hillsong)' : 'Add a keyword to reject (e.g. shaman)'"
+                :disabled="cfBusy"
+                @input="cfNewKeyword = { ...cfNewKeyword, [cat.id]: $event.target.value }"
+                @keyup.enter="cfAddKeyword(cat)"
+              />
+              <button type="button" class="primary add-btn"
+                      :disabled="cfBusy || !(cfNewKeyword[cat.id] || '').trim()"
+                      @click="cfAddKeyword(cat)">Add</button>
+            </div>
+          </div>
+
+          <div class="cf-new-category">
+            <h3>Add a category</h3>
+            <div class="cf-new-row">
+              <input v-model="cfNewCategory.label" type="text" class="mood-input"
+                     placeholder="Category name (e.g. Profanity)" :disabled="cfBusy" />
+              <select v-model="cfNewCategory.type" :disabled="cfBusy" title="Block or Allow">
+                <option v-for="t in cfTypes" :key="t" :value="t">{{ cfTypeLabels[t] || t }}</option>
+              </select>
+              <select v-model="cfNewCategory.scope" :disabled="cfBusy">
+                <option v-for="s in cfScopes" :key="s" :value="s">{{ cfScopeLabels[s] || s }}</option>
+              </select>
+              <button type="button" class="primary add-btn"
+                      :disabled="cfBusy || !cfNewCategory.label.trim()" @click="cfAddCategory">Add category</button>
+            </div>
+            <input v-model="cfNewCategory.description" type="text" class="mood-input cf-desc-input"
+                   placeholder="Optional description" :disabled="cfBusy" />
+          </div>
+        </div>
+      </section>
+
       <section v-else-if="tab === 'voice-studio'" class="settings">
         <VoiceStudio />
       </section>
@@ -2261,6 +3106,22 @@ onUnmounted(() => {
       </section>
 
       <!-- Ads management -->
+      <section v-else-if="tab === 'special-day-mv' && isAdminUser">
+        <FathersDayManager />
+      </section>
+
+      <section v-else-if="tab === 'live-sticker' && isAdminUser">
+        <StickerManager />
+      </section>
+
+      <section v-else-if="tab === 'bible-study' && can('study.view')">
+        <BibleStudyAdmin />
+      </section>
+
+      <section v-else-if="tab === 'special-sundays' && can('special_sundays.view')">
+        <SpecialSundaysManager :can-manage="can('special_sundays.manage')" />
+      </section>
+
       <section v-else-if="tab === 'ads'" class="settings">
         <AdsManager :settings="settings" :saving="savingSettings" :read-only="settingsReadOnly" @save-setting="saveSetting" />
       </section>
@@ -2490,6 +3351,82 @@ onUnmounted(() => {
 
       </section>
 
+      <!-- Freeze Monitor -->
+      <section v-else-if="tab === 'freeze' && isAdminUser" class="freeze-page">
+        <div class="fz-head">
+          <h2>Freeze Monitor</h2>
+          <span class="fz-live"><span class="fz-dot" :class="freeze?.armed ? 'on' : 'off'"></span>
+            {{ freeze?.armed ? 'live · refreshes every 10s' : 'no recent activity' }}</span>
+        </div>
+        <p v-if="freezeError" class="fz-error">{{ freezeError }}</p>
+
+        <template v-if="freeze">
+          <!-- Top row: verdict + window -->
+          <div class="fz-top">
+            <div class="fz-verdict" :class="(freeze.rendered_verdict || freeze.verdict || '').toLowerCase()">
+              <span class="fz-verdict-label">Verdict</span>
+              <span class="fz-verdict-val">{{ freeze.rendered_verdict || freeze.verdict }}</span>
+              <span class="fz-verdict-sub">{{ freeze.rendered_verdict ? 'gate rendered' : 'live (gate at ~24h)' }}</span>
+            </div>
+            <div class="fz-window">
+              <div class="fz-wrow"><span>Window start</span><b>{{ freeze.window_start ? shortTime(freeze.window_start) : '—' }} UTC</b></div>
+              <div class="fz-wrow"><span>Window age</span><b>{{ fmtAge(freeze.age_hours) }} / 24h</b></div>
+              <div class="fz-bar"><div class="fz-fill" :style="{ width: Math.min(100, (freeze.age_hours/24*100)).toFixed(1) + '%' }"></div></div>
+              <div class="fz-wrow"><span>Window end</span><b>{{ freeze.window_end ? shortDateTime(freeze.window_end) : '—' }} UTC</b></div>
+            </div>
+          </div>
+
+          <!-- Health score cards -->
+          <div class="fz-cards">
+            <div class="fz-card"><span class="fz-k">API Cycles</span><span class="fz-v">{{ freeze.health.api_cycles }}</span><span class="fz-s">exp ~{{ freeze.health.expected_api }}</span></div>
+            <div class="fz-card"><span class="fz-k">Browser</span><span class="fz-v">{{ freeze.health.browser_cycles }}</span><span class="fz-s">exp ~{{ freeze.health.expected_brw }}</span></div>
+            <div class="fz-card"><span class="fz-k">Coverage</span><span class="fz-v" :class="freeze.health.coverage < 80 ? 'warn' : 'ok'">{{ freeze.health.coverage }}%</span><span class="fz-s">target ≥80%</span></div>
+            <div class="fz-card"><span class="fz-k">5xx Errors</span><span class="fz-v" :class="freeze.health.err5xx ? 'bad' : 'ok'">{{ freeze.health.err5xx }}</span><span class="fz-s">all good</span></div>
+            <div class="fz-card"><span class="fz-k">Failed Checks</span><span class="fz-v" :class="freeze.health.failed_checks ? 'bad' : 'ok'">{{ freeze.health.failed_checks }}</span><span class="fz-s">all good</span></div>
+            <div class="fz-card"><span class="fz-k">Balance Drift</span><span class="fz-v" :class="freeze.health.balance_drift ? 'bad' : 'ok'">{{ freeze.health.balance_drift }}</span><span class="fz-s">regressions</span></div>
+            <div class="fz-card"><span class="fz-k">Auth Drift</span><span class="fz-v" :class="freeze.health.auth_drift ? 'bad' : 'ok'">{{ freeze.health.auth_drift }}</span><span class="fz-s">all good</span></div>
+            <div class="fz-card"><span class="fz-k">Token Balance</span><span class="fz-v">{{ freeze.health.balance ?? '—' }}</span><span class="fz-s">climbs by 1/cycle</span></div>
+          </div>
+
+          <!-- Cycle tables -->
+          <div class="fz-tables">
+            <div class="fz-tbl">
+              <h3>API Probe — last 10</h3>
+              <table class="grid">
+                <thead><tr><th>Time</th><th>Status</th><th>5xx</th><th>Checks</th><th>Bal</th><th>Fails</th></tr></thead>
+                <tbody>
+                  <tr v-for="(r, i) in freeze.api_cycles.slice().reverse()" :key="i">
+                    <td>{{ shortTime(r.ts) }}</td>
+                    <td><span class="badge" :class="r.ok ? 'ok' : 'failed'">{{ r.ok ? 'PASS' : 'FAIL' }}</span></td>
+                    <td>{{ r.err5xx }}</td>
+                    <td>{{ Object.values(r.checks||{}).filter(Boolean).length }}/{{ Object.keys(r.checks||{}).length }}</td>
+                    <td>{{ r.balance }}</td>
+                    <td><small>{{ (r.fails||[]).join(', ') || '—' }}</small></td>
+                  </tr>
+                  <tr v-if="!freeze.api_cycles.length"><td colspan="6" class="empty">No API cycles yet.</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="fz-tbl">
+              <h3>Browser Probe — last 10</h3>
+              <table class="grid">
+                <thead><tr><th>Time</th><th>Status</th><th>Console</th><th>Note</th></tr></thead>
+                <tbody>
+                  <tr v-for="(r, i) in freeze.browser_cycles.slice().reverse()" :key="i">
+                    <td>{{ shortTime(r.ts) }}</td>
+                    <td><span class="badge" :class="r.ok ? 'ok' : 'failed'">{{ r.ok ? 'PASS' : 'FAIL' }}</span></td>
+                    <td><span :class="r.console_issues ? 'fz-bad' : ''">{{ r.console_issues }}</span></td>
+                    <td><small>{{ r.note || '—' }}</small></td>
+                  </tr>
+                  <tr v-if="!freeze.browser_cycles.length"><td colspan="4" class="empty">No browser cycles yet (first at :07).</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </template>
+        <p v-else-if="!freezeError" class="fz-loading">Loading freeze status…</p>
+      </section>
+
       <!-- Language Grammar Review -->
       <section v-else-if="tab === 'grammar-review'" class="gr-section">
         <div class="gr-header">
@@ -2642,6 +3579,53 @@ onUnmounted(() => {
 .pool-grid { display: grid; grid-template-columns: 1fr 120px 140px 1.4fr 1.4fr 1fr; gap: 0.55rem; }
 .pool-input { width: 100%; padding: 0.45rem 0.6rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); font: inherit; }
 .pool-input:focus, .pool-lyrics:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-soft); }
+.bgm-row { display: flex; gap: 0.5rem; align-items: stretch; }
+.bgm-row .pool-input { flex: 1; }
+.bgm-save { flex: 0 0 auto; padding: 0.45rem 1.1rem; cursor: pointer; }
+.bgm-library { list-style: none; margin: 0.5rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; }
+.bgm-track {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+  padding: 0.5rem 0.75rem; border: 1px solid var(--border, #2a2f3a); border-radius: 8px;
+}
+.bgm-track.selected { border-color: var(--primary, #4f8cff); background: rgba(79, 140, 255, 0.08); }
+.bgm-track-title { display: flex; align-items: center; gap: 0.4rem; min-width: 0; flex-wrap: wrap; }
+.bgm-tag { padding: 0.15rem 0.3rem; font-size: 0.8rem; border-radius: 6px; }
+.bgm-track-src { opacity: 0.6; font-weight: 400; }
+.bgm-track-actions { display: flex; gap: 0.4rem; flex: 0 0 auto; }
+.bgm-track-actions .bgm-save { padding: 0.3rem 0.7rem; font-size: 0.85rem; text-decoration: none; }
+.bgm-del { color: #ff6b6b; }
+
+/* Per-version Bible feature matrix: a scrollable grid of show/enable checkboxes. */
+.bible-matrix-wrap { overflow-x: auto; margin-top: 0.5rem; }
+.bible-matrix { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
+.bible-matrix th, .bible-matrix td { padding: 0.4rem 0.6rem; text-align: center; border-bottom: 1px solid var(--border); }
+.bible-matrix thead th { font-weight: 600; color: var(--text-muted); white-space: nowrap; }
+.bible-matrix th.bm-ver { text-align: left; white-space: nowrap; font-weight: 600; }
+.bible-matrix tbody tr:hover { background: var(--surface); }
+.bm-toggle { display: inline-flex; cursor: pointer; }
+.bm-toggle input { width: 1.05rem; height: 1.05rem; cursor: pointer; accent-color: var(--primary); }
+.bm-toggle input:disabled { cursor: default; }
+
+/* Compact per-translation "Listen" voice rows: label + a wrap of mode chips. */
+.voice-rows { display: flex; flex-direction: column; gap: 0.4rem; margin-top: 0.6rem; }
+.voice-row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; padding: 0.35rem 0; border-bottom: 1px solid var(--border); }
+.voice-row-lang { flex: 0 0 140px; font-weight: 600; font-size: 0.88rem; }
+.voice-row-modes { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.voice-chip {
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.voice-chip:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
+.voice-chip.active { border-color: var(--primary); color: var(--primary); background: var(--primary-soft, rgba(99,179,237,0.12)); font-weight: 600; }
+.voice-chip:disabled { opacity: 0.6; cursor: default; }
+@media (max-width: 560px) { .voice-row-lang { flex-basis: 100%; } }
 .pool-lyrics { width: 100%; margin-top: 0.55rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); padding: 0.55rem 0.6rem; font: inherit; resize: vertical; }
 .pool-actions { display: flex; gap: 0.45rem; margin-top: 0.65rem; }
 
@@ -2735,7 +3719,33 @@ onUnmounted(() => {
 .chip-x:hover:not(:disabled) { background: var(--primary); color: var(--on-primary); }
 .chip-x:disabled { opacity: 0.4; cursor: default; }
 .mood-chip.filter-chip { background: #fff0f0; color: #b00; }
+.mood-chip.allow-chip { background: #e9f7ec; color: #18794e; }
 .mood-add { display: flex; gap: 0.5rem; }
+
+/* Content Filter tab */
+.link-btn { border: 0; background: transparent; color: var(--primary); cursor: pointer; font: inherit; padding: 0; text-decoration: underline; }
+.cf-head { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; flex-wrap: wrap; }
+.cf-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.cf-file { display: none; }
+.cf-category { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 1rem; margin-top: 1rem; }
+.cf-cat-head { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+.cf-cat-title { display: flex; align-items: center; gap: 0.5rem; }
+.cf-cat-title h3 { margin: 0; }
+.cf-count { background: var(--primary-soft); color: var(--primary); border-radius: 999px; padding: 0.1rem 0.6rem; font-size: 0.8rem; }
+.cf-badge { border-radius: 999px; padding: 0.1rem 0.55rem; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
+.cf-badge-block { background: #fff0f0; color: #b00; }
+.cf-badge-allow { background: #e9f7ec; color: #18794e; }
+.cf-category.cf-allow { border-left: 3px solid #18794e; }
+.cf-cat-controls { display: flex; align-items: center; gap: 0.75rem; }
+.cf-scope { font-size: 0.85rem; color: var(--text-muted); display: flex; align-items: center; gap: 0.4rem; }
+.cf-scope select, .cf-new-row select { padding: 0.4rem 0.5rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font: inherit; }
+.cf-del-cat { color: #b00; font-size: 0.8rem; }
+.cf-cat-desc { margin: 0.4rem 0 0.6rem; }
+.cf-empty { color: var(--text-muted); font-size: 0.85rem; }
+.cf-new-category { margin-top: 1.5rem; padding-top: 1rem; border-top: 1px dashed var(--border); }
+.cf-new-category h3 { margin: 0 0 0.6rem; }
+.cf-new-row { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.cf-desc-input { margin-top: 0.5rem; }
 .banner-list { display: flex; flex-direction: column; gap: 0.75rem; }
 .banner-row, .banner-add { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0.75rem; background: var(--surface-2); }
 .banner-add { margin-top: 0.8rem; }
@@ -2851,4 +3861,45 @@ onUnmounted(() => {
 .pkg-badge { vertical-align: middle; }
 .pkg-row-update { background: rgba(234,179,8,.04); }
 .pkg-upgrade-btn { font-size: 0.78rem; padding: 0.2rem 0.6rem; }
+
+/* ── Freeze Monitor ─────────────────────────────────────────────────────── */
+.badge.ok { background: var(--success-soft); color: var(--success); }
+.fz-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
+.fz-head h2 { margin: 0; }
+.fz-live { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; color: var(--text-muted); }
+.fz-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.fz-dot.on { background: var(--success); box-shadow: 0 0 0 3px var(--success-soft); }
+.fz-dot.off { background: var(--text-muted); }
+.fz-error { color: var(--danger); font-size: 0.85rem; }
+.fz-loading { color: var(--text-muted); }
+.fz-top { display: grid; grid-template-columns: 200px 1fr; gap: 1rem; margin-bottom: 1.25rem; }
+.fz-verdict { display: flex; flex-direction: column; gap: 0.2rem; justify-content: center; align-items: center;
+  padding: 1rem; border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface-2); }
+.fz-verdict-label { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.fz-verdict-val { font-size: 1.8rem; font-weight: 700; }
+.fz-verdict-sub { font-size: 0.72rem; color: var(--text-muted); }
+.fz-verdict.green .fz-verdict-val, .fz-verdict.pass .fz-verdict-val { color: var(--success); }
+.fz-verdict.warn .fz-verdict-val, .fz-verdict.pending .fz-verdict-val { color: #b45309; }
+.fz-verdict.fail .fz-verdict-val { color: var(--danger); }
+.fz-window { padding: 1rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); }
+.fz-wrow { display: flex; justify-content: space-between; font-size: 0.85rem; padding: 0.15rem 0; }
+.fz-wrow span { color: var(--text-muted); }
+.fz-bar { height: 8px; border-radius: 999px; background: var(--surface-3); overflow: hidden; margin: 0.5rem 0; }
+.fz-fill { height: 100%; background: var(--primary); transition: width 0.5s; }
+.fz-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; margin-bottom: 1.5rem; }
+.fz-card { display: flex; flex-direction: column; gap: 0.15rem; padding: 0.75rem 0.9rem;
+  border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
+.fz-k { font-size: 0.75rem; color: var(--text-muted); }
+.fz-v { font-size: 1.5rem; font-weight: 700; }
+.fz-v.ok { color: var(--success); }
+.fz-v.bad { color: var(--danger); }
+.fz-v.warn { color: #b45309; }
+.fz-s { font-size: 0.72rem; color: var(--text-muted); }
+.fz-bad { color: var(--danger); font-weight: 600; }
+.fz-tables { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
+.fz-tbl h3 { font-size: 0.95rem; margin: 0 0 0.5rem; }
+@media (max-width: 900px) {
+  .fz-top, .fz-tables { grid-template-columns: 1fr; }
+  .fz-cards { grid-template-columns: repeat(2, 1fr); }
+}
 </style>

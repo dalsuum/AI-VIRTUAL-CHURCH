@@ -100,8 +100,15 @@ def _clean(text: str) -> str:
 
 
 def _mms_lang(language: str) -> str | None:
-    """Map a service language to the MMS-TTS lang key, or None if unsupported."""
-    return {"my": "burmese", "td": "tedim"}.get(language)
+    """Map a service language to the MMS-TTS lang key, or None if unsupported.
+
+    Falam (cfm), Hakha (cnh) and Matu (hlt) have native Meta MMS-TTS voices
+    (mms-tts-cfm / -cnh / -hlt); Mizo (lus), Paite (pck), Sizang (csy), Mara
+    (mrh) and Zou (zom) have no upstream MMS-TTS repo, so they stay
+    phonetic/Edge only and are absent here. Thadou (tcz) has an MMS-TTS voice
+    but no Bible text in the reader, so it never reaches Bible narration."""
+    return {"my": "burmese", "td": "tedim",
+            "cfm": "falam", "cnh": "hakha", "hlt": "matu"}.get(language)
 
 
 def _spell_tedim(n: int) -> str:
@@ -160,7 +167,16 @@ def _normalize_mms_text(text: str, language: str) -> str:
 
     def _repl(match: re.Match) -> str:
         val = int(match.group(0))
-        word = _spell_burmese(val) if language == "my" else _spell_tedim(val)
+        # Only Burmese and Tedim have number-word spellers. For other MMS
+        # languages (Falam/Hakha) leave the digit as-is rather than voicing a
+        # wrong-language Tedim numeral — verse numbers are already stripped
+        # before narration, so stray digits in verse text are rare.
+        if language == "my":
+            word = _spell_burmese(val)
+        elif language == "td":
+            word = _spell_tedim(val)
+        else:
+            return match.group(0)
         return f" {word} "
 
     text = re.sub(r'\d+', _repl, text)
@@ -298,19 +314,34 @@ def _speak_voicebox(text: str, gender: str = "female", engine_override: str = ""
     return audio_resp.content  # WAV bytes
 
 
-def narrate(
-    session_token: str,
-    segment: str,
+def _fmt_for(mode: str, language: str = "en") -> str:
+    """The audio container `synthesize()` will produce for a given mode/language.
+
+    Lets a caller compute the storage key (which includes the extension) and
+    check the cache *before* paying for synthesis. Must stay in lock-step with
+    the format each branch of synthesize() actually emits."""
+    if language in ("my", "td"):
+        return "wav"  # my/td always route to MMS-TTS, which returns WAV
+    if mode == "edge_tts":
+        return "mp3"
+    if mode in ("mms_tts", "voicebox"):
+        return "wav"
+    if mode == "kokoro":
+        return os.getenv("KOKORO_FORMAT") or os.getenv("TTS_FORMAT", "mp3")
+    return os.getenv("TTS_FORMAT", "mp3")  # openai
+
+
+def synthesize(
     text: str,
     mode: str = "openai",
     voice: str = "",
     gender: str = "female",
     language: str = "en",
-) -> str:
-    """Read `text` aloud with the `mode` provider, store the audio, and return a
-    playable URL.
+) -> tuple[bytes, str]:
+    """Render `text` to audio with the `mode` provider; return (bytes, format).
 
-    Raises on any failure — the caller logs and the segment stays text-only."""
+    The provider dispatch shared by both segment narration (`narrate`) and the
+    online Bible reader (`narrate_bible`). Raises on any failure."""
     clean = _clean(text)
 
     if mode == "mms_tts":
@@ -356,8 +387,51 @@ def narrate(
         audio = b"".join(_speak(chunk, cfg) for chunk in _chunks(clean) if chunk)
         fmt = cfg["fmt"]
 
-    content_type = "audio/mpeg" if fmt == "mp3" else f"audio/{fmt}"
+    return audio, fmt
+
+
+def _content_type(fmt: str) -> str:
+    return "audio/mpeg" if fmt == "mp3" else f"audio/{fmt}"
+
+
+def narrate(
+    session_token: str,
+    segment: str,
+    text: str,
+    mode: str = "openai",
+    voice: str = "",
+    gender: str = "female",
+    language: str = "en",
+) -> str:
+    """Read `text` aloud with the `mode` provider, store the audio, and return a
+    playable URL.
+
+    Raises on any failure — the caller logs and the segment stays text-only."""
+    audio, fmt = synthesize(text, mode=mode, voice=voice, gender=gender, language=language)
     key = f"narration/{session_token}/{segment}.{fmt}"
-    storage.upload_bytes(key, audio, content_type)
+    storage.upload_bytes(key, audio, _content_type(fmt))
     # Consistent with avatar.render(): hand back a presigned, directly-playable URL.
+    return storage.presign(key, expires=6 * 3600)
+
+
+def narrate_bible(
+    language: str,
+    book: int,
+    chapter: int,
+    text: str,
+    mode: str = "edge_tts",
+    voice: str = "",
+    gender: str = "female",
+) -> str:
+    """Narrate one Bible chapter and return a playable URL, caching permanently.
+
+    Chapter text is immutable, so the audio is stored under a deterministic key
+    and synthesized only once per (translation, book, chapter, voice). Repeat
+    requests just re-presign the existing object — no re-synthesis."""
+    fmt = _fmt_for(mode, language)
+    key = f"bible-audio/{language}/{int(book)}/{int(chapter)}/{mode}-{gender}.{fmt}"
+    if not storage.exists(key):
+        audio, fmt = synthesize(text, mode=mode, voice=voice, gender=gender, language=language)
+        key = f"bible-audio/{language}/{int(book)}/{int(chapter)}/{mode}-{gender}.{fmt}"
+        storage.upload_bytes(key, audio, _content_type(fmt))
     return storage.presign(key, expires=6 * 3600)

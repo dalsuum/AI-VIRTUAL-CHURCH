@@ -28,6 +28,7 @@ Redis queue so neither has to know the other's serializer.
 - [Music: four sources + a reuse pool](#music-four-sources--a-reuse-pool)
 - [Narration & avatar (optional enrichments)](#narration--avatar-optional-enrichments)
 - [Safety: the crisis intercept](#safety-the-crisis-intercept)
+- [Content filter (YouTube allow/block firewall)](#content-filter-youtube-allowblock-firewall)
 - [Offering & financial ledger](#offering--financial-ledger)
 - [Testimonies](#testimonies)
 - [Admin console](#admin-console)
@@ -70,7 +71,11 @@ Redis queue so neither has to know the other's serializer.
                                                           ┌────────▼────────┐
                                                           │  Language APIs  │   ┌──────────────────┐
                                                           │  FastAPI :8001  │──▶│  Ollama          │
-                                                          │  /tedim/* (td)  │   │  tedim-zolai 1b  │
+                                                          │  /tedim/*  (td) │   │  tedim-zolai 1b  │
+                                                          │  /falam/* (cfm) │   │  falam-lai 1b    │
+                                                          │  /hakha/* (cnh) │   │  hakha-lai 1b    │
+                                                          │  /mizo/*  (lus) │   │  mizo-lushai 1b  │
+                                                          │  /paite/* (pck) │   │  paite-zomi 1b   │
                                                           │  FastAPI :8002  │──▶│  burmese-myanmar │
                                                           │  /burmese/* (my)│   └──────────────────┘
                                                           └─────────────────┘
@@ -87,7 +92,15 @@ contract between the two worlds is "a JSON object on a list," nothing more.
 
 1. **Auth.** The worshipper registers, logs in, or starts as a **guest** (an anonymous
    `*@guest.local` account is minted). Auth uses Sanctum SPA session cookies (HttpOnly,
-   CSRF-protected); no bearer tokens are stored in JS.
+   CSRF-protected); no bearer tokens are stored in JS. **Registration is verified by
+   email**: `POST /register` creates a `pending` account (no auto-login, no tokens) and
+   emails a single-use, 24h, sha256-hashed activation link. Clicking it hits
+   `GET /activate?token=…` ([ActivationController.php](backend/app/Http/Controllers/ActivationController.php)),
+   which activates the account, stamps `email_verified_at`, and grants the **Member
+   monthly package** through the existing ledger-backed [TokenService](backend/app/Services/TokenService.php)
+   (`MEMBER_MONTHLY_TOKENS`, default 100). Login is blocked until the account is active.
+   Never-activated accounts are pruned hourly by `users:cleanup-pending`. See
+   [AccountActivationService.php](backend/app/Services/AccountActivationService.php).
 2. **Start a session.** `POST /service/start` creates a `service_sessions` row and
    **locks the music source** (`hymn_sung` | `hymn` | `suno` | `youtube`) from the
    user's saved preference, so the choice can't drift mid-service.
@@ -171,8 +184,10 @@ A single Celery app with one Redis broker and **named queues that mirror the wor
 | [tasks/celery_burmese_tasks.py](workers/tasks/celery_burmese_tasks.py) | Legacy Myanmar localization/narration tasks kept for compatibility. New services use `generate_text_segments(..., language='my')` and `tasks.narrate(..., language='my')`. |
 | [tedim_router.py](workers/tedim_router.py) | FastAPI router: `POST /tedim/translate`, `POST /tedim/generate`, `GET /tedim/verse?ref=`. Redis db 2 cache (30-day TTL). Single-inference semaphore. `_validate_tedim()` multi-layer gatekeeper: (1) min 60-char length; (2) must contain core Tedim theological vocabulary; (3) ≥2 sentence-final `hi`/`hen` particles; (4) sentence-ending ratio — ≥60% must end with `hi`/`hen`/`in`/`amen` (genuine Tedim grammar); (5) no sentence-initial `hi`/`hen`; (6) no consecutive repeated words; (7) trigram-loop guard — rejects output where any 3-word phrase repeats ≥3 times. Returns HTTP 502 on failure so `llm_engine` uses handcrafted Tedim instead of serving word salad. `_ollama()` uses `temperature 0.3`, `top_p 0.85`, `top_k 40`, `repeat_penalty 1.3`. |
 | [burmese_router.py](workers/burmese_router.py) | FastAPI router: `POST /burmese/translate`, `POST /burmese/generate`, `GET /burmese/verse?ref=`. Redis db 3 cache (30-day TTL). Shares the same semaphore pattern as the Tedim router. Myanmar Unicode only — no Zawgyi. |
-| [api.py](workers/api.py) | Unified FastAPI app mounting Tedim, Burmese, `/tts/speak` MMS-TTS, and `/stt/transcribe` MMS-ASR routers plus `/health`. Typically run as two separate uvicorn instances: port 8001 (`aivc-tedim-api`) for Tedim/MMS requests, port 8002 (`aivc-burmese-api`) for Burmese. |
-| [mms_tts_api.py](workers/mms_tts_api.py) | Dedicated MMS speech app on port 8003. Mounts only `/tts/*` and `/stt/*` so PyTorch speech work can run separately from Ollama LLM inference. |
+| [chin_router.py](workers/chin_router.py) | Config-driven sibling of `tedim_router.py` adding four more Chin/Zo languages: **Falam** (`cfm`, `/falam/*`, ollama `falam-lai`) and **Hakha** (`cnh`, `/hakha/*`, ollama `hakha-lai`) on their own instruction-tuned Ollama models (llama3.2:1b + per-language Modelfile system prompt); **Mizo** (`lus`, `/mizo/*`) and **Paite** (`pck`, `/paite/*`) have no instruction model upstream so they are backed by the **goldfish-models** monolingual LMs via `goldfish_service` (`engine: "goldfish"` in their LANGS config — `goldfish-models/lus_latn_full`, `goldfish-models/pck_latn_full`). Each exposes `POST /<lang>/translate`, `POST /<lang>/generate`, `GET /<lang>/verse?ref=`; `_infer()` dispatches to the configured engine. Shared single-inference semaphore + Redis db 2 cache (30-day TTL). Validation is intentionally lighter than Tedim (length ≥60, language vocabulary markers, repeated-word + trigram-loop guards, English-paragraph/parenthetical-note stripping) — it omits Tedim's `hi`/`hen` sentence-final-particle grammar, which is Tedim-specific. Fails with HTTP 502 so `llm_engine` falls back to curated content, same contract as Tedim. The Falam/Hakha base 1B is a placeholder; the Modelfiles (`Modelfile.falam/.hakha/.mizo/.paite` at repo root) document the path to fine-tuned per-language GGUFs. Bible verse text is looked up from `bible_api`, never generated. |
+| [goldfish_service.py](workers/goldfish_service.py) | Serves the **goldfish-models** monolingual GPT-2-style causal LMs for the two Bible-only Chin/Zo languages with no instruction model or native TTS voice: **Mizo** (`lus` → `goldfish-models/lus_latn_full`) and **Paite** (`pck` → `goldfish-models/pck_latn_full`). Models load lazily on first use (transformers + torch, CPU, thread-capped, single-inference semaphore — mirrors `mms_tts_service`). Completion-only, so callers prime it with a native-language seed and it continues. `chin_router` imports `generate_text()` in-process; `POST /goldfish/generate` + `GET /goldfish/languages` expose it over HTTP. Each narrator is **admin-toggleable** from the Admin Console → Bible page — `AdminController` mirrors `narration_lus`/`narration_pck` to Redis (`ai:narration_<iso>`), which `is_enabled()` consults; when off, generation raises HTTP 502 so the caller falls back to curated content. |
+| [api.py](workers/api.py) | Unified FastAPI app mounting Tedim, Burmese, the four Chin/Zo languages (Falam/Hakha via Ollama, Mizo/Paite via goldfish — `chin_router.ROUTERS`), the `/goldfish/*` goldfish LLM service, `/tts/speak` MMS-TTS, and `/stt/transcribe` MMS-ASR routers plus `/health`. Typically run as two separate uvicorn instances: port 8001 (`aivc-tedim-api`) for Tedim/Chin/MMS requests, port 8002 (`aivc-burmese-api`) for Burmese. |
+| [mms_tts_api.py](workers/mms_tts_api.py) | Dedicated MMS speech app on port 8003. Mounts only `/tts/*` and `/stt/*` so PyTorch speech work can run separately from Ollama LLM inference. `/tts/speak` splits long input on sentence boundaries and synthesises chunk-by-chunk (concatenating the waveforms) so a full Bible chapter no longer OOM-kills the worker on a small host; `MMS_TTS_TIMEOUT=600` covers the multi-minute first-run synthesis (cached thereafter). Burmese Bible narration uses Edge TTS (`my-MM-NilarNeural`/`ThihaNeural`), resolved per-language in `BibleController::edgeVoice()` — an English Edge voice cannot synthesise Burmese script. |
 | [nllb_api.py](workers/nllb_api.py) · [nllb_service.py](workers/nllb_service.py) · [hf_space_nllb/](workers/hf_space_nllb/) | **Burmese prose is produced by translating the already-good English segment** (`facebook/nllb-200-distilled-600M`, `eng_Latn`→`mya_Mymr`) rather than generating Myanmar directly with the Ollama `burmese-myanmar` model, which emitted word-salad. `_complete()` in [llm_engine.py](workers/llm_engine.py) tries translators in order: **(1) the NLLB ZeroGPU Space** (`NLLB_HF_SPACE`, off-box on HF's GPU — `hf_space_nllb/app.py`, called via `gradio_client`); **(2) the local NLLB service** (`nllb_api.py` on port 8004, `POST /nllb/translate`, lazy-loaded model, Redis db 4 cache, `_clean_myanmar` strips per-syllable spacing). If both fail it **raises** so the caller serves its safe curated/hardcoded Burmese fallback — the Ollama `burmese-myanmar` model is deliberately NOT in the chain. The local service is a light standby (model loads only if the Space is unreachable), keeping the 2.3 GB model off the CPU box. **Tedim is NOT routed through NLLB** — `tdt_Latn` tested as unusable (echoes English back), so Tedim stays on Ollama `tedim-zolai`. Note: HF's *free serverless* tier no longer hosts NLLB (`Model not supported by provider hf-inference`), which is why a self-hosted ZeroGPU Space is used. |
 | [hymns_my.py](workers/hymns_my.py) | Loader for the 852-song `data/hymns_my.json` Burmese library; mood-based selection for `MyanmarHymnStrategy`. |
 | [hymns_td.py](workers/hymns_td.py) | Loader for `data/hymns_td.json` (bundled, 467 hymns); mood selection + YouTube-embed priority for `TedimHymnStrategy`. |
@@ -180,7 +195,9 @@ A single Celery app with one Redis broker and **named queues that mirror the wor
 | [strategies/instrumental_hymn_strategy.py](workers/strategies/instrumental_hymn_strategy.py) | Unified `hymn` (instrumental) strategy for all languages. Burmese/Tedim selection is restricted to slugs whose MP3 is actually seeded (via `storage.list_keys`) so it stays in-language instead of silently falling through to English MIDI. |
 | [strategies/local_ai_strategy.py](workers/strategies/local_ai_strategy.py) | `local_ai` music source — GPU-preferred MusicGen (subclass of `MusicGenStrategy`). Auto-detects CUDA; falls back to CPU. |
 | [strategies/_suno_custom.py](workers/strategies/_suno_custom.py) | Shared helper that builds and calls Suno customMode with exact lyrics for a given language/style. **Lyric sanitization rules (must be kept up to date when the hymn data format changes):** (1) `ထပ်ဆိoရန်[။]` on its own line → `[Chorus]` — this is the classic Burmese hymnal "Repeat/Chorus" marker, not a lyric; (2) Burmese numeral verse prefixes `၁ lyric text` → `[Verse 1]\nlyric text`; standalone `၁` → `[Verse 1]`. Suno treats `[Verse N]`/`[Chorus]` as structural metatags and never sings them. Any new non-lyric patterns found in `hymns_my.json` must be added to `_MY_SECTION_TAGS` or the verse-number substitution in `sanitize_lyrics()` — never leave raw structural markers reaching the Suno prompt. |
-| [tools/seed_language_data.py](workers/tools/seed_language_data.py) | One-time seeder: downloads Judson 1835 (Myanmar) and Lai Siangtho 1932 (Tedim) Bibles, book index, and Myanmar hymns into `workers/data/`. |
+| [tools/seed_language_data.py](workers/tools/seed_language_data.py) | One-time seeder: downloads the English KJV (`data/kjv.json` — from dalsuum/bible if present, else built via `build_kjv_bible.py`), Judson 1835 (Myanmar) and Lai Siangtho 1932 (Tedim) Bibles, the seven Chin/Zo language Bibles from the Bible Society of Myanmar (Falam, Hakha, Mizo, Paite, Sizang, Mara, Matu), the Hebrew Tanakh (WLC, `data/wlc.json` — from dalsuum/bible if present, else built via `build_hebrew_bible.py`), the book index, and Myanmar hymns into `workers/data/`. |
+| [tools/build_kjv_bible.py](workers/tools/build_kjv_bible.py) | Builds the English Authorized (King James) Version into `data/kjv.json` in the dalsuum/bible schema, from the public-domain getbible.net `kjv` module. Full 66-book canon (Genesis=1…Revelation=66), canonical numbering. A second English edition alongside BSB; the output is also the file to commit to dalsuum/bible so it seeds like the other translations. |
+| [tools/build_hebrew_bible.py](workers/tools/build_hebrew_bible.py) | Builds the Hebrew Tanakh (Westminster Leningrad Codex) into `data/wlc.json` in the dalsuum/bible schema, from the public-domain getbible.net `codex` module. Old Testament only (39 books, Genesis=1…Malachi=39), pointed Hebrew, right-to-left. The output is also the file to commit to dalsuum/bible so it seeds like the other translations. |
 | [tools/seed_tedim_hymns.py](workers/tools/seed_tedim_hymns.py) | Refreshes `data/hymns_td.json` if you want to pick up newly added hymns. Not required at deploy — the file is bundled in the repo. |
 | [tools/seed_tedim_midi.py](workers/tools/seed_tedim_midi.py) | Optional: instrumental fallback renders from the Tedim Hymn 7th Edition MIDI library (needs fluidsynth + ffmpeg). |
 | [tools/import_myanmar_hymns.py](workers/tools/import_myanmar_hymns.py) | Regenerates `data/hymns_my.json` from the upstream dalsuum/myanmar-hymns source repo. |
@@ -188,15 +205,18 @@ A single Celery app with one Redis broker and **named queues that mirror the wor
 | [tools/collect_myanmar_lyrics.py](workers/tools/collect_myanmar_lyrics.py) | Collects Myanmar Christian worship lyrics from OpenLyrics XML sources and a Blogspot index. Enforces Myanmar Unicode, strips guitar chord lines, deduplicates, and writes the result to `data/myanmar_lyrics_collection.json`. Run once (or periodically) to grow the lyrics corpus for Suno and fine-tuning use. Requires `requests` + `beautifulsoup4`. |
 | [tools/tap_lyrics.py](workers/tools/tap_lyrics.py) | LRC "Tapper": plays a hymn's local sung MP3 via ffplay and captures one timestamp per lyric line on the spacebar (undo/restart/finish), then merges a `timings` array into the matching `hymns_td.json` / `hymns_my.json` object (1-space indent, literal unicode — minimal diff). td/my only (English hymns live in `hymns.py`, not JSON). Authors the line cues the player consumes for synced lyrics. |
 | [llm_engine.py](workers/llm_engine.py) | Intake plan via OpenRouter; spoken prose generated directly in English/Myanmar/Tedim. Myanmar/Tedim prose is routed to the local FastAPI/Ollama services when configured. **Safe hardcoded fallbacks apply to all languages** (English included) — if OpenRouter or the local model times out or returns unusable text at any segment (welcome, prayer, sermon, benediction), the fallback fires instead of leaving the service frozen. Strips markdown / stage directions to clean spoken prose. **Burmese output plausibility guard** (`_is_my_plausible`) counts Myanmar Unicode codepoints (U+1000–U+109F) in each generated segment; fragments below the per-segment minimum (20 for welcome, 60 for prayer, 30 for benediction, 80 for sermon) are treated as garbled model output and the safe fallback fires immediately rather than sending fragmentary text to the worshipper. **AI-composed song lyrics (`generate_music_lyrics`, Myanmar/Tedim)** are sourced library-first: `_library_lyrics_for_mood` searches the worship library (`song_library.py` → `GET /songs`) with the worshipper's mood and reuses the first matching, in-language curated song — guaranteeing correct vocabulary and phrasing. **Burmese** then goes straight to the curated fallback (the local llama3.2:3b-based model emits word-salad, not real Myanmar, so it is not called for lyrics); **Tedim** composes via its local Zolai Ollama model when no library song matches. Every path passes the hardened language guard before reaching Suno — for `my` the guard requires a core worship term (ဘုရား/ကိုယ်တော်/ယေရှု…) and rejects low unique-token ratios so model word-salad can never reach Suno. |
-| [bible_api.py](workers/bible_api.py) | Resolves a scripture *reference* to verse *text* from bundled public-domain translations: BSB (English), Judson 1835 (Myanmar), Lai Siangtho 1932 (Tedim). The model never writes scripture. |
+| [bible_api.py](workers/bible_api.py) | Resolves a scripture *reference* to verse *text* from bundled public-domain translations: BSB and King James Version (English), Judson 1835 (Myanmar), Lai Siangtho 1932 (Tedim), Westminster Leningrad Codex (Hebrew Tanakh — Old Testament only, right-to-left), and seven Chin/Zo language Bibles from the Bible Society of Myanmar (Falam `cfm`, Hakha `cnh`, Mizo `lus`, Paite `pck`, Sizang `csy`, Mara `mrh`, Matu `hlt`). The model never writes scripture. Also exposes browse helpers (`list_books`, `chapter`) for the online Bible reader; partial-canon translations (Hebrew) pad their table of contents out to the full 66 books with the missing books flagged `available: false` so the reader greys them, while translations with extra deuterocanonical books or unreliable native book names (Matu) are capped to and labelled from the canonical 66-book index. |
+| [bible_router.py](workers/bible_router.py) | FastAPI routes backing the online Bible reader: `/bible/books`, `/bible/chapter`, `/bible/languages` (read-only) and `POST /bible/narrate` (text-to-speech). Serves the same in-memory public-domain translations as `bible_api`; Laravel proxies these under `/api/bible`. Narration reuses `narrator.synthesize()` and caches one audio file per (translation, book, chapter, voice) under `bible-audio/…`, so each chapter is synthesized once. |
 | [classifier.py](workers/classifier.py) | Post-generation deny-list guardrail (`review() → (ok, reason)`). |
 | [strategies/](workers/strategies/) | `MusicStrategy` interface + `HymnStrategy` / `SunoStrategy` / `YouTubeStrategy`, returning a normalized `MusicResult`. All functions are synchronous — they run inside Celery tasks that have no event loop. `YouTubeStrategy` accepts a `language` argument so `_LANG_CONFIG` routes each service to its correct filter set. **Sermon slot** — three-gate filter: (1) title must contain a preaching indicator (`sermon_title_require_any`; word-boundary for Latin scripts, substring for non-Latin scripts), (2) title must NOT contain choir/music/concert keywords (`sermon_title_reject_any`; same matching rules), (3) channel must not be in `channel_reject_any`. Burmese (`my`) sermon search also ignores English-only agent queries, searches with Burmese sermon terms, requests Myanmar-language/region results, and requires Myanmar script in the video title so English sermons cannot fill the Burmese sermon slot. **Tedim** (`td`) sermon search leads with native vocabulary queries (`thugenna`, `thu gen`) and requires at least one Zomi/Tedim identity word (zomi, tedim, zolai, thugenna, thugen, thu gen) in the video title — Tedim uses Latin script so a Unicode-range check is not possible; the identity-word gate serves the same role as the Myanmar-script check. **Worship music slot** — three-gate filter: (1) title must contain at least one Christian/worship term (`music_title_require_any`) to block cartoons and secular videos, (2) title must not be in `music_title_reject_any`, (3) channel check. After both filters, results are scored by mood-keyword density and the best match wins. `"sunday"` is absent from all sermon require-lists — it caused "Mission Sunday Choir" events to appear as sermons. Per-language sermon require-lists: **English** — sermon/preaching/message/pastor/rev/teaching/bible study/gospel; **Burmese** (`my`) — `တရားဟောချက်`/`တရားဟော`/`နုတ်ကပတ်တော်`/`သွန်သင်ချက်` plus pastor/rev; **Tedim** (`td`) — sermon/preaching/message/pastor/rev/thugenna/thu gen/thugen (+ identity gate). Tedim also rejects cartoon/animation/movie/drama from the music slot. Adding a new language requires only a new `_LANG_CONFIG` entry. |
 | [hymns.py](workers/hymns.py) / [seed_hymns.py](workers/seed_hymns.py) | Public-domain hymn library (lyrics + recordings) and the one-time seeder that renders/downloads it into storage. |
 | [song_library.py](workers/song_library.py) | Live worship-song reader. The `songs` DB table is the single source of truth (admin Lyrics tab); the worker reads songs on demand from the backend's public `GET /songs` endpoint — the same data the website uses. One store, no JSON copy, no drift. Override the backend base with the `CHURCH_API_URL` env var. |
 
-**Admin Lyrics tab — bulk export/import.** The Song Library list has an **Export** menu (CSV, TXT, PDF, JSON) that downloads the *currently filtered view* (respects the language tabs + search), and an **Import** button that accepts **CSV or JSON** for bulk add. Import skips songs that already exist (same title + language, case-insensitive) so re-importing a file is a no-op. CSV columns (header row, case-insensitive): `language, title, artist, category, lyrics, url`. Endpoint: `POST /admin/songs/import` (`lyrics.manage`, 5 MB cap). PDF is export-only (printable songbook); PDF/TXT import is intentionally unsupported because parsing free-form layouts is unreliable.
+**Admin Lyrics tab — bulk export/import.** The Song Library list has an **Export** menu (CSV, TXT, PDF, JSON). Each row has a checkbox plus a header "select all" (scoped to the current view); when songs are ticked the export covers **just that selection** (the Export button shows the count, e.g. `Export (3)`), and with nothing ticked it falls back to the *currently filtered view* (respects the language tabs + search). The PDF export renders its hidden layout off-screen *inside the DOM* (html2canvas cannot rasterise a detached node — doing so produced blank/white pages), then removes it once the file is saved. There is also an **Import** button that accepts **CSV or JSON** for bulk add. Import skips songs that already exist (same title + language, case-insensitive) so re-importing a file is a no-op. CSV columns (header row, case-insensitive): `language, title, artist, category, lyrics, url`. Endpoint: `POST /admin/songs/import` (`lyrics.manage`, 5 MB cap). PDF is export-only (printable songbook); PDF/TXT import is intentionally unsupported because parsing free-form layouts is unreliable.
 
-**Front song panel — worship-ready exports.** The public Myanmar worship-song page (`MyanmarLyrics.vue`) reads the worship library **live** from the public `GET /songs` endpoint — the same `songs` DB table the admin Lyrics tab writes, so there is no duplicated static JSON to drift (the old `public/data/myanmar_lyrics_collection.json` fetch was removed; the 852-song `hymns_my.json` corpus stays static because it is not in the DB). An open song can be downloaded as **.TXT**, **PDF**, or **PPTX**. The PowerPoint export (`pptxgenjs`, lazy-loaded so it never bloats the main bundle) builds a 16:9 deck: a title slide plus one slide per verse/section, large centred white text on a dark projection background, with chord markers stripped for clean congregation slides — ready to open in PowerPoint at the start of worship.
+**Admin Vocabulary tab — DB-backed reference editor.** The `#vocabulary` reference is multilingual: each word carries a gloss per Chin/Zo language plus Burmese, Hebrew and English, stored in the `vocabularies` DB table and edited from **Admin Console → Vocabulary** (`vocabulary.manage` permission). Language columns are `zolai` (default, required), `falam`, `hakha`, `matu`, `mizo`, `paite`, `sizang`, `burmese`, `hebrew`, `english` (required) — the ethnic-language set added in `2026_06_21_000001_add_ethnic_languages_to_vocabularies_table` mirrors the Bible reader voice rows; all but zolai/english are nullable and filled in over time. The public page has a **language dropdown** (default Zolai) so a worshipper reads each word in their own tongue, with English/Hebrew/Burmese kept as reference columns. The admin list table also has a **"Show language" dropdown** — with so many language columns it would otherwise overflow, so the list shows only Zolai + the chosen language + English (the editor form still exposes every language). Add/edit/delete rows with category filter + search (matches every language); the public page reads the same data live via `GET /api/vocabulary`. The optional `hebrew` column (added alongside the Hebrew Tanakh/WLC Bible reader) renders right-to-left. The legacy `notes` column is retained in the DB but is no longer shown or edited in the UI/API. Seeded once from `frontend/src/data/zolai_vocabulary.json` via `php artisan db:seed --class="Database\Seeders\VocabularySeeder"` (idempotent — upserts by zolai+english+category). Burmese glosses were machine-seeded as best-effort and are meant to be corrected here.
+
+**Front song panel — worship-ready exports.** The public Myanmar worship-song page (`MyanmarLyrics.vue`) reads the worship library **live** from the public `GET /songs` endpoint — the same `songs` DB table the admin Lyrics tab writes, so there is no duplicated static JSON to drift (the old `public/data/myanmar_lyrics_collection.json` fetch was removed; the 852-song `hymns_my.json` corpus stays static because it is not in the DB). An open song can be downloaded as **.TXT**, **PDF**, or **PPTX**. The PowerPoint export (`pptxgenjs`, lazy-loaded so it never bloats the main bundle) builds a 16:9 deck: a title slide plus one slide per verse/section, large centred white text on a dark projection background, with chord markers stripped for clean congregation slides — ready to open in PowerPoint at the start of worship. The page uses the **mobile-first design system**: a sticky search bar (leading magnify icon), horizontally-scrollable category chips (44px touch targets, never wrapping), a single-column responsive **song-card list** with larger Burmese-optimised titles, and Iconify (`mdi`) icons throughout (no emojis) — back/pagination arrows, the per-card music glyph, and the export buttons. Presentation only: search, category filtering, pagination, the detail/chord-sheet view, and all three exports are unchanged. Covered by [frontend/e2e/songs.smoke.spec.js](frontend/e2e/songs.smoke.spec.js) (search/chips/card→detail→back at 390px).
 | [data/myanmar_lyrics_collection.json](workers/data/myanmar_lyrics_collection.json) | Scraper **staging** output from `tools/collect_myanmar_lyrics.py` — not read at runtime. Load it into the `songs` table with `php artisan songs:import-corpus` (idempotent), after which the DB is authoritative and the worker reads songs live via `song_library.py`. |
 | [test_llm_engine.py](workers/test_llm_engine.py) | Unit tests for `llm_engine` — covers `_strip_formatting`, `_is_my_plausible`, `_fix_tedim_vocab`, and the per-segment fallback behaviour. Run with `python -m unittest test_llm_engine`. |
 | [test_agent_orchestrator.py](workers/test_agent_orchestrator.py) | Unit tests for `agent_orchestrator` — covers JSON parse tolerance, MAX_TURNS recovery, and tool-call error handling. Run with `python -m unittest test_agent_orchestrator`. |
@@ -211,8 +231,9 @@ service one stage at a time.
 
 | Component | Role |
 |-----------|------|
-| [App.vue](frontend/src/App.vue) | Stage machine: `intake` → `preparing` → `service`; routes `#admin` to the console, `#vocabulary` to the Zolai vocabulary page. |
-| [ZolaiVocabulary.vue](frontend/src/components/ZolaiVocabulary.vue) | Searchable Zolai↔English reference at `#vocabulary`. Edit `frontend/src/data/zolai_vocabulary.json` to add or correct words. |
+| [App.vue](frontend/src/App.vue) | Stage machine: `intake` → `preparing` → `service`; routes `#admin` to the console, `#vocabulary` to the Zolai vocabulary page. **Auth + account entry** is hash-routed too (no client router): `#login`/`#register` render [AuthPanel.vue](frontend/src/components/AuthPanel.vue) (posts to `api.login()`/`api.register()`; register no longer auto-logs-in — it shows a "check your email to activate" confirmation), and `#account` renders [AccountSettings.vue](frontend/src/components/AccountSettings.vue) (token balance, plan, upgrade/cancel, change password). On load `App.vue` resolves identity via `GET /me` and applies lightweight **route guards** mirroring requireAuth/requireGuest/requireAdmin — `#account` needs a registered login (else → `#login`), `#login`/`#register` bounce already-authenticated users to `#account`, and logged-in non-staff are kept out of `#admin` (the console keeps its own login form for the unauthenticated case). The **topbar nav** is identity-aware: logged-out visitors see **Login / Register**; registered users see **Account / Logout**; admins additionally see an **Admin** link. A guest session (`*@guest.local`) counts as logged-out for this UI. The preparing screen opens as soon as the opening-prayer audio lands; a ~140 s failsafe (counted from when the prayer **text** is ready, not from full service "complete") opens the door even if a slow/failed narration callback never produces that audio, so worshippers are never trapped on "Generating voice narration…". The **topbar** is responsive: on phones (≤640px) the brand keeps the **logo mark + "AI Virtual Church" wordmark** (beside the hamburger) and the **page nav links are hidden entirely** (`.nav-page { display:none }`) — mobile page navigation lives in the **bottom nav** ([BottomNav.vue](frontend/src/components/layout/BottomNav.vue)), so the header keeps only identity controls (**Login / Register** for guests, **Logout** for members) plus the **light/dark theme toggle**, which always stays visible on the right. **Global layout:** the header (sticky topbar + nav) and footer ("AI can make mistakes…" + donate link) are rendered **once** in `App.vue` and wrap **every** route — the active view (Bible, Bible Study, Worship, Pastor, Journey, Vocabulary, Admin, intake/account/auth, …) swaps inside a single `<main class="app-main">` between them, so the header/footer never re-render, disappear, or duplicate on navigation (hash routing means no full page reload, so header state — session, language toggle — is preserved). `.app-main` is a flex column that stretches a full-screen route view (e.g. the Bible reader's freeze-pane) to fill exactly the space between the header and footer. Route components no longer carry their own copy of the site header/footer (the duplicates in `BibleStudy.vue` were removed). The shell is extracted into reusable components under [frontend/src/components/layout/](frontend/src/components/layout/): **AppLayout.vue** (the `#app-shell` wrapper — header + `<main>` slot + footer; the seam where future shell pieces like a notification bar or breadcrumbs can be added), **AppHeader.vue** (sticky topbar; the nav is **data-driven** from a single `navItems` array — add a page by adding one entry + its route — with `active` highlighting derived from the reactive `currentHash`), and **AppFooter.vue**. App.vue passes identity/feature-flag props down and handles `@logout`. On route change App.vue also does **scroll restoration** (`window.scrollTo(0,0)` when the base hash changes, ignoring same-page `?session=` suffixes) so a new page always starts at the top. A **Playwright layout-shell smoke suite** ([frontend/e2e/shell.smoke.spec.js](frontend/e2e/shell.smoke.spec.js), `npm run test:e2e`) locks this in: it loads every primary route at 1440px **and** 390px and asserts exactly one header + one footer + one `<main>` per route, the centered intake card, no horizontal overflow, sticky-footer positioning, and the scroll-restoration rules (resets on base-route change, preserves on `?session=` change). It runs as its **own path-filtered CI workflow** ([.github/workflows/e2e.yml](.github/workflows/e2e.yml)) that triggers only when shell-relevant files change (App.vue, `components/layout/**`, global CSS, the spec) — not on every frontend edit — serving the production build with `vite preview` (the SPA treats the absent backend as "logged out" so the shell still renders). The shell carries a `data-layout="app"` anchor and the suite asserts exactly one exists, closing the nested-shell loophole. The rules these tests defend are written down in [components/layout/LAYOUT_CONTRACT.md](frontend/src/components/layout/LAYOUT_CONTRACT.md) (AppLayout owns header/footer; one shell per route tree; pages don't reintroduce chrome; full-width pages are intentional exceptions; scroll-reset + responsive-nav rules). A dev-only `window.__layoutDebug = true` (or `?layoutDebug`) flag outlines the header/main/footer regions and logs scroll state — stripped from production builds. |
+| [BibleReader.vue](frontend/src/components/BibleReader.vue) | Online Bible reader at `#bible`. Browse books/chapters in English (Berean Standard Bible, 2020 & King James Version), Burmese (Judson 1835), Tedim (Lai Siangtho 1932), Hebrew (Westminster Leningrad Codex — the Tanakh, Old Testament only, rendered **right-to-left**; the New Testament books are shown greyed/unselectable for this translation) and seven Chin/Zo language Bibles from the Bible Society of Myanmar (Falam, Hakha, Mizo, Paite, Sizang, Mara, Matu — Latin script); the active translation's version and year are shown beneath the language tabs, and switching translation keeps your place. A **🔊 Listen** button narrates the open chapter aloud — English via the admin's configured voice provider, Burmese, Tedim, Falam, Hakha & Matu via the native MMS-TTS voices (`mms-tts-mya`/`-ctd`/`-cfm`/`-cnh`/`-hlt`), Hebrew via the Edge `he-IL` neural voices — reusing the service narration stack, and **highlights each verse as it's read** (proportional-timing, like the service player). A **📖 Continuous** toggle (per-device, **off** by default) makes the narration roll past the end of the chapter into the next chapter — and on into the next book across both testaments — until the very end of the Bible, instead of stopping at the chapter end. The chapter view is a **freeze-panes layout** (flex `100dvh`, not `position: sticky`, which silently fails on mobile Chrome): the control bar, chapter title, player and **Previous/Next** stay frozen while only the verse list scrolls. The frozen panel is **collapsible** (▾ Controls / ▴ Hide, remembered per-device): collapsing folds away the app header, language tabs and toggle buttons down to a slim handle (back · chapter title · toggle) for maximum reading space, while the audio player + Speed row stay visible whenever narration is loaded so you can read with the panel folded and still control playback. A **playback-speed** control (0.75×/Normal/1.25×/1.5×, remembered per-device) sets the narration rate — highlighting stays in sync since it maps `currentTime/duration`; background music keeps looping at its own natural tempo regardless of narration speed. Highlighting and music on/off are **per-device reader preferences** layered over the admin default: the admin setting is what a first-time reader sees, but each reader's own toggle (in `localStorage`) wins. The control bar is **responsive**: full labels on wide screens, collapsing to a wrapping **icon-only toolbar** (← / 🔊 / ✨ / 🎵 / 📋 + chapter picker, with on/off shown by colour) on phones so nothing overflows or is hidden. Reading-comfort controls (all per-device): a **text-size** selector (Normal / Medium / Large, for older eyes — scales the verse font and line spacing), a **peaceful reading background** beyond dark/light (Default / Sepia / Cream / Mint / Sky / Night — each a self-contained background+text pair so contrast stays readable in either app theme, applied to the verse pane only), and a **📋 Select** mode: tap to pick one or many verses, then **Copy** a clean shareable block to the clipboard — `Genesis 1:1-3, 5 (Berean Standard Bible (2020))` followed by the numbered verses, with consecutive verses collapsed into ranges — for pasting into notes or social media (off by default so taps never disturb reading; cleared on chapter change). An admin can also play **looping background music** softly behind the narration, with three modes (`bible_bg_music_mode`): **off**, **static** (one fixed track chosen from a **music library** — admins upload multiple local **.mp3/.ogg** tracks (`POST /api/admin/bible/bg-music/upload`), see them listed alongside the AI-generated loops (`GET …/bg-music/library`), preview each, delete uploads (`DELETE …/bg-music/library/{id}`), **tag each upload with a mood + time-of-day** (`PATCH …/bg-music/library/{id}`) and pick which one plays (`POST …/bg-music/select`); the `BibleBgMusicLibrary` service keeps a JSON manifest for uploads and discovers AI loops from the worker's `bible-bg/` dir, and every track streams back through the public `GET /api/bible/bg-music/file?src=…&key=…` so no external hosting/CORS is needed. When uploaded tracks carry tags, the reader auto-picks the best-fitting upload per chapter via `GET /api/bible/bg-music/match`, using the **same coarse theme + reader time-of-day** AI mode uses (the worker's `GET /bible/bg-music/classify` returns the chapter's `{theme, tod}`; Laravel scores each upload's tags — exact match 2, `any` wildcard 1 — and falls back to the single selected track, or to time-of-day-only matching if the worker is unreachable). With no tags it stays a single fixed track, exactly as before), or **ai** — an instrumental loop generated per chapter, keyed by a coarse **theme** inferred from the chapter text (comfort/praise/lament/hope/peace/wisdom) and the **reader's local time of day** (morning/afternoon/evening/night). AI tracks are stored under a deterministic, language-independent key `bible-bg/{theme}_{tod}.mp3`, so existence-check + presign needs no DB registry; the first reader to hit an uncached bucket triggers a one-off MusicGen generation offloaded to the `ai:music` Celery worker (`tasks.generate_bible_bg`, engine `bible_bg_music_engine` = `musicgen`|`local_ai`) and falls back to silence until it's cached. The background-music loop is **independent of the voice**: when the reader has 🎵 Music on it plays whenever a chapter is open — softly under the narration when there's a voice, and **on its own when the language has no narrator or the voice is off** (so a non-narrated translation still gets ambient music). Every Bible setting lives on its own **Admin Console → Bible** page: the Bible voice as one compact row **per translation** (all 12 versions — English/KJV get every provider, Burmese/Tedim/Falam/Hakha/Matu add native MMS-TTS, Hebrew its he-IL voice, the remaining Chin/Zo Bibles (Mizo, Paite, Sizang, Mara — no upstream MMS-TTS) read phonetically via the English Edge voice, and any version can be set to **Off**), the highlight default, and all background-music settings (`bible_narration_mode_*`, `bible_text_highlight_enabled`, `bible_bg_music_*`, independent of the live-service narrator but inheriting the voice when unset), **plus a per-version feature matrix** (`bible_features`). The matrix has one row per translation and a checkbox per control — **Show tab** (hides the whole translation from the reader, and `BibleController` rejects its `/api/bible/*` access with 404) and one toggle each for 🔊 Listen, ✨ Highlight, 📖 Continuous, 🎵 Music, 📋 Select, playback **Speed**, **Aa** text size and **Color** themes. Everything defaults on, so an unconfigured install behaves exactly as before; the reader reads `versions` + `features` from `GET /api/bible/config` and hides any disabled tab or button. AI resolution goes through `GET /api/bible/bg-music` → worker `POST /bible/bg-music` ([bible_bg.py](workers/bible_bg.py)). Reads via the public `/api/bible/*` proxy (`BibleController`, incl. `/bible/config`) — no auth required. **Mobile-first design-system pass:** all control glyphs are now Iconify (`mdi`) SVGs via `AppIcon` (no emojis) — back/All-books arrows, the collapse chevron, Listen (`volume-high`, spinning `loading` while preparing), Highlight, Continuous, Music, Select, Copy, and Prev/Next; every action/toggle button has a 44px touch target. Presentation only — narration, highlighting, continuous reading, background music, speed, text-size, colour themes, select/copy and freeze-pane scrolling are unchanged. Covered by [frontend/e2e/bible.smoke.spec.js](frontend/e2e/bible.smoke.spec.js) (header/tabs/search render + emoji-free icons + no 390px overflow). |
+| [ZolaiVocabulary.vue](frontend/src/components/ZolaiVocabulary.vue) | Searchable **multilingual** reference at `#vocabulary` (nav label "Vocabulary") with a **language dropdown** — default Zolai (Tedim), plus Falam, Hakha, Matu, Mizo, Paite, Sizang, Burmese, Hebrew, English. The chosen language becomes the left-most column; English/Hebrew/Burmese stay as reference columns (the picked language is not repeated). Loads **live** from the public `GET /api/vocabulary` endpoint — the `vocabularies` DB table is the source of truth, edited from the **Admin Console → Vocabulary** tab. The original `frontend/src/data/zolai_vocabulary.json` is now only the one-time **seed** source (`VocabularySeeder`), not read at runtime. Search matches every language + notes (Hebrew renders right-to-left); the back link collapses to an icon on phones. |
 | [IntakeForm.vue](frontend/src/components/IntakeForm.vue) | Mood picker (first question) + **language tab** (English / မြန်မာ / Zolai). For first-time visitors, name/email/prayer/music-source/scheduling are collapsed behind an "Add a prayer request or schedule" toggle so the main path is one-tap. Returning users always see the full form. Passes `language` and `mood` to the preparing screen so countdown verses load in the right Bible translation immediately. Moods, music sources, and scheduling toggle are all driven by `GET /config`. |
 | [PreparingView.vue](frontend/src/components/PreparingView.vue) | Countdown screen; accepts `language` and `mood` props from the intake event so mood-matched Scripture cards load in the correct Bible translation before the server poll returns. Card type is `'verse'` (labelled "Scripture"); label `'banner'` shows admin text; `'testimony'` shows a worshipper story. Opens immediately via `nextTick` when `mediaReady` arrives — no longer waits for the next 1-second tick. |
 | [ServicePlayer.vue](frontend/src/components/ServicePlayer.vue) | The full-screen, one-stage-at-a-time player. Auto-reads each segment (server video → server audio → browser Web Speech), auto-advances. |
@@ -221,6 +242,10 @@ service one stage at a time.
 | [TestimonyWall.vue](frontend/src/components/TestimonyWall.vue) | The approved testimony wall + submit-your-own. |
 | [AdminConsole.vue](frontend/src/components/AdminConsole.vue) | Permission-driven tab navigation (TABS registry — add one entry to wire a new tab's nav button, permission check, and data loader). Tabs: Dashboard, Services, Donors, Testimonies, Users, Prayer Requests, Settings, AI Music Pool, Voice Studio, Voice Training, Permissions, Language Review, System. Non-admin staff see only the tabs permitted by the Permissions matrix; settings are read-only for non-admins. |
 | [useApi.js](frontend/src/composables/useApi.js) / [useTheme.js](frontend/src/composables/useTheme.js) | API client + light/dark theme. Mutating requests auto-recover from a stale CSRF token: on a `419` the client refreshes the `XSRF-TOKEN` cookie and retries once, so admin writes (e.g. deleting an ad) don't fail after a session rotates in a long-open tab. |
+| [BottomNav.vue](frontend/src/components/layout/BottomNav.vue) | **Mobile-first primary navigation** — a fixed bottom tab bar shown only on phones (≤640px; `display:none` above that, where the topbar nav stays primary, so the two navigation systems never coexist — see [LAYOUT_CONTRACT.md](frontend/src/components/layout/LAYOUT_CONTRACT.md) rule 8). Four primary tabs (**Home / Songs / Bible / Study**) plus a **"More" bottom sheet** that surfaces every secondary, permission-gated destination (Worship Radio, Pastor Chat, Spiritual Journey, Vocabulary, Father's Day, Live Stickers, Account, Admin) and the auth actions (Login/Register or Logout). Rendered once by `AppLayout`; page content reserves `--bottom-nav-h` of bottom padding on phones so nothing hides behind the bar. The smoke suite asserts exactly one nav with five tabs at 390px and hidden at 1200px. |
+| [AppIcon.vue](frontend/src/components/AppIcon.vue) / [icons.js](frontend/src/icons.js) | **Iconify icon system — no emojis in the UI.** Every icon is a scalable SVG from the Material Design Icons (`mdi`) set, registered **offline** (no runtime Iconify-API calls) from [icons.data.json](frontend/src/icons.data.json) — a minimal subset of only the icons the app uses, regenerated with `npm run icons:gen` ([scripts/gen-icons.mjs](frontend/scripts/gen-icons.mjs)) so the bundle never carries the full ~7000-icon collection. Use as `<AppIcon name="mdi:home" />`. |
+
+**Styling & PWA.** A [Tailwind CSS](frontend/tailwind.config.js) utility layer is wired on top of the existing CSS-variable design tokens (`src/styles.css`): Tailwind's color/radius/shadow scales map to the same `var(--…)` token names, so utilities theme for free under `[data-theme="dark"]` and we never hardcode hex. Preflight is disabled so the hand-authored component styles are untouched — Tailwind is purely additive. The app is an **installable PWA**: [public/manifest.webmanifest](frontend/public/manifest.webmanifest) + theme-color/apple-touch meta in [index.html](frontend/index.html), standalone display, SVG app icon. (Offline service-worker caching is a planned follow-up.)
 
 ---
 
@@ -373,6 +398,144 @@ Doors open the instant all required steps check off — no fixed countdown to dr
 
 ---
 
+## AI Worship Radio (mood-based worship companion)
+
+A worship-music companion reached at `#worship`. A worshipper states a mood — either a
+chip (😰 Anxiety, 💔 Broken Heart, 🔥 Revival, 🙏 Need Prayer, …) or free text
+("I feel lonely and tired") — and a language (English / Burmese / Zolai). The app builds a
+mood-matched playlist, explains *why* it chose those songs, and **plays continuously** until
+the worshipper presses Stop, fetching a fresh batch (with no recent repeats) each time the
+queue runs low.
+
+**Phase 1 (shipped).** Deterministic, no-LLM recommendation engine:
+
+| Piece | Role |
+| --- | --- |
+| `worship_tracks` table / `WorshipTrack` model | Metadata-only catalog (title, artist, language, themes/moods/scriptures JSON, official YouTube/Spotify/Apple links, popularity). **No hosted audio** — copyright-safe. |
+| `MoodExpansionService` | Expands a mood/chip/free-text into spiritual theme tags via a built-in dictionary + optional admin JSON override (`music.mood_dictionary`). |
+| `MusicRecommendationService` | The "Music Recommendation Agent". Weighted scoring — **language 40 / mood 30 / theme 20 / popularity 10** — with recent-50 no-repeat exclusion, artist diversity, and a 5–10 song clamp (`music.min_playlist` / `music.max_playlist`). |
+| `MusicController` | Public `GET /api/music/moods` + `POST /api/music/recommend` (throttled, no auth). |
+| `WorshipTrackAdminController` | `music.manage`-gated CRUD + playlist settings; http(s)-only URL validation. |
+| `WorshipRadio.vue` | `#worship` page: mood selector, language picker, AI-reason banner, song cards, YouTube IFrame player with auto-advance + continuous autoplay. |
+| `MusicCatalogManager.vue` | Admin **Worship Radio** tab: catalog CRUD + playlist settings. |
+
+Seed a demo catalog (en/my/td) with
+`php artisan db:seed --class="Database\Seeders\WorshipTrackSeeder"`.
+
+**Deferred to Phase 2:** feedback/learning loop, saved & shared playlists, per-user
+personalization, multi-provider streaming fallback, AI-pastor→worship handoff, and
+devotional/sleep/24-7 radio modes. The schema is forward-compatible with these.
+
+## AI Bible Study (multi-agent discussion)
+
+A live, multi-pastor Bible discussion built on a reusable **AI Core platform** so future
+ministry modules (sermon, prayer room, counseling, discipleship) can share the same
+orchestration, personas, prompts, and admin console. Reached at `#bible-study`.
+
+**The experience.** A worshipper picks a language, translation, conversation style, and
+number of pastors (2–7), then asks any Bible question. A panel of *fictional* pastors —
+inspired by different preaching traditions but **never revealing or naming any real
+figure** — discusses it under a moderator, streaming live. Each round runs
+**FRAME → DELIBERATE → SYNTHESIZE**: the moderator frames the question and assigns each
+pastor a distinct angle, the weighted pastors deliberate in turn (agreeing, building,
+respectfully differing), and the moderator synthesizes agreements + honest disagreements
+with a verse spine. Ending the discussion produces a structured summary (key verses,
+lessons, prayer, action points, reflection questions, study plan).
+
+**AI Core platform.** Everything is module-keyed and admin-editable, no code change to add
+a module or language:
+
+| Service | Role |
+|---|---|
+| `module_manifests` | per-module config (languages, agent bounds, memory strategy, RAG sources) |
+| `ai_personas` | fictional pastors/moderators; weighted participation; **server-only** `system_prompt` + `tradition_tag` lens |
+| `ai_prompt_templates` | frame/pastor/synthesis/summary bodies (server-only) |
+| `ai_provider_profiles` | OpenRouter / Ollama / RunPod / LM Studio; **encrypted** keys, never returned |
+| `ai_tools` + `manifest_tools` | closed tool registry + per-module allow-list (no dynamic exec) |
+| `ai_memories`, `ai_usage_ledger`, `ai_audit_log` | owner-scoped recall, cost telemetry, append-only audit |
+
+The Python side mirrors this: [`workers/core/`](workers/core/) holds `scripture` (immutable
+resolved-verse DTOs over `bible_api`), `prompt_engine` (7-layer injection-resistant
+composition), `persona_engine`, `memory`, `rag`, `events`, `tool_registry`; `core_orchestrator`
+runs the round; [`workers/plugins/bible_study/driver.py`](workers/plugins/bible_study/driver.py)
+is the thin Celery driver (`tasks.study_discuss`, `ai:study` queue, via the bridge).
+
+**Security model.** System prompts, persona lens tags, template bodies, and provider keys
+are server-only and never serialized to any API or SSE event. The prompt engine separates
+**trusted** context (moderator frame + canonical verses, in the system role) from
+**untrusted** content (other pastors + the worshipper question, fenced in the user role)
+to resist cross-agent and user prompt injection; ASCII-only fences are spoof-neutralized.
+Safety is two-stage: a cheap pre-filter before dispatch + the authoritative `classifier`
+post-filter on every turn. Sessions are owner-scoped; the SSE stream is gated by a
+**hash-only, CSPRNG stream token** (constant-time compared, idle-TTL'd, soft device
+fingerprint) with a per-user concurrency cap. Worker callbacks are **HMAC-signed with a
+timestamp tolerance**. Scripture is never model-generated — only references are cited; exact
+text comes from the local corpus (`resolved=false` on gaps, never fabricated).
+
+**Streaming.** The worker publishes seq-stamped events to a durable, **size-capped + TTL'd**
+Redis log; the Laravel SSE endpoint polls it by `seq` (proxy-safe, heartbeated) and the Vue
+client dedupes/orders on `seq`, so reconnect replay is idempotent.
+
+**Setup.** `php artisan migrate` then `php artisan db:seed --class=Database\Seeders\BibleStudySeeder`
+(idempotent: seeds the manifest, fictional personas + templates for all 7 languages, provider
+profiles, and the tool registry). Set the `STUDY_*` env vars (see `.env.example`) and run the
+`ai:study` Celery worker ([`.systemd/prod/aivc-workers-study.service`](.systemd/prod/aivc-workers-study.service))
+alongside the bridge. Admin manage it under the console's **Bible Study** tab.
+
+---
+
+## Unified Conversation & Spiritual History
+
+Every registered worshipper gets a permanent, ChatGPT-style history of every
+interaction — their **Spiritual Journal**. One unified spine (`chat_sessions` + per-type
+metadata tables) records Bible Study, Worship, Church Services, and the new AI Pastor
+Chat, so a single left sidebar, a single search, and a single timeline cover everything.
+Future AI modules drop in by writing to the same spine.
+
+**Data model.** `chat_sessions` (UUID id, `session_type`, title, summary, mood, language,
+pinned/favorite/archived, soft-deletes) is canonical; `chat_messages` holds chat turns
+(content encrypted at rest). Type-specific detail lives in `bible_sessions`,
+`music_sessions`, `service_sessions_meta`, `prayer_sessions`, each 1:1 with a session.
+`chat_session_tags` carries auto + user tags; `chat_session_shares` stores read-only
+share links (token sha256-hashed, optional bcrypt password, expiry). The existing
+multi-agent `study_sessions` engine is **bridged** (1:1 link) rather than replaced, so
+the live SSE study path is untouched. Backfill historical studies with
+`php artisan history:backfill-study`.
+
+**API** (all owner-scoped, `auth:sanctum`): `GET /api/history` (date-grouped:
+Today / Yesterday / Previous 7 / 30 / Older, cursor-paginated, Redis-cached first page),
+`GET /api/history/{id}` (full resume payload), `POST /api/history/search`,
+`PATCH /api/history/{id}` (rename / pin / favorite / archive / rate / tags),
+`DELETE` + `POST .../restore` (soft delete), `.../share` + public
+`GET /api/shared/{token}`, `.../export?format=md|json|pdf|docx` + `export-all`,
+`GET /api/history/stats` and `/timeline` (Spiritual Journey dashboard), and
+`PATCH /api/me/profile` for favorite language/version/pastor/goals + an **AI-memory
+opt-in**. Ownership is validated on every request; deletes/shares are audit-logged.
+
+**AI Pastor Chat** (`#pastor`) is a single-assistant streaming companion. Titles,
+2–5 sentence summaries, and auto-tags are generated by the worker
+(`workers/plugins/history/driver.py`, queue `ai:history`, HMAC callback
+`/internal/history-callback`) — the same Redis → worker → signed-webhook pattern as
+Bible Study. When the worshipper opts in, the pastor may reference prior sessions
+("Last week we studied Romans 8…").
+
+**Spiritual Journal.** From any session, **Save to Journal** asks the worker to distill
+an AI-written reflective entry (title + scripture + insight + prayer + reflection),
+stored append-only in `journal_entries` (reflective fields encrypted at rest). Entries
+**outlive** their source session (`chat_session_id` nullOnDelete) — the journal is the
+lasting keepsake. Endpoints: `POST /api/history/{id}/journal` (async, returns a
+`pending` entry; the worker fills it via the `journal` callback mode), `GET /api/journal`,
+`GET/DELETE /api/journal/{id}`. Pinning is capped at 20 per user.
+
+**Frontend.** `HistorySidebar.vue` (resizable/collapsible rail, search, pinned + date
+groups, per-type icons 📖🙏🎵⛪💬📚, transcript overlay with rename/pin/share/export/
+journal/delete, mobile bottom-drawer), `PastorChat.vue` (`#pastor`), and
+`SpiritualJourney.vue` (`#journey` stats + streak + timeline + 📔 journal entries).
+Account settings gains the spiritual-profile fields. Rebuild with `npm run build` in
+`frontend/`.
+
+---
+
 ## Multilingual services (Myanmar & Tedim)
 
 Three languages are supported. Language is chosen on the intake form and **locked per session** (like `music_source`).
@@ -509,7 +672,7 @@ ollama create burmese-myanmar -f ~/BurmeseModelfile
 # 4. Install Python deps and seed language data
 cd /opt/ai-church/workers
 source .venv/bin/activate && pip install -r requirements.txt
-python tools/seed_language_data.py        # Judson 1835 + Tedim 1932 Bibles + Myanmar hymns
+python tools/seed_language_data.py        # Judson 1835 + Tedim 1932 + 8 Chin/Zo Bibles + Myanmar hymns
 # Note: hymns_td.json is bundled in the repo — no seed step needed
 python tools/seed_tedim_midi.py           # optional: instrumental fallbacks (fluidsynth + ffmpeg)
 python tools/build_tedim_dataset.py       # Build the fine-tuning dataset
@@ -744,6 +907,45 @@ dedicated classifier model.
 
 ---
 
+## Content filter (YouTube allow/block firewall)
+
+A second, **admin-curated** safety layer keeps non-Christian or non-worship videos out of the
+worship-music and sermon segments. Keywords are grouped into **categories** (Other Religions,
+Occult / New Age, Profanity, Politics, Secular Music, Off-topic Channels, Sermon-exclude,
+Custom, Allowlist), each with a **scope** that decides where it applies and a **type** that
+decides whether it blocks or allows:
+
+| Type | Effect |
+|------|--------|
+| `block` | A title/channel match **rejects** the candidate (default policy). |
+| `allow` | A title/channel match **keeps** the candidate even if a block keyword also matches — **allow wins over block**. Use it for trusted channels, artists, or ministries. |
+
+| Scope | Worship/music search | Sermon search |
+|-------|:--------------------:|:-------------:|
+| `both`   | ✅ | ✅ |
+| `music`  | ✅ | — |
+| `sermon` | — | ✅ |
+
+Managed from **Admin Console → Content Filter** (its own tab, separate from Settings). Full CRUD
+on categories and keywords, per-category Block/Allow mode, plus **export to JSON/CSV** and
+**restore from JSON**. Storage lives in `Setting` (key `content_filter_categories`), kept in sync
+with the legacy flat `content_filter_keywords` (block keywords only) for backward compatibility.
+
+- **Backend:** [ContentFilterController.php](backend/app/Http/Controllers/ContentFilterController.php),
+  taxonomy + accessors in [Setting.php](backend/app/Models/Setting.php) (`filterCategories()`,
+  `filterKeywordsForScope()`, `allowKeywordsForScope()`).
+- **Delivery:** the public [`/config`](backend/app/Http/Controllers/ConfigController.php) endpoint
+  surfaces `content_filter_music` / `content_filter_sermon` (block) and
+  `content_filter_allow_music` / `content_filter_allow_sermon` (allow).
+- **Enforcement:** [youtube_strategy.py](workers/strategies/youtube_strategy.py) fetches the
+  scoped block + allow lists (cached 5 min, fails open). A candidate whose title **or** channel
+  matches a block keyword is rejected **unless** it also matches an allow keyword — applied as an
+  extra gate on top of the hardcoded per-language reject lists.
+
+Changes take effect within ~5 minutes for running workers (the cache TTL).
+
+---
+
 ## Offering & financial ledger
 
 The offering segment opens a **Stripe PaymentIntent** server-side
@@ -753,6 +955,129 @@ allocation (`operations` / `charity` / `missions`) is carried in the intent meta
 anything the client re-sends. Amounts are bounded (min 1.00), and
 `transaction_hash` is a unique idempotency key so a replayed webhook can't double-record.
 Stripe webhooks are signature-verified.
+
+---
+
+## Subscriptions, plans & the token economy
+
+Three billing tiers govern access, **separate from the staff `role`** (which controls
+admin/console privilege):
+
+| Plan        | How you get it          | Ads | Tokens/month\* | Max pastors\*\* |
+|-------------|-------------------------|-----|----------------|-----------------|
+| **Guest**   | anonymous walk-up        | yes | — (1 free use per service) | 2 |
+| **Member**  | register an account      | no  | 100            | 3 |
+| **Premium** | Stripe subscription      | no  | 1000           | 7 |
+
+\* Configurable via `config/tokens.php` / env, and overridable live by an admin
+(`plan_overrides` setting). \*\* From the existing admin-editable `study_agent_tiers`.
+
+### Single source of truth
+
+No controller branches on a plan string. [`PlanService`](backend/app/Services/PlanService.php)
+maps a plan → its rules (allowance, ads, features) from config layered with admin
+overrides; [`FeatureService`](backend/app/Services/FeatureService.php) is the per-user
+façade (`showsAds()`, `maxPastors()`, `monthlyAllowance()`, …). Plans, statuses and
+ledger entry types are PHP enums (`app/Enums/`) — no magic strings.
+
+### Token wallet (reserve → commit → rollback)
+
+`users.token_balance` is the authoritative balance; every change is appended to
+`token_ledger` inside the same `lockForUpdate` transaction that moves it, so concurrent
+requests can't double-spend. AI calls use a **two-phase hold**
+([`TokenService`](backend/app/Services/TokenService.php)): `reserve()` debits before the
+fallible upstream call, then `commit()` on success or `rollback()` (refund) on failure —
+a model timeout never charges a user. A `token_reservations` row carries a TTL;
+`reservations:cleanup` (hourly) refunds any hold stranded by a crashed worker.
+
+Admins can **top up a registered user's wallet** from **Admin Console → Users** (the
+**Grant tokens** row action; the table also shows each user's plan + current balance).
+It posts to `POST /api/admin/users/{user}/tokens` (`admin` middleware) which calls
+`TokenService::grant()` and records a `LedgerType::ADJUSTMENT` entry referencing the
+acting admin. Guest accounts have no wallet and are rejected.
+
+### Guest one-use enforcement
+
+Guests get a single free use **per service**, tracked in `guest_tracking` by salted
+hashes of three signals — IP, a browser fingerprint, and a long-lived `guest_id` cookie
+— so clearing cookies alone doesn't reset the quota (see
+[`GuestUsageService`](backend/app/Services/GuestUsageService.php)). Enforced by the
+`guest.limit:{service}` middleware; members/premium fall through to `tokens:{service}`.
+
+#### Charge-before-enrichment execution order
+
+Every AI service endpoint (worship `intake`, Bible `study`, Pastor chat) follows one
+ordering rule: **the quota/usage write is the first irreversible side-effect, and all
+best-effort enrichment runs after it, isolated.** Concretely, in
+[`ServiceController::intake`](backend/app/Http/Controllers/ServiceController.php) and
+[`StudyController`](backend/app/Http/Controllers/StudyController.php):
+
+1. **Hard path** (any failure aborts the request): validate → crisis check → persist
+   intake → **charge/record quota** → execute the primary action (dispatch the pipeline).
+2. **Soft path** (best-effort, never affects the response or billing): the unified
+   **history mirror** (`*_session_meta` + `chat_sessions`) is wrapped in `try/catch` and
+   only logs on failure.
+
+This order exists because the inverse once shipped a real bug: the history mirror sat
+*ahead* of the quota write, so when its tables were missing every `intake` threw before
+recording usage — leaving `guest_tracking` empty and letting guests reuse a service after
+a refresh instead of getting `402 guest_limit`. **An enrichment failure must never skip
+the quota write or break the user response.** See the "Degrade, never block" philosophy
+above — quota/billing is the one exception that must complete *before* enrichment, not
+after.
+
+#### Concurrency guarantees
+
+Guest usage is recorded under a row lock: `GuestUsageService::record()` wraps its
+read-modify-write of the `services_used` JSON map in `DB::transaction()` +
+`lockForUpdate()`, so two requests from the same visitor firing at once (e.g. study +
+service) serialize instead of clobbering each other's keys. The unique
+`(ip_hash, fingerprint_hash)` index is the database-level backstop against duplicate
+rows; the insert race is caught and merged into the winning row rather than 500ing.
+`chargeService()` is idempotent — the member token spend is guarded by the
+`token_ledger` reference and guest usage is keyed per-service — so a duplicate intake on
+the same session never double-charges.
+
+### Ad suppression
+
+Server-authoritative: `GET /ads/active` returns `[]` for any ad-free plan, so the
+suppression can't be bypassed by calling the API directly.
+
+### Subscription lifecycle (Stripe Checkout)
+
+`POST /subscription/checkout` opens a hosted Stripe Checkout via the
+[`BillingProvider`](backend/app/Services/Billing/BillingProvider.php) seam (Stripe today;
+a second provider can be added without touching controllers). Premium is **only**
+activated/downgraded by the signature-verified webhook
+(`POST /webhooks/stripe/subscription`). `subscription_status`
+(active/trial/grace/expired/cancelled) is explicit rather than date-inferred; every
+transition is appended to `subscription_history` for support/audit. `subscriptions:expire`
+is a daily backstop for missed deletion webhooks.
+
+### Scheduled jobs (`routes/console.php`)
+
+`tokens:refill-monthly` (daily, idempotent within a month) · `subscriptions:expire`
+(daily) · `guests:cleanup` (daily) · `reservations:cleanup` (hourly).
+
+### Usage logging
+
+`usage_logs` records per-request AI usage (user, service, model, tokens, cost, latency,
+status) for cost forensics — distinct from the wallet ledger.
+
+### Account page
+
+`AccountSettings.vue` surfaces the plan badge, a token gauge (used / remaining),
+upgrade-to-premium (→ Stripe), cancel, and token history. `GET /me` now returns
+`plan`, `is_premium`, `shows_ads`, `token_balance`, and `monthly_allowance`.
+
+> **Deploy note:** run `php artisan migrate --force` (eight additive migrations) and set
+> `STRIPE_PREMIUM_PRICE_ID`. Point a Stripe webhook at `/webhooks/stripe/subscription`
+> for `checkout.session.completed`, `customer.subscription.updated`,
+> `customer.subscription.deleted`, and `invoice.payment_failed`.
+
+**Reference docs:** [`docs/SUBSCRIPTION_SYSTEM.md`](docs/SUBSCRIPTION_SYSTEM.md)
+(architecture) · [`docs/DEPLOYMENT_CHECKLIST.md`](docs/DEPLOYMENT_CHECKLIST.md) ·
+[`docs/STAGING_TEST_PLAN.md`](docs/STAGING_TEST_PLAN.md).
 
 ---
 
@@ -778,7 +1103,7 @@ The console is at `/#admin`. Access is role-based:
 | `staff` | admin + moderator + presenter | Dashboard, Services, Testimonies, Donors, Prayer Requests, and **permission-checked reads** (Users, Settings, Music Pool, Permissions, Grammar Review, Voice Training, System health) |
 | `admin` | admin only | All writes: Settings PATCH, User mutations, Music Pool CRUD, Permissions PATCH, CSV Export, System actions |
 
-- **Dashboard** — sessions, worship-time totals, donations, intercept counts, and prayer-request counts (total + today).
+- **Dashboard** — sessions, worship-time totals, donations, intercept counts, and prayer-request counts (total + today). When the admin enables a removable special-day feature (**Special Day MV** and/or **Live Sticker**), a card per enabled feature shows its visitor render traffic (total + today); the card hides automatically while the feature is disabled. Each feature's own admin page also shows its traffic count with a **Reset count** button to zero the counter.
 - **Services** — list + **retry** a failed/stuck service (clears existing assets first so segment count visibly drops to zero, confirming regeneration is in progress) + **delete**.
 - **Testimonies** — approve / delete (moderation queue); each entry shows the user's custom mood words so the moderator has context.
 - **Users** — list + **create** new users (admin generates a first-login reset link when no password is set) + **assign role** (`admin`/`moderator`/`presenter`/`member`) + **block/unblock** + **delete** + **force password reset** (generates a one-time token link the admin shares out-of-band) + set **presenter gender**.
@@ -810,10 +1135,12 @@ The console is at `/#admin`. Access is role-based:
 - **Export** — CSV of `donations` | `users` | `testimonies`.
 - **System** (admin-only) — live system monitor with one-click installs and service restarts:
   - **Service health** — real-time status (active / inactive / unknown) of all AIVC systemd
-    units (`aivc-workers`, `aivc-workers-music`, `aivc-bridge`, `aivc-queue`,
-    `aivc-scheduler`, `aivc-tedim-api`, `aivc-burmese-api`) plus `redis-server` and `nginx`.
+    units (`aivc-workers`, `aivc-workers-music`, `aivc-workers-orchestrate`,
+    `aivc-workers-avatar`, `aivc-bridge`, `aivc-queue`, `aivc-scheduler`, `aivc-tedim-api`,
+    `aivc-burmese-api`) plus `redis-server` and `nginx`.
     Each restartable unit has a **Restart** button that dispatches a `RestartService` queue
-    job (requires the `sudoers` entry documented in `RestartService.php`).
+    job (requires the `sudoers` entry — `/usr/bin/systemctl` — documented in
+    `RestartService.php`).
   - **App version (git)** — current branch, commit hash + message, and how many commits
     behind `origin` the working tree is. A **Pull latest from origin** button dispatches a
     `RunUpdateCheck(gitPull: true)` job that runs `git pull --ff-only` then refreshes the
@@ -825,6 +1152,10 @@ The console is at `/#admin`. Access is role-based:
   - The cache lives at `/tmp/aivc_update_status.json`, refreshed by the `aivc-update-checker`
     systemd timer (every hour, 5 min after boot) and on demand via the **Refresh now** button.
     The dashboard auto-polls every 30 s while the tab is open (4 s while a check is running).
+    Because the file is written by both the queue worker (user `simon`, via
+    `update_checker.py`) and the web request (`www-data`, via `markChecking()`), both writers
+    keep it group-writable (`0664`, group `www-data`) and fall back gracefully so a permission
+    glitch degrades the spinner hint instead of returning a 500 to **Refresh now**.
 - **Ads** — full ad-campaign CRUD with multi-slide carousel, in-browser Cropper.js image editor, audience targeting (language + mood), and billing by impression/click. See [Ad Management](#ad-management) below.
 - **Voice Studio** — in-browser TTS training-data recorder and automatic MMS/VITS
   fine-tune feeder. Displays Tedim and Burmese recording-script sentences one at
@@ -857,6 +1188,7 @@ Ads appear in the service player at three positions:
 - **List view** — shows all campaigns with live impression/click/revenue totals.
 - **Edit view** — two-column layout: ad settings on the left, slide manager on the right.
   - Set status (`draft` / `active` / `paused`), type (`slideshow` / `html`), locations, slide duration, billing rates, and audience targeting.
+  - **Locations** — `start` / `between` / `end` (service flow), `special_day` (Special Day MV page), `sticker_ads` (Live Sticker page), and `bible_study` (the box below the AI Bible Study setup form). Tag an ad to a location to show it there; untag to hide.
   - **Image slides** — upload an image and crop it in-browser with Cropper.js (free aspect ratio, max 1200×800 WebP output at 88% quality).
   - **HTML slides** — paste any HTML (embed codes, custom banners).
   - Reorder slides with ↑/↓ buttons (persisted to `sort_order`).
@@ -918,6 +1250,326 @@ sending it.
 
 ---
 
+## Special Sundays (observance-driven sermon & worship)
+
+During the window around a "special Sunday" (Mother's/Father's/Children's/Youth
+Day, Palm Sunday, Easter, Pentecost, Reformation, Advent, Thanksgiving…) the app
+**pre-biases the sermon and worship music** toward the observance and shows a
+localized highlight card on the intake screen.
+
+**Window math.** Each observance resolves to a Sunday `S`; its active window is
+`[S − 2 days @ 00:00 .. S @ 23:59:59]` — i.e. **Friday 00:00 → Sunday 23:59**. A
+worshipper arriving Fri/Sat/Sun of that week gets the bias + card; Mon–Thu they
+do not. Overlapping windows are broken by `priority` (higher wins).
+
+**Dates are never hardcoded** — they move every year. Each observance carries a
+*rule* that [`App\Models\SpecialSunday`](backend/app/Models/SpecialSunday.php)
+resolves for any year:
+
+| `rule_type`     | `rule`                                 | Example                      |
+|-----------------|----------------------------------------|------------------------------|
+| `nth_weekday`   | `{month, weekday(0=Sun..6=Sat), nth}`  | Mother's Day = 2nd Sun May   |
+| `easter_offset` | `{offset}` days from Western Easter     | Palm = −7, Pentecost = +49   |
+| `fixed`         | `{month, day}` civil/fixed date         | Children's Day = Jun 1       |
+
+Western Easter is computed in-house (Anonymous Gregorian algorithm); any anchor
+that isn't already a Sunday is snapped to the **nearest Sunday** (±3 days).
+
+**How it flows.**
+- The catalog lives in [`config/special_sundays.php`](backend/config/special_sundays.php)
+  (versioned, region-editable) and is upserted into the `special_sundays` table by
+  `SpecialSundaySeeder` (my/td text NFC-normalized to Myanmar Unicode).
+- [`SpecialSundayResolver`](backend/app/Services/SpecialSundayResolver.php) returns
+  the active observance for a moment. It's consulted **live at dispatch time** in
+  [`DispatchServiceJob`](backend/app/Jobs/DispatchServiceJob.php), which adds a
+  `special_sunday` block (`sermon_tags`, `music_moods`, localized `title`/`brief`)
+  to the Redis payload. The `special-sunday:evaluate` command (daily) just warms
+  the cache and logs the active observance.
+- Worker-side, the bias filters selection without overriding the worshipper's own
+  mood/prayer: `sermon_tags` steer `generate_sermon(theme=…)` and the YouTube
+  sermon query; `music_moods` fold into the hymn/worship search query. Scripture
+  still bypasses the LLM, and my/td prose still passes the Zawgyi/Unicode guard.
+- The SPA fetches `GET /api/special-sunday/current?language=en|my|td` and renders
+  the highlight card in [IntakeForm.vue](frontend/src/components/IntakeForm.vue),
+  in Myanmar Unicode fonts (Pyidaungsu/Padauk/Noto Sans Myanmar) for my/td.
+
+**Admin console — monitor & control.** The staff console has a **Special Sundays**
+tab (permissions `special_sundays.view` / `special_sundays.manage`) backed by
+`GET /api/admin/special-sundays` and write routes under `/api/admin/special-sundays`:
+- *Monitor* — the observance active right now, an upcoming calendar (this year +
+  next), and a **bias audit** (recent services generated inside a window, with the
+  observance that biased them, resolved retroactively from `created_at`).
+- *Control* — enable/disable each observance, edit priority, title/brief (en/my/td,
+  NFC-normalized to Myanmar Unicode), and the date rule, or **add a new observance**
+  manually. Everything is auto-seeded by default; edits/additions live in the DB row.
+
+**Curated content (manual mode).** Beyond biasing the AI, each observance can carry
+a **hand-authored sermon** and **specific songs** per service language, managed from
+the same admin tab (tables `special_sermons` / `special_songs`):
+- Each observance has a per-language **mode** for sermon and for worship
+  (`content_modes` JSON on `special_sundays`). Default **Auto** = the AI sermon /
+  mood-selected worship run normally. Flip to **Manual** to serve the highest-priority
+  active curated entry instead; if none is active, the worker safely falls back to Auto.
+- Curated **sermons** are spoken verbatim (still classifier-reviewed, narrated, and
+  avatar-rendered). Curated **songs** support four source kinds — `youtube` (id/URL),
+  `hymn` (a Song-library id, reusing its audio + lyrics), `audio` (a direct hosted
+  URL), and `suno` (a composition prompt rendered at service time).
+- Entries are tagged by `mood` / `priority` / `region`; when several match a
+  day+language, a matching mood wins, then highest priority. The worker honors this on
+  both the pipeline and agent orchestration paths. my/td text is NFC-normalized.
+
+**Preview (confirm before Sunday).** The Content panel has a read-only **preview**
+(`GET /api/admin/special-sundays/{id}/preview?language=&mood=`) that resolves the exact
+sermon + worship that *would* be served for a chosen language and mood — showing the
+manual pick (sermon title/body, song) or, for **Auto** mode, the bias `sermon_tags` /
+`music_moods` that steer the AI. Lets staff verify a manual selection ahead of time
+without dispatching a real service.
+
+**Adding a special Sunday (config).** For a permanent, version-controlled entry,
+append it to
+[`config/special_sundays.php`](backend/config/special_sundays.php) with a unique
+`key`, a `rule_type` + `rule`, `titles`/`briefs` for `en`/`my`/`td` (Myanmar
+Unicode only), `sermon_tags`, `music_moods`, optional `region`, and `priority`,
+then re-seed:
+
+```bash
+php artisan db:seed --class="Database\Seeders\SpecialSundaySeeder" --force
+```
+
+No migration is needed — the seeder upserts by `key`.
+
+---
+
+## Special Day Music Video (Father's Day) — standalone & removable
+
+A self-contained feature that lets a public visitor upload photo(s) of their
+father and download a vertical **1080×1920 MP4** set to an admin-provided song +
+lyrics. It is deliberately isolated from the worship pipeline so it can be added
+for one occasion and removed cleanly afterwards.
+
+**Two delivery modes (mutually exclusive — only one runs at a time)**
+- **Manual MV library** (the original): visitors upload photos and build a video
+  from your uploaded songs (below).
+- **Auto YouTube song**: the system plays the **currently active Special Sunday's**
+  curated YouTube song (no video creation) with a **share button only**. Songs are
+  a hardcoded catalog in `backend/config/special_day_songs.php`, keyed by the same
+  observance `key` as `config/special_sundays.php` (`fathers_day`, `easter_sunday`,
+  …); each entry is `['title' => …, 'youtube_id' => …]`. The resolver picks today's
+  active day, the page embeds its song(s), and Share hands out the raw YouTube
+  watch URL plus an *aivirtual.church* invitation. Entries with no valid 11-char
+  `youtube_id` are skipped; a day with no usable songs shows "not available".
+  The admin panel previews exactly what Auto mode would play right now.
+- Enabling one mode forces the other off (enforced in both the UI and
+  `adminSave`); you cannot have both on.
+
+**How it works**
+- **Admin** (`#admin` → *Special Day MV* tab, admin role only): choose the mode
+  (Manual MV library or Auto YouTube), and for manual, manage a **song
+  library** — add multiple songs (MP3/WAV), each with its own lyrics, sync mode,
+  detected vocal-onset and tap-to-sync. Set the default effect and **enable** the
+  page. Config + assets live as plain files in `backend/storage/app/fathersday/`
+  (`config.json` + `songs/<id>.<ext>`) — **no DB migration**.
+- **Visitor** (`#fathers-day`, link appears only when enabled): **picks a song**,
+  drops 1–6 photos, picks an effect, hits *Create video*, and the MP4
+  auto-downloads when ready.
+- **Effects**: `slide` (hard cut), `fade` (crossfade), `kenburns` (gentle
+  zoom/pan). A single photo is held for the whole song (with optional zoom).
+- **Community Original + brand audio tag** (to avoid social-media copyright
+  blocks): mark a song *Community Original* (your own/cleared recording), and
+  optionally upload a short **aivirtual.church audio ident** that the renderer
+  overlays at the very *start* of every MV. The overlay (`amix duration=first
+  normalize=0`) keeps the song's length and full volume — lyric sync stays exact
+  and the song still sounds good — while making the audio identifiably yours so
+  community-original songs pass Facebook/Instagram checks. (A genuinely
+  copyrighted *melody* can still be flagged regardless; this protects your own
+  originals and public-domain hymns, it is not a way to disguise commercial
+  tracks.) **Sharing**: the done screen has a single **⬇ Save video** button —
+  it downloads the MP4 to the gallery, with on-screen steps to post it **once**
+  via Facebook → *Create post* → *Photo/Video* (not Stories/Reels). There is no
+  "Share video" button: handing a video to the OS share sheet sends it into
+  Facebook's **Stories/Reels** quick-flow, which **chops it into 15–20s
+  segments** ("part 1, 2, 3…") — no website can override that, and FB removed
+  programmatic video posting to personal timelines (`publish_actions`, 2018), so
+  every share path just resolved to a download anyway. A manual **Feed** upload
+  is the only guaranteed single post. The *Or share a link* `/v/{jobId}` page
+  remains as a fallback for sharing a preview-card link.
+- **Lyrics**: `[mm:ss.xx]` LRC tags drive the time-synced highlight; otherwise
+  lines are split evenly across the song length. Section markers like
+  `[Verse 1]` / `[Chorus]` / `[Bridge]` are recognised and **not** shown on the
+  video. Lyrics are burned in as ASS subtitles using the bundled **Myanmar
+  Njaun** font (`backend/resources/fonts/`), which renders Myanmar *and* Latin so
+  EN/MY/TD lyrics all display — the host has no Myanmar system font. Reuses the
+  LRC convention from the worship `MusicPlayer`.
+- **Song**: MP3/WAV up to **50 MB**.
+- **Tap-to-sync** (exact karaoke timing): in the admin panel, *Tap-to-sync
+  lyrics* plays the song and the admin presses **Space** as each line is sung;
+  this writes per-line `[mm:ss.xx]` LRC timestamps and turns on synced mode, so
+  every line appears exactly when it's sung — reliable for any language. Without
+  tapping, lines are split evenly from the vocal-onset (below).
+- **Lyrics hold for the intro**: when a song is uploaded, `DetectVocalStartJob`
+  runs **Demucs** (vocal source separation) on the first 90s to find when the
+  singing starts, and caches `vocal_start` (seconds) in config. The renderer
+  holds the lyrics through the instrumental intro and spreads them from that
+  point. Admin can override the detected value. Demucs runs in an **isolated
+  venv** (`workers/.venv-demucs`, gitignored) so its torch can't disturb the
+  narration/avatar stack; detection is ~3 min on CPU but runs once per song.
+  Setup: `python3.12 -m venv workers/.venv-demucs && workers/.venv-demucs/bin/pip
+  install torch torchaudio --index-url https://download.pytorch.org/whl/cpu &&
+  workers/.venv-demucs/bin/pip install demucs diffq`.
+- **Rendering** runs on the existing Laravel `queue:work` worker via
+  `RenderFathersDayJob` shelling out to `ffmpeg` — no new service or port.
+- **Sharing**: the visitor can share the finished MV. The button is
+  **duration-aware** to avoid Facebook auto-splitting a long file into many
+  spammy ~90s reels — clips **≤90s** are handed straight to
+  `navigator.share({files})` (native file share), while **longer** videos fall
+  back to sharing a clean **main-domain** `/v/<id>` link (served with
+  Open-Graph/Twitter-card meta; `SecurityHeaders` relaxes the CSP for `/v/*`
+  video+poster). When the **Web Share API is unavailable** (e.g. desktop
+  browsers) the button degrades gracefully to **copy-link / save-file** so the
+  tap always does something. (A full-song share builds the link directly rather
+  than reading blob metadata, which previously hung.)
+
+**Security**: uploads are validated by extension + size (≤8 MB/photo, ≤6 photos),
+then **re-encoded through ffmpeg**, which strips EXIF/GPS and neutralises
+malformed-image payloads. Filenames are server-generated (never client-trusted),
+job ids are UUIDs validated against path traversal, the render endpoint is
+throttled (`10/min`), and originals are deleted after the render. The public page
+only appears once a song is uploaded **and** the feature is enabled.
+
+**Abuse / resource guards**: finished MVs are pruned after **30 days** and
+abandoned uploads after **1h** by the scheduled `media:prune` command (daily
+03:30) plus an opportunistic sweep on each render — so a public endpoint can't
+fill the disk. A hard **5 GB** storage ceiling refuses new renders (HTTP 503) if
+cleanup ever falls behind, and **idempotency** (a content hash of the uploaded
+photos + effect/song/clip, kept 24h in `render_index.json`) returns the existing
+job for an identical re-submit instead of re-encoding a duplicate.
+
+**nginx note**: photo uploads can exceed the default body cap. Bump the API
+server block: `client_max_body_size 60M;` then `nginx -t && systemctl reload nginx`.
+
+**To remove the whole feature**, delete:
+`FathersDayController.php`, `app/Jobs/RenderFathersDayJob.php`, the *Father's Day
+MV* route block in `routes/api.php`, `backend/storage/app/fathersday/`, the
+frontend `FathersDay.vue` + `FathersDayManager.vue`, and their wiring in
+`App.vue` / `AdminConsole.vue` / `useApi.js`.
+
+---
+
+## Live Sticker Maker — standalone & removable
+
+A self-contained fun tool that lets a public visitor upload **any** photo
+(vertical or horizontal) and get **an AI watercolor die-cut sticker** — an
+illustration repaint of their photo, cut out from its background with a white
+sticker border + soft shadow and scattered colour-emoji (hearts / sparkles),
+like a ChatGPT/Telegram sticker. An optional caption can come from
+the admin **Father's Day song lyrics** (reused from the Special Day feature) or
+**free text the visitor types** (lightly **auto-corrected** for English).
+Isolated from the worship pipeline so it can be removed cleanly.
+
+**How it works** (`workers/tools/sticker_render.py`)
+- **Admin** (`#admin` → *Live Sticker* tab, admin only): **enable/disable** the
+  page and set fallback page copy (title/subtitle). Config is a plain file at
+  `backend/storage/app/stickers/config.json` — **no DB migration**. The link,
+  intake banner and page only appear when enabled.
+- **Special-Sunday theme**: when a Special Sunday is active (resolved by
+  `SpecialSundayResolver`), the page title, caption suggestions and the AI repaint
+  prompt + decorations automatically follow it (Father's Day → dad theme,
+  Christmas → 🎄🎁, etc.). Outside observances the admin fallback copy is used.
+- **Visitor** (`#stickers`, shown when enabled): taps the red **Create Live Sticker**
+  box, picks a photo, fine-tunes the square crop (pre-centred on the detected
+  face/group), optionally adds a caption, and gets a downloadable PNG sticker.
+- **Face detection + crop**: **OpenCV** (Haar cascade) finds the face(s) and
+  suggests a padded square box. `/stickers/detect` runs this **synchronously**
+  and returns the box; the frontend shows it in **cropper.js** for manual
+  adjustment. EXIF orientation is honoured so phone photos aren't sideways.
+  Both `/stickers/detect` and `/stickers/render` return **404 when the feature
+  is disabled**, so no upload/CPU work happens unless an admin has turned it on.
+- **AI repaint (img2img)**: the sticker is repainted via **OpenRouter** using
+  Google's **`google/gemini-2.5-flash-image`** model (best watercolor portraits,
+  keeps the full head/pose in frame, cheapest), driven by the existing
+  `OPENROUTER_API_KEY` (`workers/.env`). Override with **`STICKER_MODEL`** in
+  `workers/.env` — e.g. `openai/gpt-5-image-mini` (~$0.044) or `openai/gpt-5-image`
+  (~$0.19), though the OpenAI variants tend to crop the top of the head and may
+  burn unwanted text into the image. **Note:** OpenRouter has no
+  `openai/gpt-image-1`. The prompt **rotates through a set of
+  distinct art styles** (`STYLES`) so consecutive renders look different, while
+  **strongly preserving each person's facial identity/likeness** (face shape,
+  eyes, nose, mouth, skin tone, glasses, hairstyle, expression) — style is
+  applied to rendering/texture only, never to facial features.
+  **One image per job (~$0.02–0.04)** to keep cost low — change `COUNT` in
+  `sticker_render.py` + `StickerController` to make more. If the key is missing
+  or a call fails, it falls back to a cutout of the **real** photo so the tool
+  still works.
+- **Die-cut cutout**: **rembg** (U²-Net) removes the background; **Pillow** +
+  **OpenCV** dilate the silhouette into a white sticker border, add a soft drop
+  shadow, and scatter 3–5 colour emoji (avoiding faces) from the bundled
+  **Noto Color Emoji** font (`backend/resources/fonts/`). Output is a 768×768
+  transparent PNG.
+- **Auto-correct** (caption): English-only via `pyspellchecker`, conservative
+  (skips proper nouns / all-caps / non-Latin) — the Burmese model is unusable
+  for free text.
+- **Rendering** runs on the dedicated `fathersday` queue via `RenderStickerJob`
+  (reuses the existing `aivc-fathersday-render@` workers — no new service; job
+  timeout 150s). Outputs/uploads live as plain files in
+  `backend/storage/app/stickers/jobs/<id>/` — **no DB migration**.
+
+**Dependencies** (worker venv, one-off):
+`workers/.venv/bin/pip install opencv-python-headless Pillow pyspellchecker
+"rembg[cpu]" onnxruntime`. rembg downloads its U²-Net model (~176 MB) to
+`~/.u2net/` on first run. The Noto Color Emoji font is committed under
+`backend/resources/fonts/`. Requires `OPENROUTER_API_KEY` in `workers/.env`.
+
+**Security**: uploads validated by extension + size (≤12 MB), stored under
+server-generated names; job ids are UUIDs validated against path traversal;
+`detect`/`render` throttled (`20/min`); originals deleted after the render.
+**Retention is split** so shared `/s/<id>` links don't die within hours:
+**finished** stickers (a `sticker_*.png` exists) are kept **~1 year**
+(`KEEP_SECS` = 365 days) so links stay alive, while **abandoned** uploads
+(photo detected but never rendered) are still pruned after **1h**
+(`ABANDON_SECS`) for privacy; the scheduled `media:prune` command (daily 03:30)
+is the backstop. The base storage dir is `setgid 02775` so the render worker
+(separate OS user in the `www-data` group) can read the queued job. The photo is
+sent to OpenRouter for the repaint — note this in any privacy copy.
+
+**Abuse / resource guards**: a global **daily cap** (`DAILY_CAP` = 500 renders)
+bounds paid OpenRouter cost even under distributed abuse (HTTP 429 past the cap);
+**idempotency** returns the existing job for a repeat submit of the same upload
+token instead of paying for a second repaint; and a hard **2 GB** storage ceiling
+refuses new renders (HTTP 503) if cleanup falls behind. Public share pages
+(`/s`,`/si`,`/v`,`/vi`,`/vp`) are served with `X-Robots-Tag: noindex,
+noimageindex` so user photos stay shareable by direct link but out of search
+results.
+
+**Sharing**: the visitor's primary action is **📤 Share**, which hands the actual
+PNG file to `navigator.share({files})` — it lands straight in WhatsApp /
+Instagram / Messenger / Viber / X with **no hostname exposed**. For link-based
+shares (Facebook/X/Telegram/“Copy link”) the page builds a clean **main-domain**
+URL `https://aivirtual.church/s/<jobId>`, served by `ShareController` (registered
+in `routes/web.php`) with **Open-Graph/Twitter-card** meta so the preview shows
+the sticker on the public domain, never `api.*`. `og:image` is re-served at
+`/si/<jobId>/<n>`. `SecurityHeaders` relaxes the CSP only for `/s/*`.
+
+**nginx (main domain)**: map the share paths to php-fpm inside the
+`server_name aivirtual.church` block:
+```nginx
+location ^~ /s/  { root /opt/ai-church/backend/public; try_files $uri @sticker_share; }
+location ^~ /si/ { root /opt/ai-church/backend/public; try_files $uri @sticker_share; }
+location @sticker_share {
+    fastcgi_pass unix:/run/php/php8.3-fpm.sock;
+    include fastcgi_params;
+    fastcgi_param SCRIPT_FILENAME /opt/ai-church/backend/public/index.php;
+    fastcgi_param SCRIPT_NAME /index.php;
+}
+```
+
+**To remove the whole feature**, delete: `StickerController.php`,
+`app/Jobs/RenderStickerJob.php`, `ShareController.php`, `workers/tools/sticker_render.py`,
+the *Live Sticker* route block in `routes/api.php`, the `routes/web.php` share block,
+the `/s//si` nginx locations, `backend/storage/app/stickers/`, the frontend
+`LiveSticker.vue`, and its wiring in `App.vue` / `useApi.js`.
+
+---
+
 ## Running locally
 
 You need **four** long-running processes plus Redis and MySQL. None auto-restart and
@@ -955,7 +1607,7 @@ set -a; . ./.env; set +a
 python seed_hymns.py
 
 #   Seed language data (required for Myanmar/Tedim language services):
-python tools/seed_language_data.py        # Judson 1835 + Tedim 1932 Bibles + Myanmar hymns
+python tools/seed_language_data.py        # Judson 1835 + Tedim 1932 + 8 Chin/Zo Bibles + Myanmar hymns
 # hymns_td.json is bundled — no Tedim hymn seed step needed
 python tools/seed_tedim_midi.py           # optional: Tedim instrumental fallbacks
 
@@ -973,6 +1625,31 @@ npm run dev
 # (optional) release scheduled services on time
 cd backend && php artisan schedule:work
 ```
+
+## Automated tests
+
+The backend has a **PHPUnit** suite (`backend/tests`) covering authentication,
+email-verification/activation, the token ledger, monthly refill, authorization,
+admin user management, and billing-disabled behaviour. Tests run against a
+**dedicated MySQL test database** (the production engine, never the dev/prod data)
+with `RefreshDatabase`.
+
+```bash
+# one-time: provision an isolated test database
+sudo mysql -e "CREATE DATABASE ai_church_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; \
+  GRANT ALL PRIVILEGES ON ai_church_test.* TO 'ai_church'@'localhost'; FLUSH PRIVILEGES;"
+
+cd backend
+composer install                 # installs dev deps (phpunit, mockery)
+cp .env.testing.example .env.testing   # then set DB_USERNAME / DB_PASSWORD
+vendor/bin/phpunit               # or: vendor/bin/phpunit --testdox
+```
+
+Connection + drivers (sqlite-free, MySQL, array cache/session, sync queue, array
+mailer) are pinned in [backend/phpunit.xml](backend/phpunit.xml); local DB
+credentials live in a gitignored `.env.testing`. **CI** ([.github/workflows/ci.yml](.github/workflows/ci.yml))
+spins up a MySQL service, runs the suite with coverage, and builds the frontend on
+every push and pull request.
 
 ### Local gotchas worth knowing
 
@@ -1081,6 +1758,12 @@ This includes:
 - SQL + Tinker CRUD commands
 - post-edit validation queries
 - Tedim/Burmese/English language-safety notes
+
+## API services & billing
+
+A complete list of every external API the platform uses, which ones are **paid/metered**,
+and the **monthly admin checklist** for checking balances and recharging lives in
+[**docs/API_SERVICES_AND_BILLING.md**](docs/API_SERVICES_AND_BILLING.md).
 
 ## Environment variables
 
@@ -1237,7 +1920,7 @@ before any state-changing request to bootstrap CSRF protection.
 | `PATCH` | `/admin/music-tracks/{id}` | (admin only) Update a pool track. |
 | `DELETE` | `/admin/music-tracks/{id}` | (admin only) Delete a pool track. |
 | `GET` | `/admin/grammar-review` | Language grammar review — list sentences from Tedim/Burmese data files (permission-checked: `language_review.view`). Query params: `lang` (`td`/`my`), `type` (`hymn_titles`/`hymn_lyrics`/`sermons`/`prayers`), `status` (`all`/`pending`/`approved`/`corrected`), `page`. |
-| `POST` | `/admin/grammar-review` | Save an approval or correction for a sentence (`action`: `approve`/`correct`/`reset`; `key`; `correction` text). Persisted in `workers/data/grammar_review.json`. |
+| `POST` | `/admin/grammar-review` | Save an approval or correction for a sentence (`action`: `approve`/`correct`/`reset`; `key`; `correction` text). Persisted in `workers/data/grammar_review.json` (runtime-written, gitignored). The web user (`www-data`) must have write access to `workers/data/`; otherwise the endpoint returns a `500` with a clear "cannot write to data directory" message instead of saving silently. |
 | `GET` | `/admin/permissions` | Role permission matrix (permission-checked: `permissions.view`). |
 | `PATCH` | `/admin/permissions` | (admin only) Update the permission matrix. |
 | `GET` | `/admin/export/{type}` | (admin only) CSV: `donations` \| `users` \| `testimonies`. |

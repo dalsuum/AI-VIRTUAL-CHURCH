@@ -31,6 +31,41 @@ function rememberedName() {
 }
 
 // Read the XSRF-TOKEN cookie that Sanctum sets after /sanctum/csrf-cookie.
+// ── Guest device identity ────────────────────────────────────────────────────
+// Two stable, non-sensitive signals so the server can enforce the "one free use
+// per service" guest quota across cookie clears (see GuestUsageService):
+//   • a coarse browser fingerprint (UA + language + screen + timezone), sent as a
+//     header — survives clearing site data;
+//   • a long-lived first-party `guest_id` cookie (a random UUID), readable by the
+//     server. Neither identifies the person; both are hashed server-side.
+function guestFingerprint() {
+  try {
+    const parts = [
+      navigator.userAgent,
+      navigator.language,
+      `${screen.width}x${screen.height}x${screen.colorDepth}`,
+      Intl.DateTimeFormat().resolvedOptions().timeZone || "",
+      navigator.hardwareConcurrency || "",
+    ].join("|");
+    // Small, fast non-crypto hash (djb2) → hex. The server salts+SHA-256s it anyway.
+    let h = 5381;
+    for (let i = 0; i < parts.length; i++) h = ((h << 5) + h + parts.charCodeAt(i)) >>> 0;
+    return h.toString(16);
+  } catch {
+    return "unknown";
+  }
+}
+
+function ensureGuestCookie() {
+  if (/(^|;\s*)guest_id=/.test(document.cookie)) return;
+  const uuid =
+    (crypto.randomUUID && crypto.randomUUID()) ||
+    `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  // 1-year first-party cookie; SameSite=Lax so it rides along with same-site XHR.
+  document.cookie = `guest_id=${uuid}; path=/; max-age=${60 * 60 * 24 * 365}; SameSite=Lax`;
+}
+ensureGuestCookie();
+
 function getCsrfToken() {
   const match = document.cookie
     .split(";")
@@ -70,6 +105,8 @@ async function request(path, { method = "GET", body } = {}, _retried = false) {
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json",
+      // Guest-quota fingerprint (ignored by the server for registered users).
+      "X-Guest-Fingerprint": guestFingerprint(),
       ...(mutating ? { "X-XSRF-TOKEN": getCsrfToken() } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
@@ -127,6 +164,17 @@ async function adminExport(type) {
   return res.blob();
 }
 
+// Generic authenticated download — returns a Blob for the caller to save.
+async function adminDownload(path, accept) {
+  await ensureCsrf();
+  const res = await fetch(`${BASE_URL}${path}`, {
+    credentials: "include",
+    headers: { Accept: accept },
+  });
+  if (!res.ok) throw Object.assign(new Error("Download failed"), { status: res.status });
+  return res.blob();
+}
+
 export const api = {
   // hasToken kept for component compatibility; now checks the session flag.
   hasToken: () => sessionEstablished,
@@ -143,12 +191,10 @@ export const api = {
 
   // Auth flows establish a server-side session (HttpOnly cookie set in response).
   // The frontend stores only the display name for greeting purposes.
+  // Registration no longer auto-logs-in: it creates a pending account and emails an
+  // activation link. No session is established here — the user signs in after activating.
   register: (payload) =>
-    request("/register", { method: "POST", body: payload }).then((res) => {
-      markSession();
-      if (res?.user?.name) rememberName(res.user.name);
-      return res;
-    }),
+    request("/register", { method: "POST", body: payload }),
   login: (payload) =>
     request("/login", { method: "POST", body: payload }).then((res) => {
       markSession();
@@ -161,6 +207,69 @@ export const api = {
       rememberName(null);
     }),
   me: () => request("/me"),
+  // Public auth-state probe — returns { authenticated, user } with HTTP 200 even
+  // when logged out (no console 401), unlike /me which sits behind auth:sanctum.
+  session: () => request("/auth/session"),
+
+  // ── AI Bible Study (worshipper) ──────────────────────────────────────────
+  studyConfig: () => request("/v1/study/config"),
+  studyCreateSession: (payload) =>
+    request("/v1/study/sessions", { method: "POST", body: payload }),
+  studyShow: (id) => request(`/v1/study/sessions/${id}`),
+  studyPostMessage: (id, content) =>
+    request(`/v1/study/sessions/${id}/messages`, { method: "POST", body: { content } }),
+  studyListEvents: (id, afterSeq = 0) =>
+    request(`/v1/study/sessions/${id}/events?after_seq=${afterSeq}`),
+  studyEnd: (id) => request(`/v1/study/sessions/${id}/end`, { method: "POST" }),
+  studyEmail: (id, email) =>
+    request(`/v1/study/sessions/${id}/email`, { method: "POST", body: email ? { email } : {} }),
+
+  // ── AI Worship Radio (worshipper) ────────────────────────────────────────
+  musicMoods: () => request("/music/moods"),
+  musicRecommend: (payload) =>
+    request("/music/recommend", { method: "POST", body: payload }),
+
+  // ── AI Worship Radio (admin / Music tab) ─────────────────────────────────
+  worshipTracks: (params = "") => request(`/admin/worship-tracks${params}`),
+  worshipYoutubeSearch: (q) =>
+    request(`/admin/worship-tracks/youtube-search?q=${encodeURIComponent(q)}`),
+  worshipTrackCreate: (payload) =>
+    request("/admin/worship-tracks", { method: "POST", body: payload }),
+  worshipTrackUpdate: (id, payload) =>
+    request(`/admin/worship-tracks/${id}`, { method: "PATCH", body: payload }),
+  worshipTrackDelete: (id) =>
+    request(`/admin/worship-tracks/${id}`, { method: "DELETE" }),
+  musicSettings: () => request("/admin/music-settings"),
+  musicSettingsSave: (payload) =>
+    request("/admin/music-settings", { method: "PATCH", body: payload }),
+
+  // ── AI Bible Study (admin / AI Core console) ─────────────────────────────
+  studyAdminPersonas: () => request("/v1/admin/study/personas"),
+  studyAdminCreatePersona: (payload) =>
+    request("/v1/admin/study/personas", { method: "POST", body: payload }),
+  studyAdminUpdatePersona: (id, payload) =>
+    request(`/v1/admin/study/personas/${id}`, { method: "PATCH", body: payload }),
+  studyAdminDeletePersona: (id) =>
+    request(`/v1/admin/study/personas/${id}`, { method: "DELETE" }),
+  studyAdminPrompts: () => request("/v1/admin/study/prompts"),
+  studyAdminUpdatePrompt: (id, payload) =>
+    request(`/v1/admin/study/prompts/${id}`, { method: "PATCH", body: payload }),
+  studyAdminProviders: () => request("/v1/admin/study/providers"),
+  studyAdminCreateProvider: (payload) =>
+    request("/v1/admin/study/providers", { method: "POST", body: payload }),
+  studyAdminUpdateProvider: (id, payload) =>
+    request(`/v1/admin/study/providers/${id}`, { method: "PATCH", body: payload }),
+  studyAdminDeleteProvider: (id) =>
+    request(`/v1/admin/study/providers/${id}`, { method: "DELETE" }),
+  studyAdminManifest: () => request("/v1/admin/study/manifest"),
+  studyAdminUpdateManifest: (payload) =>
+    request("/v1/admin/study/manifest", { method: "PATCH", body: payload }),
+  studyAdminTiers: () => request("/v1/admin/study/tiers"),
+  studyAdminUpdateTiers: (payload) =>
+    request("/v1/admin/study/tiers", { method: "PATCH", body: payload }),
+  studyAdminSessions: () => request("/v1/admin/study/sessions"),
+  studyAdminUsage: () => request("/v1/admin/study/usage"),
+  studyAdminAudit: () => request("/v1/admin/study/audit"),
 
   // Account self-service
   updateName: (name) =>
@@ -172,6 +281,50 @@ export const api = {
   resetPassword: (token, new_password) =>
     request("/reset-password", { method: "POST", body: { token, new_password } }),
 
+  // Subscription + token wallet (account page).
+  subscriptionStatus: () => request("/subscription"),
+  subscriptionCheckout: () => request("/subscription/checkout", { method: "POST" }),
+  subscriptionCancel: () => request("/subscription/cancel", { method: "POST" }),
+  tokenBalance: () => request("/tokens/balance"),
+  tokenHistory: () => request("/tokens/history"),
+
+  // ── Unified Conversation & Spiritual History ─────────────────────────────
+  history: (params = "") => request(`/history${params}`),
+  historyShow: (id) => request(`/history/${id}`),
+  historySearch: (payload) =>
+    request("/history/search", { method: "POST", body: payload }),
+  historyUpdate: (id, payload) =>
+    request(`/history/${id}`, { method: "PATCH", body: payload }),
+  historyDelete: (id) => request(`/history/${id}`, { method: "DELETE" }),
+  historyRestore: (id) => request(`/history/${id}/restore`, { method: "POST" }),
+  historyShare: (id, payload = {}) =>
+    request(`/history/${id}/share`, { method: "POST", body: payload }),
+  historyRevokeShare: (id) => request(`/history/${id}/share`, { method: "DELETE" }),
+  historyStats: () => request("/history/stats"),
+  historyTimeline: (year) => request(`/history/timeline${year ? `?year=${year}` : ""}`),
+  historyExportUrl: (id, format) => `${BASE_URL}/history/${id}/export?format=${format}`,
+  historyExportAllUrl: (format) => `${BASE_URL}/history/export-all?format=${format}`,
+  sharedView: (token, password) =>
+    request(`/shared/${token}${password ? `?password=${encodeURIComponent(password)}` : ""}`),
+
+  // ── Spiritual Journal ────────────────────────────────────────────────────
+  journalGenerate: (sessionId) =>
+    request(`/history/${sessionId}/journal`, { method: "POST" }),
+  journalList: (params = "") => request(`/journal${params}`),
+  journalShow: (id) => request(`/journal/${id}`),
+  journalDelete: (id) => request(`/journal/${id}`, { method: "DELETE" }),
+
+  // ── AI Pastor Chat ───────────────────────────────────────────────────────
+  pastorStart: (payload) =>
+    request("/pastor/sessions", { method: "POST", body: payload }),
+  pastorMessages: (id) => request(`/pastor/sessions/${id}/messages`),
+  pastorPostMessage: (id, message) =>
+    request(`/pastor/sessions/${id}/messages`, { method: "POST", body: { message } }),
+
+  // Spiritual-profile preferences (account page).
+  updateProfile: (payload) =>
+    request("/me/profile", { method: "PATCH", body: payload }),
+
   // Public app configuration (intake/preparing options). Optional context narrows
   // countdown cards by service mood/language once a session poll is available.
   getConfig: (context = {}) => {
@@ -182,6 +335,11 @@ export const api = {
     return request(`/config${qs ? `?${qs}` : ""}`);
   },
 
+  // Active special Sunday (if any) for the highlight card, localized to the
+  // service language. Returns { active: false } outside any observance window.
+  getCurrentSpecialSunday: (language = "en") =>
+    request(`/special-sunday/current?language=${encodeURIComponent(language)}`),
+
   // Worship song library (public read for the front song panel).
   getSongs: (params = {}) => {
     const qs = new URLSearchParams();
@@ -191,14 +349,42 @@ export const api = {
     return request(`/songs${q ? `?${q}` : ""}`);
   },
 
+  // Zolai ↔ Burmese ↔ English vocabulary reference (public read for #vocabulary).
+  getVocabulary: () => request("/vocabulary"),
+  // Admin CRUD (vocabulary.manage).
+  adminCreateVocabulary: (payload) =>
+    request("/admin/vocabulary", { method: "POST", body: payload }),
+  adminUpdateVocabulary: (id, payload) =>
+    request(`/admin/vocabulary/${id}`, { method: "PATCH", body: payload }),
+  adminDeleteVocabulary: (id) =>
+    request(`/admin/vocabulary/${id}`, { method: "DELETE" }),
+
+  // Online Bible reader (public, read-only). lang = en | my | td.
+  bibleConfig: () => request("/bible/config"),
+  bibleBooks: (lang = "en") =>
+    request(`/bible/books?lang=${encodeURIComponent(lang)}`),
+  bibleChapter: (lang, book, chapter) =>
+    request(`/bible/chapter?lang=${encodeURIComponent(lang)}&book=${book}&chapter=${chapter}`),
+  // Chapter narration (TTS). Returns { url }. Synthesized once, then cached.
+  bibleAudio: (lang, book, chapter) =>
+    request(`/bible/audio?lang=${encodeURIComponent(lang)}&book=${book}&chapter=${chapter}`),
+  // AI background-music loop for a chapter + reader-local hour (0-23). Returns
+  // { url, theme, tod, generating }. url is null while it's still generating.
+  bibleBgMusic: (lang, book, chapter, hour) =>
+    request(`/bible/bg-music?lang=${encodeURIComponent(lang)}&book=${book}&chapter=${chapter}&hour=${hour}`),
+  // Static mode: which uploaded track best fits this chapter's mood + the
+  // reader's time of day (falls back to the fixed track server-side).
+  bibleBgMusicMatch: (lang, book, chapter, hour) =>
+    request(`/bible/bg-music/match?lang=${encodeURIComponent(lang)}&book=${book}&chapter=${chapter}&hour=${hour}`),
+
   updateGuestEmail: (email) =>
     request("/me/email", { method: "PATCH", body: { email } }),
 
   updateMusicSource: (music_source) =>
     request("/me/music-source", { method: "PATCH", body: { music_source } }),
 
-  // Email-link resume: server establishes the session via the URL token and sets
-  // the HttpOnly cookie; frontend marks session established and reads metadata.
+  // Email-link resume: server exchanges the URL token for a service-scoped session
+  // cookie; it does not sign the browser into the owner's account.
   resumeSession: (sessionToken) =>
     fetch(`${BASE_URL}/service/${sessionToken}/resume`, {
       credentials: "include",
@@ -206,7 +392,6 @@ export const api = {
     }).then(async (r) => {
       const data = await r.json();
       if (!r.ok) throw new Error(data.message || "Resume failed");
-      markSession();
       return data;
     }),
 
@@ -231,7 +416,10 @@ export const api = {
 
   // Admin console (requires an is_admin account).
   adminDashboard: () => request("/admin/dashboard"),
+  adminFreezeStatus: () => request("/admin/freeze/status"),
   adminServices: () => request("/admin/services"),
+  adminServiceResumeLink: (id) =>
+    request(`/admin/services/${id}/resume-link`, { method: "POST" }),
   adminRetryService: (id) => request(`/admin/services/${id}/retry`, { method: "POST" }),
   adminDeleteService: (id) => request(`/admin/services/${id}`, { method: "DELETE" }),
   adminBulkDeleteServices: (service_ids) =>
@@ -254,6 +442,8 @@ export const api = {
     request("/admin/users", { method: "POST", body: payload }),
   adminAssignRole: (id, role) =>
     request(`/admin/users/${id}/role`, { method: "PATCH", body: { role } }),
+  adminGrantTokens: (id, amount) =>
+    request(`/admin/users/${id}/tokens`, { method: "POST", body: { amount } }),
   adminForcePasswordReset: (id) =>
     request(`/admin/users/${id}/force-reset`, { method: "POST" }),
   adminDonors: () => request("/admin/donors"),
@@ -261,6 +451,54 @@ export const api = {
   adminSettings: () => request("/admin/settings"),
   adminUpdateSettings: (payload) =>
     request("/admin/settings", { method: "PATCH", body: payload }),
+  // Bible AI background-music matrix: status (cached/total) + queue generation.
+  adminBibleBgMusicStatus: () => request("/admin/bible/bg-music/status"),
+  adminBibleBgMusicPregenerate: () =>
+    request("/admin/bible/bg-music/pregenerate", { method: "POST" }),
+  // Background-music library: list tracks, upload, delete, and pick the active one.
+  adminBibleBgMusicLibrary: () => request("/admin/bible/bg-music/library"),
+  // Upload a local mp3/ogg into the library. Multipart — can't use the JSON helper.
+  adminBibleBgMusicUpload: async (file, theme, tod) => {
+    await ensureCsrf();
+    const fd = new FormData();
+    fd.append("file", file, file.name);
+    if (theme) fd.append("theme", theme);
+    if (tod) fd.append("tod", tod);
+    const res = await fetch(`${BASE_URL}/admin/bible/bg-music/upload`, {
+      method: "POST",
+      credentials: "include",
+      headers: { Accept: "application/json", "X-XSRF-TOKEN": getCsrfToken() },
+      body: fd,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw Object.assign(new Error(data.message || "Upload failed"), { status: res.status, data });
+    return data;
+  },
+  adminBibleBgMusicDelete: (id) =>
+    request(`/admin/bible/bg-music/library/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  adminBibleBgMusicTags: (id, theme, tod) =>
+    request(`/admin/bible/bg-music/library/${encodeURIComponent(id)}`, { method: "PATCH", body: { theme, tod } }),
+  adminBibleBgMusicSelect: (src, key) =>
+    request("/admin/bible/bg-music/select", { method: "POST", body: { src, key } }),
+
+  // Content filter — categorized YouTube blocklist (CRUD + import/export).
+  cfList: () => request("/admin/content-filter"),
+  cfReplace: (categories) =>
+    request("/admin/content-filter", { method: "PUT", body: { categories } }),
+  cfAddCategory: (payload) =>
+    request("/admin/content-filter/categories", { method: "POST", body: payload }),
+  cfUpdateCategory: (id, payload) =>
+    request(`/admin/content-filter/categories/${encodeURIComponent(id)}`, { method: "PATCH", body: payload }),
+  cfDeleteCategory: (id) =>
+    request(`/admin/content-filter/categories/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  cfAddKeyword: (id, keyword) =>
+    request(`/admin/content-filter/categories/${encodeURIComponent(id)}/keywords`, { method: "POST", body: { keyword } }),
+  cfUpdateKeyword: (id, from, to) =>
+    request(`/admin/content-filter/categories/${encodeURIComponent(id)}/keywords`, { method: "PATCH", body: { from, to } }),
+  cfDeleteKeyword: (id, keyword) =>
+    request(`/admin/content-filter/categories/${encodeURIComponent(id)}/keywords`, { method: "DELETE", body: { keyword } }),
+  cfExportJson: () => adminDownload("/admin/content-filter/export.json", "application/json"),
+  cfExportCsv: () => adminDownload("/admin/content-filter/export.csv", "text/csv"),
   adminMusicTracks: (params = {}) => {
     const qs = new URLSearchParams();
     if (params.mood) qs.set("mood", params.mood);
@@ -276,6 +514,32 @@ export const api = {
     request(`/admin/music-tracks/${id}`, { method: "PATCH", body: payload }),
   adminDeleteMusicTrack: (id) =>
     request(`/admin/music-tracks/${id}`, { method: "DELETE" }),
+  // Special Sundays — monitor + catalog management (special_sundays.view/manage).
+  adminSpecialSundays: () => request("/admin/special-sundays"),
+  adminCreateSpecialSunday: (payload) =>
+    request("/admin/special-sundays", { method: "POST", body: payload }),
+  adminUpdateSpecialSunday: (id, payload) =>
+    request(`/admin/special-sundays/${id}`, { method: "PATCH", body: payload }),
+  adminDeleteSpecialSunday: (id) =>
+    request(`/admin/special-sundays/${id}`, { method: "DELETE" }),
+  adminPreviewSpecialSunday: (id, language = "en", mood = "") => {
+    const qs = new URLSearchParams({ language });
+    if (mood) qs.set("mood", mood);
+    return request(`/admin/special-sundays/${id}/preview?${qs.toString()}`);
+  },
+  // Curated sermon/song libraries attached to a special Sunday (manual mode).
+  adminCreateSpecialSermon: (dayId, payload) =>
+    request(`/admin/special-sundays/${dayId}/sermons`, { method: "POST", body: payload }),
+  adminUpdateSpecialSermon: (id, payload) =>
+    request(`/admin/special-sermons/${id}`, { method: "PATCH", body: payload }),
+  adminDeleteSpecialSermon: (id) =>
+    request(`/admin/special-sermons/${id}`, { method: "DELETE" }),
+  adminCreateSpecialSong: (dayId, payload) =>
+    request(`/admin/special-sundays/${dayId}/songs`, { method: "POST", body: payload }),
+  adminUpdateSpecialSong: (id, payload) =>
+    request(`/admin/special-songs/${id}`, { method: "PATCH", body: payload }),
+  adminDeleteSpecialSong: (id) =>
+    request(`/admin/special-songs/${id}`, { method: "DELETE" }),
   // Song library CRUD (admin Lyrics tab; requires lyrics.manage).
   adminGetSong: (id) => request(`/admin/songs/${id}`),
   adminCreateSong: (payload) =>
@@ -417,4 +681,111 @@ export const api = {
     if (!res.ok) throw Object.assign(new Error("Export failed"), { status: res.status });
     return res.blob();
   },
+
+  // ---- Father's Day (Special Day) MV — removable feature -------------------
+  // Public page config (enabled flag, effects, copy).
+  fdPublicConfig: () => request("/fathers-day/config"),
+  // Public render: upload photo(s) + chosen effect. Multipart, so raw fetch.
+  fdRender: async (files, effect, songId, opts = {}) => {
+    await ensureCsrf();      // CSRF cookie/token for the stateful SPA POST
+    const fd = new FormData();
+    files.forEach((f) => fd.append("photos[]", f, f.name));
+    if (effect) fd.append("effect", effect);
+    if (songId) fd.append("song_id", songId);
+    if (opts.full) fd.append("full", "1");
+    if (opts.clipStart != null) fd.append("clip_start", String(opts.clipStart));
+    if (opts.clipEnd != null) fd.append("clip_end", String(opts.clipEnd));
+    const res = await fetch(`${BASE_URL}/fathers-day/render`, {
+      method: "POST",
+      credentials: "include",
+      headers: { Accept: "application/json", "X-XSRF-TOKEN": getCsrfToken() },
+      body: fd,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw Object.assign(new Error(data.message || "Render failed"), { status: res.status, data });
+    return data;
+  },
+  fdJobStatus: (id) => request(`/fathers-day/job/${id}`),
+  fdDownloadUrl: (id) => `${BASE_URL}/fathers-day/download/${id}`,
+  // Public song stream for the visitor's clip picker.
+  fdPublicSongBlob: async (songId) => {
+    const res = await fetch(`${BASE_URL}/fathers-day/song/${songId}/audio`, {
+      credentials: "include",
+      headers: { Accept: "audio/*" },
+    });
+    if (!res.ok) throw Object.assign(new Error("Could not load song"), { status: res.status });
+    return res.blob();
+  },
+
+  // --- Live Sticker maker (SELF-CONTAINED & REMOVABLE) ------------------
+  stickerConfig: () => request("/stickers/config"),
+  // Step 1: upload one photo, get a token + auto face-crop box. Multipart.
+  stickerDetect: async (file) => {
+    await ensureCsrf();
+    const fd = new FormData();
+    fd.append("photo", file, file.name);
+    const res = await fetch(`${BASE_URL}/stickers/detect`, {
+      method: "POST",
+      credentials: "include",
+      headers: { Accept: "application/json", "X-XSRF-TOKEN": getCsrfToken() },
+      body: fd,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw Object.assign(new Error(data.message || "Could not read image"), { status: res.status, data });
+    return data;
+  },
+  // Step 2: queue the 5-sticker composite with the adjusted crop + text.
+  stickerRender: (payload) => request("/stickers/render", { method: "POST", body: payload }),
+  stickerJobStatus: (id) => request(`/stickers/job/${id}`),
+  // Admin enable/disable + page copy.
+  stickerAdminShow: () => request("/admin/stickers"),
+  stickerAdminSave: (payload) => request("/admin/stickers", { method: "POST", body: payload }),
+  stickerResetUsage: () => request("/admin/stickers/reset-usage", { method: "POST" }),
+
+  // Admin: fetch a library song as a blob for the tap-to-sync player (cookie auth).
+  fdSongBlob: async (songId) => {
+    const res = await fetch(`${BASE_URL}/admin/fathers-day/songs/${songId}/audio`, {
+      credentials: "include",
+      headers: { Accept: "audio/*" },
+    });
+    if (!res.ok) throw Object.assign(new Error("Could not load song"), { status: res.status });
+    return res.blob();
+  },
+
+  // Admin global settings + song library.
+  fdAdminShow: () => request("/admin/fathers-day"),
+  fdAdminSave: (payload) => request("/admin/fathers-day", { method: "POST", body: payload }),
+  fdResetUsage: () => request("/admin/fathers-day/reset-usage", { method: "POST" }),
+  fdUpdateSong: (songId, payload) => request(`/admin/fathers-day/songs/${songId}`, { method: "PATCH", body: payload }),
+  fdDeleteSong: (songId) => request(`/admin/fathers-day/songs/${songId}`, { method: "DELETE" }),
+  fdAddSong: async (file, title) => {
+    await ensureCsrf();
+    const fd = new FormData();
+    fd.append("song", file, file.name);
+    if (title) fd.append("title", title);
+    const res = await fetch(`${BASE_URL}/admin/fathers-day/songs`, {
+      method: "POST",
+      credentials: "include",
+      headers: { Accept: "application/json", "X-XSRF-TOKEN": getCsrfToken() },
+      body: fd,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw Object.assign(new Error(data.message || "Upload failed"), { status: res.status, data });
+    return data;
+  },
+  fdUploadBrandTag: async (file) => {
+    await ensureCsrf();
+    const fd = new FormData();
+    fd.append("tag", file, file.name);
+    const res = await fetch(`${BASE_URL}/admin/fathers-day/brand-tag`, {
+      method: "POST",
+      credentials: "include",
+      headers: { Accept: "application/json", "X-XSRF-TOKEN": getCsrfToken() },
+      body: fd,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw Object.assign(new Error(data.message || "Upload failed"), { status: res.status, data });
+    return data;
+  },
+  fdDeleteBrandTag: () => request("/admin/fathers-day/brand-tag", { method: "DELETE" }),
 };

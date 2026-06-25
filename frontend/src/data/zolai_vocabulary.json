@@ -1,117 +1,924 @@
 [
-  { "zolai": "Pasian",       "english": "God",                               "category": "Theology",  "notes": "NOT Pathian (Mizo word)" },
-  { "zolai": "Topa",         "english": "Lord / Master",                     "category": "Theology",  "notes": "NOT Lalpa (Mizo word)" },
-  { "zolai": "Zeisu",        "english": "Jesus",                             "category": "Theology",  "notes": "NOT Isua (Mizo word)" },
-  { "zolai": "Zeisu Krist",  "english": "Jesus Christ",                      "category": "Theology",  "notes": "" },
-  { "zolai": "Kha Siangtho", "english": "Holy Spirit",                       "category": "Theology",  "notes": "" },
-  { "zolai": "Thu Siangtho", "english": "Holy Bible / Holy Word",            "category": "Theology",  "notes": "" },
-  { "zolai": "hotkhiatna",   "english": "salvation",                         "category": "Theology",  "notes": "hong hotkhia = to save/rescue. NOT zangtal (= free of charge)" },
-  { "zolai": "lungdamna",    "english": "thanksgiving / gratitude",          "category": "Theology",  "notes": "lungdam = to be glad/thankful. NOT 'grace'" },
-  { "zolai": "itna",         "english": "love (noun)",                       "category": "Theology",  "notes": "" },
-  { "zolai": "kumdan",       "english": "glory / honour",                    "category": "Theology",  "notes": "" },
-  { "zolai": "Lai Siangtho", "english": "Holy Bible (the Tedim Bible name)", "category": "Theology",  "notes": "Lai Siangtho 1932 edition" },
-
-  { "zolai": "biakinn",      "english": "church",                            "category": "Worship",   "notes": "NOT koici, NOT kohhran" },
-  { "zolai": "thungetna",    "english": "prayer (noun)",                     "category": "Worship",   "notes": "NOT tawngtaina (Mizo word)" },
-  { "zolai": "thungen",      "english": "to pray",                           "category": "Worship",   "notes": "thu + ngen = 'request word'. NOT tawngtai (Mizo word)" },
-  { "zolai": "kiphatna",     "english": "praise / worship (noun)",           "category": "Worship",   "notes": "" },
-  { "zolai": "kilemna",      "english": "praise",                            "category": "Worship",   "notes": "" },
-  { "zolai": "phat",         "english": "to praise",                         "category": "Worship",   "notes": "" },
-  { "zolai": "siangtho",     "english": "holy / sacred",                     "category": "Worship",   "notes": "" },
-  { "zolai": "labu",         "english": "hymn / song",                       "category": "Worship",   "notes": "" },
-  { "zolai": "Zomi",         "english": "the Tedim / Chin people",           "category": "Worship",   "notes": "" },
-  { "zolai": "biakpiakna",   "english": "offering / gift to God",            "category": "Worship",   "notes": "" },
-
-  { "zolai": "ka",           "english": "I / my  (1st person singular)",     "category": "Pronouns",  "notes": "" },
-  { "zolai": "nang",         "english": "you / your  (2nd person singular)", "category": "Pronouns",  "notes": "" },
-  { "zolai": "amah",         "english": "he / she / it  (3rd singular)",     "category": "Pronouns",  "notes": "" },
-  { "zolai": "eite",         "english": "we / our  (1st person plural)",     "category": "Pronouns",  "notes": "" },
-  { "zolai": "note",         "english": "you  (2nd person plural)",          "category": "Pronouns",  "notes": "" },
-  { "zolai": "amaute",       "english": "they / their  (3rd plural)",        "category": "Pronouns",  "notes": "" },
-
-  { "zolai": "pai",          "english": "to go",                             "category": "Verbs",     "notes": "" },
-  { "zolai": "hong",         "english": "to come",                           "category": "Verbs",     "notes": "" },
-  { "zolai": "za",           "english": "to hear / listen",                  "category": "Verbs",     "notes": "" },
-  { "zolai": "mu",           "english": "to see",                            "category": "Verbs",     "notes": "" },
-  { "zolai": "it",           "english": "to love",                           "category": "Verbs",     "notes": "" },
-  { "zolai": "piak",         "english": "to give",                           "category": "Verbs",     "notes": "" },
-  { "zolai": "lak",          "english": "to take / show",                    "category": "Verbs",     "notes": "" },
-  { "zolai": "om",           "english": "to be / exist",                     "category": "Verbs",     "notes": "" },
-  { "zolai": "suak",         "english": "to become",                         "category": "Verbs",     "notes": "" },
-  { "zolai": "nei",          "english": "to have",                           "category": "Verbs",     "notes": "" },
-  { "zolai": "makaih",       "english": "to guide / lead",                   "category": "Verbs",     "notes": "" },
-  { "zolai": "kem",          "english": "to keep / protect",                 "category": "Verbs",     "notes": "" },
-  { "zolai": "hehpih",       "english": "to help / bless",                   "category": "Verbs",     "notes": "" },
-  { "zolai": "bia",          "english": "to speak / say",                    "category": "Verbs",     "notes": "" },
-  { "zolai": "ngen",         "english": "to ask / request",                  "category": "Verbs",     "notes": "" },
-  { "zolai": "ngaih",        "english": "to think / consider / remember",    "category": "Verbs",     "notes": "" },
-  { "zolai": "ngaidam",      "english": "to forgive",                        "category": "Verbs",     "notes": "" },
-  { "zolai": "dim",          "english": "to fill",                           "category": "Verbs",     "notes": "" },
-  { "zolai": "kai",          "english": "to lift / carry out",               "category": "Verbs",     "notes": "" },
-  { "zolai": "thahat",       "english": "to strengthen / be strong",         "category": "Verbs",     "notes": "" },
-  { "zolai": "mangngilh",    "english": "to forget",                         "category": "Verbs",     "notes": "" },
-  { "zolai": "kimawh",       "english": "to be pleased / rejoice",           "category": "Verbs",     "notes": "" },
-  { "zolai": "naih",         "english": "to be near / close",                "category": "Verbs",     "notes": "" },
-  { "zolai": "lam",          "english": "to show / reveal",                  "category": "Verbs",     "notes": "also a noun meaning 'way/road'" },
-
-  { "zolai": "lungtang",     "english": "heart",                             "category": "Nouns",     "notes": "" },
-  { "zolai": "nuntakna",     "english": "life",                              "category": "Nouns",     "notes": "" },
-  { "zolai": "thu",          "english": "word / matter / affair",            "category": "Nouns",     "notes": "" },
-  { "zolai": "min",          "english": "name",                              "category": "Nouns",     "notes": "" },
-  { "zolai": "mi",           "english": "person / people",                   "category": "Nouns",     "notes": "" },
-  { "zolai": "khua",         "english": "village / place / world",           "category": "Nouns",     "notes": "" },
-  { "zolai": "ni",           "english": "day / sun",                         "category": "Nouns",     "notes": "" },
-  { "zolai": "hun",          "english": "time / season",                     "category": "Nouns",     "notes": "" },
-  { "zolai": "kum",          "english": "year",                              "category": "Nouns",     "notes": "" },
-  { "zolai": "mun",          "english": "place / location",                  "category": "Nouns",     "notes": "" },
-  { "zolai": "nopna",        "english": "joy / happiness",                   "category": "Nouns",     "notes": "" },
-  { "zolai": "lungkhamna",   "english": "sorrow / grief",                    "category": "Nouns",     "notes": "" },
-  { "zolai": "lauhna",       "english": "fear",                              "category": "Nouns",     "notes": "" },
-  { "zolai": "lam-etna",     "english": "hope",                              "category": "Nouns",     "notes": "" },
-  { "zolai": "muanna",       "english": "peace",                             "category": "Nouns",     "notes": "" },
-  { "zolai": "ngaihdamna",   "english": "forgiveness",                       "category": "Nouns",     "notes": "" },
-  { "zolai": "thahatna",     "english": "strength",                          "category": "Nouns",     "notes": "" },
-  { "zolai": "upna",         "english": "faith / belief",                    "category": "Nouns",     "notes": "um = to believe. NOT sungkuanna (= family/household)" },
-  { "zolai": "thupha",       "english": "blessing / benediction",            "category": "Nouns",     "notes": "thu + pha = 'good word'. Gospel = Lungdamna Thu" },
-  { "zolai": "siamna",       "english": "knowledge / wisdom",                "category": "Nouns",     "notes": "" },
-  { "zolai": "diklam",       "english": "righteousness / right path",        "category": "Nouns",     "notes": "" },
-
-  { "zolai": "in",           "english": "subject marker (after subject)",    "category": "Grammar",   "notes": "e.g. 'Pasian in' = God [as subject]; word order is SOV" },
-  { "zolai": "hi",           "english": "declarative sentence ending",       "category": "Grammar",   "notes": "ends every statement. e.g. 'Pasian tha hi' = God is good" },
-  { "zolai": "hen",          "english": "prayer / blessing / wish ending",   "category": "Grammar",   "notes": "ends prayers and benedictions. e.g. 'hong kem hen' = may [he] keep [you]" },
-  { "zolai": "ahi hi",       "english": "emphatic declarative ending",       "category": "Grammar",   "notes": "strong affirmation: 'that is indeed so'" },
-  { "zolai": "lo hi",        "english": "negation: does not / there is not", "category": "Grammar",   "notes": "e.g. 'om lo hi' = is not there; 'mangngilh lo hi' = does not forget" },
-  { "zolai": "khin hi",      "english": "past tense marker",                 "category": "Grammar",   "notes": "verb + khin hi = did / went / was (past completed)" },
-  { "zolai": "ding hi",      "english": "future tense marker",               "category": "Grammar",   "notes": "verb + ding hi = will (future)" },
-  { "zolai": "laitak hi",    "english": "continuous aspect",                 "category": "Grammar",   "notes": "verb + laitak hi = is -ing (ongoing action)" },
-  { "zolai": "sungah",       "english": "in / inside / within",              "category": "Grammar",   "notes": "locative: 'biakinn sungah' = inside the church" },
-  { "zolai": "pan",          "english": "from",                              "category": "Grammar",   "notes": "ablative: 'Pasian pan' = from God" },
-  { "zolai": "kiangah",      "english": "toward / to / near",               "category": "Grammar",   "notes": "allative: 'Topa kiangah' = toward the Lord" },
-  { "zolai": "zel",          "english": "always / continually",              "category": "Grammar",   "notes": "e.g. 'hong makaih zel' = always guide" },
-  { "zolai": "zaw",          "english": "more / -er (comparative)",          "category": "Grammar",   "notes": "e.g. 'tha zaw' = better" },
-  { "zolai": "pen",          "english": "most / -est (superlative)",         "category": "Grammar",   "notes": "e.g. 'tha pen' = best" },
-  { "zolai": "mama",         "english": "very / extremely (intensifier)",    "category": "Grammar",   "notes": "e.g. 'tha mama' = very good" },
-
-  { "zolai": "siangtho",     "english": "holy / sacred",                     "category": "Adjectives","notes": "" },
-  { "zolai": "nop",          "english": "joyful / happy",                    "category": "Adjectives","notes": "" },
-  { "zolai": "lungkham",     "english": "sad / sorrowful",                   "category": "Adjectives","notes": "" },
-  { "zolai": "tha",          "english": "good",                              "category": "Adjectives","notes": "" },
-  { "zolai": "dik",          "english": "right / correct / true",            "category": "Adjectives","notes": "" },
-  { "zolai": "lian",         "english": "big / great",                       "category": "Adjectives","notes": "" },
-  { "zolai": "tam",          "english": "many / much",                       "category": "Adjectives","notes": "" },
-  { "zolai": "tawm",         "english": "few / little / small",              "category": "Adjectives","notes": "" },
-  { "zolai": "gim",          "english": "tired / weary",                     "category": "Adjectives","notes": "" },
-  { "zolai": "dah",          "english": "hurt / painful",                    "category": "Adjectives","notes": "" },
-  { "zolai": "cim",          "english": "wise / clever",                     "category": "Adjectives","notes": "" },
-
-  { "zolai": "khat",         "english": "one",                               "category": "Numbers",   "notes": "" },
-  { "zolai": "nih",          "english": "two",                               "category": "Numbers",   "notes": "" },
-  { "zolai": "thum",         "english": "three",                             "category": "Numbers",   "notes": "" },
-  { "zolai": "li",           "english": "four",                              "category": "Numbers",   "notes": "" },
-  { "zolai": "nga",          "english": "five",                              "category": "Numbers",   "notes": "" },
-  { "zolai": "guk",          "english": "six",                               "category": "Numbers",   "notes": "" },
-  { "zolai": "sagih",        "english": "seven",                             "category": "Numbers",   "notes": "" },
-  { "zolai": "giat",         "english": "eight",                             "category": "Numbers",   "notes": "" },
-  { "zolai": "kua",          "english": "nine",                              "category": "Numbers",   "notes": "" },
-  { "zolai": "sawm",         "english": "ten",                               "category": "Numbers",   "notes": "" }
+  {
+    "zolai": "Pasian",
+    "burmese": "ဘုရားသခင်",
+    "hebrew": "אֱלֹהִים",
+    "english": "God",
+    "category": "Theology",
+    "notes": "NOT Pathian (Mizo word)",
+    "falam": "Pathian",
+    "hakha": "Pathian",
+    "matu": "Pathian",
+    "mizo": "Pathian",
+    "paite": "Pasian",
+    "sizang": "Pasian"
+  },
+  {
+    "zolai": "Topa",
+    "burmese": "သခင်",
+    "hebrew": "אָדוֹן",
+    "english": "Lord / Master",
+    "category": "Theology",
+    "notes": "NOT Lalpa (Mizo word)",
+    "falam": "Bawipa",
+    "hakha": "Bawipa",
+    "matu": "Bawipa",
+    "mizo": "Lalpa",
+    "paite": "Toupa",
+    "sizang": "Topa"
+  },
+  {
+    "zolai": "Zeisu",
+    "burmese": "ယေရှု",
+    "hebrew": "יֵשׁוּעַ",
+    "english": "Jesus",
+    "category": "Theology",
+    "notes": "NOT Isua (Mizo word)",
+    "falam": "Jesuh",
+    "hakha": "Jesuh",
+    "matu": "Jesuh",
+    "mizo": "Isua",
+    "paite": "Jesu",
+    "sizang": "Jesu"
+  },
+  {
+    "zolai": "Zeisu Krist",
+    "burmese": "ယေရှုခရစ်",
+    "hebrew": "יֵשׁוּעַ הַמָּשִׁיחַ",
+    "english": "Jesus Christ",
+    "category": "Theology",
+    "notes": "",
+    "falam": "Jesuh Khrih",
+    "hakha": "Jesuh Khrih",
+    "mizo": "Isua Krista"
+  },
+  {
+    "zolai": "Kha Siangtho",
+    "burmese": "သန့်ရှင်းသောဝိညာဉ်တော်",
+    "hebrew": "רוּחַ הַקֹּדֶשׁ",
+    "english": "Holy Spirit",
+    "category": "Theology",
+    "notes": "",
+    "falam": "Thlarau Thiang",
+    "hakha": "Thlarau Thiang",
+    "mizo": "Thlarau Thianghlim",
+    "paite": "Kha Siangthou",
+    "sizang": "Kha Siangtho"
+  },
+  {
+    "zolai": "Thu Siangtho",
+    "burmese": "သန့်ရှင်းသောကျမ်းစာ",
+    "hebrew": "דְּבַר הָאֱלֹהִים",
+    "english": "Holy Bible / Holy Word",
+    "category": "Theology",
+    "notes": "",
+    "paite": "Lai Siangthou",
+    "sizang": "Lai Siangtho"
+  },
+  {
+    "zolai": "hotkhiatna",
+    "burmese": "ကယ်တင်ခြင်း",
+    "hebrew": "יְשׁוּעָה",
+    "english": "salvation",
+    "category": "Theology",
+    "notes": "hong hotkhia = to save/rescue. NOT zangtal (= free of charge)",
+    "mizo": "Chhandamna",
+    "paite": "Hotkhiatna",
+    "sizang": "Hotkhiatna"
+  },
+  {
+    "zolai": "lungdamna",
+    "burmese": "ကျေးဇူးတင်ခြင်း",
+    "hebrew": "תּוֹדָה",
+    "english": "thanksgiving / gratitude",
+    "category": "Theology",
+    "notes": "lungdam = to be glad/thankful. NOT 'grace'",
+    "paite": "Lungdamna",
+    "sizang": "Lungdamna"
+  },
+  {
+    "zolai": "itna",
+    "burmese": "ချစ်ခြင်းမေတ္တာ",
+    "hebrew": "אַהֲבָה",
+    "english": "love (noun)",
+    "category": "Theology",
+    "notes": "",
+    "falam": "Dawtnak",
+    "hakha": "Dawtnak",
+    "mizo": "Hmangaihna",
+    "paite": "Itna",
+    "sizang": "Itna"
+  },
+  {
+    "zolai": "kumdan",
+    "burmese": "ဘုန်းတော် / ဂုဏ်တော်",
+    "hebrew": "כָּבוֹד",
+    "english": "glory / honour",
+    "category": "Theology",
+    "notes": ""
+  },
+  {
+    "zolai": "Lai Siangtho",
+    "burmese": "သမ္မာကျမ်းစာ",
+    "hebrew": "כִּתְבֵי הַקֹּדֶשׁ",
+    "english": "Holy Bible (the Tedim Bible name)",
+    "category": "Theology",
+    "notes": "Lai Siangtho 1932 edition",
+    "paite": "Lai Siangthou",
+    "sizang": "Lai Siangtho"
+  },
+  {
+    "zolai": "biakinn",
+    "burmese": "အသင်းတော် / ဘုရားကျောင်း",
+    "hebrew": "כְּנֵסִיָּה",
+    "english": "church",
+    "category": "Worship",
+    "notes": "NOT koici, NOT kohhran",
+    "mizo": "Kohhran"
+  },
+  {
+    "zolai": "thungetna",
+    "burmese": "ဆုတောင်းခြင်း",
+    "hebrew": "תְּפִלָּה",
+    "english": "prayer (noun)",
+    "category": "Worship",
+    "notes": "NOT tawngtaina (Mizo word)",
+    "hakha": "Thlacamnak",
+    "mizo": "Tawngtaina",
+    "paite": "Thumna",
+    "sizang": "Thumna"
+  },
+  {
+    "zolai": "thungen",
+    "burmese": "ဆုတောင်းသည်",
+    "hebrew": "לְהִתְפַּלֵּל",
+    "english": "to pray",
+    "category": "Worship",
+    "notes": "thu + ngen = 'request word'. NOT tawngtai (Mizo word)",
+    "hakha": "Thlacam",
+    "mizo": "Tawngtai",
+    "paite": "Thum",
+    "sizang": "Thum"
+  },
+  {
+    "zolai": "kiphatna",
+    "burmese": "ကိုးကွယ်ချီးမွမ်းခြင်း",
+    "hebrew": "תְּהִלָּה",
+    "english": "praise / worship (noun)",
+    "category": "Worship",
+    "notes": ""
+  },
+  {
+    "zolai": "kilemna",
+    "burmese": "ချီးမွမ်းခြင်း",
+    "hebrew": "שֶׁבַח",
+    "english": "praise",
+    "category": "Worship",
+    "notes": ""
+  },
+  {
+    "zolai": "phat",
+    "burmese": "ချီးမွမ်းသည်",
+    "hebrew": "לְהַלֵּל",
+    "english": "to praise",
+    "category": "Worship",
+    "notes": "",
+    "mizo": "Fak",
+    "paite": "Phat",
+    "sizang": "Phat"
+  },
+  {
+    "zolai": "siangtho",
+    "burmese": "သန့်ရှင်းသော",
+    "hebrew": "קָדוֹשׁ",
+    "english": "holy / sacred",
+    "category": "Worship",
+    "notes": "",
+    "falam": "Thiang",
+    "hakha": "Thiang",
+    "mizo": "Thianghlim",
+    "paite": "Siangthou",
+    "sizang": "Siangtho"
+  },
+  {
+    "zolai": "labu",
+    "burmese": "ဓမ္မသီချင်း",
+    "hebrew": "מִזְמוֹר",
+    "english": "hymn / song",
+    "category": "Worship",
+    "notes": "",
+    "falam": "Hla",
+    "hakha": "Hla",
+    "mizo": "Hla",
+    "paite": "La",
+    "sizang": "La"
+  },
+  {
+    "zolai": "Zomi",
+    "burmese": "ဇိုမီး (ချင်းလူမျိုး)",
+    "english": "the Tedim / Chin people",
+    "category": "Worship",
+    "notes": "",
+    "hakha": "Laimi",
+    "mizo": "Mizo",
+    "paite": "Zomi",
+    "sizang": "Zomi"
+  },
+  {
+    "zolai": "biakpiakna",
+    "burmese": "ပူဇော်သက္ကာ",
+    "hebrew": "קָרְבָּן",
+    "english": "offering / gift to God",
+    "category": "Worship",
+    "notes": ""
+  },
+  {
+    "zolai": "ka",
+    "burmese": "ငါ / ကျွန်ုပ်",
+    "hebrew": "אֲנִי",
+    "english": "I / my  (1st person singular)",
+    "category": "Pronouns",
+    "notes": ""
+  },
+  {
+    "zolai": "nang",
+    "burmese": "သင်",
+    "hebrew": "אַתָּה",
+    "english": "you / your  (2nd person singular)",
+    "category": "Pronouns",
+    "notes": ""
+  },
+  {
+    "zolai": "amah",
+    "burmese": "သူ",
+    "hebrew": "הוּא",
+    "english": "he / she / it  (3rd singular)",
+    "category": "Pronouns",
+    "notes": ""
+  },
+  {
+    "zolai": "eite",
+    "burmese": "ငါတို့",
+    "hebrew": "אֲנַחְנוּ",
+    "english": "we / our  (1st person plural)",
+    "category": "Pronouns",
+    "notes": ""
+  },
+  {
+    "zolai": "note",
+    "burmese": "သင်တို့",
+    "hebrew": "אַתֶּם",
+    "english": "you  (2nd person plural)",
+    "category": "Pronouns",
+    "notes": ""
+  },
+  {
+    "zolai": "amaute",
+    "burmese": "သူတို့",
+    "hebrew": "הֵם",
+    "english": "they / their  (3rd plural)",
+    "category": "Pronouns",
+    "notes": ""
+  },
+  {
+    "zolai": "pai",
+    "burmese": "သွားသည်",
+    "hebrew": "לָלֶכֶת",
+    "english": "to go",
+    "category": "Verbs",
+    "notes": ""
+  },
+  {
+    "zolai": "hong",
+    "burmese": "လာသည်",
+    "hebrew": "לָבוֹא",
+    "english": "to come",
+    "category": "Verbs",
+    "notes": ""
+  },
+  {
+    "zolai": "za",
+    "burmese": "ကြားသည် / နားထောင်သည်",
+    "hebrew": "לִשְׁמֹעַ",
+    "english": "to hear / listen",
+    "category": "Verbs",
+    "notes": ""
+  },
+  {
+    "zolai": "mu",
+    "burmese": "မြင်သည်",
+    "hebrew": "לִרְאוֹת",
+    "english": "to see",
+    "category": "Verbs",
+    "notes": ""
+  },
+  {
+    "zolai": "it",
+    "burmese": "ချစ်သည်",
+    "hebrew": "לֶאֱהֹב",
+    "english": "to love",
+    "category": "Verbs",
+    "notes": ""
+  },
+  {
+    "zolai": "piak",
+    "burmese": "ပေးသည်",
+    "hebrew": "לָתֵת",
+    "english": "to give",
+    "category": "Verbs",
+    "notes": ""
+  },
+  {
+    "zolai": "lak",
+    "burmese": "ယူသည်",
+    "hebrew": "לָקַחַת",
+    "english": "to take / show",
+    "category": "Verbs",
+    "notes": ""
+  },
+  {
+    "zolai": "om",
+    "burmese": "ရှိသည်",
+    "hebrew": "לִהְיוֹת",
+    "english": "to be / exist",
+    "category": "Verbs",
+    "notes": ""
+  },
+  {
+    "zolai": "suak",
+    "burmese": "ဖြစ်လာသည်",
+    "hebrew": "לְהֵעָשׂוֹת",
+    "english": "to become",
+    "category": "Verbs",
+    "notes": ""
+  },
+  {
+    "zolai": "nei",
+    "burmese": "ပိုင်ဆိုင်သည်",
+    "hebrew": "יֵשׁ",
+    "english": "to have",
+    "category": "Verbs",
+    "notes": ""
+  },
+  {
+    "zolai": "makaih",
+    "burmese": "လမ်းပြ ဦးဆောင်သည်",
+    "hebrew": "לְהַנְחוֹת",
+    "english": "to guide / lead",
+    "category": "Verbs",
+    "notes": ""
+  },
+  {
+    "zolai": "kem",
+    "burmese": "စောင့်ရှောက်သည်",
+    "hebrew": "לִשְׁמֹר",
+    "english": "to keep / protect",
+    "category": "Verbs",
+    "notes": ""
+  },
+  {
+    "zolai": "hehpih",
+    "burmese": "ကူညီသည်",
+    "hebrew": "לַעֲזֹר",
+    "english": "to help / bless",
+    "category": "Verbs",
+    "notes": ""
+  },
+  {
+    "zolai": "bia",
+    "burmese": "ပြောသည်",
+    "hebrew": "לְדַבֵּר",
+    "english": "to speak / say",
+    "category": "Verbs",
+    "notes": ""
+  },
+  {
+    "zolai": "ngen",
+    "burmese": "တောင်းသည်",
+    "hebrew": "לְבַקֵּשׁ",
+    "english": "to ask / request",
+    "category": "Verbs",
+    "notes": ""
+  },
+  {
+    "zolai": "ngaih",
+    "burmese": "စဉ်းစား အောက်မေ့သည်",
+    "hebrew": "לַחְשֹׁב",
+    "english": "to think / consider / remember",
+    "category": "Verbs",
+    "notes": ""
+  },
+  {
+    "zolai": "ngaidam",
+    "burmese": "ခွင့်လွှတ်သည်",
+    "hebrew": "לִסְלֹחַ",
+    "english": "to forgive",
+    "category": "Verbs",
+    "notes": ""
+  },
+  {
+    "zolai": "dim",
+    "burmese": "ပြည့်စေသည်",
+    "hebrew": "לְמַלֵּא",
+    "english": "to fill",
+    "category": "Verbs",
+    "notes": ""
+  },
+  {
+    "zolai": "kai",
+    "burmese": "ချီမြှောက်သည်",
+    "hebrew": "לָשֵׂאת",
+    "english": "to lift / carry out",
+    "category": "Verbs",
+    "notes": ""
+  },
+  {
+    "zolai": "thahat",
+    "burmese": "ခွန်အားဖြည့်သည်",
+    "hebrew": "לְחַזֵּק",
+    "english": "to strengthen / be strong",
+    "category": "Verbs",
+    "notes": ""
+  },
+  {
+    "zolai": "mangngilh",
+    "burmese": "မေ့သည်",
+    "hebrew": "לִשְׁכֹּחַ",
+    "english": "to forget",
+    "category": "Verbs",
+    "notes": ""
+  },
+  {
+    "zolai": "kimawh",
+    "burmese": "ဝမ်းမြောက်သည်",
+    "hebrew": "לִשְׂמֹחַ",
+    "english": "to be pleased / rejoice",
+    "category": "Verbs",
+    "notes": ""
+  },
+  {
+    "zolai": "naih",
+    "burmese": "နီးသည်",
+    "hebrew": "לִקְרֹב",
+    "english": "to be near / close",
+    "category": "Verbs",
+    "notes": ""
+  },
+  {
+    "zolai": "lam",
+    "burmese": "ပြသသည်",
+    "hebrew": "לְגַלּוֹת",
+    "english": "to show / reveal",
+    "category": "Verbs",
+    "notes": "also a noun meaning 'way/road'"
+  },
+  {
+    "zolai": "lungtang",
+    "burmese": "နှလုံး",
+    "hebrew": "לֵב",
+    "english": "heart",
+    "category": "Nouns",
+    "notes": ""
+  },
+  {
+    "zolai": "nuntakna",
+    "burmese": "အသက် / ဘဝ",
+    "hebrew": "חַיִּים",
+    "english": "life",
+    "category": "Nouns",
+    "notes": ""
+  },
+  {
+    "zolai": "thu",
+    "burmese": "စကား / အကြောင်းအရာ",
+    "hebrew": "דָּבָר",
+    "english": "word / matter / affair",
+    "category": "Nouns",
+    "notes": ""
+  },
+  {
+    "zolai": "min",
+    "burmese": "နာမည် / အမည်",
+    "hebrew": "שֵׁם",
+    "english": "name",
+    "category": "Nouns",
+    "notes": ""
+  },
+  {
+    "zolai": "mi",
+    "burmese": "လူ",
+    "hebrew": "אָדָם",
+    "english": "person / people",
+    "category": "Nouns",
+    "notes": ""
+  },
+  {
+    "zolai": "khua",
+    "burmese": "ရွာ / နေရာ / ကမ္ဘာ",
+    "hebrew": "עוֹלָם",
+    "english": "village / place / world",
+    "category": "Nouns",
+    "notes": ""
+  },
+  {
+    "zolai": "ni",
+    "burmese": "နေ့ / နေ",
+    "hebrew": "יוֹם",
+    "english": "day / sun",
+    "category": "Nouns",
+    "notes": ""
+  },
+  {
+    "zolai": "hun",
+    "burmese": "အချိန် / ကာလ",
+    "hebrew": "זְמַן",
+    "english": "time / season",
+    "category": "Nouns",
+    "notes": ""
+  },
+  {
+    "zolai": "kum",
+    "burmese": "နှစ်",
+    "hebrew": "שָׁנָה",
+    "english": "year",
+    "category": "Nouns",
+    "notes": ""
+  },
+  {
+    "zolai": "mun",
+    "burmese": "နေရာ",
+    "hebrew": "מָקוֹם",
+    "english": "place / location",
+    "category": "Nouns",
+    "notes": ""
+  },
+  {
+    "zolai": "nopna",
+    "burmese": "ဝမ်းမြောက်ခြင်း",
+    "hebrew": "שִׂמְחָה",
+    "english": "joy / happiness",
+    "category": "Nouns",
+    "notes": ""
+  },
+  {
+    "zolai": "lungkhamna",
+    "burmese": "ဝမ်းနည်းခြင်း",
+    "hebrew": "יָגוֹן",
+    "english": "sorrow / grief",
+    "category": "Nouns",
+    "notes": ""
+  },
+  {
+    "zolai": "lauhna",
+    "burmese": "ကြောက်ခြင်း",
+    "hebrew": "פַּחַד",
+    "english": "fear",
+    "category": "Nouns",
+    "notes": ""
+  },
+  {
+    "zolai": "lam-etna",
+    "burmese": "မျှော်လင့်ခြင်း",
+    "hebrew": "תִּקְוָה",
+    "english": "hope",
+    "category": "Nouns",
+    "notes": ""
+  },
+  {
+    "zolai": "muanna",
+    "burmese": "ငြိမ်သက်ခြင်း",
+    "hebrew": "שָׁלוֹם",
+    "english": "peace",
+    "category": "Nouns",
+    "notes": ""
+  },
+  {
+    "zolai": "ngaihdamna",
+    "burmese": "ခွင့်လွှတ်ခြင်း",
+    "hebrew": "סְלִיחָה",
+    "english": "forgiveness",
+    "category": "Nouns",
+    "notes": ""
+  },
+  {
+    "zolai": "thahatna",
+    "burmese": "ခွန်အား",
+    "hebrew": "כֹּחַ",
+    "english": "strength",
+    "category": "Nouns",
+    "notes": ""
+  },
+  {
+    "zolai": "upna",
+    "burmese": "ယုံကြည်ခြင်း",
+    "hebrew": "אֱמוּנָה",
+    "english": "faith / belief",
+    "category": "Nouns",
+    "notes": "um = to believe. NOT sungkuanna (= family/household)"
+  },
+  {
+    "zolai": "thupha",
+    "burmese": "ကောင်းကြီးမင်္ဂလာ",
+    "hebrew": "בְּרָכָה",
+    "english": "blessing / benediction",
+    "category": "Nouns",
+    "notes": "thu + pha = 'good word'. Gospel = Lungdamna Thu"
+  },
+  {
+    "zolai": "siamna",
+    "burmese": "ပညာ / အသိပညာ",
+    "hebrew": "חָכְמָה",
+    "english": "knowledge / wisdom",
+    "category": "Nouns",
+    "notes": ""
+  },
+  {
+    "zolai": "diklam",
+    "burmese": "ဖြောင့်မတ်ခြင်း",
+    "hebrew": "צֶדֶק",
+    "english": "righteousness / right path",
+    "category": "Nouns",
+    "notes": ""
+  },
+  {
+    "zolai": "in",
+    "burmese": "က (ကတ္တားပြ)",
+    "english": "subject marker (after subject)",
+    "category": "Grammar",
+    "notes": "e.g. 'Pasian in' = God [as subject]; word order is SOV"
+  },
+  {
+    "zolai": "hi",
+    "burmese": "သည် (ဝါကျအဆုံး)",
+    "english": "declarative sentence ending",
+    "category": "Grammar",
+    "notes": "ends every statement. e.g. 'Pasian tha hi' = God is good"
+  },
+  {
+    "zolai": "hen",
+    "burmese": "ပါစေ",
+    "english": "prayer / blessing / wish ending",
+    "category": "Grammar",
+    "notes": "ends prayers and benedictions. e.g. 'hong kem hen' = may [he] keep [you]"
+  },
+  {
+    "zolai": "ahi hi",
+    "burmese": "အမှန်ပင်ဖြစ်သည်",
+    "english": "emphatic declarative ending",
+    "category": "Grammar",
+    "notes": "strong affirmation: 'that is indeed so'"
+  },
+  {
+    "zolai": "lo hi",
+    "burmese": "မ...ပါ / မဟုတ်ပါ",
+    "hebrew": "לֹא",
+    "english": "negation: does not / there is not",
+    "category": "Grammar",
+    "notes": "e.g. 'om lo hi' = is not there; 'mangngilh lo hi' = does not forget"
+  },
+  {
+    "zolai": "khin hi",
+    "burmese": "ခဲ့သည် (အတိတ်)",
+    "english": "past tense marker",
+    "category": "Grammar",
+    "notes": "verb + khin hi = did / went / was (past completed)"
+  },
+  {
+    "zolai": "ding hi",
+    "burmese": "မည် (အနာဂတ်)",
+    "english": "future tense marker",
+    "category": "Grammar",
+    "notes": "verb + ding hi = will (future)"
+  },
+  {
+    "zolai": "laitak hi",
+    "burmese": "နေသည် (ဆက်လက်)",
+    "english": "continuous aspect",
+    "category": "Grammar",
+    "notes": "verb + laitak hi = is -ing (ongoing action)"
+  },
+  {
+    "zolai": "sungah",
+    "burmese": "အတွင်း၌ / ထဲတွင်",
+    "hebrew": "בְּתוֹךְ",
+    "english": "in / inside / within",
+    "category": "Grammar",
+    "notes": "locative: 'biakinn sungah' = inside the church"
+  },
+  {
+    "zolai": "pan",
+    "burmese": "မှ",
+    "hebrew": "מִן",
+    "english": "from",
+    "category": "Grammar",
+    "notes": "ablative: 'Pasian pan' = from God"
+  },
+  {
+    "zolai": "kiangah",
+    "burmese": "ထံသို့ / အနီးသို့",
+    "hebrew": "אֶל",
+    "english": "toward / to / near",
+    "category": "Grammar",
+    "notes": "allative: 'Topa kiangah' = toward the Lord"
+  },
+  {
+    "zolai": "zel",
+    "burmese": "အမြဲ",
+    "hebrew": "תָּמִיד",
+    "english": "always / continually",
+    "category": "Grammar",
+    "notes": "e.g. 'hong makaih zel' = always guide"
+  },
+  {
+    "zolai": "zaw",
+    "burmese": "ပို၍",
+    "hebrew": "יוֹתֵר",
+    "english": "more / -er (comparative)",
+    "category": "Grammar",
+    "notes": "e.g. 'tha zaw' = better"
+  },
+  {
+    "zolai": "pen",
+    "burmese": "အ...ဆုံး",
+    "hebrew": "הֲכִי",
+    "english": "most / -est (superlative)",
+    "category": "Grammar",
+    "notes": "e.g. 'tha pen' = best"
+  },
+  {
+    "zolai": "mama",
+    "burmese": "အလွန်",
+    "hebrew": "מְאֹד",
+    "english": "very / extremely (intensifier)",
+    "category": "Grammar",
+    "notes": "e.g. 'tha mama' = very good"
+  },
+  {
+    "zolai": "siangtho",
+    "burmese": "သန့်ရှင်းသော",
+    "hebrew": "קָדוֹשׁ",
+    "english": "holy / sacred",
+    "category": "Adjectives",
+    "notes": ""
+  },
+  {
+    "zolai": "nop",
+    "burmese": "ပျော်ရွှင်သော",
+    "hebrew": "שָׂמֵחַ",
+    "english": "joyful / happy",
+    "category": "Adjectives",
+    "notes": ""
+  },
+  {
+    "zolai": "lungkham",
+    "burmese": "ဝမ်းနည်းသော",
+    "hebrew": "עָצוּב",
+    "english": "sad / sorrowful",
+    "category": "Adjectives",
+    "notes": ""
+  },
+  {
+    "zolai": "tha",
+    "burmese": "ကောင်းသော",
+    "hebrew": "טוֹב",
+    "english": "good",
+    "category": "Adjectives",
+    "notes": ""
+  },
+  {
+    "zolai": "dik",
+    "burmese": "မှန်ကန်သော",
+    "hebrew": "נָכוֹן",
+    "english": "right / correct / true",
+    "category": "Adjectives",
+    "notes": ""
+  },
+  {
+    "zolai": "lian",
+    "burmese": "ကြီးသော",
+    "hebrew": "גָּדוֹל",
+    "english": "big / great",
+    "category": "Adjectives",
+    "notes": ""
+  },
+  {
+    "zolai": "tam",
+    "burmese": "များသော",
+    "hebrew": "רַב",
+    "english": "many / much",
+    "category": "Adjectives",
+    "notes": ""
+  },
+  {
+    "zolai": "tawm",
+    "burmese": "နည်းသော / သေးငယ်သော",
+    "hebrew": "מְעַט",
+    "english": "few / little / small",
+    "category": "Adjectives",
+    "notes": ""
+  },
+  {
+    "zolai": "gim",
+    "burmese": "ပင်ပန်းသော",
+    "hebrew": "עָיֵף",
+    "english": "tired / weary",
+    "category": "Adjectives",
+    "notes": ""
+  },
+  {
+    "zolai": "dah",
+    "burmese": "နာကျင်သော",
+    "hebrew": "כּוֹאֵב",
+    "english": "hurt / painful",
+    "category": "Adjectives",
+    "notes": ""
+  },
+  {
+    "zolai": "cim",
+    "burmese": "ပညာရှိသော / လိမ္မာသော",
+    "hebrew": "חָכָם",
+    "english": "wise / clever",
+    "category": "Adjectives",
+    "notes": ""
+  },
+  {
+    "zolai": "khat",
+    "burmese": "တစ်",
+    "hebrew": "אֶחָד",
+    "english": "one",
+    "category": "Numbers",
+    "notes": ""
+  },
+  {
+    "zolai": "nih",
+    "burmese": "နှစ်",
+    "hebrew": "שְׁנַיִם",
+    "english": "two",
+    "category": "Numbers",
+    "notes": ""
+  },
+  {
+    "zolai": "thum",
+    "burmese": "သုံး",
+    "hebrew": "שְׁלֹשָׁה",
+    "english": "three",
+    "category": "Numbers",
+    "notes": ""
+  },
+  {
+    "zolai": "li",
+    "burmese": "လေး",
+    "hebrew": "אַרְבָּעָה",
+    "english": "four",
+    "category": "Numbers",
+    "notes": ""
+  },
+  {
+    "zolai": "nga",
+    "burmese": "ငါး",
+    "hebrew": "חֲמִשָּׁה",
+    "english": "five",
+    "category": "Numbers",
+    "notes": ""
+  },
+  {
+    "zolai": "guk",
+    "burmese": "ခြောက်",
+    "hebrew": "שִׁשָּׁה",
+    "english": "six",
+    "category": "Numbers",
+    "notes": ""
+  },
+  {
+    "zolai": "sagih",
+    "burmese": "ခုနစ်",
+    "hebrew": "שִׁבְעָה",
+    "english": "seven",
+    "category": "Numbers",
+    "notes": ""
+  },
+  {
+    "zolai": "giat",
+    "burmese": "ရှစ်",
+    "hebrew": "שְׁמוֹנָה",
+    "english": "eight",
+    "category": "Numbers",
+    "notes": ""
+  },
+  {
+    "zolai": "kua",
+    "burmese": "ကိုး",
+    "hebrew": "תִּשְׁעָה",
+    "english": "nine",
+    "category": "Numbers",
+    "notes": ""
+  },
+  {
+    "zolai": "sawm",
+    "burmese": "ဆယ်",
+    "hebrew": "עֲשָׂרָה",
+    "english": "ten",
+    "category": "Numbers",
+    "notes": ""
+  }
 ]

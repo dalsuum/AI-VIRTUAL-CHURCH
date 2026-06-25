@@ -45,9 +45,12 @@ const availableMoods = ref([]);
 const moodInput      = ref('');
 
 const LOCATION_OPTIONS = [
-  { value: 'start',   label: 'Service Start',    hint: 'Before the first stage begins.' },
-  { value: 'between', label: 'Between Stages',   hint: 'In the content area between Previous / Next.' },
-  { value: 'end',     label: 'Service End',      hint: 'After the final stage, before "End service".' },
+  { value: 'start',       label: 'Service Start',    hint: 'Before the first stage begins.' },
+  { value: 'between',     label: 'Between Stages',   hint: 'In the content area between Previous / Next.' },
+  { value: 'end',         label: 'Service End',      hint: 'After the final stage, before "End service".' },
+  { value: 'special_day', label: 'Special Day pages', hint: 'In the box below the Father\'s Day music-video page. Tag an ad here to show it; untag to hide.' },
+  { value: 'sticker_ads', label: 'Sticker page',      hint: 'In the box below the Live Sticker page. Tag an ad here to show it; untag to hide.' },
+  { value: 'bible_study',  label: 'Bible Study page',  hint: 'In the box below the AI Bible Study setup form. Tag an ad here to show it; untag to hide.' },
 ];
 
 const CURRENCY_OPTIONS = ['USD','EUR','GBP','SGD','MMK','INR','KRW','JPY','AUD','CAD'];

@@ -81,6 +81,28 @@ class WebhookController extends Controller
         // Broadcast to the client over WebSockets (Laravel Reverb / Echo).
         // event(new AssetReady($session->session_token, $asset));
 
+        // Phase 2 (SessionStateStore): record each ready segment as a service-milestone
+        // graph node on the bridged unified-history session, and checkpoint which segments
+        // are ready so far. Best-effort — never fail the asset webhook.
+        try {
+            $bridge = \App\Models\ServiceSessionMeta::where('service_session_id', $session->id)->first();
+            if ($bridge?->chat_session_id) {
+                $chat = \App\Models\ChatSession::find($bridge->chat_session_id);
+                if ($chat) {
+                    $history = app(\App\Services\HistoryService::class);
+                    $history->recordEvent($chat, 'service_segment_ready', [
+                        'segment'    => $data['segment'],
+                        'asset_type' => $asset->asset_type,
+                    ]);
+                    $ready = ServiceAsset::where('session_id', $session->id)
+                        ->where('status', 'ready')->pluck('segment')->all();
+                    $history->checkpoint($chat, ['ready_segments' => $ready, 'language' => $session->language]);
+                }
+            }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('service milestone node/checkpoint failed', ['e' => $e->getMessage()]);
+        }
+
         // Myanmar/Tedim services are now generated directly in their target language
         // by the Python worker. Do not dispatch the old post-generation localization
         // jobs here: they can run for many minutes and block DispatchServiceJob on the
@@ -137,5 +159,275 @@ class WebhookController extends Controller
         );
 
         return response()->json(['ok' => true, 'track_id' => $track->id]);
+    }
+
+    /**
+     * Persist one completed Bible Study turn (source of truth for show/replay) and
+     * its token usage. HMAC-signed (over "{ts}.{body}") with a ±tolerance window so a
+     * leaked secret can't replay old payloads. The live event stream is published
+     * separately by the worker; this only writes durable state.
+     */
+    public function studyTurn(Request $request): JsonResponse
+    {
+        $this->verifySignature($request);
+
+        $data = $request->validate([
+            'session_id'        => ['required', 'integer'],
+            'turn'              => ['required', 'integer', 'min:1'],
+            'role'              => ['required', 'in:user,moderator,pastor,synthesis,system'],
+            'persona_id'        => ['nullable', 'integer'],
+            'display_name'      => ['nullable', 'string', 'max:120'],
+            'content'           => ['nullable', 'string'],
+            'scripture_refs'    => ['nullable', 'array'],
+            'safety_flag'       => ['nullable', 'boolean'],
+            'prompt_tokens'     => ['nullable', 'integer'],
+            'completion_tokens' => ['nullable', 'integer'],
+        ]);
+
+        $session = \App\Models\StudySession::findOrFail($data['session_id']);
+
+        \App\Models\StudyMessage::updateOrCreate(
+            ['session_id' => $session->id, 'turn' => $data['turn']],
+            [
+                'role'              => $data['role'],
+                'persona_id'        => $data['persona_id'] ?? null,
+                'content'           => $data['content'] ?? '',
+                'scripture_refs'    => $data['scripture_refs'] ?? null,
+                'safety_flag'       => (bool) ($data['safety_flag'] ?? false),
+                'prompt_tokens'     => $data['prompt_tokens'] ?? null,
+                'completion_tokens' => $data['completion_tokens'] ?? null,
+            ],
+        );
+
+        if (($data['prompt_tokens'] ?? 0) || ($data['completion_tokens'] ?? 0)) {
+            \App\Models\AiUsageLedger::create([
+                'module'            => config('bible_study.module'),
+                'session_id'        => $session->id,
+                'prompt_tokens'     => $data['prompt_tokens'] ?? 0,
+                'completion_tokens' => $data['completion_tokens'] ?? 0,
+            ]);
+        }
+
+        $session->update(['last_activity_at' => now()]);
+
+        // Phase 2 (SessionStateStore): mirror content-bearing discussion turns onto the
+        // bridged unified-history session as graph nodes, and checkpoint round position so
+        // a study can be resumed/rehydrated from nodes. Best-effort — never fail the turn.
+        try {
+            $content = trim((string) ($data['content'] ?? ''));
+            $bridge = \App\Models\BibleSessionMeta::where('study_session_id', $session->id)->first();
+            if ($content !== '' && $bridge?->chat_session_id
+                && in_array($data['role'], ['pastor', 'synthesis', 'moderator'], true)) {
+                $chat = \App\Models\ChatSession::find($bridge->chat_session_id);
+                if ($chat) {
+                    $history = app(\App\Services\HistoryService::class);
+                    $history->recordEvent($chat, 'study_turn', [
+                        'turn'         => $data['turn'],
+                        'role'         => $data['role'],
+                        'persona_id'   => $data['persona_id'] ?? null,
+                        'display_name' => $data['display_name'] ?? null,
+                        'content'      => $content,
+                        'scripture_refs' => $data['scripture_refs'] ?? null,
+                    ]);
+                    $history->checkpoint($chat, ['turn' => $data['turn'], 'role' => $data['role'], 'state' => 'in_progress']);
+                }
+            }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('study turn node/checkpoint failed', ['e' => $e->getMessage()]);
+        }
+
+        return response()->json(['ok' => true]);
+    }
+
+    /** Persist the generated end-of-discussion summary. HMAC-signed like studyTurn. */
+    public function studySummary(Request $request): JsonResponse
+    {
+        $this->verifySignature($request);
+
+        $data = $request->validate([
+            'session_id' => ['required', 'integer'],
+            'summary'    => ['required', 'array'],
+        ]);
+
+        $session = \App\Models\StudySession::findOrFail($data['session_id']);
+        $s = $data['summary'];
+
+        \App\Models\StudySummary::updateOrCreate(
+            ['session_id' => $session->id],
+            [
+                'key_verses'           => $s['key_verses'] ?? null,
+                'lessons'              => $s['lessons'] ?? null,
+                'prayer'               => is_string($s['prayer'] ?? null) ? $s['prayer'] : null,
+                'action_points'        => $s['action_points'] ?? null,
+                'reflection_questions' => $s['reflection_questions'] ?? null,
+                'study_plan'           => $s['study_plan'] ?? null,
+                'generated_at'         => now(),
+            ],
+        );
+
+        $session->update(['state' => 'summarized']);
+
+        // Mirror a short summary onto the bridged unified-history row, if any.
+        $bridge = \App\Models\BibleSessionMeta::where('study_session_id', $session->id)->first();
+        if ($bridge && $bridge->chat_session_id) {
+            $lessons = is_array($s['lessons'] ?? null) ? implode(' ', $s['lessons']) : ($s['lessons'] ?? '');
+            $summary = trim((string) $lessons) ?: (is_string($s['prayer'] ?? null) ? $s['prayer'] : '');
+            $bridge->update(['discussion_summary' => $summary]);
+            if ($summary !== '') {
+                \App\Models\ChatSession::whereKey($bridge->chat_session_id)
+                    ->update(['summary' => mb_substr($summary, 0, 1000), 'status' => 'completed', 'ended_at' => now()]);
+                \Illuminate\Support\Facades\Cache::forget(
+                    'history:list:' . (\App\Models\ChatSession::find($bridge->chat_session_id)->user_id ?? 0)
+                );
+                // Phase 2: mark the end-of-discussion as a graph milestone + final checkpoint.
+                try {
+                    $chat = \App\Models\ChatSession::find($bridge->chat_session_id);
+                    if ($chat) {
+                        $history = app(\App\Services\HistoryService::class);
+                        $history->recordEvent($chat, 'study_summarized', ['key_verses' => $s['key_verses'] ?? null]);
+                        $history->checkpoint($chat, ['state' => 'summarized']);
+                    }
+                } catch (\Throwable $e) {
+                    \Illuminate\Support\Facades\Log::warning('study summary node/checkpoint failed', ['e' => $e->getMessage()]);
+                }
+            }
+        }
+
+        return response()->json(['ok' => true]);
+    }
+
+    /**
+     * Unified-history worker callback (HMAC-signed). Handles:
+     *  - pastor_reply:   append the assistant turn + push an SSE event for the live stream
+     *  - title_summary:  set the session title/summary + auto-tags + memory snapshot
+     */
+    public function historyCallback(Request $request): JsonResponse
+    {
+        $this->verifySignature($request);
+
+        $data = $request->validate([
+            'mode'             => ['required', 'in:pastor_reply,title_summary,journal'],
+            'session_id'       => ['nullable', 'string'],
+            'journal_entry_id' => ['nullable', 'integer'],
+            'reply'            => ['nullable', 'string'],
+            'title'            => ['nullable', 'string', 'max:200'],
+            'summary'          => ['nullable', 'string'],
+            'scripture_ref'    => ['nullable', 'string', 'max:120'],
+            'insight'          => ['nullable', 'string'],
+            'prayer'           => ['nullable', 'string'],
+            'reflection'       => ['nullable', 'string'],
+            'tags'             => ['nullable', 'array'],
+            'tags.*'           => ['string', 'max:40'],
+            'token_usage'      => ['nullable', 'integer'],
+        ]);
+
+        // Journal fills an entry by its own id, not a chat session.
+        if ($data['mode'] === 'journal') {
+            return $this->fillJournalEntry($data);
+        }
+
+        $session = \App\Models\ChatSession::find($data['session_id']);
+        if (! $session) {
+            return response()->json(['ok' => false], 404);
+        }
+
+        if ($data['mode'] === 'pastor_reply') {
+            $reply = trim((string) ($data['reply'] ?? ''));
+            if ($reply !== '') {
+                // Dual-write the assistant turn: legacy projection + graph node (Phase 1).
+                \Illuminate\Support\Facades\DB::transaction(function () use ($session, $reply, $data) {
+                    \App\Models\ChatMessage::create([
+                        'session_id'  => $session->id,
+                        'sender'      => 'assistant',
+                        'content'     => $reply,
+                        'token_usage' => $data['token_usage'] ?? null,
+                    ]);
+                    app(\App\Services\SessionState\SessionStateStore::class)->appendNode(
+                        $session->id,
+                        \App\Services\SessionState\SessionNodeData::message('assistant', $reply, null, $data['token_usage'] ?? null)
+                    );
+                });
+                $session->forceFill(['last_activity_at' => now()])->save();
+                \Illuminate\Support\Facades\Cache::forget("history:list:{$session->user_id}");
+                // Push to the live SSE tail (assistant message as a single event).
+                \Illuminate\Support\Facades\Redis::rpush(
+                    "pastor:{$session->id}:events",
+                    json_encode(['type' => 'message', 'sender' => 'assistant', 'content' => $reply])
+                );
+            }
+            // After enough turns, ask for a title/summary too.
+            if ($session->title === null
+                && \App\Models\ChatMessage::where('session_id', $session->id)->count() >= 3) {
+                app(\App\Services\HistoryTitleService::class)->enqueue($session);
+            }
+
+            return response()->json(['ok' => true]);
+        }
+
+        // title_summary
+        $update = [];
+        if (! empty($data['title']))   { $update['title'] = $data['title']; }
+        if (! empty($data['summary'])) { $update['summary'] = $data['summary']; }
+        if ($update) {
+            $session->update($update);
+            \Illuminate\Support\Facades\Cache::forget("history:list:{$session->user_id}");
+        }
+        foreach (array_slice(array_unique($data['tags'] ?? []), 0, 20) as $tag) {
+            \App\Models\ChatSessionTag::firstOrCreate(
+                ['chat_session_id' => $session->id, 'tag' => $tag],
+                ['auto' => true]
+            );
+        }
+        if (! empty($data['summary'])) {
+            \App\Models\AiMemory::create([
+                'module'          => 'history',
+                'chat_session_id' => $session->id,
+                'user_id'         => $session->user_id,
+                'kind'            => 'summary',
+                'content'         => $data['summary'],
+            ]);
+        }
+
+        return response()->json(['ok' => true]);
+    }
+
+    /** Fill a pending journal entry with the worker-generated reflection. */
+    private function fillJournalEntry(array $data): JsonResponse
+    {
+        $entry = \App\Models\JournalEntry::find($data['journal_entry_id'] ?? 0);
+        if (! $entry) {
+            return response()->json(['ok' => false], 404);
+        }
+
+        $hasContent = ! empty($data['insight']) || ! empty($data['prayer']) || ! empty($data['reflection']);
+        $entry->update([
+            'status'        => $hasContent ? 'ready' : 'failed',
+            'title'         => $data['title'] ?: $entry->title,
+            'scripture_ref' => $data['scripture_ref'] ?? null,
+            'insight'       => $data['insight'] ?? null,
+            'prayer'        => $data['prayer'] ?? null,
+            'reflection'    => $data['reflection'] ?? null,
+        ]);
+
+        return response()->json(['ok' => true]);
+    }
+
+    /**
+     * Verify an HMAC-signed worker payload: signature = HMAC-SHA256(secret,
+     * "{timestamp}.{raw body}"), compared in constant time, with a tolerance window
+     * to reject replays. Falls back to nothing — fail closed.
+     */
+    private function verifySignature(Request $request): void
+    {
+        $secret = (string) config('services.worker.secret', '');
+        $ts     = (string) $request->header('X-Worker-Timestamp', '');
+        $sig    = (string) $request->header('X-Worker-Signature', '');
+        $tolerance = (int) config('bible_study.webhook_tolerance', 60);
+
+        abort_unless(strlen($secret) >= 32, 403);
+        abort_unless($ts !== '' && abs(time() - (int) $ts) <= $tolerance, 403, 'Stale or missing timestamp.');
+
+        $expected = hash_hmac('sha256', $ts . '.' . $request->getContent(), $secret);
+        abort_unless($sig !== '' && hash_equals($expected, $sig), 403, 'Bad signature.');
     }
 }

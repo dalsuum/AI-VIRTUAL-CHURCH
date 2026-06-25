@@ -21,7 +21,11 @@ class DispatchServiceJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public function __construct(public int $sessionId) {}
+    public string $correlationId;
+
+    public function __construct(public int $sessionId) {
+        $this->correlationId = (string) \Illuminate\Support\Str::uuid();
+    }
 
     public function handle(): void
     {
@@ -30,6 +34,7 @@ class DispatchServiceJob implements ShouldQueue
         $language = $session->language ?? 'en';
 
         $payload = json_encode([
+            'correlation_id' => $this->correlationId,
             'session_id'   => $session->id,
             'session_token'=> $session->session_token,
             'music_source' => $session->music_source, // 'hymn_sung' | 'hymn' | 'suno' | 'youtube'
@@ -69,10 +74,34 @@ class DispatchServiceJob implements ShouldQueue
             // repeating the same scripture passages, prayer themes, or sermon angles
             // for someone who has attended before.
             'user_history' => $this->buildUserHistory($session),
+            // When the service falls inside a special-Sunday window (Mother's Day,
+            // Easter, Pentecost…), bias sermon + worship toward the observance. The
+            // worker filters the sermon theme by `sermon_tags` and the hymn/worship
+            // mood by `music_moods`, and — when the day's per-language mode is
+            // 'manual' — hands the worker a curated sermon/song under `content`.
+            // null outside any window — normal selection.
+            'special_sunday' => $this->resolveSpecialSunday($language, $intake->mood ?? null),
         ]);
 
         // The Python orchestrator (tasks.orchestrate) BLPOPs this list.
         Redis::rpush('ai:intake', $payload);
+    }
+
+    /**
+     * Resolve the active special Sunday (if any) for this service's language at
+     * dispatch time. Returns the worker-facing bias payload, or null when no
+     * observance window is open. Resolution is cheap and never blocks dispatch.
+     */
+    private function resolveSpecialSunday(string $language, ?string $mood = null): ?array
+    {
+        try {
+            return app(\App\Services\SpecialSundayResolver::class)->dispatchPayload($language, $mood);
+        } catch (\Throwable $e) {
+            // A catalog/DB hiccup must never stop a service from going out.
+            report($e);
+
+            return null;
+        }
     }
 
     /**

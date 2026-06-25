@@ -70,6 +70,9 @@ CACHE_TTL = 60 * 60 * 24 * 30  # 30 days
 _redis = aioredis.from_url("redis://127.0.0.1:6379/2", decode_responses=True)
 _gpu_lock = asyncio.Semaphore(1)  # one inference at a time on ARM CPU
 
+# Pre-compiled regexes for validation
+_REPEATED_WORD_RE = re.compile(r"\b(\w{2,})\s+\1\b")
+_WORD_RE = re.compile(r"\b\w+\b")
 
 class TranslateIn(BaseModel):
     text: str
@@ -112,7 +115,7 @@ async def _ollama(prompt: str, system: str | None = None,
 
 @router.post("/translate")
 async def translate(body: TranslateIn):
-    key = "tedim:tr:" + hashlib.sha1(
+    key = "tedim:tr:" + hashlib.sha256(
         f"{body.direction}|{body.text}".encode()).hexdigest()
     if cached := await _redis.get(key):
         return {"text": cached, "cached": True}
@@ -203,7 +206,7 @@ def _validate_tedim(text: str) -> str:
             )
 
     # Reject obvious consecutive repeated-word shuffling ('ka ka', 'nang nang').
-    if re.search(r"\b(\w{2,})\s+\1\b", lower):
+    if _REPEATED_WORD_RE.search(lower):
         raise HTTPException(
             status_code=502,
             detail="Tedim output contains repeated-word patterns (word salad); using fallback.",
@@ -211,7 +214,7 @@ def _validate_tedim(text: str) -> str:
 
     # Reject looping 3-gram patterns: the model gets stuck and repeats the same
     # short phrase 3+ times (e.g. "heng eite tha" × 4, "zo lhai zen hi" × 3).
-    words = re.findall(r"\b\w+\b", lower)
+    words = _WORD_RE.findall(lower)
     if len(words) >= 6:
         from collections import Counter
         trigrams = [" ".join(words[i:i+3]) for i in range(len(words) - 2)]

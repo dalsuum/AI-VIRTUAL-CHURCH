@@ -22,19 +22,25 @@ import llm_engine  # noqa: E402
 import narrator  # noqa: E402
 from tasks.celery_burmese_tasks import localize_segment_burmese, narrate_burmese  # noqa: E402, F401
 from tasks.celery_tedim_tasks import localize_segment_tedim, narrate_tedim  # noqa: E402, F401
+from tasks.celery_study_tasks import study_discuss  # noqa: E402, F401
+from tasks.celery_history_tasks import history_job  # noqa: E402, F401
 import storage  # noqa: E402
 from strategies import MusicResult, get_strategy  # noqa: E402
 from strategies.youtube_strategy import find_sermon_video  # noqa: E402
 from tasks.celery_app import app  # noqa: E402
 
-LARAVEL_WEBHOOK = os.environ["LARAVEL_WEBHOOK_URL"]  # e.g. https://api.host/api/internal/asset-ready
-WORKER_SECRET = os.environ["WORKER_WEBHOOK_SECRET"]
+LARAVEL_WEBHOOK = os.environ.get("LARAVEL_WEBHOOK_URL", "")  # e.g. https://api.host/api/internal/asset-ready
+WORKER_SECRET = os.environ.get("WORKER_WEBHOOK_SECRET", "")
 # Sibling internal endpoint that registers a freshly generated song in the reusable
 # mood pool. Same host/secret as the asset-ready webhook, different final path.
-MUSIC_TRACK_WEBHOOK = LARAVEL_WEBHOOK.replace("asset-ready", "music-track")
+MUSIC_TRACK_WEBHOOK = LARAVEL_WEBHOOK.replace("asset-ready", "music-track") if LARAVEL_WEBHOOK else ""
 
 
 def _post_asset(session_token: str, segment: str, **fields) -> None:
+    if not LARAVEL_WEBHOOK or not WORKER_SECRET:
+        raise RuntimeError(
+            "LARAVEL_WEBHOOK_URL and WORKER_WEBHOOK_SECRET must be set to post assets"
+        )
     payload = {"session_token": session_token, "segment": segment, **fields}
     requests.post(
         LARAVEL_WEBHOOK,
@@ -42,6 +48,18 @@ def _post_asset(session_token: str, segment: str, **fields) -> None:
         headers={"X-Worker-Secret": WORKER_SECRET},
         timeout=30,
     ).raise_for_status()
+
+
+def _post_token_telemetry(session_token: str, segment: str, prompt_tokens: int, completion_tokens: int) -> None:
+    """Best-effort token telemetry; never block service composition."""
+    if prompt_tokens <= 0 and completion_tokens <= 0:
+        return
+
+    print(
+        f"[telemetry] {segment} session={session_token[:8]}... "
+        f"prompt_tokens={prompt_tokens} completion_tokens={completion_tokens}",
+        flush=True,
+    )
 
 
 def _post_music_track(*, mood: str, language: str, provider_ref: str, storage_key: str, title: str | None, lyrics: str | None = None) -> None:
@@ -70,6 +88,133 @@ def _musicgen_queue_depth() -> int:
 
 SERVER_NARRATION_MODES = {"openai", "kokoro", "edge_tts", "mms_tts", "voicebox"}
 NARRATED_SEGMENTS = {"opening_prayer", "scripture", "sermon", "benediction"}
+
+
+def _special_sunday_theme(job: dict) -> str | None:
+    """Build a sermon-theme string from the special-Sunday bias on the job, e.g.
+    "Easter Sunday: resurrection, victory, empty tomb". Always English (it steers
+    the LLM, never reaches the worshipper) and uses the language-neutral key/tags.
+    Returns None outside any observance window."""
+    special = job.get("special_sunday")
+    if not isinstance(special, dict):
+        return None
+    # The English title is the clearest LLM anchor; fall back to the key.
+    title = (special.get("title") or special.get("key") or "").strip()
+    tags = [t for t in (special.get("sermon_tags") or []) if isinstance(t, str) and t.strip()]
+    if not title and not tags:
+        return None
+    return f"{title}: {', '.join(tags)}" if tags else title
+
+
+def _special_sunday_content(job: dict, segment: str) -> dict | None:
+    """Return the curated 'manual' content for a segment ('sermon' | 'music') when
+    the active special Sunday's per-language mode is manual AND an entry resolved.
+    None means run the normal AI/bias path."""
+    special = job.get("special_sunday")
+    if not isinstance(special, dict):
+        return None
+    content = special.get("content")
+    if not isinstance(content, dict):
+        return None
+    seg = content.get(segment)
+    if isinstance(seg, dict) and seg.get("mode") == "manual":
+        return seg
+    return None
+
+
+def _youtube_id(ref: str) -> str:
+    """Extract an 11-char YouTube id from a URL or bare id; return ref unchanged
+    if it doesn't look like either (the player tolerates a raw id)."""
+    import re
+    ref = (ref or "").strip()
+    m = re.search(r"(?:v=|youtu\.be/|/embed/|/shorts/)([A-Za-z0-9_-]{11})", ref)
+    if m:
+        return m.group(1)
+    if re.fullmatch(r"[A-Za-z0-9_-]{11}", ref):
+        return ref
+    return ref
+
+
+def _deliver_manual_song(job: dict, song: dict) -> bool:
+    """Serve an admin-curated special-Sunday song for the worship + closing_hymn
+    segments. Supports all four source kinds. Returns True on success; False lets
+    the caller fall back to the normal mood-selected worship."""
+    token    = job["session_token"]
+    stype    = (song.get("source_type") or "").strip()
+    title    = song.get("title") or "Worship"
+    lyrics   = song.get("lyrics")
+    ref      = (song.get("source_ref") or "").strip()
+    language = job.get("language", "en")
+
+    def _post_both(**fields):
+        for seg in ("worship", "closing_hymn"):
+            _post_asset(token, seg, text_payload=title, lyrics=lyrics, **fields)
+
+    try:
+        if stype == "youtube":
+            _post_both(asset_type="youtube", provider_ref=_youtube_id(ref))
+            return True
+
+        if stype == "audio":
+            # A direct hosted URL is already browser-playable; pass it straight
+            # through as the storage_key the player loads.
+            _post_both(asset_type="audio", storage_key=ref)
+            return True
+
+        if stype == "hymn":
+            import song_library
+            match = next(
+                (s for s in song_library.get_songs(language=language) if str(s.get("id")) == str(ref)),
+                None,
+            )
+            if match is None:
+                return False
+            url = (match.get("url") or "").strip()
+            use_lyrics = lyrics or match.get("lyrics")
+            use_title  = title if song.get("title") else (match.get("title") or title)
+            if not url:
+                return False
+            if "youtu" in url:
+                for seg in ("worship", "closing_hymn"):
+                    _post_asset(token, seg, asset_type="youtube", provider_ref=_youtube_id(url),
+                                text_payload=use_title, lyrics=use_lyrics)
+            else:
+                for seg in ("worship", "closing_hymn"):
+                    _post_asset(token, seg, asset_type="audio", storage_key=url,
+                                text_payload=use_title, lyrics=use_lyrics)
+            return True
+
+        if stype == "suno":
+            from strategies import get_strategy
+            strategy = get_strategy("suno", language=language)
+            result = strategy.fetch(mood=job.get("mood", ""), prompt=ref, query="")
+            if result is None:
+                return False
+            if result.asset_type == "audio" and result.storage_key:
+                result.storage_key = storage.presign(result.storage_key, expires=6 * 3600)
+            for seg in ("worship", "closing_hymn"):
+                _post_asset(token, seg, asset_type=result.asset_type, storage_key=result.storage_key,
+                            provider_ref=result.provider_ref, text_payload=title or result.title,
+                            lyrics=lyrics or result.lyrics, timings=result.timings)
+            return True
+    except Exception as exc:  # noqa: BLE001 — degrade to normal worship, never crash
+        print(f"[music] manual special-Sunday song ({stype}) failed: {exc}", flush=True)
+
+    return False
+
+
+def _special_sunday_music_query(job: dict, base_query: str) -> str:
+    """Fold the observance's `music_moods` into the hymn/worship search query so
+    the mood→hymn matcher leans toward themed worship. Leaves the base query
+    intact when no special Sunday is active."""
+    special = job.get("special_sunday")
+    if not isinstance(special, dict):
+        return base_query
+    moods = [m for m in (special.get("music_moods") or []) if isinstance(m, str) and m.strip()]
+    if not moods:
+        return base_query
+    extra = " ".join(moods)
+    return f"{base_query} {extra}".strip() if base_query else extra
 
 
 def _wants_server_narration(job: dict) -> bool:
@@ -168,8 +313,7 @@ def _orchestrate_pipeline(job: dict) -> None:
 
     p_tok = llm_engine.session_prompt_tokens.get()
     c_tok = llm_engine.session_completion_tokens.get()
-    if p_tok > 0 or c_tok > 0:
-        _post_asset(token, "telemetry_plan", asset_type="telemetry", prompt_tokens=p_tok, completion_tokens=c_tok)
+    _post_token_telemetry(token, "telemetry_plan", p_tok, c_tok)
 
     # 1b. Registered worshippers get a short, mood-aware "welcome back" greeting up
     # front so the countdown screen has something personal to show while the heavier
@@ -256,10 +400,18 @@ def generate_text_segments(job: dict, plan: dict) -> None:
     user_history = job.get("user_history")
     prayer_text = job.get("prayer_text")
     youtube_mode = job.get("music_source") == "youtube"
-    if youtube_mode:
+    # A special Sunday in 'manual' sermon mode supplies a hand-authored sermon
+    # that is spoken verbatim — it replaces both the AI sermon and the YouTube
+    # sermon-video lookup for this language.
+    manual_sermon = _special_sunday_content(job, "sermon")
+    if youtube_mode and not manual_sermon:
         try:
             past_video_ids = (user_history or {}).get("past_video_ids", [])
-            video = find_sermon_video(mood=mood, query=plan.get("preaching_query", ""),
+            # A special Sunday biases the YouTube sermon search toward the
+            # observance (its moods/title) on top of the worshipper's keywords.
+            preaching_query = _special_sunday_music_query(
+                job, plan.get("preaching_query", ""))
+            video = find_sermon_video(mood=mood, query=preaching_query,
                                       language=language,
                                       excluded_ids=past_video_ids)
             _post_asset(token, "sermon", asset_type="youtube",
@@ -308,12 +460,16 @@ def generate_text_segments(job: dict, plan: dict) -> None:
                             countdown=_narrate_slot)
         _narrate_slot += _narrate_stagger
 
-    if not youtube_mode:
+    if manual_sermon and (manual_sermon.get("body") or "").strip():
+        # Curated special-Sunday sermon — spoken as written (still reviewed,
+        # narrated, and avatar-rendered like any other spoken segment).
+        _process_spoken_segment("sermon", manual_sermon["body"].strip())
+    elif not youtube_mode:
         sermon_minutes = 5 if job.get("music_source") == "musicgen" else 8
         sermon_text = llm_engine.generate_sermon(
             user_name=name, mood=mood, scripture_ref=ref, language=language,
             target_minutes=sermon_minutes, prayer_text=prayer_text,
-            user_history=user_history)
+            user_history=user_history, theme=_special_sunday_theme(job))
         _process_spoken_segment("sermon", sermon_text)
 
     ben_text = llm_engine.generate_benediction(
@@ -323,8 +479,7 @@ def generate_text_segments(job: dict, plan: dict) -> None:
 
     p_tok = llm_engine.session_prompt_tokens.get()
     c_tok = llm_engine.session_completion_tokens.get()
-    if p_tok > 0 or c_tok > 0:
-        _post_asset(token, "telemetry_segments", asset_type="telemetry", prompt_tokens=p_tok, completion_tokens=c_tok)
+    _post_token_telemetry(token, "telemetry_segments", p_tok, c_tok)
 
 
 @app.task(name="tasks.repair_missing_narration")
@@ -380,6 +535,14 @@ def generate_music(job: dict, plan: dict) -> None:
     # Where generated audio lands (local dir vs S3) is an admin setting Laravel threads
     # through; None falls back to the worker's env default.
     storage.set_backend(job.get("storage_backend"))
+
+    # A special Sunday in 'manual' music mode pins a specific curated song. Serve it
+    # and skip the mood-selection path entirely; on any failure, fall through to the
+    # normal worship so the service is never left silent.
+    manual_song = _special_sunday_content(job, "music")
+    if manual_song and _deliver_manual_song(job, manual_song):
+        print(f"[music] served manual special-Sunday song for {job['session_token']}", flush=True)
+        return
 
     reuse = job.get("reuse_track")
     if reuse:
@@ -439,7 +602,9 @@ def generate_music(job: dict, plan: dict) -> None:
                 result = strategy.fetch(
                     mood=job["mood"],
                     prompt=music_prompt,
-                    query=plan.get("music_query", ""),
+                    # A special Sunday folds its music_moods into the hymn query so
+                    # worship leans toward the observance (e.g. Easter → joyful).
+                    query=_special_sunday_music_query(job, plan.get("music_query", "")),
                 )
                 break
             except Exception as exc:  # noqa: BLE001 — degrade gracefully
@@ -463,7 +628,7 @@ def generate_music(job: dict, plan: dict) -> None:
                     result = fb_strategy.fetch(
                         mood=job["mood"],
                         prompt="",
-                        query=plan.get("music_query", ""),
+                        query=_special_sunday_music_query(job, plan.get("music_query", "")),
                     )
                     used_local_fallback = True
                     print(
@@ -641,3 +806,22 @@ def narrate(
     # Enrich the existing segment row with its narration; the webhook keeps the
     # segment's text (and any avatar video) intact and just fills in audio_key.
     _post_asset(session_token, segment, audio_key=audio_url)
+
+
+@app.task(name="tasks.generate_bible_bg", time_limit=1800, soft_time_limit=1500)
+def generate_bible_bg(theme: str, tod: str, engine: str = "musicgen", storage_backend: str = "") -> None:
+    """Generate (once) the AI background-music loop for a Bible (theme, tod) bucket.
+
+    Offloaded from the Bible API process so MusicGen never blocks narration. The
+    deterministic storage key makes this idempotent: if the track already exists
+    (another reader triggered it first) the task is a cheap no-op.
+    """
+    import bible_bg  # noqa: PLC0415 — heavy deps, import lazily on the worker
+
+    if storage_backend:
+        storage.set_backend(storage_backend)
+    try:
+        url = bible_bg.generate_track(theme, tod, engine=engine)
+        print(f"[bible-bg] ready {theme}/{tod}: {url}", flush=True)
+    except Exception as exc:  # noqa: BLE001 — best-effort; reader falls back to silence
+        print(f"[bible-bg] generation failed for {theme}/{tod}: {exc}", flush=True)

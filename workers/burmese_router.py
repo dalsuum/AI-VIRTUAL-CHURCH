@@ -93,7 +93,7 @@ async def _ollama(prompt: str, system: str | None = None,
 
 @router.post("/translate")
 async def translate(body: TranslateIn):
-    key = "burmese:tr:" + hashlib.sha1(
+    key = "burmese:tr:" + hashlib.sha256(
         f"{body.direction}|{body.text}".encode()).hexdigest()
     if cached := await _redis.get(key):
         return {"text": cached, "cached": True}

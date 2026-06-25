@@ -333,20 +333,13 @@ class WebhookController extends Controller
 
         if ($data['mode'] === 'pastor_reply') {
             $reply = trim((string) ($data['reply'] ?? ''));
+            $store = app(\App\Services\SessionState\SessionStateStore::class);
             if ($reply !== '') {
-                // Dual-write the assistant turn: legacy projection + graph node (Phase 1).
-                \Illuminate\Support\Facades\DB::transaction(function () use ($session, $reply, $data) {
-                    \App\Models\ChatMessage::create([
-                        'session_id'  => $session->id,
-                        'sender'      => 'assistant',
-                        'content'     => $reply,
-                        'token_usage' => $data['token_usage'] ?? null,
-                    ]);
-                    app(\App\Services\SessionState\SessionStateStore::class)->appendNode(
-                        $session->id,
-                        \App\Services\SessionState\SessionNodeData::message('assistant', $reply, null, $data['token_usage'] ?? null)
-                    );
-                });
+                // Phase 4: session_nodes is the sole record (legacy chat_messages dropped).
+                $store->appendNode(
+                    $session->id,
+                    \App\Services\SessionState\SessionNodeData::message('assistant', $reply, null, $data['token_usage'] ?? null)
+                );
                 $session->forceFill(['last_activity_at' => now()])->save();
                 \Illuminate\Support\Facades\Cache::forget("history:list:{$session->user_id}");
                 // Push to the live SSE tail (assistant message as a single event).
@@ -356,8 +349,7 @@ class WebhookController extends Controller
                 );
             }
             // After enough turns, ask for a title/summary too.
-            if ($session->title === null
-                && \App\Models\ChatMessage::where('session_id', $session->id)->count() >= 3) {
+            if ($session->fresh()?->title === null && $store->messageCount($session) >= 3) {
                 app(\App\Services\HistoryTitleService::class)->enqueue($session);
             }
 

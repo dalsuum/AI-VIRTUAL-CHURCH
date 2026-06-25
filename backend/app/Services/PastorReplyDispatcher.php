@@ -2,8 +2,8 @@
 
 namespace App\Services;
 
-use App\Models\ChatMessage;
 use App\Models\ChatSession;
+use App\Services\SessionState\SessionStateStore;
 use Illuminate\Support\Facades\Redis;
 
 /**
@@ -17,10 +17,10 @@ class PastorReplyDispatcher
 
     public function dispatch(ChatSession $session): void
     {
-        $turns = ChatMessage::where('session_id', $session->id)
-            ->orderBy('created_at')->limit(20)
-            ->get(['sender', 'content'])
-            ->map(fn ($m) => ['role' => $m->sender, 'content' => $m->content])->all();
+        $turns = array_map(
+            fn ($t) => ['role' => $t['sender'], 'content' => $t['content']],
+            app(SessionStateStore::class)->messageTurns($session, 20),
+        );
 
         $job = [
             'correlation_id' => (string) \Illuminate\Support\Str::uuid(),

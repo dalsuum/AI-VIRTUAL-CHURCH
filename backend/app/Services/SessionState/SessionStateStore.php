@@ -149,6 +149,30 @@ class SessionStateStore
             ]));
     }
 
+    /**
+     * Lightweight ['sender','content'] turns from the active branch's message nodes, in
+     * chronological (seq) order, optionally limited to the first N. Used by the worker
+     * dispatchers (pastor reply / title / journal) that need conversation context — the
+     * Phase 4 replacement for reading the dropped chat_messages table.
+     *
+     * @return array<int,array{sender:string,content:string}>
+     */
+    public function messageTurns(ChatSession $session, int $limit = 0): array
+    {
+        $dtos = $this->messageDtos($session);
+        if ($limit > 0) {
+            $dtos = $dtos->take($limit);
+        }
+
+        return $dtos->map(fn ($m) => ['sender' => $m['sender'], 'content' => $m['content']])->values()->all();
+    }
+
+    /** Count of message-type nodes on the active branch (Phase 4 title-trigger gate). */
+    public function messageCount(ChatSession $session): int
+    {
+        return $this->messageDtos($session)->count();
+    }
+
     /** Nodes of the active branch, in order. Empty collection when nothing recorded yet. */
     private function activeBranchNodes(ChatSession $session)
     {

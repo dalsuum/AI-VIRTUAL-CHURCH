@@ -2,7 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Models\ChatMessage;
 use App\Models\SessionNode;
 use App\Services\HistoryService;
 use App\Services\SessionState\SessionNodeData;
@@ -94,17 +93,17 @@ class SessionStateStoreTest extends TestCase
         $this->assertCount(1, $state->activeBranch);
     }
 
-    public function test_history_service_dual_writes_message_and_node(): void
+    public function test_history_service_records_message_as_node_only(): void
     {
         $user = $this->makeUser();
         $session = app(HistoryService::class)->startSession($user, 'pastor');
 
-        app(HistoryService::class)->recordMessage($session, 'user', 'Pray for my family');
+        $nodeId = app(HistoryService::class)->recordMessage($session, 'user', 'Pray for my family');
 
-        // Legacy projection AND the graph node both exist and agree.
-        $this->assertSame(1, ChatMessage::where('session_id', $session->id)->count());
+        // Phase 4: session_nodes is the sole record (no chat_messages projection).
         $node = SessionNode::where('session_id', $session->id)->first();
         $this->assertNotNull($node);
+        $this->assertSame($nodeId, $node->id);
         $this->assertSame('user', $node->sender);
         $this->assertSame('Pray for my family', $node->content);
         $this->assertSame($node->id, $session->fresh()->active_node_id);
@@ -119,8 +118,8 @@ class SessionStateStoreTest extends TestCase
             'mood' => 'hopeful', 'track_ids' => [1, 2, 3],
         ]);
 
-        // Phase 2 events are graph-only — no chat_messages projection.
-        $this->assertSame(0, ChatMessage::where('session_id', $session->id)->count());
+        // Events are graph-only and never appear as message-type nodes.
+        $this->assertSame(0, $this->store()->messageCount($session));
         $node = SessionNode::find($nodeId);
         $this->assertSame('system_event', $node->type);
         $this->assertSame('playlist_recommended', $node->content);
@@ -144,7 +143,7 @@ class SessionStateStoreTest extends TestCase
         $this->assertSame([7], $state->latestCheckpoint->state_blob['queue']);
     }
 
-    public function test_phase3_message_dtos_match_legacy_projection_and_exclude_events(): void
+    public function test_message_dtos_are_ordered_and_exclude_events(): void
     {
         $user = $this->makeUser();
         $session = app(HistoryService::class)->startSession($user, 'pastor');
@@ -156,13 +155,12 @@ class SessionStateStoreTest extends TestCase
         $history->recordEvent($session, 'playlist_recommended', ['x' => 1]);
 
         $dtos = $this->store()->messageDtos($session);
-        $legacy = ChatMessage::where('session_id', $session->id)->orderBy('created_at')->get();
 
         $this->assertCount(2, $dtos, 'system_event excluded; only the two messages');
         $this->assertSame(
-            $legacy->pluck('content')->all(),
+            ['Teach me to pray', 'Begin with thanksgiving'],
             $dtos->pluck('content')->all(),
-            'node-derived read matches the legacy projection content/order'
+            'node-derived read is in chronological (seq) order'
         );
         $this->assertSame(['user', 'assistant'], $dtos->pluck('sender')->all());
     }

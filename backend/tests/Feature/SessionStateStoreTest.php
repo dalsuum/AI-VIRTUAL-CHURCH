@@ -143,4 +143,27 @@ class SessionStateStoreTest extends TestCase
         $this->assertSame($eventNode, $state->latestCheckpoint->node_id, 'checkpoint binds to the active node');
         $this->assertSame([7], $state->latestCheckpoint->state_blob['queue']);
     }
+
+    public function test_phase3_message_dtos_match_legacy_projection_and_exclude_events(): void
+    {
+        $user = $this->makeUser();
+        $session = app(HistoryService::class)->startSession($user, 'pastor');
+        $history = app(HistoryService::class);
+
+        $history->recordMessage($session, 'user', 'Teach me to pray');
+        $history->recordMessage($session, 'assistant', 'Begin with thanksgiving');
+        // A system_event node must NOT appear in the message-derived read.
+        $history->recordEvent($session, 'playlist_recommended', ['x' => 1]);
+
+        $dtos = $this->store()->messageDtos($session);
+        $legacy = ChatMessage::where('session_id', $session->id)->orderBy('created_at')->get();
+
+        $this->assertCount(2, $dtos, 'system_event excluded; only the two messages');
+        $this->assertSame(
+            $legacy->pluck('content')->all(),
+            $dtos->pluck('content')->all(),
+            'node-derived read matches the legacy projection content/order'
+        );
+        $this->assertSame(['user', 'assistant'], $dtos->pluck('sender')->all());
+    }
 }

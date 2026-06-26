@@ -135,6 +135,13 @@ Controller → ChatOrchestrator
   → inference.llm → guardrails.post → persistence.write`), persisted by correlation id
   and materialised (never re-run) at `GET /api/v1/chat/debug/{correlationId}` (staff only).
 
+**Security gate — multi-tenant knowledge:** corpora today are SHARED and read-only (bible,
+sermon), so there is no tenant boundary to cross. **Private / per-church corpora MUST NOT be
+enabled until tenant-scoped vector filtering is enforced on the retrieval path** (the tenant
+filter made non-optional so an unscoped query returns zero cross-tenant rows). The invariant
+is pinned by `tests/Unit/Knowledge/TenantIsolationTest.php` (one passing isolation test + one
+skipped gate test to unskip when the feature lands).
+
 **First end-to-end slice:** `POST /api/v1/chat/study` (Bible Study capability) runs the
 full pipeline; the controller depends only on `ChatOrchestrator`. Ingestion is CLI/worker
 side via `php artisan knowledge:ingest {collection} {file} --chunker=bible|text`.

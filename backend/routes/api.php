@@ -411,6 +411,17 @@ Route::middleware(['auth:sanctum', 'account.usable'])->group(function () {
 // Public config (enabled languages, agent bounds, public persona names only).
 Route::get('/v1/study/config', [StudyController::class, 'config'])->middleware('throttle:120,1');
 
+// AI platform — first end-to-end slice (Bible Study capability through the full pipeline:
+// Guardrails → Knowledge/RAG → Inference → Guardrails). Thin controller → ChatOrchestrator
+// only. Owner-scoped via sanctum; RAG activates only when KNOWLEDGE_ENABLED=true (staging).
+Route::post('/v1/chat/study', [\App\Http\Controllers\ChatController::class, 'study'])
+    ->middleware(['auth:sanctum', 'account.usable', 'throttle:20,1']);
+
+// Retrieval/execution explainability — materialises a recorded trace by correlation id (staff
+// only; reads the trace store, never re-runs retrieval).
+Route::get('/v1/chat/debug/{correlationId}', [\App\Http\Controllers\ChatDebugController::class, 'show'])
+    ->middleware(['auth:sanctum', 'account.usable', 'staff']);
+
 // Worshipper-facing endpoints. Guests are authenticated users (@guest.local), so
 // the whole surface sits behind sanctum; every handler is owner-scoped.
 Route::middleware(['auth:sanctum', 'account.usable'])->prefix('v1/study')->group(function () {

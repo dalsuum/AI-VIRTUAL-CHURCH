@@ -30,7 +30,17 @@ class MusicRecommendationService
 
     private const LANGUAGE_NAMES = ['en' => 'English', 'my' => 'Burmese', 'td' => 'Zolai'];
 
-    public function __construct(private MoodExpansionService $moods) {}
+    /** YouTube search hint appended per language when discovering fresh tracks. */
+    private const LANGUAGE_SEARCH_HINT = [
+        'en' => 'English worship song',
+        'my' => 'Myanmar Burmese gospel worship song ဓမ္မသီချင်း',
+        'td' => 'Tedim Zolai gospel worship song Pasian la',
+    ];
+
+    public function __construct(
+        private MoodExpansionService $moods,
+        private YoutubeSongSearchService $youtube,
+    ) {}
 
     /**
      * Build a playlist for ($language, $mood), excluding recently played track
@@ -41,6 +51,12 @@ class MusicRecommendationService
     {
         $size   = $this->clampSize($size);
         $themes = $this->moods->expand($mood);
+
+        // Keep the catalogue fresh: when the same-language pool the worshipper
+        // hasn't just heard can't fill a playlist, discover new embeddable songs
+        // from YouTube and persist them. This is what stops the radio looping the
+        // same handful of seeded tracks. Best-effort — never blocks a response.
+        $this->maybeDiscover($language, $mood, $themes, $size, $excludeIds);
 
         $candidates = WorshipTrack::query()
             ->where('active', true)
@@ -156,6 +172,94 @@ class MusicRecommendationService
             $moodLabel,
             $themeText
         );
+    }
+
+    /**
+     * Live YouTube search on a mood request: discovers fresh embeddable songs and
+     * persists them into the catalogue. Fires on the first search of a mood (per
+     * the cache TTL) and whenever the playable, un-played same-language pool can't
+     * fill a playlist. Requires discovery enabled and a configured key. Persisted
+     * tracks are deduped by youtube_url so repeat searches don't bloat the table.
+     */
+    private function maybeDiscover(string $language, string $mood, array $themes, int $size, array $excludeIds): void
+    {
+        if (! $this->youtube->isConfigured()) {
+            return;
+        }
+        if (! filter_var(Setting::get('music.youtube_discovery', true), FILTER_VALIDATE_BOOLEAN)) {
+            return;
+        }
+
+        // Live search: hit YouTube whenever the worshipper searches a mood, so the
+        // radio surfaces fresh uploads — not just the seeded catalogue. To protect
+        // the daily API quota we cache a per-(language, mood) marker: the first
+        // search for a mood goes live; repeats within the TTL reuse what we just
+        // persisted. A thin/exhausted same-language pool always forces a live hit.
+        $playable = WorshipTrack::query()
+            ->where('active', true)
+            ->where('language', $language)
+            ->whereNotNull('youtube_url')
+            ->where('youtube_url', '!=', '')
+            ->when($excludeIds !== [], fn ($q) => $q->whereNotIn('id', $excludeIds))
+            ->count();
+
+        $ttl       = max(60, (int) Setting::get('music.youtube_discovery_ttl', 21600)); // 6h default
+        $cacheKey  = 'music:yt-discover:' . $language . ':' . md5($this->lower($mood));
+        $searchedRecently = \Illuminate\Support\Facades\Cache::has($cacheKey);
+
+        // Skip the network call only when we already searched this mood recently
+        // AND there is still enough un-played material to fill a playlist.
+        if ($searchedRecently && $playable >= $size) {
+            return;
+        }
+
+        \Illuminate\Support\Facades\Cache::put($cacheKey, true, $ttl);
+
+        try {
+            $results = $this->youtube->search($this->discoveryQuery($language, $mood, $themes), 8);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Worship YouTube discovery failed', [
+                'error' => $e->getMessage(), 'language' => $language, 'mood' => $mood,
+            ]);
+            return;
+        }
+
+        foreach ($results as $r) {
+            if (empty($r['url'])) {
+                continue;
+            }
+
+            WorshipTrack::updateOrCreate(
+                ['youtube_url' => $r['url']],
+                [
+                    'title'            => $r['title'] !== '' ? mb_substr($r['title'], 0, 255) : 'Worship Song',
+                    'artist'          => $r['channel'] !== '' ? mb_substr($r['channel'], 0, 255) : null,
+                    'language'        => $language,
+                    'genre'           => 'worship',
+                    'themes'          => array_slice($themes, 0, 8),
+                    'moods'           => [$this->lower($mood)],
+                    'cover_image'     => $r['thumbnail'] ?? null,
+                    'copyright_status' => 'metadata_only',
+                    'popularity'      => 20,   // below curated seeds, above nothing.
+                    'active'          => true,
+                ],
+            );
+        }
+    }
+
+    /** Build the YouTube search query for discovery from mood + top theme + language. */
+    private function discoveryQuery(string $language, string $mood, array $themes): string
+    {
+        $topTheme = '';
+        foreach ($themes as $t) {
+            if ($t !== $this->lower($mood)) {
+                $topTheme = $t;
+                break;
+            }
+        }
+        $hint = self::LANGUAGE_SEARCH_HINT[$language] ?? 'worship song';
+
+        return trim(sprintf('%s %s %s', trim($mood), $topTheme, $hint));
     }
 
     /** Clamp the requested size to the admin-configured [min, max] window. */

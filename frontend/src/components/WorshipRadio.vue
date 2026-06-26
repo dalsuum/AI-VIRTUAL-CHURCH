@@ -168,7 +168,13 @@ async function playCurrent() {
   if (!player) {
     player = new window.YT.Player("worship-yt", {
       height: "100%", width: "100%", videoId: id,
-      playerVars: { autoplay: 1, rel: 0, modestbranding: 1 },
+      // playsinline keeps playback INSIDE the page on iOS/Android (without it
+      // mobile Safari/Chrome refuse to start an embed or hijack to fullscreen);
+      // origin is required by the IFrame API to avoid postMessage/embed errors.
+      playerVars: {
+        autoplay: 1, rel: 0, modestbranding: 1,
+        playsinline: 1, origin: window.location.origin,
+      },
       events: {
         onReady: () => { playing.value = true; },
         onStateChange: (e) => {
@@ -342,9 +348,13 @@ function streamLink(t) {
   border-radius: var(--radius); padding: .8rem 1rem; margin: 1.25rem 0; color: var(--text); }
 
 .wr-stage { margin: 1rem 0; }
-.wr-video { position: relative; padding-top: 56.25%; border-radius: var(--radius); overflow: hidden;
+/* 16:9 player capped so it never dominates the viewport (esp. on phones where a
+   full-width 56.25% box pushes the song list off-screen). max-height letterboxes
+   the box instead of letting it grow with screen width. */
+.wr-video { position: relative; width: 100%; aspect-ratio: 16 / 9; max-height: 55vh;
+  margin: 0 auto; border-radius: var(--radius); overflow: hidden;
   background: #000; box-shadow: var(--shadow-sm); }
-.wr-video > div { position: absolute; inset: 0; }
+.wr-video > div, .wr-video :deep(iframe) { position: absolute; inset: 0; width: 100%; height: 100%; }
 .wr-noembed { display: flex; flex-direction: column; align-items: center; gap: .35rem;
   padding: 2rem 1rem; border: 1px dashed var(--border-strong); border-radius: var(--radius);
   background: var(--surface); text-align: center; }
@@ -376,6 +386,9 @@ function streamLink(t) {
 
 @media (max-width: 640px) {
   .wr-free { flex-direction: column; }
+  /* Keep the YouTube box compact on phones so the now-playing card and queue
+     stay visible without scrolling past a giant player. */
+  .wr-video { max-height: 34vh; }
   /* Sit the player bar directly above the fixed BottomNav so its
      Play/Pause/Next/Stop controls aren't hidden behind it on phones. */
   .wr-player { flex-wrap: wrap; bottom: var(--bottom-nav-h); }

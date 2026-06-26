@@ -1,0 +1,27 @@
+{
+  "project": "aivirtual.church",
+  "current_phase": "Integration / Hardening",
+  "previous_phase": "MVP / Core Build",
+  "last_updated": "2026-06-25",
+  "phases": [
+    "Discovery",
+    "Architecture / Design",
+    "MVP / Core Build",
+    "Integration / Hardening",
+    "Beta (limited users)",
+    "Production (Live)",
+    "Maintenance / Iteration"
+  ],
+  "milestones": {
+    "mvp_complete": true,
+    "guardrails_complete": true,
+    "orchestrator_stable": true,
+    "ai_platform_kernel": true,
+    "rag_knowledge_ingestion": "in_progress",
+    "billing_subscriptions": true,
+    "multi_tenant_isolation": "in_progress",
+    "production_deploy": true
+  },
+  "active_branch": "feat/ai-platform-kernel",
+  "notes": "Core SaaS shipped and deployed to prod (Laravel 12.62, 2026-06-25). Current work hardens the AI platform: layered kernel (inference/chat/guardrails/RAG/observability) plus knowledge ingestion (PDF sermons, Qdrant vector + keyword store)."
+}

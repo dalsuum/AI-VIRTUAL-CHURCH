@@ -57,11 +57,15 @@ Route::middleware('throttle:auth')->group(function () {
     Route::post('/guest',          [AuthController::class, 'guest']);
     Route::post('/register',       [AuthController::class, 'register']);
     Route::post('/login',          [AuthController::class, 'login']);
-    // Public auth-state probe — 200 {user:null} when logged out (no console 401).
-    Route::get('/auth/session',    [AuthController::class, 'session']);
     Route::post('/forgot-password',[AuthController::class, 'forgotPassword']);
     Route::post('/reset-password', [AuthController::class, 'resetPassword']);
 });
+
+// Public auth-state probe — 200 {user:null} when logged out (no console 401).
+// Read-only, so it gets its own generous limit instead of sharing the credential
+// bucket; the frontend polls this on every page load.
+Route::get('/auth/session', [AuthController::class, 'session'])
+    ->middleware('throttle:60,1');
 
 // Email-link service resume — public, one-time resume token acts as the credential.
 // Throttled to limit repeated token exchange from a leaked link.

@@ -2029,7 +2029,7 @@ before any state-changing request to bootstrap CSRF protection.
 
 ### Public
 
-> Auth routes (`/guest`, `/register`, `/login`) are rate-limited per IP (`throttle:auth`) to slow credential stuffing. Intake is throttled per user (`throttle:intake`); testimony submission per user (`throttle:testimony`).
+> Credential routes (`/guest`, `/register`, `/login`, `/forgot-password`, `/reset-password`) are rate-limited (`throttle:auth`, 5/min) keyed by **login email + IP** — so users behind a shared NAT don't lock each other out and an attacker can't drain one IP's budget by spraying unrelated accounts. The read-only `/auth/session` probe (polled on every page load) has its own generous limit (`throttle:60,1`) so it never consumes the credential bucket. Intake is throttled per user (`throttle:intake`); testimony submission per user (`throttle:testimony`).
 
 | Method | Path | Purpose |
 |--------|------|---------|

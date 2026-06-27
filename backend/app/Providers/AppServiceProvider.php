@@ -44,9 +44,12 @@ class AppServiceProvider extends ServiceProvider
             }
         }
 
-        // Auth endpoints — keyed by IP so unauthenticated callers are also covered.
+        // Auth endpoints — keyed by login identifier + IP so users behind a shared
+        // NAT don't lock each other out and an attacker can't drain one IP's budget
+        // by spraying unrelated accounts. Falls back to IP-only when no email is sent.
         RateLimiter::for('auth', function (Request $request) {
-            return Limit::perMinute(5)->by($request->ip());
+            $email = strtolower(trim((string) $request->input('email', '')));
+            return Limit::perMinute(5)->by($email.'|'.$request->ip());
         });
 
         // Intake triggers the full AI pipeline (LLM + TTS + music). Two guards:

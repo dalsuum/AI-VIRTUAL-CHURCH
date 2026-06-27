@@ -170,6 +170,29 @@ class MusicRecommendTest extends TestCase
         $this->assertSame(['td'], array_values(array_unique(array_column($playlist, 'language'))));
     }
 
+    public function test_discovery_walks_ladder_until_it_has_a_full_playlist(): void
+    {
+        // First query yields a single song; the broad fallback yields more. The
+        // ladder must keep going past the thin first hit and accumulate enough
+        // to fill a playlist instead of stopping at one song.
+        $yt = \Mockery::mock(\App\Services\YoutubeSongSearchService::class);
+        $yt->shouldReceive('isConfigured')->andReturn(true);
+        $yt->shouldReceive('search')->andReturnUsing(function (string $query) {
+            $broad = str_contains(mb_strtolower($query), 'zomi worship song');
+            $n = $broad ? 8 : 1;
+            $tag = $broad ? 'b' : 'a';
+            return array_map(fn ($i) => [
+                'video_id' => "v{$tag}{$i}000000000", 'url' => "https://www.youtube.com/watch?v=v{$tag}{$i}00000000",
+                'title' => "Zomi Worship {$tag}{$i}", 'channel' => 'Zomi Worship Team', 'thumbnail' => null,
+            ], range(1, $n));
+        });
+        $this->app->instance(\App\Services\YoutubeSongSearchService::class, $yt);
+
+        $playlist = $this->postJson('/api/music/recommend', ['language' => 'td', 'mood' => 'Peace'])->json('playlist');
+
+        $this->assertGreaterThanOrEqual(5, count($playlist), 'ladder accumulated past the thin first query');
+    }
+
     public function test_invalid_language_is_rejected(): void
     {
         $this->postJson('/api/music/recommend', [

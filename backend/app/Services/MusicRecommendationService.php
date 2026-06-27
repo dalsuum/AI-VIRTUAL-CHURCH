@@ -239,21 +239,29 @@ class MusicRecommendationService
         \Illuminate\Support\Facades\Cache::put($cacheKey, true, $ttl);
 
         // Try the mood-specific query first, then progressively broader proven
-        // terms, stopping at the first that returns embeddable hits. This is the
-        // "expand keywords and search again" fallback: without it, a sparse
-        // catalogue (e.g. Zolai) plus an over-specific native query yields zero
-        // results and the radio reports "no songs" despite music being findable.
+        // terms, accumulating (deduped by url) until we have enough fresh songs
+        // to top the same-language pool up to a full playlist — not stopping at
+        // the first query with *any* hit. This is the "expand keywords and search
+        // again" fallback: without it, a sparse catalogue (e.g. Zolai) plus an
+        // over-specific native query yields zero results and the radio reports
+        // "no songs" despite music being findable; stopping at the first hit
+        // could leave a 2-song discovery batch when a broader query has more.
         $results = [];
         try {
             foreach ($this->discoveryQueries($language, $mood, $themes) as $query) {
                 if ($query === '') {
                     continue;
                 }
-                $results = $this->youtube->search($query, 8);
-                if ($results !== []) {
+                foreach ($this->youtube->search($query, 8) as $r) {
+                    if (! empty($r['url'])) {
+                        $results[$r['url']] = $r;   // url key de-dupes across queries
+                    }
+                }
+                if (count($results) >= $size) {
                     break;
                 }
             }
+            $results = array_values($results);
         } catch (\Throwable $e) {
             \Illuminate\Support\Facades\Log::warning('Worship YouTube discovery failed', [
                 'error' => $e->getMessage(), 'language' => $language, 'mood' => $mood,
@@ -314,8 +322,9 @@ class MusicRecommendationService
     /**
      * Ordered specific→broad YouTube queries for discovery. The first is the
      * mood-specific native query; the rest are the language's proven broad
-     * fallbacks. maybeDiscover() walks the list until one returns hits, so a
-     * sparse catalogue still surfaces worship music instead of nothing.
+     * fallbacks. maybeDiscover() walks the list, accumulating results until it
+     * has a full playlist's worth, so a sparse catalogue still surfaces enough
+     * worship music instead of nothing (or a 2-song batch from a thin query).
      */
     private function discoveryQueries(string $language, string $mood, array $themes): array
     {

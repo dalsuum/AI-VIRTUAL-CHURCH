@@ -152,4 +152,25 @@ class HistoryTest extends TestCase
             'id' => $me->id, 'fav_language' => 'td', 'ai_memory_enabled' => false,
         ]);
     }
+
+    /**
+     * Regression: the Pastor Chat messages endpoint reads message-type session_nodes
+     * (Phase 4) — the dropped ChatSession::messages() relation 500'd, leaving the UI
+     * stuck on the "…" typing indicator because the assistant turn never loaded.
+     */
+    public function test_pastor_messages_endpoint_returns_node_messages(): void
+    {
+        $me = $this->makeUser();
+        $session = $this->makeSession($me, ['session_type' => 'pastor']);
+        $history = app(HistoryService::class);
+        $history->recordMessage($session, 'user', 'Hello pastor');
+        $history->recordMessage($session, 'assistant', 'Peace be with you.');
+
+        $res = $this->actingAs($me)->getJson("/api/pastor/sessions/{$session->id}/messages")
+            ->assertOk()->json();
+
+        $this->assertCount(2, $res['messages']);
+        $this->assertSame('assistant', $res['messages'][1]['sender']);
+        $this->assertSame('Peace be with you.', $res['messages'][1]['content']);
+    }
 }

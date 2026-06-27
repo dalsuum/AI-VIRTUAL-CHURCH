@@ -654,6 +654,16 @@ opt-in**. Ownership is validated on every request; deletes/shares are audit-logg
 Bible Study. When the worshipper opts in, the pastor may reference prior sessions
 ("Last week we studied Romans 8…").
 
+**Reply language** is a per-session property. The chat header carries a language picker
+(Auto Detect · English · မြန်မာ · Tedim · Lai Hakha · Falam · Mizo) that defaults to the
+worshipper's saved `fav_language` and locks once the conversation starts — switch
+languages by starting a new chat. The chosen code travels start → `PastorChatPipeline` →
+`PastorReplyDispatcher` → `driver.py`, which instructs the model to *reply ONLY in* that
+language. **Auto Detect** sends `auto`; on the first turn the worker classifies the
+worshipper's message into a supported code, replies in it, and returns `detected_language`
+so the callback locks it onto the session (every follow-up then dispatches the concrete
+code, never `auto`).
+
 **Spiritual Journal.** From any session, **Save to Journal** asks the worker to distill
 an AI-written reflective entry (title + scripture + insight + prayer + reflection),
 stored append-only in `journal_entries` (reflective fields encrypted at rest). Entries

@@ -50,13 +50,37 @@ def _pastor_system(language: str, memory: list) -> str:
     return base
 
 
+def _detect_language(text: str, llm: OpenRouterLLM) -> str:
+    """Classify the worshipper's first message into one supported code (default en)."""
+    sample = (text or "").strip()[:500]
+    if not sample:
+        return "en"
+    out, _ = llm.complete(
+        system=("Identify the language of the worshipper's message. Reply with ONLY one "
+                f"code from this list and nothing else: {', '.join(_LANG_NAME)}. "
+                "If unsure, reply 'en'."),
+        messages=[{"role": "user", "content": sample}],
+        temperature=0.0, max_tokens=4, role="detect",
+    )
+    code = (out or "").strip().lower().split(maxsplit=1)[0] if (out or "").strip() else "en"
+    return code if code in _LANG_NAME else "en"
+
+
 def _run_pastor_reply(job: dict, llm: OpenRouterLLM) -> None:
-    system = _pastor_system(job.get("language", "en"), job.get("memory") or [])
     messages = [
         {"role": "assistant" if t.get("role") == "assistant" else "user",
          "content": t.get("content", "")}
         for t in (job.get("turns") or [])
     ]
+    # 'auto' (or any unknown code) → detect from the first worshipper turn, then lock it
+    # in via the callback so follow-up turns arrive with the resolved code.
+    language = (job.get("language") or "en").strip().lower()
+    detected = None
+    if language not in _LANG_NAME:
+        first_user = next((m["content"] for m in messages if m["role"] == "user"), "")
+        language = detected = _detect_language(first_user, llm)
+
+    system = _pastor_system(language, job.get("memory") or [])
     text, usage = llm.complete(
         system=system, messages=messages, temperature=0.7, max_tokens=700, role="pastor"
     )
@@ -65,6 +89,7 @@ def _run_pastor_reply(job: dict, llm: OpenRouterLLM) -> None:
         "session_id": job["session_id"],
         "reply": text.strip(),
         "token_usage": int(usage.get("total_tokens", 0) or 0),
+        "detected_language": detected,
     })
 
 

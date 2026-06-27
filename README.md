@@ -686,6 +686,11 @@ without revisiting core identity, authorization or relationship logic.
 > deploying, run `php artisan migrate` then the one data step
 > `php artisan community:backfill-default-church` (idempotent).
 
+The detailed reasoning behind these choices is recorded as architecture decision records
+in [`docs/adr/`](docs/adr/) — domain layer (0001), event contract (0002), correlation IDs
+(0003), `PrivacyGate` (0004), invitation lifecycle (0005) and presence model (0006). Treat
+the frozen event names and payloads there as public architecture: prefer additive changes.
+
 ## Unified Conversation & Spiritual History
 
 Every registered worshipper gets a permanent, ChatGPT-style history of every

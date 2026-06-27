@@ -166,6 +166,8 @@ Route::middleware(['auth:sanctum', 'account.usable'])->group(function () {
         ->middleware('throttle:60,1');
     Route::delete('/history/{id}',         [\App\Http\Controllers\HistoryController::class, 'destroy']);
     Route::post('/history/{id}/restore',   [\App\Http\Controllers\HistoryController::class, 'restore']);
+    Route::post('/history/bulk',           [\App\Http\Controllers\HistoryController::class, 'bulk'])
+        ->middleware('throttle:30,1');
     Route::post('/history/{id}/share',     [\App\Http\Controllers\HistoryController::class, 'share'])
         ->middleware('throttle:20,1');
     Route::delete('/history/{id}/share',   [\App\Http\Controllers\HistoryController::class, 'revokeShare']);

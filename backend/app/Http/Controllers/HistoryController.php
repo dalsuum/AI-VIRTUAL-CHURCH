@@ -255,6 +255,40 @@ class HistoryController extends Controller
         return response()->json(['session' => $session]);
     }
 
+    /**
+     * Apply one action to many owned sessions at once (sidebar multi-select).
+     * Owner-scoped via forUser(); withTrashed() so 'untrash' can reach soft-deleted rows.
+     * delete = soft delete · archive/unarchive = toggle archived · untrash = restore.
+     */
+    public function bulk(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'action' => ['required', 'in:delete,archive,unarchive,untrash'],
+            'ids'    => ['required', 'array', 'min:1', 'max:200'],
+            'ids.*'  => ['string'],
+        ]);
+        $userId = (int) $request->user()->id;
+
+        $sessions = ChatSession::withTrashed()->forUser($userId)
+            ->whereIn('id', $data['ids'])->get();
+
+        DB::transaction(function () use ($sessions, $data) {
+            foreach ($sessions as $session) {
+                match ($data['action']) {
+                    'delete'    => $session->delete(),                  // soft delete
+                    'archive'   => $session->update(['archived' => true]),
+                    'unarchive' => $session->update(['archived' => false]),
+                    'untrash'   => $session->restore(),
+                };
+            }
+        });
+
+        $this->history->forgetListCache($userId);
+        $this->audit($request, "history.bulk.{$data['action']}", implode(',', $sessions->pluck('id')->all()));
+
+        return response()->json(['ok' => true, 'affected' => $sessions->count()]);
+    }
+
     /** Single-session export, or the whole journal via export-all. */
     public function export(Request $request, string $id)
     {

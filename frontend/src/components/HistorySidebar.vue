@@ -28,6 +28,8 @@ const searchResults = ref(null);   // null = not searching
 const detail = ref(null);          // open transcript
 const flash = ref("");
 const view = ref("active");        // "active" | "archived" | "deleted"
+const selectMode = ref(false);     // multi-select for bulk delete/archive/restore
+const selected = ref(new Set());   // chosen session ids
 
 const GROUP_ORDER = ["Today", "Yesterday", "Previous 7 Days", "Previous 30 Days", "Older"];
 const orderedGroups = computed(() =>
@@ -143,8 +145,45 @@ async function restoreDeleted(item) {
 
 function setView(v) {
   view.value = view.value === v ? "active" : v;
+  selectMode.value = false;
+  selected.value = new Set();
   clearSearch();
   load(true);
+}
+
+// ── Multi-select / bulk actions ─────────────────────────────────────────────
+const visibleItems = computed(() => {
+  if (searchResults.value) return searchResults.value;
+  const groupItems = orderedGroups.value.flatMap(([, items]) => items);
+  return view.value === "active" ? [...pinned.value, ...groupItems] : groupItems;
+});
+
+function toggleSelectMode() {
+  selectMode.value = !selectMode.value;
+  selected.value = new Set();
+}
+function toggleSelect(it) {
+  const s = new Set(selected.value);
+  s.has(it.id) ? s.delete(it.id) : s.add(it.id);
+  selected.value = s;
+}
+function selectAll() {
+  const ids = visibleItems.value.map((i) => i.id);
+  selected.value = selected.value.size === ids.length ? new Set() : new Set(ids);
+}
+
+async function bulkAction(action) {
+  const ids = [...selected.value];
+  if (!ids.length) return;
+  const verb = { delete: "Delete", archive: "Archive", unarchive: "Restore", untrash: "Restore" }[action];
+  if (action === "delete" && !confirm(`Delete ${ids.length} session(s)? You can restore them later.`)) return;
+  try {
+    await api.historyBulk(action, ids);
+    flash.value = `${verb}d ${ids.length} session(s).`;
+  } catch { flash.value = "Bulk action failed."; }
+  selectMode.value = false;
+  selected.value = new Set();
+  await load(true);
 }
 
 async function remove(item) {
@@ -211,6 +250,23 @@ defineExpose({ reload: () => load(true) });
         <button class="hr-toggle" :class="{ on: view === 'deleted' }" @click="setView('deleted')">
           {{ view === 'deleted' ? "← Active" : "🗑 Deleted" }}
         </button>
+        <button v-if="!searchResults" class="hr-toggle" :class="{ on: selectMode }" @click="toggleSelectMode">
+          {{ selectMode ? "Cancel" : "☑ Select" }}
+        </button>
+      </div>
+
+      <!-- Bulk action bar (multi-select) -->
+      <div v-if="selectMode" class="hr-bulk">
+        <button class="hr-mini" @click="selectAll">
+          {{ selected.size === visibleItems.length && visibleItems.length ? "Clear" : "All" }}
+        </button>
+        <span class="hr-bulk-n">{{ selected.size }} selected</span>
+        <template v-if="selected.size">
+          <button v-if="view === 'active'" class="hr-bulk-btn" @click="bulkAction('archive')">🗄 Archive</button>
+          <button v-if="view === 'archived'" class="hr-bulk-btn" @click="bulkAction('unarchive')">♻ Restore</button>
+          <button v-if="view === 'deleted'" class="hr-bulk-btn" @click="bulkAction('untrash')">♻ Restore</button>
+          <button v-if="view !== 'deleted'" class="hr-bulk-btn danger" @click="bulkAction('delete')">🗑 Delete</button>
+        </template>
       </div>
 
       <!-- Search results -->
@@ -227,14 +283,18 @@ defineExpose({ reload: () => load(true) });
       <template v-else>
         <div v-if="pinned.length && view === 'active'" class="hr-section">
           <h4>📌 Pinned</h4>
-          <button v-for="it in pinned" :key="it.id" class="hr-item" @click="openItem(it)">
+          <button v-for="it in pinned" :key="it.id" class="hr-item" :class="{ sel: selected.has(it.id) }"
+                  @click="selectMode ? toggleSelect(it) : openItem(it)">
+            <input v-if="selectMode" type="checkbox" class="hr-cb" :checked="selected.has(it.id)" @click.stop="toggleSelect(it)" />
             <span class="hr-tt">{{ it.title }}</span>
           </button>
         </div>
 
         <div v-for="[label, items] in orderedGroups" :key="label" class="hr-section">
           <h4>{{ label }}</h4>
-          <button v-for="it in items" :key="it.id" class="hr-item" @click="openItem(it)">
+          <button v-for="it in items" :key="it.id" class="hr-item" :class="{ sel: selected.has(it.id) }"
+                  @click="selectMode ? toggleSelect(it) : openItem(it)">
+            <input v-if="selectMode" type="checkbox" class="hr-cb" :checked="selected.has(it.id)" @click.stop="toggleSelect(it)" />
             <span class="hr-tt">{{ it.title }}</span>
             <span v-if="it.favorite" class="hr-star">★</span>
           </button>
@@ -318,6 +378,14 @@ defineExpose({ reload: () => load(true) });
 .hr-item { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left; padding: 7px 8px;
   border: none; background: none; border-radius: 8px; cursor: pointer; font-size: 13px; color: var(--text); }
 .hr-item:hover { background: var(--surface-3); }
+.hr-item.sel { background: var(--primary-soft); }
+.hr-cb { flex: 0 0 auto; margin: 0; cursor: pointer; }
+.hr-bulk { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 8px;
+  padding: 6px 8px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; }
+.hr-bulk-n { font-size: 12px; color: var(--text-muted); margin-right: auto; }
+.hr-bulk-btn { padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface); cursor: pointer; font-size: 12px; color: var(--text); }
+.hr-bulk-btn.danger { color: #dc2626; border-color: #dc2626; }
 .hr-ic { flex: 0 0 auto; }
 .hr-tt { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hr-star { color: #eab308; }

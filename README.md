@@ -704,7 +704,10 @@ lasting keepsake. Endpoints: `POST /api/history/{id}/journal` (async, returns a
 **Frontend.** `HistorySidebar.vue` (resizable/collapsible rail, search, pinned + date
 groups, per-type icons 📖🙏🎵⛪💬📚, **🗄 Archived / 🗑 Deleted toggles** that list
 archived sessions (♻ Restore in the overlay) or soft-deleted sessions of any type
-(tap to restore via `POST /history/{id}/restore`), transcript overlay with
+(tap to restore via `POST /history/{id}/restore`), a **☑ Select** mode for
+**multi-select bulk actions** (Archive / Delete in Active, Restore / Delete in
+Archived, Restore in Deleted) via owner-scoped `POST /history/bulk`
+(`{action: delete|archive|unarchive|untrash, ids: [...]}`), transcript overlay with
 rename/pin/share/export/journal/archive/delete, mobile bottom-drawer), `PastorChat.vue` (`#pastor`), and
 `SpiritualJourney.vue` (`#journey` stats + streak + timeline + 📔 journal entries).
 Account settings gains the spiritual-profile fields. Rebuild with `npm run build` in

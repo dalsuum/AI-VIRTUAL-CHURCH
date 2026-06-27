@@ -51,19 +51,33 @@ def _pastor_system(language: str, memory: list) -> str:
 
 
 def _detect_language(text: str, llm: OpenRouterLLM) -> str:
-    """Classify the worshipper's first message into one supported code (default en)."""
+    """Classify the worshipper's first message into one supported code (default en).
+
+    Burmese (my) is written in Myanmar script, so any Myanmar-range character is a
+    decisive signal — and, conversely, Latin-only text can NOT be Burmese. Tedim,
+    Hakha, Falam and Mizo are Chin languages all written in Latin script and look
+    alike, so the LLM only has to disambiguate among the Latin set (and English).
+    """
     sample = (text or "").strip()[:500]
     if not sample:
         return "en"
+    # Decisive: Myanmar script => Burmese.
+    if any("က" <= c <= "႟" for c in sample):
+        return "my"
+    # Latin script => never Burmese; restrict the candidate set accordingly.
+    latin_codes = [c for c in _LANG_NAME if c != "my"]  # en, td, cnh, cfm, lus
     out, _ = llm.complete(
-        system=("Identify the language of the worshipper's message. Reply with ONLY one "
-                f"code from this list and nothing else: {', '.join(_LANG_NAME)}. "
-                "If unsure, reply 'en'."),
+        system=("Identify the language of this message, which is written in Latin script "
+                "(so it is NOT Burmese). Reply with ONLY one code and nothing else from: "
+                f"{', '.join(latin_codes)}. Tedim/Zolai (td), Hakha (cnh), Falam (cfm) and "
+                "Mizo (lus) are closely related Chin languages — pick the closest. Use 'en' "
+                "only for clearly English text; if it is non-English but you are unsure which "
+                "Chin language, prefer 'td'."),
         messages=[{"role": "user", "content": sample}],
         temperature=0.0, max_tokens=4, role="detect",
     )
     code = (out or "").strip().lower().split(maxsplit=1)[0] if (out or "").strip() else "en"
-    return code if code in _LANG_NAME else "en"
+    return code if code in latin_codes else "en"
 
 
 def _run_pastor_reply(job: dict, llm: OpenRouterLLM) -> None:

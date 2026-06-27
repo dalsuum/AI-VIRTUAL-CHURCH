@@ -690,8 +690,11 @@ dispatches the concrete code, never `auto`).
 For the low-resource Chin languages (`td`/`cfm`/`cnh`/`lus`) the reply is generated
 **local-model-first**: `driver.py` calls the native FastAPI model (`aivc-tedim-api`, `:8001`,
 e.g. `POST /tedim/generate`) and falls back to the cloud LLM (replying in that language)
-whenever the local model 502s on degenerate output or is unreachable. English and Burmese
-go straight to the cloud LLM. Override base URL with `LOCAL_LLM_BASE_URL`.
+whenever the local model 502s on degenerate output or is unreachable. The local call has a
+short 15 s read timeout — on a CPU-only / memory-pressured box the native model can stall
+past a usable chat latency, so the wasted wait is capped and the cloud fallback fires fast
+enough that the reply still feels live. English and Burmese go straight to the cloud LLM.
+Override base URL with `LOCAL_LLM_BASE_URL`.
 
 **Spiritual Journal.** From any session, **Save to Journal** asks the worker to distill
 an AI-written reflective entry (title + scripture + insight + prayer + reflection),

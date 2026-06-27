@@ -73,7 +73,10 @@ def _local_pastor_reply(language: str, system: str, messages: list) -> str | Non
         r = requests.post(
             f"{_LOCAL_LLM_BASE}/{path}/generate",
             json={"prompt": prompt, "system": system},
-            timeout=60,
+            # Short read timeout: on a CPU-only / memory-pressured box the local
+            # model can stall well past a usable chat latency. Cap the wasted wait
+            # so we fall back to the cloud LLM fast and the reply still feels live.
+            timeout=15,
         )
         if r.status_code != 200:
             return _fallback(f"http_{r.status_code}")

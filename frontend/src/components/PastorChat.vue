@@ -26,7 +26,10 @@ const LANGUAGES = [
   { code: "cfm", label: "Falam" },
   { code: "lus", label: "Mizo" },
 ];
-const language = ref("en");
+// Default to Auto Detect so typing in any supported language just works; the worker
+// detects from the first message and locks it onto the session. Users can still pick a
+// specific language explicitly before sending.
+const language = ref("auto");
 
 function sessionFromHash() {
   const m = window.location.hash.match(/session=([0-9a-f-]+)/i);
@@ -95,9 +98,6 @@ async function send() {
 
 onMounted(async () => {
   await api.ensureSession().catch(() => {});
-  // Default the picker to the worshipper's saved preference when one is set.
-  const fav = await api.me().then((r) => r?.user?.fav_language).catch(() => null);
-  if (fav && LANGUAGES.some((l) => l.code === fav)) language.value = fav;
   const id = sessionFromHash();
   if (id) hydrate(id);
 });

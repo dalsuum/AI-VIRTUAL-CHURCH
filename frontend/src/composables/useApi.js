@@ -297,6 +297,8 @@ export const api = {
     request(`/history/${id}`, { method: "PATCH", body: payload }),
   historyDelete: (id) => request(`/history/${id}`, { method: "DELETE" }),
   historyRestore: (id) => request(`/history/${id}/restore`, { method: "POST" }),
+  historyBulk: (action, ids) =>
+    request("/history/bulk", { method: "POST", body: { action, ids } }),
   historyShare: (id, payload = {}) =>
     request(`/history/${id}/share`, { method: "POST", body: payload }),
   historyRevokeShare: (id) => request(`/history/${id}/share`, { method: "DELETE" }),

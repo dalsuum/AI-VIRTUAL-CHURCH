@@ -59,3 +59,17 @@ def test_network_error_falls_back(monkeypatch):
 
     monkeypatch.setattr(driver.requests, "post", boom)
     assert driver._local_pastor_reply("cfm", "sys", [{"role": "user", "content": "x"}]) is None
+
+
+def test_tedim_markers_short_circuit_detection_without_llm():
+    # Tedim-distinctive tokens must resolve to 'td' deterministically — the cloud LLM
+    # (which over-collapses Chin languages onto Mizo) must NOT be consulted.
+    def fail_llm():
+        raise AssertionError("LLM must not be called when Tedim markers are present")
+
+    class _Boom:
+        def complete(self, *a, **k):
+            fail_llm()
+
+    assert driver._detect_language("Biakinn pai hoih hia?", _Boom()) == "td"
+    assert driver._detect_language("Pasian in hong it hi", _Boom()) == "td"

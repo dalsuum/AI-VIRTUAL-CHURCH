@@ -523,6 +523,10 @@ class Setting extends Model
         static::set('content_filter_categories', json_encode($clean));
         // Keep the flat key in sync so older readers (e.g. /config consumers) work.
         static::setList('content_filter_keywords', static::filterKeywords());
+        // Bump the filter epoch so cached Worship Radio discovery markers keyed by
+        // it are invalidated at once — a new block/allow takes effect immediately
+        // instead of waiting out the per-mood discovery TTL.
+        static::set('content_filter_epoch', (string) now()->getTimestamp());
         return $clean;
     }
 

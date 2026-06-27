@@ -41,4 +41,28 @@ class MoodExpansionServiceTest extends TestCase
     {
         $this->assertSame([], $this->svc()->expand('   '));
     }
+
+    public function test_label_localizes_chip_text_per_language(): void
+    {
+        $svc = $this->svc();
+
+        $this->assertSame('Anxiety', $svc->label('anxiety', 'en'));
+        $this->assertSame('စိုးရိမ်ပူပန်', $svc->label('anxiety', 'my'));
+        $this->assertSame('Mangbatna', $svc->label('anxiety', 'td'));
+    }
+
+    public function test_labels_returns_all_language_variants(): void
+    {
+        $labels = $this->svc()->labels('peace');
+
+        $this->assertSame('Peace', $labels['en']);
+        $this->assertSame('ငြိမ်သက်', $labels['my']);
+        $this->assertSame('Lungmuanna', $labels['td']);
+    }
+
+    public function test_unmapped_mood_falls_back_to_titlecased_english(): void
+    {
+        // Free text in any language passes through (no native term to swap in).
+        $this->assertSame('I Feel Lost', $this->svc()->label('i feel lost', 'td'));
+    }
 }

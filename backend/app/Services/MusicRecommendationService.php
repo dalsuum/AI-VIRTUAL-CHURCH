@@ -259,7 +259,13 @@ class MusicRecommendationService
         }
         $hint = self::LANGUAGE_SEARCH_HINT[$language] ?? 'worship song';
 
-        return trim(sprintf('%s %s %s', trim($mood), $topTheme, $hint));
+        // Search in the worshipper's language: a chip mood ("happy") becomes its
+        // native term ("ပျော်ရွှင်" / "Lungdam") so discovery surfaces real
+        // Burmese/Zolai worship instead of English-keyword results. Free text the
+        // worshipper typed is already in their language and passes through as-is.
+        $nativeMood = $this->moods->label($mood, $language);
+
+        return trim(sprintf('%s %s %s', trim($nativeMood), $topTheme, $hint));
     }
 
     /** Clamp the requested size to the admin-configured [min, max] window. */

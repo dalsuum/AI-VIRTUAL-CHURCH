@@ -42,10 +42,15 @@ let fallbackTimer = null;      // auto-advance timer for non-embeddable tracks
 
 function clearFallback() { if (fallbackTimer) { clearTimeout(fallbackTimer); fallbackTimer = null; } }
 
+/** Mood chip text in the currently selected language (falls back to English). */
+function moodLabel(m) {
+  return (m.labels && m.labels[language.value]) || m.label;
+}
+
 const activeMoodLabel = computed(() => {
   if (freeText.value.trim()) return freeText.value.trim();
   const m = moods.value.find((x) => x.key === selectedMood.value);
-  return m ? m.label : "";
+  return m ? moodLabel(m) : "";
 });
 
 onMounted(async () => {
@@ -84,7 +89,11 @@ function youtubeId(url) {
 }
 
 function payload(extra = {}) {
-  const mood = freeText.value.trim() || activeMoodLabel.value || selectedMood.value;
+  // Send the canonical mood KEY (e.g. "happy"), not the localized label, so the
+  // server's theme expansion + keyword search stay language-independent; the
+  // server translates the key back to a native search term per language. Free
+  // text (already in the worshipper's language) is sent verbatim.
+  const mood = freeText.value.trim() || selectedMood.value;
   return { language: language.value, mood, ...extra };
 }
 
@@ -251,7 +260,7 @@ function streamLink(t) {
           class="wr-mood" :class="{ active: selectedMood === m.key && !freeText }"
           @click="pickMood(m.key)"
         >
-          <span class="wr-emoji">{{ m.emoji }}</span>{{ m.label }}
+          <span class="wr-emoji">{{ m.emoji }}</span>{{ moodLabel(m) }}
         </button>
       </div>
 

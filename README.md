@@ -1796,7 +1796,13 @@ Connection + drivers (sqlite-free, MySQL, array cache/session, sync queue, array
 mailer) are pinned in [backend/phpunit.xml](backend/phpunit.xml); local DB
 credentials live in a gitignored `.env.testing`. **CI** ([.github/workflows/ci.yml](.github/workflows/ci.yml))
 spins up a MySQL service, runs the suite with coverage, and builds the frontend on
-every push and pull request.
+every push and pull request. A separate **Security** workflow
+([.github/workflows/security.yml](.github/workflows/security.yml)) audits all three
+dependency ecosystems (`composer audit`, `npm audit`, `pip-audit`) and scans for
+secrets with gitleaks. The Python audit pins `requests`, `fastapi`/`uvicorn` and an
+explicit `starlette==1.3.1` to patched releases, and `--ignore-vuln`s two
+`transformers` advisories that have no fix compatible with the `<5` pin we keep to
+protect the MMS-TTS narrator stack.
 
 ### Local gotchas worth knowing
 

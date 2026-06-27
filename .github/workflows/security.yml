@@ -58,7 +58,14 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install --upgrade pip pip-audit
       - name: Audit requirements
-        run: pip-audit -r requirements.txt
+        # Ignored advisories have no fix compatible with our pinned major:
+        #   PYSEC-2025-217  transformers — no fixed release exists yet.
+        #   CVE-2026-1839   transformers — only fixed in 5.x; we pin <5 to protect
+        #                   the MMS-TTS narrator stack (torch/transformers 4.x).
+        run: >-
+          pip-audit -r requirements.txt
+          --ignore-vuln PYSEC-2025-217
+          --ignore-vuln CVE-2026-1839
 
   secret-scan:
     name: Secret scanning (gitleaks)

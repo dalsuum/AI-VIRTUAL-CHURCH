@@ -28,7 +28,7 @@ class WorshipTrackAdminController extends Controller
         $q = WorshipTrack::query()->orderBy('title');
 
         $language = trim((string) $request->query('language', ''));
-        if (in_array($language, MusicRecommendationService::SUPPORTED_LANGUAGES, true)) {
+        if (in_array($language, MusicRecommendationService::supportedLanguages(), true)) {
             $q->where('language', $language);
         }
 
@@ -147,7 +147,7 @@ class WorshipTrackAdminController extends Controller
         return $request->validate([
             'title'            => $rule(['required', 'string', 'max:255']),
             'artist'           => $rule(['nullable', 'string', 'max:255']),
-            'language'         => $rule(['required', Rule::in(MusicRecommendationService::SUPPORTED_LANGUAGES)]),
+            'language'         => $rule(['required', Rule::in(MusicRecommendationService::supportedLanguages())]),
             'genre'            => $rule(['nullable', 'string', 'max:100']),
             'themes'           => $rule(['nullable', 'array', 'max:50']),
             'themes.*'         => ['string', 'max:60'],

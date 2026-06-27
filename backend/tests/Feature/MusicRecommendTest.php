@@ -193,6 +193,40 @@ class MusicRecommendTest extends TestCase
         $this->assertGreaterThanOrEqual(5, count($playlist), 'ladder accumulated past the thin first query');
     }
 
+    public function test_discovery_queries_are_language_aware(): void
+    {
+        // Capture every query the recommender sends to YouTube for a Zolai +
+        // relax request: the first must carry the native mood label + a concept,
+        // and the broad fallbacks must be the configured Zomi/Tedim terms.
+        $seen = [];
+        $yt = \Mockery::mock(\App\Services\YoutubeSongSearchService::class);
+        $yt->shouldReceive('isConfigured')->andReturn(true);
+        $yt->shouldReceive('search')->andReturnUsing(function (string $q) use (&$seen) {
+            $seen[] = $q;
+            return [];   // force the full ladder to run
+        });
+        $this->app->instance(\App\Services\YoutubeSongSearchService::class, $yt);
+
+        $this->postJson('/api/music/recommend', ['language' => 'td', 'mood' => 'relax'])->assertOk();
+
+        $this->assertStringContainsString('Lungmuanna', $seen[0], 'native Zolai mood label seeds the first query');
+        $joined = implode(' | ', $seen);
+        $this->assertStringContainsString('Zomi worship song', $joined, 'configured broad fallback is tried');
+        $this->assertStringContainsString('Tedim worship song', $joined);
+    }
+
+    public function test_moods_endpoint_exposes_the_six_universal_categories(): void
+    {
+        $res = $this->getJson('/api/music/moods')->assertOk();
+        $keys = array_column($res->json('moods'), 'key');
+
+        $this->assertSame(['energy', 'feel_good', 'focus', 'love', 'relax', 'heartbreak'], $keys);
+        // Each chip carries an emoji + a translated label set for the switcher.
+        $relax = collect($res->json('moods'))->firstWhere('key', 'relax');
+        $this->assertSame('🌿', $relax['emoji']);
+        $this->assertSame('Lungmuanna', $relax['labels']['td']);
+    }
+
     public function test_invalid_language_is_rejected(): void
     {
         $this->postJson('/api/music/recommend', [

@@ -506,20 +506,30 @@ Doors open the instant all required steps check off — no fixed countdown to dr
 
 ## AI Worship Radio (mood-based worship companion)
 
-A worship-music companion reached at `#worship`. A worshipper states a mood — either a
-chip (😰 Anxiety, 💔 Broken Heart, 🔥 Revival, 🙏 Need Prayer, …) or free text
-("I feel lonely and tired") — and a language (English / Burmese / Zolai). The app builds a
+A worship-music companion reached at `#worship`. A worshipper picks one of **six universal
+moods** (⚡ Energy, 😊 Feel Good, 🎯 Focus, ❤️ Love, 🌿 Relax, 💔 Heartbreak) or types free text
+("I feel lonely and tired"), plus a language (English / Burmese / Zolai). The app builds a
 mood-matched playlist, explains *why* it chose those songs, and **plays continuously** until
 the worshipper presses Stop, fetching a fresh batch (with no recent repeats) each time the
 queue runs low.
+
+**Single source of truth — [`config/worship_moods.php`](backend/config/worship_moods.php).**
+The six mood ids (`energy` / `feel_good` / `focus` / `love` / `relax` / `heartbreak`) are
+language-independent and stable; only their labels are translated. That one file holds each
+mood's emoji, per-language labels, expansion **concepts**, and free-text **triggers**, plus
+the per-language search **hint** + broad **fallback** queries — consumed by the UI, the mood
+expansion, and the YouTube query generation alike. Adding a language = a label per mood + a
+`languages` entry; **no code change**. Free text routes to a category by trigger words
+("I'm anxious" → `relax`, "I need encouragement" → `energy`), and legacy stored mood keys
+(`anxiety`/`peace`/…) are triggers too, so pre-redesign saved sessions still resume correctly.
 
 **Phase 1 (shipped).** Deterministic, no-LLM recommendation engine:
 
 | Piece | Role |
 | --- | --- |
 | `worship_tracks` table / `WorshipTrack` model | Metadata-only catalog (title, artist, language, themes/moods/scriptures JSON, official YouTube/Spotify/Apple links, popularity). **No hosted audio** — copyright-safe. |
-| `MoodExpansionService` | Expands a mood/chip/free-text into spiritual theme tags via a built-in dictionary + optional admin JSON override (`music.mood_dictionary`). Also owns **native mood labels** (`LABELS_I18N` → `labels()` / `label()`): each canonical key carries a Burmese (`my`) and Zolai/Tedim (`td`) display word, so the chips re-label when the language switches. The English key stays the search anchor — theme expansion is language-independent — and `MusicRecommendationService` swaps the **native term into the YouTube discovery query** so a Burmese/Zolai mood actually collects Burmese/Zolai worship rather than English-keyword results. |
-| `MusicRecommendationService` | The "Music Recommendation Agent". Weighted scoring — **language 40 / mood 30 / theme 20 / popularity 10** — with recent-50 no-repeat exclusion, artist diversity, and a 5–10 song clamp (`music.min_playlist` / `music.max_playlist`). **Live YouTube discovery:** on a mood search it queries YouTube (`YoutubeSongSearchService`, content-filtered + embeddable-only) for fresh songs and persists them into `worship_tracks` (deduped by `youtube_url`), so the radio never loops the same seeded handful and an **empty catalogue for a language (e.g. Zolai/Tedim) still produces a playlist** instead of "no songs matched". Discovery tries a **specific→broad query ladder** (`discoveryQueries()`): the native mood+theme query first, then the language's proven broad fallbacks (`LANGUAGE_FALLBACK_QUERIES`, e.g. `Zomi worship song` / `Myanmar worship song`), **accumulating results (deduped by url) until it has a full playlist's worth** rather than stopping at the first query with any hit — so a sparse-catalogue language whose narrow native query matches nothing (or matches only a song or two) still gets enough music for a real playlist. Fires on the first search of a mood (cached per language+mood for `music.youtube_discovery_ttl`, default 6h) and whenever the un-played same-language pool can't fill a playlist. Toggle with `music.youtube_discovery` (default on); requires `YOUTUBE_API_KEY`. |
+| `MoodExpansionService` | Reads `config/worship_moods.php` (the only source). Expands a mood id or free text into spiritual **concept** tags, with an optional admin JSON override (`music.mood_dictionary`) layered on top. Exposes `labels()` / `label()` (per-language native words, so chips re-label on language switch) and `emoji()`. The English label stays the search anchor — concept expansion is language-independent — and `MusicRecommendationService` swaps the **native term into the YouTube discovery query** so a Burmese/Zolai mood actually collects Burmese/Zolai worship rather than English-keyword results. |
+| `MusicRecommendationService` | The "Music Recommendation Agent". Weighted scoring — **language 40 / mood 30 / theme 20 / popularity 10** — with recent-50 no-repeat exclusion, artist diversity, and a 5–10 song clamp (`music.min_playlist` / `music.max_playlist`). **Live YouTube discovery:** on a mood search it queries YouTube (`YoutubeSongSearchService`, content-filtered + embeddable-only) for fresh songs and persists them into `worship_tracks` (deduped by `youtube_url`), so the radio never loops the same seeded handful and an **empty catalogue for a language (e.g. Zolai/Tedim) still produces a playlist** instead of "no songs matched". Discovery tries a **specific→broad query ladder** (`discoveryQueries()`): the native mood+theme query first, then the language's proven broad fallbacks (the `fallback` list in `config/worship_moods.php`, e.g. `Zomi worship song` / `Myanmar worship song`), **accumulating results (deduped by url) until it has a full playlist's worth** rather than stopping at the first query with any hit — so a sparse-catalogue language whose narrow native query matches nothing (or matches only a song or two) still gets enough music for a real playlist. Fires on the first search of a mood (cached per language+mood for `music.youtube_discovery_ttl`, default 6h) and whenever the un-played same-language pool can't fill a playlist. Toggle with `music.youtube_discovery` (default on); requires `YOUTUBE_API_KEY`. |
 | `MusicController` | Public `GET /api/music/moods` + `POST /api/music/recommend` (throttled, no auth). |
 | `WorshipTrackAdminController` | `music.manage`-gated CRUD + playlist settings; http(s)-only URL validation. |
 | `WorshipRadio.vue` | `#worship` page: mood selector, language picker, AI-reason banner, song cards, YouTube IFrame player with auto-advance + continuous autoplay. Mood chips render the language's native label (`m.labels[language]`) and submit the canonical mood **key** (not the visible label), so switching to Burmese/Zolai re-labels every chip and still drives the same theme/keyword search server-side. **Reuse:** "▶ Continue" on a saved music session in the history sidebar opens `#worship?mood=…&language=…`; on mount the page prefills the chip (or free text) + language from the hash and auto-starts, so a worshipper resumes the same mood with a fresh playlist. |

@@ -15,9 +15,13 @@ use App\Models\WorshipTrack;
  *
  * Score weights (sum = 1.0):
  *   language    0.40  (exact language match)
- *   mood        0.30  (overlap of track.moods with the requested mood)
- *   theme       0.20  (overlap of track.themes with the expanded theme tags)
+ *   mood        0.30  (overlap of track.moods with the expanded concept tags)
+ *   theme       0.20  (overlap of track.themes with the expanded concept tags)
  *   popularity  0.10  (track.popularity normalized against the catalog max)
+ *
+ * Moods, language names, search hints and broad fallback queries all live in
+ * config/worship_moods.php — the single source of truth shared with the UI and
+ * MoodExpansionService.
  */
 class MusicRecommendationService
 {
@@ -26,35 +30,16 @@ class MusicRecommendationService
     private const W_THEME      = 0.20;
     private const W_POPULARITY = 0.10;
 
-    public const SUPPORTED_LANGUAGES = ['en', 'my', 'td'];
-
-    private const LANGUAGE_NAMES = ['en' => 'English', 'my' => 'Burmese', 'td' => 'Zolai'];
-
-    /** YouTube search hint appended per language when discovering fresh tracks. */
-    private const LANGUAGE_SEARCH_HINT = [
-        'en' => 'English worship song',
-        'my' => 'Myanmar Burmese gospel worship song ဓမ္မသီချင်း',
-        'td' => 'Tedim Zolai gospel worship song Pasian la',
-    ];
-
-    /**
-     * Broad, proven fallback queries per language, tried in order when the
-     * mood-specific discovery query returns nothing. The native hint above is
-     * deliberately narrow ("Lungmuanna rest Tedim Zolai gospel worship song")
-     * and yields zero hits for sparse-catalogue languages like Zolai; without a
-     * broadening step an empty catalogue would stop the radio. These terms are
-     * the ones that actually surface uploads on YouTube — keep them general.
-     */
-    private const LANGUAGE_FALLBACK_QUERIES = [
-        'en' => ['Christian worship song', 'praise and worship'],
-        'my' => ['Myanmar worship song', 'Burmese gospel song', 'Myanmar Christian song'],
-        'td' => ['Zomi worship song', 'Tedim worship song', 'Pasian la Zomi'],
-    ];
-
     public function __construct(
         private MoodExpansionService $moods,
         private YoutubeSongSearchService $youtube,
     ) {}
+
+    /** Supported language codes, from config (used by request validation). */
+    public static function supportedLanguages(): array
+    {
+        return array_keys((array) config('worship_moods.languages', []));
+    }
 
     /**
      * Build a playlist for ($language, $mood), excluding recently played track
@@ -114,7 +99,11 @@ class MusicRecommendationService
     {
         $langScore = $track->language === $language ? 1.0 : 0.0;
 
-        $moodScore  = $this->overlap((array) $track->moods, [$this->lower($mood)]);
+        // $themes is the expanded concept set (mood id "relax" + peace/anxiety/…),
+        // so a curated track tagged moods:['anxiety'] still matches the "relax"
+        // chip. We match the track's mood tags AND its theme tags against the
+        // same concept set — the abstract mood id alone would match nothing.
+        $moodScore  = $this->overlap((array) $track->moods, $themes);
         $themeScore = $this->overlap((array) $track->themes, $themes);
         $popScore   = $maxPopularity > 0 ? min(1.0, $track->popularity / $maxPopularity) : 0.0;
 
@@ -180,8 +169,11 @@ class MusicRecommendationService
     /** Build the "I selected these because…" explanation. */
     private function reason(string $mood, string $language, array $themes, int $count): string
     {
-        $langName  = self::LANGUAGE_NAMES[$language] ?? $language;
-        $moodLabel = trim($mood) !== '' ? trim($mood) : 'worship';
+        $langName  = config("worship_moods.languages.{$language}.name", $language);
+        // Show the worshipper's English mood label ("Relax") rather than the raw
+        // id; free text falls back to what they typed.
+        $moodLabel = $this->moods->label($mood, 'en');
+        $moodLabel = trim($moodLabel) !== '' ? $moodLabel : 'worship';
         $topThemes = array_slice(array_values(array_filter($themes, fn ($t) => $t !== $this->lower($mood))), 0, 3);
         $themeText = $topThemes !== [] ? implode(', ', $topThemes) : 'God\'s presence';
 
@@ -335,20 +327,19 @@ class MusicRecommendationService
                 break;
             }
         }
-        $hint = self::LANGUAGE_SEARCH_HINT[$language] ?? 'worship song';
+        $hint = config("worship_moods.languages.{$language}.hint", 'worship song');
 
-        // Search in the worshipper's language: a chip mood ("happy") becomes its
-        // native term ("ပျော်ရွှင်" / "Lungdam") so discovery surfaces real
+        // Search in the worshipper's language: a chip mood ("feel_good") becomes
+        // its native term ("ပျော်ရွှင်" / "Lungdam") so discovery surfaces real
         // Burmese/Zolai worship instead of English-keyword results. Free text the
         // worshipper typed is already in their language and passes through as-is.
         $nativeMood = $this->moods->label($mood, $language);
 
         $specific = trim(sprintf('%s %s %s', trim($nativeMood), $topTheme, $hint));
 
-        return array_values(array_unique(array_merge(
-            [$specific],
-            self::LANGUAGE_FALLBACK_QUERIES[$language] ?? ['worship song'],
-        )));
+        $fallbacks = (array) config("worship_moods.languages.{$language}.fallback", ['worship song']);
+
+        return array_values(array_unique(array_merge([$specific], $fallbacks)));
     }
 
     /** Clamp the requested size to the admin-configured [min, max] window. */

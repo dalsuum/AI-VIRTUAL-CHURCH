@@ -100,7 +100,7 @@ function youtubeId(url) {
 }
 
 function payload(extra = {}) {
-  // Send the canonical mood KEY (e.g. "happy"), not the localized label, so the
+  // Send the canonical mood KEY (e.g. "relax"), not the localized label, so the
   // server's theme expansion + keyword search stay language-independent; the
   // server translates the key back to a native search term per language. Free
   // text (already in the worshipper's language) is sent verbatim.

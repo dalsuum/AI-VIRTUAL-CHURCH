@@ -270,6 +270,20 @@ class HistoryTest extends TestCase
         $this->assertNull($s->fresh()->deleted_at);
     }
 
+    public function test_bulk_purge_permanently_deletes(): void
+    {
+        $me = $this->makeUser();
+        $s = $this->makeSession($me);
+        $s->delete();
+
+        $this->actingAs($me)
+            ->postJson('/api/history/bulk', ['action' => 'purge', 'ids' => [$s->id]])
+            ->assertOk();
+
+        $this->assertNull(ChatSession::withTrashed()->find($s->id));
+        $this->assertDatabaseMissing('chat_sessions', ['id' => $s->id]);
+    }
+
     public function test_bulk_rejects_unknown_action(): void
     {
         $me = $this->makeUser();

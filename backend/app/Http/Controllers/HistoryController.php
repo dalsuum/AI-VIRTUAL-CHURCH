@@ -258,12 +258,13 @@ class HistoryController extends Controller
     /**
      * Apply one action to many owned sessions at once (sidebar multi-select).
      * Owner-scoped via forUser(); withTrashed() so 'untrash' can reach soft-deleted rows.
-     * delete = soft delete · archive/unarchive = toggle archived · untrash = restore.
+     * delete = soft delete · archive/unarchive = toggle archived · untrash = restore ·
+     * purge = permanent force-delete (children cascade via FK; not recoverable).
      */
     public function bulk(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'action' => ['required', 'in:delete,archive,unarchive,untrash'],
+            'action' => ['required', 'in:delete,archive,unarchive,untrash,purge'],
             'ids'    => ['required', 'array', 'min:1', 'max:200'],
             'ids.*'  => ['string'],
         ]);
@@ -279,6 +280,7 @@ class HistoryController extends Controller
                     'archive'   => $session->update(['archived' => true]),
                     'unarchive' => $session->update(['archived' => false]),
                     'untrash'   => $session->restore(),
+                    'purge'     => $session->forceDelete(),             // permanent
                 };
             }
         });

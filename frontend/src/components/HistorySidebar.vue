@@ -175,8 +175,9 @@ function selectAll() {
 async function bulkAction(action) {
   const ids = [...selected.value];
   if (!ids.length) return;
-  const verb = { delete: "Delete", archive: "Archive", unarchive: "Restore", untrash: "Restore" }[action];
+  const verb = { delete: "Delete", archive: "Archive", unarchive: "Restore", untrash: "Restore", purge: "Permanently delete" }[action];
   if (action === "delete" && !confirm(`Delete ${ids.length} session(s)? You can restore them later.`)) return;
+  if (action === "purge" && !confirm(`Permanently delete ${ids.length} session(s)? This cannot be undone.`)) return;
   try {
     await api.historyBulk(action, ids);
     flash.value = `${verb}d ${ids.length} session(s).`;
@@ -265,6 +266,7 @@ defineExpose({ reload: () => load(true) });
           <button v-if="view === 'active'" class="hr-bulk-btn" @click="bulkAction('archive')">🗄 Archive</button>
           <button v-if="view === 'archived'" class="hr-bulk-btn" @click="bulkAction('unarchive')">♻ Restore</button>
           <button v-if="view === 'deleted'" class="hr-bulk-btn" @click="bulkAction('untrash')">♻ Restore</button>
+          <button v-if="view === 'deleted'" class="hr-bulk-btn danger" @click="bulkAction('purge')">✖ Delete forever</button>
           <button v-if="view !== 'deleted'" class="hr-bulk-btn danger" @click="bulkAction('delete')">🗑 Delete</button>
         </template>
       </div>

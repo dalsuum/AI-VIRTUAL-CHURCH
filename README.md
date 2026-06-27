@@ -604,6 +604,105 @@ alongside the bridge. Admin manage it under the console's **Bible Study** tab.
 
 ---
 
+## Community platform (digital church) — Phase 1 foundation
+
+AI Virtual Church is growing from a personal AI worship app into a **community platform**
+where members worship, study, pray and talk with the AI pastor *together*. The design is
+clean-architecture, event-driven and backward compatible — it builds on the existing
+`chat_sessions` spine rather than replacing it.
+
+**One abstraction for every "together" activity.** Worship-together, read-together,
+study-together, pray-together, pastor-chat-together and radio-together are not six
+features — they are one polymorphic **Invitation → Session → Participant** model over
+session types. New audiences (couple, family, small group, church, public) are added by
+extending enums and policies, never new subsystems.
+
+**Domain layer.** New community code lives under `app/Domains/<Domain>/` (Accounts,
+Church, Friends, Invitations, Bible, Worship, Pastor, Notifications, AI, Analytics) and
+coexists with the existing flat `app/Services|Models|Notifications` — no repo-wide rename.
+
+**Phase 1 foundation (shipped in this slice).**
+- **Church hierarchy** — `churches` (tenant-ready, nullable `church_id` everywhere; multi-tenant
+  enforcement deferred to Phase 6) + `church_memberships` carrying the contextual role
+  (`owner…guest`, `App\Enums\ChurchRole`), distinct from the platform privilege role.
+- **Privacy** — `privacy_settings` (profile/activity/presence visibility, friend-only mode,
+  incognito) resolved through a single authority, **`PrivacyGate`**
+  (`app/Domains/Accounts/Services`). Every policy, feed, presence read and invitation check
+  funnels through it, so visibility rules (`private/friends/church/public` × friend/block/
+  incognito) live in exactly one place.
+- **Presence** — `presences` durable last-seen store (Redis hot path lands in Phase 6).
+- **Friend system** — `friendships` with one canonical row per unordered pair
+  (`user_id = min`, `friend_id = max`); `Friendship::areFriends()/blockExistsBetween()` are
+  the single source of truth for pair state.
+
+**Friend system (PR 2).** A full friendship **state machine** owned by one service,
+`App\Domains\Friends\Services\FriendshipService` — the single transition validator,
+audit point and event source. States `NONE / PENDING / ACCEPTED / BLOCKED` with
+transitions request, accept, reject, cancel, remove, block, unblock and a one-sided
+favorite. Removal/reject/cancel/unblock **soft-delete** the canonical row (audit history
+and AI memory survive; a later re-request restores the same row). A **block overrides
+every relationship**, enforced centrally by the `not.blocked` middleware (404, so a block
+can't be probed) and `PrivacyGate`. Seven **frozen domain events**
+(`FriendRequestSent/Accepted/Rejected`, `FriendRemoved`, `FriendBlocked`, `FriendUnblocked`,
+`FriendFavorited`) form the public contract that notifications, the activity feed,
+analytics and AI memory subscribe to in later phases. Endpoints live under `/api/friends/*`
+(rate-limited; initiation routes carry `not.blocked`). Authorization for initiating contact
+flows through the `friend-interact` gate → `FriendshipPolicy` → `PrivacyGate`.
+
+**Invitations + event pipeline (PR 3).** One **polymorphic invitation** for every
+together-activity (worship, bible reading, bible study, prayer, pastor chat, radio).
+`App\Domains\Invitations\Services\InvitationService` is the **only** component that
+mutates invitation state — every transition (`pending → accepted/declined/cancelled/
+expired`) flows through one `transition()` method, giving a single place for audit,
+expiry enforcement, session creation (later phases), event publishing and idempotency
+(re-running a completed transition is a no-op; queue retries are safe). Each invitation
+carries a **`correlation_id`** that every record it spawns (session, notifications,
+audit, analytics) reuses, so a whole workflow is traceable. A scheduled
+`invitations:expire` job sweeps stale invitations through the same transition path.
+
+The **event-driven layer** goes live here. Domain events are **past-tense facts**
+(`InvitationSent/Accepted/Declined/Cancelled/Expired`) published only by the service;
+queued, **idempotent** listeners react (registered in `CommunityEventServiceProvider`,
+since `app/Domains` is outside auto-discovery). Listeners are side-effects only — they
+never mutate domain state.
+
+Notifications use a **router layered by priority**: the domain sets a
+`NotificationPriority` (`critical/high/normal/low`) and the priority — not the calling
+code — decides channels (`CommunityNotification::via()`). Today database (in-app inbox)
++ email are wired; WebSocket/push slot into `NotificationPriority::channels()` in Phase 6
+without touching any notification. A `CommunityDatabaseChannel` persists `priority` and
+`correlation_id` on each row; listeners dedupe on those keys.
+
+**Presence, privacy & church authorization (PR 4).** Presence is **ephemeral**: callers
+go through `App\Domains\Accounts\Services\PresenceService` (never the model), so Phase 6
+can make Redis the authoritative store — keeping the `presences` table only for durable
+last-seen/recovery — without changing a controller. Cross-user presence reads are
+visibility-filtered through `PrivacyGate::canViewPresence` (honoring incognito + blocks;
+a hidden member returns 404, not 403). The **Privacy API** (`/api/me/privacy`) exposes the
+stable Phase 1 settings (profile/activity/presence visibility, friend-only mode, incognito);
+notification-channel preferences are left for the later reminder/notification work.
+**Church authorization** runs through `ChurchPolicy`, whose abilities (view/createSession/
+moderate/manage) declare a minimum role and defer the comparison to `ChurchRole::atLeast` —
+**the enum owns the hierarchy**, no policy hard-codes role order. A default-church backfill
+(`php artisan community:backfill-default-church`) is idempotent, transactional and
+resumable: it creates the church once and only the missing memberships, safe to rerun.
+
+Covered by `tests/Unit/PrivacyGateTest.php` and the feature suite (`FriendshipTest`,
+`InvitationTest`, `EventReplaySafetyTest`, `PresencePrivacyTest`, `ChurchAuthorizationTest`,
+`BackfillDefaultChurchTest`). **Phase 1 (foundation) is complete** — tagged
+`v0.2.0-foundation` as a known-good architectural checkpoint. Bible reading, study groups,
+worship sessions and AI ministry (Phases 2–5) build on this social + event-driven base
+without revisiting core identity, authorization or relationship logic.
+
+> **Deploy note.** Phase 1 migrations are additive/nullable (backward compatible). After
+> deploying, run `php artisan migrate` then the one data step
+> `php artisan community:backfill-default-church` (idempotent).
+
+The detailed reasoning behind these choices is recorded as architecture decision records
+in [`docs/adr/`](docs/adr/) — domain layer (0001), event contract (0002), correlation IDs
+(0003), `PrivacyGate` (0004), invitation lifecycle (0005) and presence model (0006). Treat
+the frozen event names and payloads there as public architecture: prefer additive changes.
+
 ## Unified Conversation & Spiritual History
 
 Every registered worshipper gets a permanent, ChatGPT-style history of every

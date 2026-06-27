@@ -150,6 +150,63 @@ Route::middleware(['auth:sanctum', 'account.usable'])->group(function () {
     // Spiritual-profile preferences (favorite language/version/pastor/goals + AI memory).
     Route::patch('/me/profile',          [AuthController::class, 'updateProfile']);
 
+    // ── Friend system (community platform — Phase 1) ──────────────────────────
+    // All actions are scoped to the authenticated user; the target is the {user}
+    // route binding. State transitions are owned by FriendshipService. Mutations are
+    // throttled; initiation routes (request/favorite) carry not.blocked so a block
+    // hides the target entirely.
+    Route::get('/friends',                  [\App\Http\Controllers\FriendController::class, 'index']);
+    Route::get('/friends/requests',         [\App\Http\Controllers\FriendController::class, 'requests']);
+    Route::post('/friends/search',          [\App\Http\Controllers\FriendController::class, 'search'])
+        ->middleware('throttle:60,1');
+    Route::post('/friends/{user}/request',  [\App\Http\Controllers\FriendController::class, 'request'])
+        ->middleware(['not.blocked', 'throttle:30,1']);
+    Route::post('/friends/{user}/accept',   [\App\Http\Controllers\FriendController::class, 'accept'])
+        ->middleware('throttle:60,1');
+    Route::post('/friends/{user}/reject',   [\App\Http\Controllers\FriendController::class, 'reject'])
+        ->middleware('throttle:60,1');
+    Route::post('/friends/{user}/cancel',   [\App\Http\Controllers\FriendController::class, 'cancel'])
+        ->middleware('throttle:60,1');
+    Route::delete('/friends/{user}',        [\App\Http\Controllers\FriendController::class, 'remove'])
+        ->middleware('throttle:60,1');
+    Route::post('/friends/{user}/block',    [\App\Http\Controllers\FriendController::class, 'block'])
+        ->middleware('throttle:30,1');
+    Route::post('/friends/{user}/unblock',  [\App\Http\Controllers\FriendController::class, 'unblock'])
+        ->middleware('throttle:30,1');
+    Route::post('/friends/{user}/favorite', [\App\Http\Controllers\FriendController::class, 'favorite'])
+        ->middleware(['not.blocked', 'throttle:60,1']);
+
+    // ── Invitations (polymorphic together-activities — Phase 1) ───────────────
+    // Status is mutated only by InvitationService; the controller authorizes via
+    // InvitationPolicy and delegates. {invitation} binds by UUID.
+    Route::get('/invitations',                    [\App\Http\Controllers\InvitationController::class, 'index']);
+    Route::post('/invitations',                   [\App\Http\Controllers\InvitationController::class, 'store'])
+        ->middleware('throttle:30,1');
+    Route::get('/invitations/{invitation}',       [\App\Http\Controllers\InvitationController::class, 'show']);
+    Route::post('/invitations/{invitation}/accept',  [\App\Http\Controllers\InvitationController::class, 'accept'])
+        ->middleware('throttle:60,1');
+    Route::post('/invitations/{invitation}/decline', [\App\Http\Controllers\InvitationController::class, 'decline'])
+        ->middleware('throttle:60,1');
+    Route::post('/invitations/{invitation}/cancel',  [\App\Http\Controllers\InvitationController::class, 'cancel'])
+        ->middleware('throttle:60,1');
+
+    // ── Privacy settings (own) ────────────────────────────────────────────────
+    Route::get('/me/privacy',  [\App\Http\Controllers\PrivacyController::class, 'show']);
+    Route::put('/me/privacy',  [\App\Http\Controllers\PrivacyController::class, 'update'])
+        ->middleware('throttle:60,1');
+
+    // ── Presence (always via PresenceService; visibility-filtered) ─────────────
+    Route::post('/presence/heartbeat', [\App\Http\Controllers\PresenceController::class, 'heartbeat'])
+        ->middleware('throttle:120,1');
+    Route::get('/presence/me',         [\App\Http\Controllers\PresenceController::class, 'me']);
+    Route::get('/presence/friends',    [\App\Http\Controllers\PresenceController::class, 'friends']);
+    Route::get('/presence/{user}',     [\App\Http\Controllers\PresenceController::class, 'show'])
+        ->middleware('not.blocked');
+
+    // ── Churches (read-only Phase 1 surface; ChurchPolicy authorization) ───────
+    Route::get('/churches',                    [\App\Http\Controllers\ChurchController::class, 'index']);
+    Route::get('/churches/{church}/members',   [\App\Http\Controllers\ChurchController::class, 'members']);
+
     // ── Unified Conversation & Spiritual History ──────────────────────────────
     // Every route is owner-scoped inside the controller (findOwned → 404 on miss).
     Route::get('/history',                 [\App\Http\Controllers\HistoryController::class, 'index']);

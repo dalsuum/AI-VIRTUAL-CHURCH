@@ -592,6 +592,41 @@ alongside the bridge. Admin manage it under the console's **Bible Study** tab.
 
 ---
 
+## Community platform (digital church) — Phase 1 foundation
+
+AI Virtual Church is growing from a personal AI worship app into a **community platform**
+where members worship, study, pray and talk with the AI pastor *together*. The design is
+clean-architecture, event-driven and backward compatible — it builds on the existing
+`chat_sessions` spine rather than replacing it.
+
+**One abstraction for every "together" activity.** Worship-together, read-together,
+study-together, pray-together, pastor-chat-together and radio-together are not six
+features — they are one polymorphic **Invitation → Session → Participant** model over
+session types. New audiences (couple, family, small group, church, public) are added by
+extending enums and policies, never new subsystems.
+
+**Domain layer.** New community code lives under `app/Domains/<Domain>/` (Accounts,
+Church, Friends, Invitations, Bible, Worship, Pastor, Notifications, AI, Analytics) and
+coexists with the existing flat `app/Services|Models|Notifications` — no repo-wide rename.
+
+**Phase 1 foundation (shipped in this slice).**
+- **Church hierarchy** — `churches` (tenant-ready, nullable `church_id` everywhere; multi-tenant
+  enforcement deferred to Phase 6) + `church_memberships` carrying the contextual role
+  (`owner…guest`, `App\Enums\ChurchRole`), distinct from the platform privilege role.
+- **Privacy** — `privacy_settings` (profile/activity/presence visibility, friend-only mode,
+  incognito) resolved through a single authority, **`PrivacyGate`**
+  (`app/Domains/Accounts/Services`). Every policy, feed, presence read and invitation check
+  funnels through it, so visibility rules (`private/friends/church/public` × friend/block/
+  incognito) live in exactly one place.
+- **Presence** — `presences` durable last-seen store (Redis hot path lands in Phase 6).
+- **Friend system** — `friendships` with one canonical row per unordered pair
+  (`user_id = min`, `friend_id = max`); `Friendship::areFriends()/blockExistsBetween()` are
+  the single source of truth for pair state.
+
+Covered by `tests/Unit/PrivacyGateTest.php` (visibility truth table). Friend/invitation
+workflows, notifications (with priority) and the Events/Listeners contract follow in the
+next Phase 1 slices.
+
 ## Unified Conversation & Spiritual History
 
 Every registered worshipper gets a permanent, ChatGPT-style history of every

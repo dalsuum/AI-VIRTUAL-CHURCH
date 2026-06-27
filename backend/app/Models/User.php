@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Laravel\Sanctum\HasApiTokens;
 use Illuminate\Notifications\Notifiable;
 
@@ -118,6 +119,25 @@ class User extends Authenticatable
     public function subscriptionHistory(): HasMany
     {
         return $this->hasMany(SubscriptionHistory::class);
+    }
+
+    // --- Community platform (Domains layer) ------------------------------------
+    // Contextual church roles, privacy preferences and presence. New community
+    // tables live under app/Domains/*; relations point at their FQCNs.
+
+    public function churchMemberships(): HasMany
+    {
+        return $this->hasMany(\App\Domains\Church\Models\ChurchMembership::class);
+    }
+
+    public function privacy(): HasOne
+    {
+        return $this->hasOne(\App\Domains\Accounts\Models\PrivacySetting::class);
+    }
+
+    public function presence(): HasOne
+    {
+        return $this->hasOne(\App\Domains\Accounts\Models\Presence::class);
     }
 
     /** Anonymous walk-ups live as @guest.local accounts; their billing tier is always guest. */

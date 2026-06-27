@@ -1103,7 +1103,15 @@ with the legacy flat `content_filter_keywords` (block keywords only) for backwar
   [YoutubeSongSearchService.php](backend/app/Services/YoutubeSongSearchService.php) (admin Worship
   Radio link search).
 
-Changes take effect within ~5 minutes for running workers (the cache TTL).
+- **Worship Radio:** [MusicRecommendationService.php](backend/app/Services/MusicRecommendationService.php)
+  re-applies the same block/allow firewall **at serve time** against each catalogue track's
+  title/artist/URL — so blocking a channel or URL also removes tracks that were saved *before* the
+  block (discovery only screens new search hits). Saving any filter change also bumps a
+  `content_filter_epoch` that invalidates the cached per-mood discovery markers, so a new block
+  takes effect on the **next** request rather than after the discovery TTL.
+
+Changes take effect immediately for Worship Radio; within ~5 minutes for the live-service workers
+(their `/config` cache TTL).
 
 ---
 

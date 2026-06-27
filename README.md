@@ -556,9 +556,11 @@ lessons, prayer, action points, reflection questions, study plan).
 + saved summary via `studyShow`; **chat-spine** studies (AI-platform `/v1/chat/study`, turns
 on the session graph) render their `messages` directly. Either way the transcript is shown
 read-only ("Past discussion", no live stream); "New Study" returns to the setup form.
-A reopened chat-spine study shows a **Summary** panel: if `chat_sessions.summary` is already
-set it renders it, otherwise "Generate Summary" hits `POST /history/{id}/summarize` (reuses
-the `title_summary` worker mode + history-callback) and polls until the summary lands.
+A reopened study shows the **original** summary it ended with — never a regenerated one:
+bridged studies render their structured `study_summaries`; chat-spine studies render the
+`chat_sessions.summary` that `HistoryService::recordMessage` already auto-generates (via the
+`title_summary` worker after the first few turns). Studies too short to have produced a
+summary simply show none.
 
 **AI Core platform.** Everything is module-keyed and admin-editable, no code change to add
 a module or language:

@@ -234,25 +234,4 @@ class HistoryTest extends TestCase
 
         $this->assertSame('en', $session->fresh()->language);
     }
-
-    public function test_summarize_enqueues_a_title_summary_job_for_owner(): void
-    {
-        $session = $this->makeSession($this->makeUser());
-
-        \Illuminate\Support\Facades\Redis::shouldReceive('rpush')->once();
-
-        $this->actingAs($session->user)
-            ->postJson("/api/history/{$session->id}/summarize")
-            ->assertStatus(202)
-            ->assertJson(['ok' => true]);
-    }
-
-    public function test_cannot_summarize_another_users_session(): void
-    {
-        $session = $this->makeSession($this->makeUser());
-
-        $this->actingAs($this->makeUser())
-            ->postJson("/api/history/{$session->id}/summarize")
-            ->assertNotFound();
-    }
 }

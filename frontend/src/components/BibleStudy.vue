@@ -45,9 +45,7 @@ const session = ref(null);
 const bubbles = ref([]);            // { turn, persona_id, name, role, text, refs:[] }
 const notice = ref("");
 const restored = ref(false);        // viewing a past session loaded from history (read-only)
-const restoredChatId = ref(null);   // chat-spine session id, for on-demand summary
-const recap = ref("");              // plain-text summary of a restored chat-spine study
-const summarizing = ref(false);
+const recap = ref("");              // the original stored end-of-discussion summary (chat-spine)
 const inputOpen = ref(false);
 const followUp = ref("");
 const composerInput = ref(null);
@@ -137,8 +135,7 @@ async function restore(chatId) {
       // Chat-spine study (AI-platform /v1/chat/study): turns are on the session graph.
       session.value = { id: s.id, topic: s.title };
       form.question = s.title || "";
-      restoredChatId.value = s.id;
-      recap.value = s.summary || "";
+      recap.value = s.summary || "";   // the summary stored when this discussion ended
       bubbles.value = (s.messages || []).map((m, i) => ({
         turn: i,
         persona_id: null,
@@ -151,26 +148,6 @@ async function restore(chatId) {
     phase.value = "discussion";
   } catch {
     error.value = "Could not open that study session.";
-  }
-}
-
-// Generate a summary for a reopened chat-spine study, then poll until the worker
-// fills it (lands via the history-callback onto chat_sessions.summary).
-async function summarizeRestored() {
-  if (!restoredChatId.value || summarizing.value) return;
-  summarizing.value = true;
-  try {
-    await api.historySummarize(restoredChatId.value);
-    for (let i = 0; i < 15 && !recap.value; i++) {
-      await new Promise((r) => setTimeout(r, 2000));
-      const { session: s } = await api.historyShow(restoredChatId.value);
-      if (s.summary) recap.value = s.summary;
-    }
-    if (!recap.value) notice.value = "Still summarizing… check back shortly.";
-  } catch {
-    error.value = "Could not generate a summary.";
-  } finally {
-    summarizing.value = false;
   }
 }
 
@@ -485,12 +462,9 @@ function goHome() { window.location.hash = ""; }
         </article>
       </div>
 
-      <div v-if="restored && restoredChatId" class="recap">
+      <div v-if="restored && recap" class="recap">
         <h3>📝 Summary</h3>
-        <p v-if="recap">{{ recap }}</p>
-        <button v-else class="primary" :disabled="summarizing" @click="summarizeRestored">
-          {{ summarizing ? "Summarizing…" : "Generate Summary" }}
-        </button>
+        <p>{{ recap }}</p>
       </div>
 
       <div v-if="inputOpen" class="composer">

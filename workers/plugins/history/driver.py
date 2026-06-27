@@ -53,6 +53,13 @@ def _local_pastor_reply(language: str, system: str, messages: list) -> str | Non
         for m in messages if m.get("content")
     )
     prompt = f"{convo}\nPastor:" if convo else "Pastor:"
+
+    def _fallback(reason: str) -> None:
+        # Structured reason aids production diagnostics: http_<code> (the service 502s on
+        # failed Tedim-marker validation), empty (200 but no usable text), network (down).
+        print(f"[history] pastor local fallback reason={reason} lang={language} path={path}", flush=True)
+        return None
+
     try:
         r = requests.post(
             f"{_LOCAL_LLM_BASE}/{path}/generate",
@@ -60,13 +67,12 @@ def _local_pastor_reply(language: str, system: str, messages: list) -> str | Non
             timeout=60,
         )
         if r.status_code != 200:
-            print(f"[history] local {path} model returned {r.status_code}; cloud fallback", flush=True)
-            return None
+            return _fallback(f"http_{r.status_code}")
         text = (r.json().get("text") or "").strip()
-        return text or None
+        return text or _fallback("empty")
     except (requests.exceptions.RequestException, ValueError) as exc:
-        print(f"[history] local {path} model unreachable ({exc}); cloud fallback", flush=True)
-        return None
+        print(f"[history] local {path} model error: {exc}", flush=True)
+        return _fallback("network")
 
 
 def _pastor_system(language: str, memory: list) -> str:

@@ -703,6 +703,34 @@ in [`docs/adr/`](docs/adr/) — domain layer (0001), event contract (0002), corr
 (0003), `PrivacyGate` (0004), invitation lifecycle (0005) and presence model (0006). Treat
 the frozen event names and payloads there as public architecture: prefer additive changes.
 
+### Phase 2 — Bible reading plans & daily reminders (PR 5)
+
+The first domain built **entirely on** the Phase 1 platform — no new infrastructure. A
+reading plan is ordered **data** (`reading_plans` → `reading_plan_days`); the seeded
+"Bible in a Year" spreads all 1,189 chapters of the canon across 365 days, and adding more
+plans (NT-in-90, Psalms-in-30, Chronological, Advent/Lent) is just more seed rows. Each day
+carries a **stable `slug`** (`day-001`) so bookmarks, deep links, notifications and future
+AI reflections reference it durably, not by integer position.
+
+Enrollment is **progress-anchored, not calendar-anchored**: `current_sequence` only
+advances when the user completes a day, so missing real-world days never skips content —
+the reminder always opens the *current* day. `ReadingPlanService` is the **sole mutator**
+of progress; `completeToday()` is idempotent per local day and emits the frozen, past-tense
+`ReadingDayCompleted` / `ReadingPlanCompleted`. A queued, idempotent `UpdateReadingStreak`
+listener maintains streaks (consecutive local days). The `reading:remind` scheduler is
+timezone-correct and idempotent per `(user, slot, local-date)`, emitting `ReadingReminderSent`
+only after delivery — enrollment never fabricates completion events. Reminder notifications
+are the one case where **channel selection follows the user's `reminder_settings.channels`**
+(in-app/email; push is Phase 6) rather than priority, since reminders are user-configured.
+
+Endpoints: `GET /bible/plans`, `POST /bible/plans/{plan}/enroll`, `GET /bible/reading/today`,
+`POST /bible/reading/today/complete`, `GET /me/streak`, `GET|PUT /me/reminders`. Covered by
+`ReadingPlanTest`, `ReadingReminderTest`, `ReadingPlansSeederTest`. Shared reading sessions
+(PR 6), reading events/listeners (PR 7) and the AI reading companion (PR 8) follow.
+
+> **Deploy note (PR 5).** Run `php artisan migrate` then seed the plan once:
+> `php artisan db:seed --class=Database\\Seeders\\ReadingPlansSeeder` (idempotent).
+
 ## Unified Conversation & Spiritual History
 
 Every registered worshipper gets a permanent, ChatGPT-style history of every

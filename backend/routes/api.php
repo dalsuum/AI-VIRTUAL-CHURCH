@@ -207,6 +207,19 @@ Route::middleware(['auth:sanctum', 'account.usable'])->group(function () {
     Route::get('/churches',                    [\App\Http\Controllers\ChurchController::class, 'index']);
     Route::get('/churches/{church}/members',   [\App\Http\Controllers\ChurchController::class, 'members']);
 
+    // ── Bible reading plans & daily reminders (Phase 2 — PR 5) ────────────────
+    // Progress is mutated only by ReadingPlanService. "Today" is the current plan day.
+    Route::get('/bible/plans',                    [\App\Http\Controllers\BibleReadingController::class, 'plans']);
+    Route::post('/bible/plans/{plan}/enroll',     [\App\Http\Controllers\BibleReadingController::class, 'enroll'])
+        ->middleware('throttle:30,1');
+    Route::get('/bible/reading/today',            [\App\Http\Controllers\BibleReadingController::class, 'today']);
+    Route::post('/bible/reading/today/complete',  [\App\Http\Controllers\BibleReadingController::class, 'complete'])
+        ->middleware('throttle:60,1');
+    Route::get('/me/streak',                      [\App\Http\Controllers\BibleReadingController::class, 'streak']);
+    Route::get('/me/reminders',                   [\App\Http\Controllers\ReminderController::class, 'show']);
+    Route::put('/me/reminders',                   [\App\Http\Controllers\ReminderController::class, 'update'])
+        ->middleware('throttle:60,1');
+
     // ── Unified Conversation & Spiritual History ──────────────────────────────
     // Every route is owner-scoped inside the controller (findOwned → 404 on miss).
     Route::get('/history',                 [\App\Http\Controllers\HistoryController::class, 'index']);

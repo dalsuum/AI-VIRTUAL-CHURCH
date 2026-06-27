@@ -40,6 +40,9 @@ class ReadingPlansSeeder extends Seeder
         '1 John' => 5, '2 John' => 1, '3 John' => 1, 'Jude' => 1, 'Revelation' => 22,
     ];
 
+    /** Sum of CANON chapter counts — the whole Protestant canon. */
+    private const TOTAL_CHAPTERS = 1189;
+
     public function run(): void
     {
         $plan = ReadingPlan::firstOrCreate(
@@ -51,30 +54,88 @@ class ReadingPlansSeeder extends Seeder
             return; // already seeded — idempotent
         }
 
-        DB::transaction(function () use ($plan) {
-            $chapters  = $this->flattenCanon();          // 1,189 [book, chapter] pairs, in order
-            $remaining = count($chapters);
-            $cursor    = 0;
+        // Build the full day assignment IN MEMORY and validate it before touching the
+        // DB. If anything is off (wrong day count, missing/duplicate chapters) we abort
+        // rather than insert a partial, corrupt plan.
+        $perDay = $this->buildDays($this->flattenCanon());
+        $this->assertIntegrity($perDay);
 
-            for ($seq = 1; $seq <= self::DAYS; $seq++) {
-                $daysLeft = self::DAYS - $seq + 1;
-                $take     = (int) ceil($remaining / $daysLeft);   // even spread
-                $passages = array_slice($chapters, $cursor, $take);
-
+        DB::transaction(function () use ($plan, $perDay) {
+            foreach ($perDay as $seq => $passages) {
                 ReadingPlanDay::create([
                     'reading_plan_id' => $plan->id,
                     'sequence'        => $seq,
                     'slug'            => sprintf('day-%03d', $seq),
                     'title'           => 'Day '.$seq,
-                    'passages'        => array_values($passages),
+                    'passages'        => $passages,
                 ]);
-
-                $cursor    += $take;
-                $remaining -= $take;
             }
         });
 
         $plan->update(['day_count' => self::DAYS]);
+    }
+
+    /**
+     * Spread the ordered chapters across DAYS as evenly as possible.
+     *
+     * @param  array<int, array{book:string, chapter:int}>  $chapters
+     * @return array<int, array<int, array{book:string, chapter:int}>>  keyed by sequence (1..DAYS)
+     */
+    private function buildDays(array $chapters): array
+    {
+        $perDay    = [];
+        $remaining = count($chapters);
+        $cursor    = 0;
+
+        for ($seq = 1; $seq <= self::DAYS; $seq++) {
+            $daysLeft        = self::DAYS - $seq + 1;
+            $take            = (int) ceil($remaining / $daysLeft);
+            $perDay[$seq]    = array_values(array_slice($chapters, $cursor, $take));
+            $cursor         += $take;
+            $remaining      -= $take;
+        }
+
+        return $perDay;
+    }
+
+    /**
+     * The canonical plan is self-validating: exactly DAYS days, exactly TOTAL_CHAPTERS
+     * chapters, every canon chapter present exactly once (no gaps, no duplicates).
+     * Throws (aborting the seed) on any violation.
+     *
+     * @param  array<int, array<int, array{book:string, chapter:int}>>  $perDay
+     */
+    private function assertIntegrity(array $perDay): void
+    {
+        if (count($perDay) !== self::DAYS) {
+            throw new \RuntimeException('Bible-in-a-Year: expected '.self::DAYS.' days, built '.count($perDay).'.');
+        }
+
+        $assigned = [];
+        foreach ($perDay as $passages) {
+            foreach ($passages as $p) {
+                $assigned[] = $p['book'].'|'.$p['chapter'];
+            }
+        }
+
+        if (count($assigned) !== self::TOTAL_CHAPTERS) {
+            throw new \RuntimeException('Bible-in-a-Year: expected '.self::TOTAL_CHAPTERS.' chapters, assigned '.count($assigned).'.');
+        }
+        if (count(array_unique($assigned)) !== self::TOTAL_CHAPTERS) {
+            throw new \RuntimeException('Bible-in-a-Year: duplicate chapter assignment detected.');
+        }
+
+        $canonical = [];
+        foreach (self::CANON as $book => $count) {
+            for ($c = 1; $c <= $count; $c++) {
+                $canonical[] = $book.'|'.$c;
+            }
+        }
+        sort($assigned);
+        sort($canonical);
+        if ($assigned !== $canonical) {
+            throw new \RuntimeException('Bible-in-a-Year: assigned chapters do not match the canon (missing or extra chapters).');
+        }
     }
 
     /** @return array<int, array{book:string, chapter:int}> */

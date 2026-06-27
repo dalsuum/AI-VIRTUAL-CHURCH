@@ -20,10 +20,12 @@ class ReadingPlansSeederTest extends TestCase
         $this->assertSame(365, $plan->day_count);
         $this->assertSame(365, $plan->days()->count());
 
-        // All 1,189 chapters of the Protestant canon are covered exactly once.
-        $totalPassages = ReadingPlanDay::where('reading_plan_id', $plan->id)
-            ->get()->sum(fn (ReadingPlanDay $d) => count($d->passages));
-        $this->assertSame(1189, $totalPassages);
+        // All 1,189 chapters of the Protestant canon are covered exactly once —
+        // no gaps, no duplicates (the seeder self-validates this before inserting).
+        $all = ReadingPlanDay::where('reading_plan_id', $plan->id)->get()
+            ->flatMap(fn (ReadingPlanDay $d) => array_map(fn ($p) => $p['book'].'|'.$p['chapter'], $d->passages));
+        $this->assertSame(1189, $all->count(), 'total chapters');
+        $this->assertSame(1189, $all->unique()->count(), 'distinct chapters (no duplicates)');
 
         // Stable per-day slug.
         $this->assertDatabaseHas('reading_plan_days', ['reading_plan_id' => $plan->id, 'slug' => 'day-001']);

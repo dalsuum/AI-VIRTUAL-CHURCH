@@ -682,8 +682,10 @@ Bible Study. When the worshipper opts in, the pastor may reference prior session
 new chat. The chosen code travels start → `PastorChatPipeline` → `PastorReplyDispatcher` →
 `driver.py`, which instructs the model to *reply ONLY in* that language. **Auto Detect**
 sends `auto`; on the first turn the worker classifies the worshipper's message into a
-supported code (Myanmar script ⇒ Burmese decisively; Latin text is never Burmese and is
-disambiguated among English + the Chin languages), replies in it, and returns
+supported code (Myanmar script ⇒ Burmese decisively; Tedim/Zolai-distinctive tokens —
+e.g. *hia*, *hoih*, *Pasian* — short-circuit to `td` so the cloud LLM cannot mis-collapse
+Tedim onto Mizo; remaining Latin text is never Burmese and is disambiguated among English +
+the Chin languages by the LLM), replies in it, and returns
 `detected_language` so the callback locks it onto the session (every follow-up then
 dispatches the concrete code, never `auto`).
 

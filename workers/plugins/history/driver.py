@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 
 import requests
@@ -126,6 +127,16 @@ def _detect_language(text: str, llm: OpenRouterLLM) -> str:
     # Decisive: Myanmar script => Burmese.
     if any("က" <= c <= "႟" for c in sample):
         return "my"
+    # Decisive: Tedim/Zolai-specific tokens that Mizo, English and the other Chin
+    # languages do not use. The cloud LLM tends to over-collapse the closely related
+    # Latin-script Chin languages onto "Mizo", so a lexical short-circuit keeps Tedim
+    # from being misrouted (e.g. "Biakinn pai hoih hia?" => td, not lus).
+    if re.search(
+        r"\b(hia|hiam|hoih|pasian|topa|zeisu|tuni|nuntakna|lametna|lungdamna|"
+        r"hehpihna|kong|hong|siam|biakinn|pai)\b",
+        sample.lower(),
+    ):
+        return "td"
     # Latin script => never Burmese; restrict the candidate set accordingly.
     latin_codes = [c for c in _LANG_NAME if c != "my"]  # en, td, cnh, cfm, lus
     out, _ = llm.complete(

@@ -111,22 +111,39 @@ onMounted(async () => {
   if (id) await restore(id);
 });
 
-async function restore(id) {
+async function restore(chatId) {
   try {
-    const full = await api.studyShow(id);
-    session.value = { id: full.id, topic: full.topic };
-    form.question = full.topic || "";
-    bubbles.value = (full.messages || []).map((m) => ({
-      turn: m.turn,
-      persona_id: m.persona_id ?? null,
-      name: m.role === "user" ? "You" : (m.role === "moderator" || m.role === "synthesis" ? "Moderator" : "Pastor"),
-      role: m.role,
-      text: m.content || "",
-      refs: (m.scripture_refs || []).map((r) => ({ ref: r, translation: full.translation || "" })),
-    }));
+    const { session: s } = await api.historyShow(chatId);
+    const studyId = s.bibleMeta?.study_session_id;
     restored.value = true;
-    if (full.summary) { summary.value = full.summary; phase.value = "summary"; }
-    else phase.value = "discussion";
+    if (studyId) {
+      // Bridged multi-pastor discussion: rich transcript lives in study_sessions.
+      const full = await api.studyShow(studyId);
+      session.value = { id: full.id, topic: full.topic };
+      form.question = full.topic || "";
+      bubbles.value = (full.messages || []).map((m) => ({
+        turn: m.turn,
+        persona_id: m.persona_id ?? null,
+        name: m.role === "user" ? "You" : (m.role === "moderator" || m.role === "synthesis" ? "Moderator" : "Pastor"),
+        role: m.role,
+        text: m.content || "",
+        refs: (m.scripture_refs || []).map((r) => ({ ref: r, translation: full.translation || "" })),
+      }));
+      if (full.summary) { summary.value = full.summary; phase.value = "summary"; return; }
+    } else {
+      // Chat-spine study (AI-platform /v1/chat/study): turns are on the session graph.
+      session.value = { id: s.id, topic: s.title };
+      form.question = s.title || "";
+      bubbles.value = (s.messages || []).map((m, i) => ({
+        turn: i,
+        persona_id: null,
+        name: m.sender === "user" ? "You" : "Pastor",
+        role: m.sender === "user" ? "user" : "pastor",
+        text: m.content || "",
+        refs: [],
+      }));
+    }
+    phase.value = "discussion";
   } catch {
     error.value = "Could not open that study session.";
   }

@@ -550,11 +550,12 @@ respectfully differing), and the moderator synthesizes agreements + honest disag
 with a verse spine. Ending the discussion produces a structured summary (key verses,
 lessons, prayer, action points, reflection questions, study plan).
 
-**Reuse from history.** "▶ Continue" on a saved study in the history sidebar opens
-`#bible-study?session=<study_id>` (the `study_session_id` carried on the chat-session's
-`bibleMeta`). On mount the page calls `studyShow`, rebuilds the transcript read-only
-("Past discussion" status, no live stream), and shows the saved summary when one exists;
-"New Study" returns to the setup form.
+**Reuse from history.** "▶ Continue" on a saved study opens `#bible-study?session=<chat_id>`
+(the unified-history chat-session id). On mount the page resolves the kind via `historyShow`:
+**bridged** multi-pastor studies (a `bibleMeta.study_session_id`) load their rich transcript
++ saved summary via `studyShow`; **chat-spine** studies (AI-platform `/v1/chat/study`, turns
+on the session graph) render their `messages` directly. Either way the transcript is shown
+read-only ("Past discussion", no live stream); "New Study" returns to the setup form.
 
 **AI Core platform.** Everything is module-keyed and admin-editable, no code change to add
 a module or language:

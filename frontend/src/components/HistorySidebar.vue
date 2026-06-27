@@ -89,10 +89,11 @@ async function openItem(item) {
 function resume(item) {
   // Pastor chats resume interactively; others open their module page.
   const moodQ = item.mood ? `?mood=${encodeURIComponent(item.mood)}&language=${encodeURIComponent(item.language || "en")}` : "";
-  const studyId = item.bibleMeta?.study_session_id;
+  // Bible Study carries the chat-session id; the page resolves bridged (multi-pastor)
+  // vs chat-spine transcripts itself, so both kinds restore.
   const routes = {
     pastor: `#pastor?session=${item.id}`,
-    bible_study: studyId ? `#bible-study?session=${studyId}` : "#bible-study",
+    bible_study: `#bible-study?session=${item.id}`,
     music: `#worship${moodQ}`,
     service: "#account",
   };

@@ -619,6 +619,15 @@ multi-agent `study_sessions` engine is **bridged** (1:1 link) rather than replac
 the live SSE study path is untouched. Backfill historical studies with
 `php artisan history:backfill-study`.
 
+**Admin deletion is a final cascade.** Deleting a worshipper (`AdminController::deleteUser`)
+hard-deletes the `users` row, and every owned table (`chat_sessions`, `service_sessions`,
+`study_sessions`, …) is `cascadeOnDelete` on `user_id`, so the whole profile vanishes.
+Deleting a generated service (`deleteService` / `bulkDeleteServices`) needs an explicit
+cascade: `service_sessions_meta.service_session_id` is `nullOnDelete`, so dropping only the
+`ServiceSession` would leave an orphaned "Church Service" row in the user's history.
+`purgeService()` therefore force-deletes the linked `chat_sessions` spine first (cascading
+its meta/messages/tags), then the service — covered by `AdminServiceDeletionTest`.
+
 **SessionStateStore.** A session is a graph of nodes with an explicit active pointer and
 rehydratable checkpoints (design: `docs/session-state-store.md`). `session_nodes` is the
 **sole durable record** of turns (a message is just `type=message`; service milestones,

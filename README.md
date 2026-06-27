@@ -623,7 +623,8 @@ complete). `App\Services\SessionState\SessionStateStore` is the single graph API
 through it.
 
 **API** (all owner-scoped, `auth:sanctum`): `GET /api/history` (date-grouped:
-Today / Yesterday / Previous 7 / 30 / Older, cursor-paginated, Redis-cached first page),
+Today / Yesterday / Previous 7 / 30 / Older, cursor-paginated, Redis-cached first page;
+`?archived=true` lists archived, `?trashed=true` lists soft-deleted for restore),
 `GET /api/history/{id}` (full resume payload), `POST /api/history/search`,
 `PATCH /api/history/{id}` (rename / pin / favorite / archive / rate / tags),
 `DELETE` + `POST .../restore` (soft delete), `.../share` + public
@@ -680,9 +681,10 @@ lasting keepsake. Endpoints: `POST /api/history/{id}/journal` (async, returns a
 `GET/DELETE /api/journal/{id}`. Pinning is capped at 20 per user.
 
 **Frontend.** `HistorySidebar.vue` (resizable/collapsible rail, search, pinned + date
-groups, per-type icons 📖🙏🎵⛪💬📚, **🗄 View archived toggle** that lists archived
-sessions with a ♻ Restore action, transcript overlay with rename/pin/share/export/
-journal/archive/delete, mobile bottom-drawer), `PastorChat.vue` (`#pastor`), and
+groups, per-type icons 📖🙏🎵⛪💬📚, **🗄 Archived / 🗑 Deleted toggles** that list
+archived sessions (♻ Restore in the overlay) or soft-deleted sessions of any type
+(tap to restore via `POST /history/{id}/restore`), transcript overlay with
+rename/pin/share/export/journal/archive/delete, mobile bottom-drawer), `PastorChat.vue` (`#pastor`), and
 `SpiritualJourney.vue` (`#journey` stats + streak + timeline + 📔 journal entries).
 Account settings gains the spiritual-profile fields. Rebuild with `npm run build` in
 `frontend/`. *Note:* the **folders / branching / message-body search / church-analytics**

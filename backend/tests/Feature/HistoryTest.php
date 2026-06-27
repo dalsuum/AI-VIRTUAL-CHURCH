@@ -84,6 +84,27 @@ class HistoryTest extends TestCase
         $this->assertDatabaseHas('chat_sessions', ['id' => $session->id, 'deleted_at' => null]);
     }
 
+    public function test_index_filters_by_archived_and_trashed(): void
+    {
+        $me = $this->makeUser();
+        $this->makeSession($me, ['title' => 'Active one']);
+        $this->makeSession($me, ['title' => 'Archived one', 'archived' => true]);
+        $deleted = $this->makeSession($me, ['title' => 'Deleted one']);
+        $deleted->delete();
+
+        $active = collect($this->actingAs($me)->getJson('/api/history')->assertOk()
+            ->json('groups'))->flatten(1)->pluck('title');
+        $this->assertEquals(['Active one'], $active->all());
+
+        $archived = collect($this->actingAs($me)->getJson('/api/history?archived=true')->assertOk()
+            ->json('groups'))->flatten(1)->pluck('title');
+        $this->assertEquals(['Archived one'], $archived->all());
+
+        $trashed = collect($this->actingAs($me)->getJson('/api/history?trashed=true')->assertOk()
+            ->json('groups'))->flatten(1)->pluck('title');
+        $this->assertEquals(['Deleted one'], $trashed->all());
+    }
+
     public function test_rename_and_pin_via_patch(): void
     {
         $me = $this->makeUser();

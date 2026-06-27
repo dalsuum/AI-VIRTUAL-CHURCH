@@ -27,7 +27,7 @@ const searching = ref(false);
 const searchResults = ref(null);   // null = not searching
 const detail = ref(null);          // open transcript
 const flash = ref("");
-const showArchived = ref(false);   // toggle: active list vs archived list
+const view = ref("active");        // "active" | "archived" | "deleted"
 
 const GROUP_ORDER = ["Today", "Yesterday", "Previous 7 Days", "Previous 30 Days", "Older"];
 const orderedGroups = computed(() =>
@@ -41,7 +41,8 @@ async function load(reset = true) {
   loading.value = true;
   try {
     const parts = [];
-    if (showArchived.value) parts.push("archived=true");
+    if (view.value === "archived") parts.push("archived=true");
+    if (view.value === "deleted") parts.push("trashed=true");
     if (!reset && nextCursor.value) parts.push(`cursor=${encodeURIComponent(nextCursor.value)}`);
     const res = await api.history(parts.length ? `?${parts.join("&")}` : "");
     if (reset) {
@@ -76,6 +77,9 @@ async function runSearch() {
 function clearSearch() { query.value = ""; searchResults.value = null; }
 
 async function openItem(item) {
+  // Deleted sessions have no readable transcript (the show endpoint excludes
+  // trashed rows); offer to restore instead of opening.
+  if (view.value === "deleted") return restoreDeleted(item);
   try {
     const res = await api.historyShow(item.id);
     detail.value = res.session;
@@ -127,8 +131,15 @@ async function restore(item) {
   flash.value = "Restored.";
 }
 
-function toggleArchived() {
-  showArchived.value = !showArchived.value;
+async function restoreDeleted(item) {
+  if (!confirm(`Restore "${item.title}"?`)) return;
+  await api.historyRestore(item.id);
+  await load(true);
+  flash.value = "Restored.";
+}
+
+function setView(v) {
+  view.value = view.value === v ? "active" : v;
   clearSearch();
   load(true);
 }
@@ -188,10 +199,16 @@ defineExpose({ reload: () => load(true) });
       </div>
 
       <p v-if="flash" class="hr-flash" @click="flash = ''">{{ flash }}</p>
+      <p v-if="view === 'deleted'" class="hr-dim">Tap a session to restore it.</p>
 
-      <button class="hr-toggle" @click="toggleArchived">
-        {{ showArchived ? "← Back to active" : "🗄 View archived" }}
-      </button>
+      <div class="hr-views">
+        <button class="hr-toggle" :class="{ on: view === 'archived' }" @click="setView('archived')">
+          {{ view === 'archived' ? "← Active" : "🗄 Archived" }}
+        </button>
+        <button class="hr-toggle" :class="{ on: view === 'deleted' }" @click="setView('deleted')">
+          {{ view === 'deleted' ? "← Active" : "🗑 Deleted" }}
+        </button>
+      </div>
 
       <!-- Search results -->
       <div v-if="searchResults" class="hr-section">
@@ -205,7 +222,7 @@ defineExpose({ reload: () => load(true) });
 
       <!-- Normal grouped list -->
       <template v-else>
-        <div v-if="pinned.length && !showArchived" class="hr-section">
+        <div v-if="pinned.length && view === 'active'" class="hr-section">
           <h4>📌 Pinned</h4>
           <button v-for="it in pinned" :key="it.id" class="hr-item" @click="openItem(it)">
             <span class="hr-tt">{{ it.title }}</span>
@@ -224,7 +241,9 @@ defineExpose({ reload: () => load(true) });
           {{ loading ? "Loading…" : "Load more" }}
         </button>
         <p v-else-if="!loading && !pinned.length && !orderedGroups.length" class="hr-dim">
-          {{ showArchived ? "No archived sessions." : "No sessions yet. Start a Bible Study, Worship, or Pastor Chat." }}
+          {{ view === 'archived' ? "No archived sessions."
+             : view === 'deleted' ? "No deleted sessions."
+             : "No sessions yet. Start a Bible Study, Worship, or Pastor Chat." }}
         </p>
       </template>
     </div>
@@ -287,9 +306,10 @@ defineExpose({ reload: () => load(true) });
   background: var(--surface-2); color: var(--text); }
 .hr-search input::placeholder { color: var(--text-faint); }
 .hr-mini { background: none; border: 1px solid var(--border); border-radius: 6px; cursor: pointer; padding: 2px 7px; color: var(--text); }
-.hr-toggle { width: 100%; padding: 5px; margin-bottom: 8px; border: 1px solid var(--border);
+.hr-views { display: flex; gap: 4px; margin-bottom: 8px; }
+.hr-toggle { flex: 1; padding: 5px; border: 1px solid var(--border);
   border-radius: 8px; background: none; cursor: pointer; color: var(--text); font-size: 12px; }
-.hr-toggle:hover { background: var(--surface-3); }
+.hr-toggle:hover, .hr-toggle.on { background: var(--surface-3); }
 .hr-section { margin-bottom: 12px; }
 .hr-section h4 { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; opacity: .6; margin: 8px 0 4px; }
 .hr-item { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left; padding: 7px 8px;

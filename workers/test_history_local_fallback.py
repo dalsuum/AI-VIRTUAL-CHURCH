@@ -24,7 +24,7 @@ def test_english_and_burmese_skip_local_model(monkeypatch):
     assert driver._local_pastor_reply("my", "sys", [{"role": "user", "content": "hi"}]) is None
 
 
-def test_tedim_uses_local_model_when_it_succeeds(monkeypatch):
+def test_tedim_uses_local_model_when_it_succeeds(monkeypatch, capsys):
     captured = {}
 
     def fake_post(url, json, timeout):
@@ -37,11 +37,15 @@ def test_tedim_uses_local_model_when_it_succeeds(monkeypatch):
     assert out == "Pathian in hong it hi."
     assert captured["url"].endswith("/tedim/generate")
     assert "Worshipper: dammaw" in captured["prompt"]
+    log = capsys.readouterr().out
+    assert "pastor local success lang=td path=tedim ms=" in log
 
 
-def test_degenerate_502_falls_back(monkeypatch):
+def test_degenerate_502_falls_back(monkeypatch, capsys):
     monkeypatch.setattr(driver.requests, "post", lambda *a, **k: _Resp(502, {"detail": "no markers"}))
     assert driver._local_pastor_reply("td", "sys", [{"role": "user", "content": "x"}]) is None
+    log = capsys.readouterr().out
+    assert "fallback reason=http_502 lang=td path=tedim ms=" in log
 
 
 def test_empty_text_falls_back(monkeypatch):

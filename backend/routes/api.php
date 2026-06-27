@@ -186,6 +186,23 @@ Route::middleware(['auth:sanctum', 'account.usable'])->group(function () {
     Route::post('/invitations/{invitation}/cancel',  [\App\Http\Controllers\InvitationController::class, 'cancel'])
         ->middleware('throttle:60,1');
 
+    // ── Privacy settings (own) ────────────────────────────────────────────────
+    Route::get('/me/privacy',  [\App\Http\Controllers\PrivacyController::class, 'show']);
+    Route::put('/me/privacy',  [\App\Http\Controllers\PrivacyController::class, 'update'])
+        ->middleware('throttle:60,1');
+
+    // ── Presence (always via PresenceService; visibility-filtered) ─────────────
+    Route::post('/presence/heartbeat', [\App\Http\Controllers\PresenceController::class, 'heartbeat'])
+        ->middleware('throttle:120,1');
+    Route::get('/presence/me',         [\App\Http\Controllers\PresenceController::class, 'me']);
+    Route::get('/presence/friends',    [\App\Http\Controllers\PresenceController::class, 'friends']);
+    Route::get('/presence/{user}',     [\App\Http\Controllers\PresenceController::class, 'show'])
+        ->middleware('not.blocked');
+
+    // ── Churches (read-only Phase 1 surface; ChurchPolicy authorization) ───────
+    Route::get('/churches',                    [\App\Http\Controllers\ChurchController::class, 'index']);
+    Route::get('/churches/{church}/members',   [\App\Http\Controllers\ChurchController::class, 'members']);
+
     // ── Unified Conversation & Spiritual History ──────────────────────────────
     // Every route is owner-scoped inside the controller (findOwned → 404 on miss).
     Route::get('/history',                 [\App\Http\Controllers\HistoryController::class, 'index']);

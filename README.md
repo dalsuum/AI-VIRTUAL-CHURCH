@@ -661,10 +661,30 @@ code — decides channels (`CommunityNotification::via()`). Today database (in-a
 without touching any notification. A `CommunityDatabaseChannel` persists `priority` and
 `correlation_id` on each row; listeners dedupe on those keys.
 
-Covered by `tests/Unit/PrivacyGateTest.php`, `tests/Feature/FriendshipTest.php` and
-`tests/Feature/InvitationTest.php` (transitions, authorization, idempotency, scheduled
-expiry, priority-routed notifications, listener replay-safety). Presence/privacy APIs and
-church-role-aware policies follow in PR 4.
+**Presence, privacy & church authorization (PR 4).** Presence is **ephemeral**: callers
+go through `App\Domains\Accounts\Services\PresenceService` (never the model), so Phase 6
+can make Redis the authoritative store — keeping the `presences` table only for durable
+last-seen/recovery — without changing a controller. Cross-user presence reads are
+visibility-filtered through `PrivacyGate::canViewPresence` (honoring incognito + blocks;
+a hidden member returns 404, not 403). The **Privacy API** (`/api/me/privacy`) exposes the
+stable Phase 1 settings (profile/activity/presence visibility, friend-only mode, incognito);
+notification-channel preferences are left for the later reminder/notification work.
+**Church authorization** runs through `ChurchPolicy`, whose abilities (view/createSession/
+moderate/manage) declare a minimum role and defer the comparison to `ChurchRole::atLeast` —
+**the enum owns the hierarchy**, no policy hard-codes role order. A default-church backfill
+(`php artisan community:backfill-default-church`) is idempotent, transactional and
+resumable: it creates the church once and only the missing memberships, safe to rerun.
+
+Covered by `tests/Unit/PrivacyGateTest.php` and the feature suite (`FriendshipTest`,
+`InvitationTest`, `EventReplaySafetyTest`, `PresencePrivacyTest`, `ChurchAuthorizationTest`,
+`BackfillDefaultChurchTest`). **Phase 1 (foundation) is complete** — tagged
+`v0.2.0-foundation` as a known-good architectural checkpoint. Bible reading, study groups,
+worship sessions and AI ministry (Phases 2–5) build on this social + event-driven base
+without revisiting core identity, authorization or relationship logic.
+
+> **Deploy note.** Phase 1 migrations are additive/nullable (backward compatible). After
+> deploying, run `php artisan migrate` then the one data step
+> `php artisan community:backfill-default-church` (idempotent).
 
 ## Unified Conversation & Spiritual History
 

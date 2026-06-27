@@ -140,6 +140,21 @@ class User extends Authenticatable
         return $this->hasOne(\App\Domains\Accounts\Models\Presence::class);
     }
 
+    /** The user's contextual role in a given church (by id), or null if not a member. */
+    public function churchRole(int $churchId): ?\App\Enums\ChurchRole
+    {
+        return $this->churchMemberships
+            ->firstWhere(fn ($m) => $m->church_id === $churchId
+                && $m->status === \App\Domains\Church\Models\ChurchMembership::STATUS_ACTIVE)
+            ?->role;
+    }
+
+    /** Does the user hold AT LEAST $min role in the church? Ordering is owned by the enum. */
+    public function hasChurchRole(int $churchId, \App\Enums\ChurchRole $min): bool
+    {
+        return (bool) $this->churchRole($churchId)?->atLeast($min);
+    }
+
     /** Anonymous walk-ups live as @guest.local accounts; their billing tier is always guest. */
     public function isGuestAccount(): bool
     {

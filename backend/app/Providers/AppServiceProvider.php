@@ -56,6 +56,13 @@ class AppServiceProvider extends ServiceProvider
             \App\Domains\Invitations\Policies\InvitationPolicy::class,
         );
 
+        // Church-scoped authorization (view/createSession/moderate/manage). Role
+        // thresholds are owned by ChurchRole::atLeast, not the policy.
+        Gate::policy(
+            \App\Domains\Church\Models\Church::class,
+            \App\Domains\Church\Policies\ChurchPolicy::class,
+        );
+
         // Auth endpoints — keyed by IP so unauthenticated callers are also covered.
         RateLimiter::for('auth', function (Request $request) {
             return Limit::perMinute(5)->by($request->ip());

@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Stripe\StripeClient;
@@ -43,6 +44,24 @@ class AppServiceProvider extends ServiceProvider
                 logger()->warning('Billing partially configured: STRIPE_SECRET and STRIPE_PREMIUM_PRICE_ID must both be set; premium checkout is disabled until then.');
             }
         }
+
+        // Community: may the actor initiate contact with the target member? Delegates
+        // to PrivacyGate via FriendshipPolicy so block/friend-only rules live in one place.
+        Gate::define('friend-interact', [\App\Domains\Friends\Policies\FriendshipPolicy::class, 'interact']);
+
+        // Invitation authorization (view/respond/cancel). Registered explicitly because
+        // the model lives under app/Domains (outside policy auto-discovery).
+        Gate::policy(
+            \App\Domains\Invitations\Models\Invitation::class,
+            \App\Domains\Invitations\Policies\InvitationPolicy::class,
+        );
+
+        // Church-scoped authorization (view/createSession/moderate/manage). Role
+        // thresholds are owned by ChurchRole::atLeast, not the policy.
+        Gate::policy(
+            \App\Domains\Church\Models\Church::class,
+            \App\Domains\Church\Policies\ChurchPolicy::class,
+        );
 
         // Auth endpoints — keyed by login identifier + IP so users behind a shared
         // NAT don't lock each other out and an attacker can't drain one IP's budget

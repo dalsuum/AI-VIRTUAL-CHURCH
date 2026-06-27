@@ -57,11 +57,15 @@ Route::middleware('throttle:auth')->group(function () {
     Route::post('/guest',          [AuthController::class, 'guest']);
     Route::post('/register',       [AuthController::class, 'register']);
     Route::post('/login',          [AuthController::class, 'login']);
-    // Public auth-state probe — 200 {user:null} when logged out (no console 401).
-    Route::get('/auth/session',    [AuthController::class, 'session']);
     Route::post('/forgot-password',[AuthController::class, 'forgotPassword']);
     Route::post('/reset-password', [AuthController::class, 'resetPassword']);
 });
+
+// Public auth-state probe — 200 {user:null} when logged out (no console 401).
+// Read-only, so it gets its own generous limit instead of sharing the credential
+// bucket; the frontend polls this on every page load.
+Route::get('/auth/session', [AuthController::class, 'session'])
+    ->middleware('throttle:60,1');
 
 // Email-link service resume — public, one-time resume token acts as the credential.
 // Throttled to limit repeated token exchange from a leaked link.
@@ -219,6 +223,8 @@ Route::middleware(['auth:sanctum', 'account.usable'])->group(function () {
         ->middleware('throttle:60,1');
     Route::delete('/history/{id}',         [\App\Http\Controllers\HistoryController::class, 'destroy']);
     Route::post('/history/{id}/restore',   [\App\Http\Controllers\HistoryController::class, 'restore']);
+    Route::post('/history/bulk',           [\App\Http\Controllers\HistoryController::class, 'bulk'])
+        ->middleware('throttle:30,1');
     Route::post('/history/{id}/share',     [\App\Http\Controllers\HistoryController::class, 'share'])
         ->middleware('throttle:20,1');
     Route::delete('/history/{id}/share',   [\App\Http\Controllers\HistoryController::class, 'revokeShare']);

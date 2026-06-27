@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import time
 
 import requests
 
@@ -54,17 +56,28 @@ def _local_pastor_reply(language: str, system: str, messages: list) -> str | Non
     )
     prompt = f"{convo}\nPastor:" if convo else "Pastor:"
 
+    # ms is the FULL local round-trip (request start → response or error) on EVERY exit
+    # path, so success and all fallback reasons are latency-comparable and the dataset
+    # isn't biased toward fast paths. Aggregate median/P95 ms by lang and by reason.
+    started = time.monotonic()
+
+    def _elapsed_ms() -> int:
+        return int((time.monotonic() - started) * 1000)
+
     def _fallback(reason: str) -> None:
         # Structured reason aids production diagnostics: http_<code> (the service 502s on
         # failed Tedim-marker validation), empty (200 but no usable text), network (down).
-        print(f"[history] pastor local fallback reason={reason} lang={language} path={path}", flush=True)
+        print(f"[history] pastor local fallback reason={reason} lang={language} path={path} ms={_elapsed_ms()}", flush=True)
         return None
 
     try:
         r = requests.post(
             f"{_LOCAL_LLM_BASE}/{path}/generate",
             json={"prompt": prompt, "system": system},
-            timeout=60,
+            # Short read timeout: on a CPU-only / memory-pressured box the local
+            # model can stall well past a usable chat latency. Cap the wasted wait
+            # so we fall back to the cloud LLM fast and the reply still feels live.
+            timeout=15,
         )
         if r.status_code != 200:
             return _fallback(f"http_{r.status_code}")
@@ -73,7 +86,7 @@ def _local_pastor_reply(language: str, system: str, messages: list) -> str | Non
             return _fallback("empty")
         # Symmetric with the fallback line so the success-vs-fallback distribution is
         # fully countable from logs alone (no silent success path).
-        print(f"[history] pastor local success lang={language} path={path}", flush=True)
+        print(f"[history] pastor local success lang={language} path={path} ms={_elapsed_ms()}", flush=True)
         return text
     except (requests.exceptions.RequestException, ValueError) as exc:
         print(f"[history] local {path} model error: {exc}", flush=True)
@@ -114,6 +127,16 @@ def _detect_language(text: str, llm: OpenRouterLLM) -> str:
     # Decisive: Myanmar script => Burmese.
     if any("က" <= c <= "႟" for c in sample):
         return "my"
+    # Decisive: Tedim/Zolai-specific tokens that Mizo, English and the other Chin
+    # languages do not use. The cloud LLM tends to over-collapse the closely related
+    # Latin-script Chin languages onto "Mizo", so a lexical short-circuit keeps Tedim
+    # from being misrouted (e.g. "Biakinn pai hoih hia?" => td, not lus).
+    if re.search(
+        r"\b(hia|hiam|hoih|pasian|topa|zeisu|tuni|nuntakna|lametna|lungdamna|"
+        r"hehpihna|kong|hong|siam|biakinn|pai)\b",
+        sample.lower(),
+    ):
+        return "td"
     # Latin script => never Burmese; restrict the candidate set accordingly.
     latin_codes = [c for c in _LANG_NAME if c != "my"]  # en, td, cnh, cfm, lus
     out, _ = llm.complete(

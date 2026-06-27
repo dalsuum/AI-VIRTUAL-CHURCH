@@ -28,6 +28,30 @@ class MusicRecommendTest extends TestCase
         }
     }
 
+    public function test_blocked_channel_track_is_not_served(): void
+    {
+        \App\Models\Setting::set('content_filter_categories', json_encode([[
+            'id' => 'offtopic', 'label' => 'Off-topic Channels', 'scope' => 'both', 'type' => 'block',
+            'keywords' => ['suan khan mang'],
+        ]]));
+
+        WorshipTrack::create([
+            'title' => 'Topa Muangin', 'artist' => 'Suan Khan Mang', 'language' => 'td',
+            'youtube_url' => 'https://www.youtube.com/watch?v=zzzzzzzzzzz',
+            'themes' => ['peace'], 'moods' => ['peace'], 'popularity' => 99, 'active' => true,
+        ]);
+        WorshipTrack::create([
+            'title' => 'Pasian Phatna', 'artist' => 'Clean Choir', 'language' => 'td',
+            'themes' => ['peace'], 'moods' => ['peace'], 'popularity' => 10, 'active' => true,
+        ]);
+
+        $res = $this->postJson('/api/music/recommend', ['language' => 'td', 'mood' => 'Peace']);
+
+        $res->assertOk();
+        $artists = array_column($res->json('playlist'), 'artist');
+        $this->assertNotContains('Suan Khan Mang', $artists, 'blocked channel filtered at serve time');
+    }
+
     public function test_recommend_returns_between_5_and_10_tracks(): void
     {
         $this->seedCatalog();

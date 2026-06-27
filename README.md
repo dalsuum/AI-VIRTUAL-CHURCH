@@ -522,7 +522,7 @@ queue runs low.
 | `MusicRecommendationService` | The "Music Recommendation Agent". Weighted scoring — **language 40 / mood 30 / theme 20 / popularity 10** — with recent-50 no-repeat exclusion, artist diversity, and a 5–10 song clamp (`music.min_playlist` / `music.max_playlist`). **Live YouTube discovery:** on a mood search it queries YouTube (`YoutubeSongSearchService`, content-filtered + embeddable-only) for fresh songs and persists them into `worship_tracks` (deduped by `youtube_url`), so the radio never loops the same seeded handful. Fires on the first search of a mood (cached per language+mood for `music.youtube_discovery_ttl`, default 6h) and whenever the un-played same-language pool can't fill a playlist. Toggle with `music.youtube_discovery` (default on); requires `YOUTUBE_API_KEY`. |
 | `MusicController` | Public `GET /api/music/moods` + `POST /api/music/recommend` (throttled, no auth). |
 | `WorshipTrackAdminController` | `music.manage`-gated CRUD + playlist settings; http(s)-only URL validation. |
-| `WorshipRadio.vue` | `#worship` page: mood selector, language picker, AI-reason banner, song cards, YouTube IFrame player with auto-advance + continuous autoplay. Mood chips render the language's native label (`m.labels[language]`) and submit the canonical mood **key** (not the visible label), so switching to Burmese/Zolai re-labels every chip and still drives the same theme/keyword search server-side. |
+| `WorshipRadio.vue` | `#worship` page: mood selector, language picker, AI-reason banner, song cards, YouTube IFrame player with auto-advance + continuous autoplay. Mood chips render the language's native label (`m.labels[language]`) and submit the canonical mood **key** (not the visible label), so switching to Burmese/Zolai re-labels every chip and still drives the same theme/keyword search server-side. **Reuse:** "▶ Continue" on a saved music session in the history sidebar opens `#worship?mood=…&language=…`; on mount the page prefills the chip (or free text) + language from the hash and auto-starts, so a worshipper resumes the same mood with a fresh playlist. |
 | `MusicCatalogManager.vue` | Admin **Worship Radio** tab: catalog CRUD + playlist settings. |
 
 Seed the curated catalog (en/my/td) with
@@ -549,6 +549,18 @@ pastor a distinct angle, the weighted pastors deliberate in turn (agreeing, buil
 respectfully differing), and the moderator synthesizes agreements + honest disagreements
 with a verse spine. Ending the discussion produces a structured summary (key verses,
 lessons, prayer, action points, reflection questions, study plan).
+
+**Reuse from history.** "▶ Continue" on a saved study opens `#bible-study?session=<chat_id>`
+(the unified-history chat-session id). On mount the page resolves the kind via `historyShow`:
+**bridged** multi-pastor studies (a `bibleMeta.study_session_id`) load their rich transcript
++ saved summary via `studyShow`; **chat-spine** studies (AI-platform `/v1/chat/study`, turns
+on the session graph) render their `messages` directly. Either way the transcript is shown
+read-only ("Past discussion", no live stream); "New Study" returns to the setup form.
+A reopened study shows the **original** summary it ended with — never a regenerated one:
+bridged studies render their structured `study_summaries`; chat-spine studies render the
+`chat_sessions.summary` that `HistoryService::recordMessage` already auto-generates (via the
+`title_summary` worker after the first few turns). Studies too short to have produced a
+summary simply show none.
 
 **AI Core platform.** Everything is module-keyed and admin-editable, no code change to add
 a module or language:
@@ -712,6 +724,15 @@ multi-agent `study_sessions` engine is **bridged** (1:1 link) rather than replac
 the live SSE study path is untouched. Backfill historical studies with
 `php artisan history:backfill-study`.
 
+**Admin deletion is a final cascade.** Deleting a worshipper (`AdminController::deleteUser`)
+hard-deletes the `users` row, and every owned table (`chat_sessions`, `service_sessions`,
+`study_sessions`, …) is `cascadeOnDelete` on `user_id`, so the whole profile vanishes.
+Deleting a generated service (`deleteService` / `bulkDeleteServices`) needs an explicit
+cascade: `service_sessions_meta.service_session_id` is `nullOnDelete`, so dropping only the
+`ServiceSession` would leave an orphaned "Church Service" row in the user's history.
+`purgeService()` therefore force-deletes the linked `chat_sessions` spine first (cascading
+its meta/messages/tags), then the service — covered by `AdminServiceDeletionTest`.
+
 **SessionStateStore.** A session is a graph of nodes with an explicit active pointer and
 rehydratable checkpoints (design: `docs/session-state-store.md`). `session_nodes` is the
 **sole durable record** of turns (a message is just `type=message`; service milestones,
@@ -722,7 +743,8 @@ complete). `App\Services\SessionState\SessionStateStore` is the single graph API
 through it.
 
 **API** (all owner-scoped, `auth:sanctum`): `GET /api/history` (date-grouped:
-Today / Yesterday / Previous 7 / 30 / Older, cursor-paginated, Redis-cached first page),
+Today / Yesterday / Previous 7 / 30 / Older, cursor-paginated, Redis-cached first page;
+`?archived=true` lists archived, `?trashed=true` lists soft-deleted for restore),
 `GET /api/history/{id}` (full resume payload), `POST /api/history/search`,
 `PATCH /api/history/{id}` (rename / pin / favorite / archive / rate / tags),
 `DELETE` + `POST .../restore` (soft delete), `.../share` + public
@@ -759,16 +781,21 @@ Bible Study. When the worshipper opts in, the pastor may reference prior session
 new chat. The chosen code travels start → `PastorChatPipeline` → `PastorReplyDispatcher` →
 `driver.py`, which instructs the model to *reply ONLY in* that language. **Auto Detect**
 sends `auto`; on the first turn the worker classifies the worshipper's message into a
-supported code (Myanmar script ⇒ Burmese decisively; Latin text is never Burmese and is
-disambiguated among English + the Chin languages), replies in it, and returns
+supported code (Myanmar script ⇒ Burmese decisively; Tedim/Zolai-distinctive tokens —
+e.g. *hia*, *hoih*, *Pasian* — short-circuit to `td` so the cloud LLM cannot mis-collapse
+Tedim onto Mizo; remaining Latin text is never Burmese and is disambiguated among English +
+the Chin languages by the LLM), replies in it, and returns
 `detected_language` so the callback locks it onto the session (every follow-up then
 dispatches the concrete code, never `auto`).
 
 For the low-resource Chin languages (`td`/`cfm`/`cnh`/`lus`) the reply is generated
 **local-model-first**: `driver.py` calls the native FastAPI model (`aivc-tedim-api`, `:8001`,
 e.g. `POST /tedim/generate`) and falls back to the cloud LLM (replying in that language)
-whenever the local model 502s on degenerate output or is unreachable. English and Burmese
-go straight to the cloud LLM. Override base URL with `LOCAL_LLM_BASE_URL`.
+whenever the local model 502s on degenerate output or is unreachable. The local call has a
+short 15 s read timeout — on a CPU-only / memory-pressured box the native model can stall
+past a usable chat latency, so the wasted wait is capped and the cloud fallback fires fast
+enough that the reply still feels live. English and Burmese go straight to the cloud LLM.
+Override base URL with `LOCAL_LLM_BASE_URL`.
 
 **Spiritual Journal.** From any session, **Save to Journal** asks the worker to distill
 an AI-written reflective entry (title + scripture + insight + prayer + reflection),
@@ -779,8 +806,14 @@ lasting keepsake. Endpoints: `POST /api/history/{id}/journal` (async, returns a
 `GET/DELETE /api/journal/{id}`. Pinning is capped at 20 per user.
 
 **Frontend.** `HistorySidebar.vue` (resizable/collapsible rail, search, pinned + date
-groups, per-type icons 📖🙏🎵⛪💬📚, transcript overlay with rename/pin/share/export/
-journal/delete, mobile bottom-drawer), `PastorChat.vue` (`#pastor`), and
+groups, per-type icons 📖🙏🎵⛪💬📚, **🗄 Archived / 🗑 Deleted toggles** that list
+archived sessions (♻ Restore in the overlay) or soft-deleted sessions of any type
+(tap to restore via `POST /history/{id}/restore`), a **☑ Select** mode for
+**multi-select bulk actions** (Archive / Delete in Active, Restore / Delete in
+Archived, Restore / **✖ Delete forever** in Deleted) via owner-scoped `POST /history/bulk`
+(`{action: delete|archive|unarchive|untrash|purge, ids: [...]}`; `purge` force-deletes
+permanently, children cascading via FK, behind a "cannot be undone" confirm), transcript overlay with
+rename/pin/share/export/journal/archive/delete, mobile bottom-drawer), `PastorChat.vue` (`#pastor`), and
 `SpiritualJourney.vue` (`#journey` stats + streak + timeline + 📔 journal entries).
 Account settings gains the spiritual-profile fields. Rebuild with `npm run build` in
 `frontend/`. *Note:* the **folders / branching / message-body search / church-analytics**
@@ -1202,7 +1235,15 @@ with the legacy flat `content_filter_keywords` (block keywords only) for backwar
   [YoutubeSongSearchService.php](backend/app/Services/YoutubeSongSearchService.php) (admin Worship
   Radio link search).
 
-Changes take effect within ~5 minutes for running workers (the cache TTL).
+- **Worship Radio:** [MusicRecommendationService.php](backend/app/Services/MusicRecommendationService.php)
+  re-applies the same block/allow firewall **at serve time** against each catalogue track's
+  title/artist/URL — so blocking a channel or URL also removes tracks that were saved *before* the
+  block (discovery only screens new search hits). Saving any filter change also bumps a
+  `content_filter_epoch` that invalidates the cached per-mood discovery markers, so a new block
+  takes effect on the **next** request rather than after the discovery TTL.
+
+Changes take effect immediately for Worship Radio; within ~5 minutes for the live-service workers
+(their `/config` cache TTL).
 
 ---
 
@@ -2128,7 +2169,7 @@ before any state-changing request to bootstrap CSRF protection.
 
 ### Public
 
-> Auth routes (`/guest`, `/register`, `/login`) are rate-limited per IP (`throttle:auth`) to slow credential stuffing. Intake is throttled per user (`throttle:intake`); testimony submission per user (`throttle:testimony`).
+> Credential routes (`/guest`, `/register`, `/login`, `/forgot-password`, `/reset-password`) are rate-limited (`throttle:auth`, 5/min) keyed by **login email + IP** — so users behind a shared NAT don't lock each other out and an attacker can't drain one IP's budget by spraying unrelated accounts. The read-only `/auth/session` probe (polled on every page load) has its own generous limit (`throttle:60,1`) so it never consumes the credential bucket. Intake is throttled per user (`throttle:intake`); testimony submission per user (`throttle:testimony`).
 
 | Method | Path | Purpose |
 |--------|------|---------|

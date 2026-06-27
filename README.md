@@ -680,8 +680,9 @@ lasting keepsake. Endpoints: `POST /api/history/{id}/journal` (async, returns a
 `GET/DELETE /api/journal/{id}`. Pinning is capped at 20 per user.
 
 **Frontend.** `HistorySidebar.vue` (resizable/collapsible rail, search, pinned + date
-groups, per-type icons 📖🙏🎵⛪💬📚, transcript overlay with rename/pin/share/export/
-journal/delete, mobile bottom-drawer), `PastorChat.vue` (`#pastor`), and
+groups, per-type icons 📖🙏🎵⛪💬📚, **🗄 View archived toggle** that lists archived
+sessions with a ♻ Restore action, transcript overlay with rename/pin/share/export/
+journal/archive/delete, mobile bottom-drawer), `PastorChat.vue` (`#pastor`), and
 `SpiritualJourney.vue` (`#journey` stats + streak + timeline + 📔 journal entries).
 Account settings gains the spiritual-profile fields. Rebuild with `npm run build` in
 `frontend/`. *Note:* the **folders / branching / message-body search / church-analytics**

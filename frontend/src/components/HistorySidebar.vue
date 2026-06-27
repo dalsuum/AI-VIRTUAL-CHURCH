@@ -27,6 +27,7 @@ const searching = ref(false);
 const searchResults = ref(null);   // null = not searching
 const detail = ref(null);          // open transcript
 const flash = ref("");
+const showArchived = ref(false);   // toggle: active list vs archived list
 
 const GROUP_ORDER = ["Today", "Yesterday", "Previous 7 Days", "Previous 30 Days", "Older"];
 const orderedGroups = computed(() =>
@@ -39,8 +40,10 @@ async function load(reset = true) {
   if (!props.authed) return;
   loading.value = true;
   try {
-    const params = reset ? "" : `?cursor=${encodeURIComponent(nextCursor.value)}`;
-    const res = await api.history(params);
+    const parts = [];
+    if (showArchived.value) parts.push("archived=true");
+    if (!reset && nextCursor.value) parts.push(`cursor=${encodeURIComponent(nextCursor.value)}`);
+    const res = await api.history(parts.length ? `?${parts.join("&")}` : "");
     if (reset) {
       pinned.value = res.pinned || [];
       groups.value = res.groups || {};
@@ -112,8 +115,22 @@ async function toggleFavorite(item) {
 
 async function archive(item) {
   await api.historyUpdate(item.id, { archived: true });
+  detail.value = null;
   await load(true);
   flash.value = "Archived.";
+}
+
+async function restore(item) {
+  await api.historyUpdate(item.id, { archived: false });
+  detail.value = null;
+  await load(true);
+  flash.value = "Restored.";
+}
+
+function toggleArchived() {
+  showArchived.value = !showArchived.value;
+  clearSearch();
+  load(true);
 }
 
 async function remove(item) {
@@ -172,6 +189,10 @@ defineExpose({ reload: () => load(true) });
 
       <p v-if="flash" class="hr-flash" @click="flash = ''">{{ flash }}</p>
 
+      <button class="hr-toggle" @click="toggleArchived">
+        {{ showArchived ? "← Back to active" : "🗄 View archived" }}
+      </button>
+
       <!-- Search results -->
       <div v-if="searchResults" class="hr-section">
         <h4>Results ({{ searchResults.length }})</h4>
@@ -184,7 +205,7 @@ defineExpose({ reload: () => load(true) });
 
       <!-- Normal grouped list -->
       <template v-else>
-        <div v-if="pinned.length" class="hr-section">
+        <div v-if="pinned.length && !showArchived" class="hr-section">
           <h4>📌 Pinned</h4>
           <button v-for="it in pinned" :key="it.id" class="hr-item" @click="openItem(it)">
             <span class="hr-tt">{{ it.title }}</span>
@@ -203,7 +224,7 @@ defineExpose({ reload: () => load(true) });
           {{ loading ? "Loading…" : "Load more" }}
         </button>
         <p v-else-if="!loading && !pinned.length && !orderedGroups.length" class="hr-dim">
-          No sessions yet. Start a Bible Study, Worship, or Pastor Chat.
+          {{ showArchived ? "No archived sessions." : "No sessions yet. Start a Bible Study, Worship, or Pastor Chat." }}
         </p>
       </template>
     </div>
@@ -227,7 +248,8 @@ defineExpose({ reload: () => load(true) });
           <button @click="exportItem(detail, 'pdf')">PDF</button>
           <button @click="exportItem(detail, 'docx')">DOCX</button>
           <button @click="exportItem(detail, 'json')">JSON</button>
-          <button @click="archive(detail)">Archive</button>
+          <button v-if="detail.archived" @click="restore(detail)">♻ Restore</button>
+          <button v-else @click="archive(detail)">Archive</button>
           <button class="danger" @click="remove(detail)">Delete</button>
         </div>
         <p v-if="detail.summary" class="hr-summary">{{ detail.summary }}</p>
@@ -265,6 +287,9 @@ defineExpose({ reload: () => load(true) });
   background: var(--surface-2); color: var(--text); }
 .hr-search input::placeholder { color: var(--text-faint); }
 .hr-mini { background: none; border: 1px solid var(--border); border-radius: 6px; cursor: pointer; padding: 2px 7px; color: var(--text); }
+.hr-toggle { width: 100%; padding: 5px; margin-bottom: 8px; border: 1px solid var(--border);
+  border-radius: 8px; background: none; cursor: pointer; color: var(--text); font-size: 12px; }
+.hr-toggle:hover { background: var(--surface-3); }
 .hr-section { margin-bottom: 12px; }
 .hr-section h4 { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; opacity: .6; margin: 8px 0 4px; }
 .hr-item { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left; padding: 7px 8px;

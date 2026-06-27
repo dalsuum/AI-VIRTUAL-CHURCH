@@ -18,6 +18,8 @@ from __future__ import annotations
 import json
 import os
 
+import requests
+
 # Reuse the OpenRouter client + HMAC-signed POST helper (single source of truth).
 from plugins.bible_study.driver import OpenRouterLLM, _signed_post
 
@@ -28,6 +30,43 @@ _LANG_NAME = {
     "en": "English", "my": "Burmese (Myanmar)", "td": "Tedim (Zolai)",
     "cnh": "Hakha Chin", "cfm": "Falam Chin", "lus": "Mizo",
 }
+
+# Low-resource languages with a native local model (FastAPI on aivc-tedim-api, :8001).
+# These models are fine-tuned for native prose; we try them first and fall back to the
+# cloud LLM when they 502 (degenerate output) or are unreachable. code -> URL path prefix.
+_LOCAL_LLM_BASE = os.getenv("LOCAL_LLM_BASE_URL", "http://127.0.0.1:8001")
+_LOCAL_LANG_PATH = {"td": "tedim", "cfm": "falam", "cnh": "hakha", "lus": "mizo"}
+
+
+def _local_pastor_reply(language: str, system: str, messages: list) -> str | None:
+    """Generate a pastoral reply from the native local model, or None to fall back.
+
+    The local endpoints take a single {prompt, system} and self-validate, returning 502
+    when their output is degenerate — in which case (or on any error) we return None so
+    the caller uses the cloud LLM instead.
+    """
+    path = _LOCAL_LANG_PATH.get(language)
+    if not path:
+        return None
+    convo = "\n".join(
+        f"{'Pastor' if m['role'] == 'assistant' else 'Worshipper'}: {m['content']}"
+        for m in messages if m.get("content")
+    )
+    prompt = f"{convo}\nPastor:" if convo else "Pastor:"
+    try:
+        r = requests.post(
+            f"{_LOCAL_LLM_BASE}/{path}/generate",
+            json={"prompt": prompt, "system": system},
+            timeout=60,
+        )
+        if r.status_code != 200:
+            print(f"[history] local {path} model returned {r.status_code}; cloud fallback", flush=True)
+            return None
+        text = (r.json().get("text") or "").strip()
+        return text or None
+    except (requests.exceptions.RequestException, ValueError) as exc:
+        print(f"[history] local {path} model unreachable ({exc}); cloud fallback", flush=True)
+        return None
 
 
 def _pastor_system(language: str, memory: list) -> str:
@@ -95,14 +134,21 @@ def _run_pastor_reply(job: dict, llm: OpenRouterLLM) -> None:
         language = detected = _detect_language(first_user, llm)
 
     system = _pastor_system(language, job.get("memory") or [])
-    text, usage = llm.complete(
-        system=system, messages=messages, temperature=0.7, max_tokens=700, role="pastor"
-    )
+
+    # Low-resource languages: prefer the native local model, fall back to the cloud LLM.
+    reply = _local_pastor_reply(language, system, messages)
+    token_usage = 0
+    if reply is None:
+        reply, usage = llm.complete(
+            system=system, messages=messages, temperature=0.7, max_tokens=700, role="pastor"
+        )
+        token_usage = int(usage.get("total_tokens", 0) or 0)
+
     _signed_post(_HISTORY_WEBHOOK, {
         "mode": "pastor_reply",
         "session_id": job["session_id"],
-        "reply": text.strip(),
-        "token_usage": int(usage.get("total_tokens", 0) or 0),
+        "reply": reply.strip(),
+        "token_usage": token_usage,
         "detected_language": detected,
     })
 

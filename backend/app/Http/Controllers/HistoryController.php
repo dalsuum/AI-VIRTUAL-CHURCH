@@ -104,6 +104,20 @@ class HistoryController extends Controller
     }
 
     /**
+     * (Re)generate the session's 2–5 sentence summary on demand — used when a worshipper
+     * reopens a past chat-spine session that never got an auto-summary. Reuses the same
+     * worker mode (title_summary) that fills `summary` after the first few turns; the
+     * result lands via /internal/history-callback. Async: returns immediately.
+     */
+    public function summarize(Request $request, string $id): JsonResponse
+    {
+        $session = $this->findOwned($request, $id);
+        app(\App\Services\HistoryTitleService::class)->enqueue($session);
+
+        return response()->json(['ok' => true], Response::HTTP_ACCEPTED);
+    }
+
+    /**
      * Fork a session at a node into a new branch-session (SessionStateStore graph).
      * Defaults to the active node. The new session shares root/parent lineage; the
      * caller continues the conversation on the child without touching the parent.

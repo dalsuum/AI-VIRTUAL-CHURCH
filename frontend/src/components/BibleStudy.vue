@@ -45,6 +45,9 @@ const session = ref(null);
 const bubbles = ref([]);            // { turn, persona_id, name, role, text, refs:[] }
 const notice = ref("");
 const restored = ref(false);        // viewing a past session loaded from history (read-only)
+const restoredChatId = ref(null);   // chat-spine session id, for on-demand summary
+const recap = ref("");              // plain-text summary of a restored chat-spine study
+const summarizing = ref(false);
 const inputOpen = ref(false);
 const followUp = ref("");
 const composerInput = ref(null);
@@ -134,6 +137,8 @@ async function restore(chatId) {
       // Chat-spine study (AI-platform /v1/chat/study): turns are on the session graph.
       session.value = { id: s.id, topic: s.title };
       form.question = s.title || "";
+      restoredChatId.value = s.id;
+      recap.value = s.summary || "";
       bubbles.value = (s.messages || []).map((m, i) => ({
         turn: i,
         persona_id: null,
@@ -146,6 +151,26 @@ async function restore(chatId) {
     phase.value = "discussion";
   } catch {
     error.value = "Could not open that study session.";
+  }
+}
+
+// Generate a summary for a reopened chat-spine study, then poll until the worker
+// fills it (lands via the history-callback onto chat_sessions.summary).
+async function summarizeRestored() {
+  if (!restoredChatId.value || summarizing.value) return;
+  summarizing.value = true;
+  try {
+    await api.historySummarize(restoredChatId.value);
+    for (let i = 0; i < 15 && !recap.value; i++) {
+      await new Promise((r) => setTimeout(r, 2000));
+      const { session: s } = await api.historyShow(restoredChatId.value);
+      if (s.summary) recap.value = s.summary;
+    }
+    if (!recap.value) notice.value = "Still summarizing… check back shortly.";
+  } catch {
+    error.value = "Could not generate a summary.";
+  } finally {
+    summarizing.value = false;
   }
 }
 
@@ -460,6 +485,14 @@ function goHome() { window.location.hash = ""; }
         </article>
       </div>
 
+      <div v-if="restored && restoredChatId" class="recap">
+        <h3>📝 Summary</h3>
+        <p v-if="recap">{{ recap }}</p>
+        <button v-else class="primary" :disabled="summarizing" @click="summarizeRestored">
+          {{ summarizing ? "Summarizing…" : "Generate Summary" }}
+        </button>
+      </div>
+
       <div v-if="inputOpen" class="composer">
         <textarea
           ref="composerInput"
@@ -590,6 +623,9 @@ function goHome() { window.location.hash = ""; }
 .verse-card { background: var(--primary-soft); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0.2rem 0.55rem; font-size: 0.9em; }
 .verse-card em { color: var(--text-muted); }
 
+.recap { margin-top: 1rem; padding: 0.9rem 1rem; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-md, 12px); }
+.recap h3 { margin: 0 0 0.5rem; font-size: 1rem; }
+.recap p { margin: 0; line-height: 1.55; white-space: pre-wrap; }
 .composer { display: flex; align-items: flex-end; gap: 0.5rem; margin-top: 0.9rem; position: sticky; bottom: 0; background: var(--bg); padding-top: 0.5rem; }
 .composer textarea { flex: 1; padding: 0.7rem 0.85rem; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-md, 12px); font: inherit; line-height: 1.45; resize: none; min-height: 2.75rem; max-height: 11rem; overflow-y: auto; }
 .composer textarea:focus { outline: none; border-color: var(--accent, #3b82f6); }

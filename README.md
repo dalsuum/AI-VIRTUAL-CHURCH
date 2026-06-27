@@ -135,6 +135,13 @@ Controller → ChatOrchestrator
   → inference.llm → guardrails.post → persistence.write`), persisted by correlation id
   and materialised (never re-run) at `GET /api/v1/chat/debug/{correlationId}` (staff only).
 
+**Security gate — multi-tenant knowledge:** corpora today are SHARED and read-only (bible,
+sermon), so there is no tenant boundary to cross. **Private / per-church corpora MUST NOT be
+enabled until tenant-scoped vector filtering is enforced on the retrieval path** (the tenant
+filter made non-optional so an unscoped query returns zero cross-tenant rows). The invariant
+is pinned by `tests/Unit/Knowledge/TenantIsolationTest.php` (one passing isolation test + one
+skipped gate test to unskip when the feature lands).
+
 **First end-to-end slice:** `POST /api/v1/chat/study` (Bible Study capability) runs the
 full pipeline; the controller depends only on `ChatOrchestrator`. Ingestion is CLI/worker
 side via `php artisan knowledge:ingest {collection} {file} --chunker=bible|text`.
@@ -646,6 +653,16 @@ opt-in**. Ownership is validated on every request; deletes/shares are audit-logg
 `/internal/history-callback`) — the same Redis → worker → signed-webhook pattern as
 Bible Study. When the worshipper opts in, the pastor may reference prior sessions
 ("Last week we studied Romans 8…").
+
+**Reply language** is a per-session property. The chat header carries a language picker
+(Auto Detect · English · မြန်မာ · Tedim · Lai Hakha · Falam · Mizo) that defaults to the
+worshipper's saved `fav_language` and locks once the conversation starts — switch
+languages by starting a new chat. The chosen code travels start → `PastorChatPipeline` →
+`PastorReplyDispatcher` → `driver.py`, which instructs the model to *reply ONLY in* that
+language. **Auto Detect** sends `auto`; on the first turn the worker classifies the
+worshipper's message into a supported code, replies in it, and returns `detected_language`
+so the callback locks it onto the session (every follow-up then dispatches the concrete
+code, never `auto`).
 
 **Spiritual Journal.** From any session, **Save to Journal** asks the worker to distill
 an AI-written reflective entry (title + scripture + insight + prayer + reflection),

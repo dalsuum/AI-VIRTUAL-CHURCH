@@ -152,4 +152,44 @@ class HistoryTest extends TestCase
             'id' => $me->id, 'fav_language' => 'td', 'ai_memory_enabled' => false,
         ]);
     }
+
+    private function postHistoryCallback(array $payload): \Illuminate\Testing\TestResponse
+    {
+        config(['services.worker.secret' => str_repeat('k', 48)]);
+        $body = json_encode($payload);
+        $ts = (string) time();
+        $sig = hash_hmac('sha256', $ts . '.' . $body, config('services.worker.secret'));
+
+        return $this->call('POST', '/api/internal/history-callback', [], [], [], [
+            'CONTENT_TYPE'            => 'application/json',
+            'HTTP_X_WORKER_TIMESTAMP' => $ts,
+            'HTTP_X_WORKER_SIGNATURE' => $sig,
+        ], $body);
+    }
+
+    /** Auto Detect: the worker-resolved language is locked onto an 'auto' session. */
+    public function test_pastor_reply_callback_locks_detected_language_on_auto_session(): void
+    {
+        $session = $this->makeSession($this->makeUser(), ['language' => 'auto']);
+
+        $this->postHistoryCallback([
+            'mode' => 'pastor_reply', 'session_id' => (string) $session->id,
+            'detected_language' => 'td',
+        ])->assertOk();
+
+        $this->assertSame('td', $session->fresh()->language);
+    }
+
+    /** A session already locked to a concrete language is never overwritten by a later detection. */
+    public function test_pastor_reply_callback_does_not_overwrite_concrete_language(): void
+    {
+        $session = $this->makeSession($this->makeUser(), ['language' => 'en']);
+
+        $this->postHistoryCallback([
+            'mode' => 'pastor_reply', 'session_id' => (string) $session->id,
+            'detected_language' => 'td',
+        ])->assertOk();
+
+        $this->assertSame('en', $session->fresh()->language);
+    }
 }

@@ -319,6 +319,7 @@ class WebhookController extends Controller
             'tags'             => ['nullable', 'array'],
             'tags.*'           => ['string', 'max:40'],
             'token_usage'      => ['nullable', 'integer'],
+            'detected_language' => ['nullable', 'string', 'in:en,my,td,cnh,cfm,lus'],
         ]);
 
         // Journal fills an entry by its own id, not a chat session.
@@ -332,6 +333,12 @@ class WebhookController extends Controller
         }
 
         if ($data['mode'] === 'pastor_reply') {
+            // Auto-detect: lock the worker-resolved language onto the session so every
+            // follow-up turn is dispatched with the concrete code (not 'auto' again).
+            if (! empty($data['detected_language'])
+                && in_array($session->language, [null, '', 'auto'], true)) {
+                $session->forceFill(['language' => $data['detected_language']])->save();
+            }
             $reply = trim((string) ($data['reply'] ?? ''));
             $store = app(\App\Services\SessionState\SessionStateStore::class);
             if ($reply !== '') {

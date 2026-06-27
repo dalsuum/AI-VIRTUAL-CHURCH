@@ -14,6 +14,20 @@ const error = ref("");
 const scroller = ref(null);
 let poll = null;
 
+// Reply language — locked once the session starts (it is a session property server-side;
+// switch languages by starting a new chat). "auto" lets the worker detect from the first
+// message. Codes mirror the worker's supported set (driver.py _LANG_NAME).
+const LANGUAGES = [
+  { code: "auto", label: "Auto Detect" },
+  { code: "en", label: "English" },
+  { code: "my", label: "မြန်မာ" },
+  { code: "td", label: "Tedim" },
+  { code: "cnh", label: "Lai Hakha" },
+  { code: "cfm", label: "Falam" },
+  { code: "lus", label: "Mizo" },
+];
+const language = ref("en");
+
 function sessionFromHash() {
   const m = window.location.hash.match(/session=([0-9a-f-]+)/i);
   return m ? m[1] : null;
@@ -65,7 +79,7 @@ async function send() {
   try {
     if (!sessionId.value) {
       await api.ensureSession();
-      const res = await api.pastorStart({ message: text });
+      const res = await api.pastorStart({ message: text, language: language.value });
       sessionId.value = res.session.id;
       // Reflect the session id in the URL so a refresh resumes it.
       history.replaceState(null, "", `#pastor?session=${sessionId.value}`);
@@ -81,6 +95,9 @@ async function send() {
 
 onMounted(async () => {
   await api.ensureSession().catch(() => {});
+  // Default the picker to the worshipper's saved preference when one is set.
+  const fav = await api.me().then((r) => r?.user?.fav_language).catch(() => null);
+  if (fav && LANGUAGES.some((l) => l.code === fav)) language.value = fav;
   const id = sessionFromHash();
   if (id) hydrate(id);
 });
@@ -92,6 +109,13 @@ onBeforeUnmount(() => clearInterval(poll));
     <header class="pastor-head">
       <h2>💬 AI Pastor Chat</h2>
       <p>A caring, Scripture-grounded companion. Your conversation is saved to your journal.</p>
+      <label class="pastor-lang">
+        <span>Language</span>
+        <select v-model="language" :disabled="!!sessionId"
+          :title="sessionId ? 'Start a new chat to change language' : ''">
+          <option v-for="l in LANGUAGES" :key="l.code" :value="l.code">{{ l.label }}</option>
+        </select>
+      </label>
     </header>
 
     <div ref="scroller" class="pastor-thread">
@@ -119,6 +143,10 @@ onBeforeUnmount(() => clearInterval(poll));
 .pastor { max-width: 760px; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; height: 100%; }
 .pastor-head h2 { margin: 0; }
 .pastor-head p { opacity: .7; margin: 4px 0 12px; }
+.pastor-lang { display: inline-flex; align-items: center; gap: 8px; margin-bottom: 12px; font-size: 13px; }
+.pastor-lang span { opacity: .7; }
+.pastor-lang select { padding: 5px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); }
+.pastor-lang select:disabled { opacity: .6; cursor: not-allowed; }
 .pastor-thread { flex: 1; overflow-y: auto; min-height: 320px; padding: 8px;
   border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--text); }
 .pastor-empty { opacity: .6; text-align: center; margin-top: 40px; }

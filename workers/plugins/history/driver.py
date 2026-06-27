@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 
 import requests
 
@@ -54,10 +55,18 @@ def _local_pastor_reply(language: str, system: str, messages: list) -> str | Non
     )
     prompt = f"{convo}\nPastor:" if convo else "Pastor:"
 
+    # ms is the FULL local round-trip (request start → response or error) on EVERY exit
+    # path, so success and all fallback reasons are latency-comparable and the dataset
+    # isn't biased toward fast paths. Aggregate median/P95 ms by lang and by reason.
+    started = time.monotonic()
+
+    def _elapsed_ms() -> int:
+        return int((time.monotonic() - started) * 1000)
+
     def _fallback(reason: str) -> None:
         # Structured reason aids production diagnostics: http_<code> (the service 502s on
         # failed Tedim-marker validation), empty (200 but no usable text), network (down).
-        print(f"[history] pastor local fallback reason={reason} lang={language} path={path}", flush=True)
+        print(f"[history] pastor local fallback reason={reason} lang={language} path={path} ms={_elapsed_ms()}", flush=True)
         return None
 
     try:
@@ -73,7 +82,7 @@ def _local_pastor_reply(language: str, system: str, messages: list) -> str | Non
             return _fallback("empty")
         # Symmetric with the fallback line so the success-vs-fallback distribution is
         # fully countable from logs alone (no silent success path).
-        print(f"[history] pastor local success lang={language} path={path}", flush=True)
+        print(f"[history] pastor local success lang={language} path={path} ms={_elapsed_ms()}", flush=True)
         return text
     except (requests.exceptions.RequestException, ValueError) as exc:
         print(f"[history] local {path} model error: {exc}", flush=True)

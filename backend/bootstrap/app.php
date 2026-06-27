@@ -52,4 +52,9 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->render(function (\App\Domains\Invitations\Exceptions\InvitationException $e, $request) {
             return response()->json(['message' => $e->getMessage()], $e->status);
         });
+
+        // Illegal reading action (enrolling while another plan is active, no active plan).
+        $exceptions->render(function (\App\Domains\Bible\Exceptions\ReadingException $e, $request) {
+            return response()->json(['message' => $e->getMessage()], $e->status);
+        });
     })->create();

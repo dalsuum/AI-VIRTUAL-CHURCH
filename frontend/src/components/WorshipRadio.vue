@@ -60,6 +60,17 @@ onMounted(async () => {
   } catch {
     error.value = "Could not load moods.";
   }
+  // Reuse a saved worship session: prefill mood + language from the hash and
+  // auto-start. A stored mood that matches a chip key fills the chip; anything
+  // else is treated as the worshipper's own free-text mood.
+  const q = new URLSearchParams(window.location.hash.split("?")[1] || "");
+  const mood = q.get("mood");
+  if (mood) {
+    language.value = q.get("language") || language.value;
+    if (moods.value.some((m) => m.key === mood)) selectedMood.value = mood;
+    else freeText.value = mood;
+    start();
+  }
 });
 
 onUnmounted(() => {

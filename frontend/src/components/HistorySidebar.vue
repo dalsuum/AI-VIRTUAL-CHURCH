@@ -88,10 +88,11 @@ async function openItem(item) {
 
 function resume(item) {
   // Pastor chats resume interactively; others open their module page.
+  const moodQ = item.mood ? `?mood=${encodeURIComponent(item.mood)}&language=${encodeURIComponent(item.language || "en")}` : "";
   const routes = {
     pastor: `#pastor?session=${item.id}`,
     bible_study: "#bible-study",
-    music: "#worship",
+    music: `#worship${moodQ}`,
     service: "#account",
   };
   window.location.hash = routes[item.type || item.session_type] || "#account";

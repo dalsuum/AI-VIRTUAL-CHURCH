@@ -145,6 +145,31 @@ class MusicRecommendTest extends TestCase
         $this->assertEmpty(array_intersect($excluded, $returned));
     }
 
+    public function test_empty_catalog_language_falls_back_to_broad_youtube_query(): void
+    {
+        // Zolai catalogue is empty and the narrow native query returns nothing —
+        // discovery must broaden to a proven term, persist the hits, and serve
+        // them instead of reporting "no songs". Mock YouTube so no network is hit.
+        $yt = \Mockery::mock(\App\Services\YoutubeSongSearchService::class);
+        $yt->shouldReceive('isConfigured')->andReturn(true);
+        $yt->shouldReceive('search')->andReturnUsing(function (string $query) {
+            // Narrow mood-specific query finds nothing; the broad fallback does.
+            if (! str_contains(mb_strtolower($query), 'zomi worship song')) {
+                return [];
+            }
+            return [[
+                'video_id' => 'aaaaaaaaaaa', 'url' => 'https://www.youtube.com/watch?v=aaaaaaaaaaa',
+                'title' => 'Zomi Worship', 'channel' => 'Zomi Worship Team', 'thumbnail' => null,
+            ]];
+        });
+        $this->app->instance(\App\Services\YoutubeSongSearchService::class, $yt);
+
+        $playlist = $this->postJson('/api/music/recommend', ['language' => 'td', 'mood' => 'Peace'])->json('playlist');
+
+        $this->assertNotEmpty($playlist, 'broad fallback query backfilled the empty Zolai catalogue');
+        $this->assertSame(['td'], array_values(array_unique(array_column($playlist, 'language'))));
+    }
+
     public function test_invalid_language_is_rejected(): void
     {
         $this->postJson('/api/music/recommend', [

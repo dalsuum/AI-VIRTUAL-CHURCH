@@ -37,6 +37,20 @@ class MusicRecommendationService
         'td' => 'Tedim Zolai gospel worship song Pasian la',
     ];
 
+    /**
+     * Broad, proven fallback queries per language, tried in order when the
+     * mood-specific discovery query returns nothing. The native hint above is
+     * deliberately narrow ("Lungmuanna rest Tedim Zolai gospel worship song")
+     * and yields zero hits for sparse-catalogue languages like Zolai; without a
+     * broadening step an empty catalogue would stop the radio. These terms are
+     * the ones that actually surface uploads on YouTube — keep them general.
+     */
+    private const LANGUAGE_FALLBACK_QUERIES = [
+        'en' => ['Christian worship song', 'praise and worship'],
+        'my' => ['Myanmar worship song', 'Burmese gospel song', 'Myanmar Christian song'],
+        'td' => ['Zomi worship song', 'Tedim worship song', 'Pasian la Zomi'],
+    ];
+
     public function __construct(
         private MoodExpansionService $moods,
         private YoutubeSongSearchService $youtube,
@@ -224,8 +238,22 @@ class MusicRecommendationService
 
         \Illuminate\Support\Facades\Cache::put($cacheKey, true, $ttl);
 
+        // Try the mood-specific query first, then progressively broader proven
+        // terms, stopping at the first that returns embeddable hits. This is the
+        // "expand keywords and search again" fallback: without it, a sparse
+        // catalogue (e.g. Zolai) plus an over-specific native query yields zero
+        // results and the radio reports "no songs" despite music being findable.
+        $results = [];
         try {
-            $results = $this->youtube->search($this->discoveryQuery($language, $mood, $themes), 8);
+            foreach ($this->discoveryQueries($language, $mood, $themes) as $query) {
+                if ($query === '') {
+                    continue;
+                }
+                $results = $this->youtube->search($query, 8);
+                if ($results !== []) {
+                    break;
+                }
+            }
         } catch (\Throwable $e) {
             \Illuminate\Support\Facades\Log::warning('Worship YouTube discovery failed', [
                 'error' => $e->getMessage(), 'language' => $language, 'mood' => $mood,
@@ -283,8 +311,13 @@ class MusicRecommendationService
         return true;
     }
 
-    /** Build the YouTube search query for discovery from mood + top theme + language. */
-    private function discoveryQuery(string $language, string $mood, array $themes): string
+    /**
+     * Ordered specific→broad YouTube queries for discovery. The first is the
+     * mood-specific native query; the rest are the language's proven broad
+     * fallbacks. maybeDiscover() walks the list until one returns hits, so a
+     * sparse catalogue still surfaces worship music instead of nothing.
+     */
+    private function discoveryQueries(string $language, string $mood, array $themes): array
     {
         $topTheme = '';
         foreach ($themes as $t) {
@@ -301,7 +334,12 @@ class MusicRecommendationService
         // worshipper typed is already in their language and passes through as-is.
         $nativeMood = $this->moods->label($mood, $language);
 
-        return trim(sprintf('%s %s %s', trim($nativeMood), $topTheme, $hint));
+        $specific = trim(sprintf('%s %s %s', trim($nativeMood), $topTheme, $hint));
+
+        return array_values(array_unique(array_merge(
+            [$specific],
+            self::LANGUAGE_FALLBACK_QUERIES[$language] ?? ['worship song'],
+        )));
     }
 
     /** Clamp the requested size to the admin-configured [min, max] window. */

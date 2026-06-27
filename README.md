@@ -1071,8 +1071,12 @@ decides whether it blocks or allows:
 
 | Type | Effect |
 |------|--------|
-| `block` | A title/channel match **rejects** the candidate (default policy). |
-| `allow` | A title/channel match **keeps** the candidate even if a block keyword also matches — **allow wins over block**. Use it for trusted channels, artists, or ministries. |
+| `block` | A match **rejects** the candidate (default policy). |
+| `allow` | A match **keeps** the candidate even if a block keyword also matches — **allow wins over block**. Use it for trusted channels, artists, or ministries. |
+
+A filter term is matched against the video **title**, **channel name**, **channel id**, and the
+**video/channel URLs**. So a `block` term can be a word, a channel name, a channel id, or a pasted
+YouTube channel/video URL — any hit drops the whole result before it reaches the worshipper.
 
 | Scope | Worship/music search | Sermon search |
 |-------|:--------------------:|:-------------:|
@@ -1092,9 +1096,12 @@ with the legacy flat `content_filter_keywords` (block keywords only) for backwar
   surfaces `content_filter_music` / `content_filter_sermon` (block) and
   `content_filter_allow_music` / `content_filter_allow_sermon` (allow).
 - **Enforcement:** [youtube_strategy.py](workers/strategies/youtube_strategy.py) fetches the
-  scoped block + allow lists (cached 5 min, fails open). A candidate whose title **or** channel
-  matches a block keyword is rejected **unless** it also matches an allow keyword — applied as an
-  extra gate on top of the hardcoded per-language reject lists.
+  scoped block + allow lists (cached 5 min, fails open). A candidate whose title, channel name,
+  channel id, **or** video/channel URL matches a block keyword is rejected **unless** it also
+  matches an allow keyword — applied as an extra gate on top of the hardcoded per-language reject
+  lists. The same matching is mirrored in
+  [YoutubeSongSearchService.php](backend/app/Services/YoutubeSongSearchService.php) (admin Worship
+  Radio link search).
 
 Changes take effect within ~5 minutes for running workers (the cache TTL).
 

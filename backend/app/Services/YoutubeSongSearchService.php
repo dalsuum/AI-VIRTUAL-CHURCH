@@ -64,7 +64,16 @@ class YoutubeSongSearchService
                 continue;
             }
             $snippet = $item['snippet'] ?? [];
-            $haystack = mb_strtolower(($snippet['title'] ?? '') . ' ' . ($snippet['channelTitle'] ?? ''));
+            $channelId = (string) ($snippet['channelId'] ?? '');
+            // Match block/allow terms against the title, channel name, channel id,
+            // and both canonical URLs so an admin can block by channel OR URL.
+            $haystack = mb_strtolower(implode(' ', array_filter([
+                $snippet['title'] ?? '',
+                $snippet['channelTitle'] ?? '',
+                $channelId,
+                "https://www.youtube.com/watch?v={$id}",
+                $channelId !== '' ? "https://www.youtube.com/channel/{$channelId}" : '',
+            ])));
 
             if ($this->isBlocked($haystack, $block, $allow)) {
                 continue;

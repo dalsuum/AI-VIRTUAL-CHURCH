@@ -49,6 +49,13 @@ class AppServiceProvider extends ServiceProvider
         // to PrivacyGate via FriendshipPolicy so block/friend-only rules live in one place.
         Gate::define('friend-interact', [\App\Domains\Friends\Policies\FriendshipPolicy::class, 'interact']);
 
+        // Invitation authorization (view/respond/cancel). Registered explicitly because
+        // the model lives under app/Domains (outside policy auto-discovery).
+        Gate::policy(
+            \App\Domains\Invitations\Models\Invitation::class,
+            \App\Domains\Invitations\Policies\InvitationPolicy::class,
+        );
+
         // Auth endpoints — keyed by IP so unauthenticated callers are also covered.
         RateLimiter::for('auth', function (Request $request) {
             return Limit::perMinute(5)->by($request->ip());

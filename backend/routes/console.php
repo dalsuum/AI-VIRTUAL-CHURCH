@@ -12,6 +12,10 @@ Artisan::command('inspire', function () {
 // running: `php artisan schedule:work` in dev, or a once-a-minute cron in prod.
 Schedule::command('services:dispatch-due')->everyMinute();
 
+// Expire stale community invitations through InvitationService's single transition
+// path (fires InvitationExpired). Idempotent; every five minutes is ample.
+Schedule::command('invitations:expire')->everyFiveMinutes()->withoutOverlapping();
+
 // Evaluate the special-Sunday window once a day (early, before traffic) so the
 // current-observance cache is warm and the active observance is logged. The
 // resolver is also consulted live at dispatch/request time, so this is a warmer,

@@ -172,6 +172,20 @@ Route::middleware(['auth:sanctum', 'account.usable'])->group(function () {
     Route::post('/friends/{user}/favorite', [\App\Http\Controllers\FriendController::class, 'favorite'])
         ->middleware(['not.blocked', 'throttle:60,1']);
 
+    // ── Invitations (polymorphic together-activities — Phase 1) ───────────────
+    // Status is mutated only by InvitationService; the controller authorizes via
+    // InvitationPolicy and delegates. {invitation} binds by UUID.
+    Route::get('/invitations',                    [\App\Http\Controllers\InvitationController::class, 'index']);
+    Route::post('/invitations',                   [\App\Http\Controllers\InvitationController::class, 'store'])
+        ->middleware('throttle:30,1');
+    Route::get('/invitations/{invitation}',       [\App\Http\Controllers\InvitationController::class, 'show']);
+    Route::post('/invitations/{invitation}/accept',  [\App\Http\Controllers\InvitationController::class, 'accept'])
+        ->middleware('throttle:60,1');
+    Route::post('/invitations/{invitation}/decline', [\App\Http\Controllers\InvitationController::class, 'decline'])
+        ->middleware('throttle:60,1');
+    Route::post('/invitations/{invitation}/cancel',  [\App\Http\Controllers\InvitationController::class, 'cancel'])
+        ->middleware('throttle:60,1');
+
     // ── Unified Conversation & Spiritual History ──────────────────────────────
     // Every route is owner-scoped inside the controller (findOwned → 404 on miss).
     Route::get('/history',                 [\App\Http\Controllers\HistoryController::class, 'index']);

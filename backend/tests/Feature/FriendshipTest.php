@@ -157,6 +157,24 @@ class FriendshipTest extends TestCase
         $this->actingAs($b, 'sanctum')->postJson("/api/friends/{$a->id}/accept")->assertStatus(409);
     }
 
+    public function test_friend_request_and_accept_deliver_in_app_notifications(): void
+    {
+        $a = $this->makeUser();
+        $b = $this->makeUser();
+
+        // Request notifies the recipient (normal priority).
+        $this->actingAs($a, 'sanctum')->postJson("/api/friends/{$b->id}/request")->assertCreated();
+        $this->assertDatabaseHas('notifications', [
+            'notifiable_id' => $b->id, 'priority' => 'normal', 'data->type' => 'friend_request',
+        ]);
+
+        // Acceptance notifies the original requester (low priority).
+        $this->actingAs($b, 'sanctum')->postJson("/api/friends/{$a->id}/accept")->assertOk();
+        $this->assertDatabaseHas('notifications', [
+            'notifiable_id' => $a->id, 'priority' => 'low', 'data->type' => 'friend_request_accepted',
+        ]);
+    }
+
     public function test_friends_list_returns_accepted_with_favorite_flag(): void
     {
         $a = $this->makeUser(['name' => 'Aaron']);

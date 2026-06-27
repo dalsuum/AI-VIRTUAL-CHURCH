@@ -637,10 +637,34 @@ analytics and AI memory subscribe to in later phases. Endpoints live under `/api
 (rate-limited; initiation routes carry `not.blocked`). Authorization for initiating contact
 flows through the `friend-interact` gate → `FriendshipPolicy` → `PrivacyGate`.
 
-Covered by `tests/Unit/PrivacyGateTest.php` (visibility truth table) and
-`tests/Feature/FriendshipTest.php` (state machine, block override, soft-delete/restore,
-one-sided favorite, PII non-leak). Invitations + the Events/Listeners pipeline,
-notifications (with priority), and presence/privacy APIs follow in PR 3–4.
+**Invitations + event pipeline (PR 3).** One **polymorphic invitation** for every
+together-activity (worship, bible reading, bible study, prayer, pastor chat, radio).
+`App\Domains\Invitations\Services\InvitationService` is the **only** component that
+mutates invitation state — every transition (`pending → accepted/declined/cancelled/
+expired`) flows through one `transition()` method, giving a single place for audit,
+expiry enforcement, session creation (later phases), event publishing and idempotency
+(re-running a completed transition is a no-op; queue retries are safe). Each invitation
+carries a **`correlation_id`** that every record it spawns (session, notifications,
+audit, analytics) reuses, so a whole workflow is traceable. A scheduled
+`invitations:expire` job sweeps stale invitations through the same transition path.
+
+The **event-driven layer** goes live here. Domain events are **past-tense facts**
+(`InvitationSent/Accepted/Declined/Cancelled/Expired`) published only by the service;
+queued, **idempotent** listeners react (registered in `CommunityEventServiceProvider`,
+since `app/Domains` is outside auto-discovery). Listeners are side-effects only — they
+never mutate domain state.
+
+Notifications use a **router layered by priority**: the domain sets a
+`NotificationPriority` (`critical/high/normal/low`) and the priority — not the calling
+code — decides channels (`CommunityNotification::via()`). Today database (in-app inbox)
++ email are wired; WebSocket/push slot into `NotificationPriority::channels()` in Phase 6
+without touching any notification. A `CommunityDatabaseChannel` persists `priority` and
+`correlation_id` on each row; listeners dedupe on those keys.
+
+Covered by `tests/Unit/PrivacyGateTest.php`, `tests/Feature/FriendshipTest.php` and
+`tests/Feature/InvitationTest.php` (transitions, authorization, idempotency, scheduled
+expiry, priority-routed notifications, listener replay-safety). Presence/privacy APIs and
+church-role-aware policies follow in PR 4.
 
 ## Unified Conversation & Spiritual History
 

@@ -46,4 +46,10 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->render(function (\App\Domains\Friends\Exceptions\FriendshipException $e, $request) {
             return response()->json(['message' => $e->getMessage()], $e->status);
         });
+
+        // Illegal invitation transition (responding to a terminal/expired invitation) or
+        // a forbidden actor. 409 state conflict / 403 authority refusal.
+        $exceptions->render(function (\App\Domains\Invitations\Exceptions\InvitationException $e, $request) {
+            return response()->json(['message' => $e->getMessage()], $e->status);
+        });
     })->create();

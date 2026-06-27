@@ -2037,6 +2037,12 @@ sudo systemctl daemon-reload
 sudo systemctl restart aivc-workers
 ```
 
+> **Frontend deploy is NOT `git push`.** `frontend/dist/` is **gitignored**, so pushing
+> source never updates the live site — nginx serves the compiled bundle directly. After any
+> change under `frontend/src/`, you must rebuild **on the box**: `cd /opt/ai-church/frontend
+> && npm run build`. Skipping this leaves users on the old bundle (missing buttons / "changes
+> not reflecting"). No nginx restart is needed; the new hashed assets are picked up on reload.
+
 The units assume `/opt/ai-church` and the `simon` user; if your app path or user differ,
 edit each unit's `WorkingDirectory` and `User`/`Group` before copying. DEPLOY.md also
 covers the deploy-time gotchas (the `REDIS_PREFIX=` trap, storage ownership for php-fpm,

@@ -146,6 +146,32 @@ Route::middleware(['auth:sanctum', 'account.usable'])->group(function () {
     // Spiritual-profile preferences (favorite language/version/pastor/goals + AI memory).
     Route::patch('/me/profile',          [AuthController::class, 'updateProfile']);
 
+    // ── Friend system (community platform — Phase 1) ──────────────────────────
+    // All actions are scoped to the authenticated user; the target is the {user}
+    // route binding. State transitions are owned by FriendshipService. Mutations are
+    // throttled; initiation routes (request/favorite) carry not.blocked so a block
+    // hides the target entirely.
+    Route::get('/friends',                  [\App\Http\Controllers\FriendController::class, 'index']);
+    Route::get('/friends/requests',         [\App\Http\Controllers\FriendController::class, 'requests']);
+    Route::post('/friends/search',          [\App\Http\Controllers\FriendController::class, 'search'])
+        ->middleware('throttle:60,1');
+    Route::post('/friends/{user}/request',  [\App\Http\Controllers\FriendController::class, 'request'])
+        ->middleware(['not.blocked', 'throttle:30,1']);
+    Route::post('/friends/{user}/accept',   [\App\Http\Controllers\FriendController::class, 'accept'])
+        ->middleware('throttle:60,1');
+    Route::post('/friends/{user}/reject',   [\App\Http\Controllers\FriendController::class, 'reject'])
+        ->middleware('throttle:60,1');
+    Route::post('/friends/{user}/cancel',   [\App\Http\Controllers\FriendController::class, 'cancel'])
+        ->middleware('throttle:60,1');
+    Route::delete('/friends/{user}',        [\App\Http\Controllers\FriendController::class, 'remove'])
+        ->middleware('throttle:60,1');
+    Route::post('/friends/{user}/block',    [\App\Http\Controllers\FriendController::class, 'block'])
+        ->middleware('throttle:30,1');
+    Route::post('/friends/{user}/unblock',  [\App\Http\Controllers\FriendController::class, 'unblock'])
+        ->middleware('throttle:30,1');
+    Route::post('/friends/{user}/favorite', [\App\Http\Controllers\FriendController::class, 'favorite'])
+        ->middleware(['not.blocked', 'throttle:60,1']);
+
     // ── Unified Conversation & Spiritual History ──────────────────────────────
     // Every route is owner-scoped inside the controller (findOwned → 404 on miss).
     Route::get('/history',                 [\App\Http\Controllers\HistoryController::class, 'index']);

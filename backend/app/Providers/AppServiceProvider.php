@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Stripe\StripeClient;
@@ -43,6 +44,10 @@ class AppServiceProvider extends ServiceProvider
                 logger()->warning('Billing partially configured: STRIPE_SECRET and STRIPE_PREMIUM_PRICE_ID must both be set; premium checkout is disabled until then.');
             }
         }
+
+        // Community: may the actor initiate contact with the target member? Delegates
+        // to PrivacyGate via FriendshipPolicy so block/friend-only rules live in one place.
+        Gate::define('friend-interact', [\App\Domains\Friends\Policies\FriendshipPolicy::class, 'interact']);
 
         // Auth endpoints — keyed by IP so unauthenticated callers are also covered.
         RateLimiter::for('auth', function (Request $request) {

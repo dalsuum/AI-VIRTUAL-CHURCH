@@ -24,6 +24,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'account.usable' => \App\Http\Middleware\EnsureAccountIsUsable::class,
             'guest.limit' => \App\Http\Middleware\GuestRateLimiter::class,
             'tokens'      => \App\Http\Middleware\RequireTokens::class,
+            'not.blocked' => \App\Http\Middleware\EnsureNotBlocked::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
@@ -37,5 +38,12 @@ return Application::configure(basePath: dirname(__DIR__))
                 'balance'     => $e->available,
                 'upgrade_url' => '/account',
             ], 402);
+        });
+
+        // Illegal friendship state transition (e.g. accepting a non-existent request,
+        // friending a blocked user). The exception carries the right status: 409 for a
+        // state conflict, 403 for a block/privacy refusal.
+        $exceptions->render(function (\App\Domains\Friends\Exceptions\FriendshipException $e, $request) {
+            return response()->json(['message' => $e->getMessage()], $e->status);
         });
     })->create();

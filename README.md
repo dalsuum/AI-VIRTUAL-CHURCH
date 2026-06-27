@@ -623,9 +623,24 @@ coexists with the existing flat `app/Services|Models|Notifications` — no repo-
   (`user_id = min`, `friend_id = max`); `Friendship::areFriends()/blockExistsBetween()` are
   the single source of truth for pair state.
 
-Covered by `tests/Unit/PrivacyGateTest.php` (visibility truth table). Friend/invitation
-workflows, notifications (with priority) and the Events/Listeners contract follow in the
-next Phase 1 slices.
+**Friend system (PR 2).** A full friendship **state machine** owned by one service,
+`App\Domains\Friends\Services\FriendshipService` — the single transition validator,
+audit point and event source. States `NONE / PENDING / ACCEPTED / BLOCKED` with
+transitions request, accept, reject, cancel, remove, block, unblock and a one-sided
+favorite. Removal/reject/cancel/unblock **soft-delete** the canonical row (audit history
+and AI memory survive; a later re-request restores the same row). A **block overrides
+every relationship**, enforced centrally by the `not.blocked` middleware (404, so a block
+can't be probed) and `PrivacyGate`. Seven **frozen domain events**
+(`FriendRequestSent/Accepted/Rejected`, `FriendRemoved`, `FriendBlocked`, `FriendUnblocked`,
+`FriendFavorited`) form the public contract that notifications, the activity feed,
+analytics and AI memory subscribe to in later phases. Endpoints live under `/api/friends/*`
+(rate-limited; initiation routes carry `not.blocked`). Authorization for initiating contact
+flows through the `friend-interact` gate → `FriendshipPolicy` → `PrivacyGate`.
+
+Covered by `tests/Unit/PrivacyGateTest.php` (visibility truth table) and
+`tests/Feature/FriendshipTest.php` (state machine, block override, soft-delete/restore,
+one-sided favorite, PII non-leak). Invitations + the Events/Listeners pipeline,
+notifications (with priority), and presence/privacy APIs follow in PR 3–4.
 
 ## Unified Conversation & Spiritual History
 

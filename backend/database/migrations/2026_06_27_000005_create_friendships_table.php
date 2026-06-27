@@ -28,6 +28,11 @@ return new class extends Migration
             $table->json('favorited_by')->nullable();
             $table->timestamp('responded_at')->nullable();
             $table->timestamps();
+            // Soft-delete instead of hard-delete: removal/reject/cancel/unblock collapse
+            // the pair to "no relationship" while preserving audit history, keeping
+            // analytics accurate and AI memory un-orphaned. The canonical row is reused
+            // (restored) on a later re-request, so the unique pair constraint still holds.
+            $table->softDeletes();
 
             $table->unique(['user_id', 'friend_id']);   // at most one row per pair
             $table->index(['friend_id', 'status']);      // reverse lookups

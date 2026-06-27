@@ -44,6 +44,7 @@ const LANG_NAMES = {
 const session = ref(null);
 const bubbles = ref([]);            // { turn, persona_id, name, role, text, refs:[] }
 const notice = ref("");
+const restored = ref(false);        // viewing a past session loaded from history (read-only)
 const inputOpen = ref(false);
 const followUp = ref("");
 const composerInput = ref(null);
@@ -104,7 +105,32 @@ onMounted(async () => {
     const res = await api.fetchActiveAds();
     ads.value = res.ads || [];
   } catch (_) { /* ignore */ }
+  // Restore a past discussion opened from the history sidebar (#bible-study?session=ID):
+  // load its transcript read-only, showing the summary when one was generated.
+  const id = new URLSearchParams(window.location.hash.split("?")[1] || "").get("session");
+  if (id) await restore(id);
 });
+
+async function restore(id) {
+  try {
+    const full = await api.studyShow(id);
+    session.value = { id: full.id, topic: full.topic };
+    form.question = full.topic || "";
+    bubbles.value = (full.messages || []).map((m) => ({
+      turn: m.turn,
+      persona_id: m.persona_id ?? null,
+      name: m.role === "user" ? "You" : (m.role === "moderator" || m.role === "synthesis" ? "Moderator" : "Pastor"),
+      role: m.role,
+      text: m.content || "",
+      refs: (m.scripture_refs || []).map((r) => ({ ref: r, translation: full.translation || "" })),
+    }));
+    restored.value = true;
+    if (full.summary) { summary.value = full.summary; phase.value = "summary"; }
+    else phase.value = "discussion";
+  } catch {
+    error.value = "Could not open that study session.";
+  }
+}
 
 onBeforeUnmount(() => stream.close());
 
@@ -327,6 +353,8 @@ function newDiscussion() {
   bubbles.value = [];
   notice.value = "";
   session.value = null;
+  restored.value = false;
+  if (window.location.hash.startsWith("#bible-study?")) window.location.hash = "#bible-study";
   phase.value = "setup";
 }
 
@@ -389,11 +417,18 @@ function goHome() { window.location.hash = ""; }
     <!-- DISCUSSION -->
     <section v-else-if="phase === 'discussion'" class="discussion">
       <div class="status">
-        <span :class="['dot', connected ? 'on' : 'off']"></span>
-        <span v-if="reconnecting">Reconnecting…</span>
-        <span v-else-if="connected">Live</span>
-        <span v-else>Connecting…</span>
-        <button class="ghost end" @click="end">End Discussion</button>
+        <template v-if="restored">
+          <span class="dot off"></span>
+          <span>Past discussion</span>
+          <button class="ghost end" @click="newDiscussion">New Study</button>
+        </template>
+        <template v-else>
+          <span :class="['dot', connected ? 'on' : 'off']"></span>
+          <span v-if="reconnecting">Reconnecting…</span>
+          <span v-else-if="connected">Live</span>
+          <span v-else>Connecting…</span>
+          <button class="ghost end" @click="end">End Discussion</button>
+        </template>
       </div>
 
       <p v-if="notice" class="notice">{{ notice }}</p>

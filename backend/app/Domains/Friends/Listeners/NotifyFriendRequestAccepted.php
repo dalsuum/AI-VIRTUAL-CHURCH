@@ -23,7 +23,7 @@ class NotifyFriendRequestAccepted extends CommunityNotifier implements ShouldQue
             return;
         }
 
-        $this->sendOnce($requester, new FriendRequestAcceptedNotification($accepter), [
+        $this->sendOnce($requester, new FriendRequestAcceptedNotification($accepter, $event->correlationId), [
             'data->type'     => 'friend_request_accepted',
             'data->actor_id' => $accepter->id,
         ]);

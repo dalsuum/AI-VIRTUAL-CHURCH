@@ -19,7 +19,7 @@ class SendFriendRequestNotification extends CommunityNotifier implements ShouldQ
             return;
         }
 
-        $this->sendOnce($target, new FriendRequestNotification($actor), [
+        $this->sendOnce($target, new FriendRequestNotification($actor, $event->correlationId), [
             'data->type'     => 'friend_request',
             'data->actor_id' => $actor->id,
         ]);

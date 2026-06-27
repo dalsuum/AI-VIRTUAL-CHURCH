@@ -9,13 +9,20 @@ use App\Models\User;
 /** "X accepted your friend request." Low priority → in-app only. */
 class FriendRequestAcceptedNotification extends CommunityNotification
 {
-    public function __construct(public readonly User $actor)
-    {
+    public function __construct(
+        public readonly User $actor,
+        private readonly ?string $correlationId = null,
+    ) {
     }
 
     public function priority(): NotificationPriority
     {
         return NotificationPriority::LOW;
+    }
+
+    public function correlationId(): ?string
+    {
+        return $this->correlationId;
     }
 
     protected function databasePayload(object $notifiable): array

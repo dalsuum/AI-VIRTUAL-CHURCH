@@ -69,7 +69,12 @@ def _local_pastor_reply(language: str, system: str, messages: list) -> str | Non
         if r.status_code != 200:
             return _fallback(f"http_{r.status_code}")
         text = (r.json().get("text") or "").strip()
-        return text or _fallback("empty")
+        if not text:
+            return _fallback("empty")
+        # Symmetric with the fallback line so the success-vs-fallback distribution is
+        # fully countable from logs alone (no silent success path).
+        print(f"[history] pastor local success lang={language} path={path}", flush=True)
+        return text
     except (requests.exceptions.RequestException, ValueError) as exc:
         print(f"[history] local {path} model error: {exc}", flush=True)
         return _fallback("network")

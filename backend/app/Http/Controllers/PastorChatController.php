@@ -74,9 +74,17 @@ class PastorChatController extends Controller
     {
         $session = $this->findOwned($request, $id);
 
-        return response()->json([
-            'messages' => $session->messages()->get(['sender', 'content', 'created_at']),
-        ]);
+        // Phase 4: messages live as message-type nodes in session_nodes (the legacy
+        // chat_messages relation was dropped) — read them through the state store.
+        $messages = app(\App\Services\SessionState\SessionStateStore::class)
+            ->messageDtos($session)
+            ->map(fn ($m) => [
+                'sender'     => $m['sender'],
+                'content'    => $m['content'],
+                'created_at' => $m['created_at'],
+            ])->values();
+
+        return response()->json(['messages' => $messages]);
     }
 
     /** Live SSE — tails the Redis events list for this session. */

@@ -84,6 +84,27 @@ class HistoryTest extends TestCase
         $this->assertDatabaseHas('chat_sessions', ['id' => $session->id, 'deleted_at' => null]);
     }
 
+    public function test_index_filters_by_archived_and_trashed(): void
+    {
+        $me = $this->makeUser();
+        $this->makeSession($me, ['title' => 'Active one']);
+        $this->makeSession($me, ['title' => 'Archived one', 'archived' => true]);
+        $deleted = $this->makeSession($me, ['title' => 'Deleted one']);
+        $deleted->delete();
+
+        $active = collect($this->actingAs($me)->getJson('/api/history')->assertOk()
+            ->json('groups'))->flatten(1)->pluck('title');
+        $this->assertEquals(['Active one'], $active->all());
+
+        $archived = collect($this->actingAs($me)->getJson('/api/history?archived=true')->assertOk()
+            ->json('groups'))->flatten(1)->pluck('title');
+        $this->assertEquals(['Archived one'], $archived->all());
+
+        $trashed = collect($this->actingAs($me)->getJson('/api/history?trashed=true')->assertOk()
+            ->json('groups'))->flatten(1)->pluck('title');
+        $this->assertEquals(['Deleted one'], $trashed->all());
+    }
+
     public function test_rename_and_pin_via_patch(): void
     {
         $me = $this->makeUser();
@@ -212,5 +233,64 @@ class HistoryTest extends TestCase
         ])->assertOk();
 
         $this->assertSame('en', $session->fresh()->language);
+    }
+
+    public function test_bulk_delete_and_archive_are_owner_scoped(): void
+    {
+        $me = $this->makeUser();
+        $a = $this->makeSession($me);
+        $b = $this->makeSession($me);
+        $intruderSession = $this->makeSession($this->makeUser());
+
+        $this->actingAs($me)
+            ->postJson('/api/history/bulk', ['action' => 'archive', 'ids' => [$a->id, $b->id, $intruderSession->id]])
+            ->assertOk()
+            ->assertJson(['affected' => 2]);   // the intruder's session is invisible to forUser()
+
+        $this->assertTrue((bool) $a->fresh()->archived);
+        $this->assertFalse((bool) $intruderSession->fresh()->archived);
+
+        $this->actingAs($me)
+            ->postJson('/api/history/bulk', ['action' => 'delete', 'ids' => [$a->id]])
+            ->assertOk();
+        $this->assertSoftDeleted('chat_sessions', ['id' => $a->id]);
+    }
+
+    public function test_bulk_untrash_restores_soft_deleted_sessions(): void
+    {
+        $me = $this->makeUser();
+        $s = $this->makeSession($me);
+        $s->delete();
+        $this->assertSoftDeleted('chat_sessions', ['id' => $s->id]);
+
+        $this->actingAs($me)
+            ->postJson('/api/history/bulk', ['action' => 'untrash', 'ids' => [$s->id]])
+            ->assertOk();
+
+        $this->assertNull($s->fresh()->deleted_at);
+    }
+
+    public function test_bulk_purge_permanently_deletes(): void
+    {
+        $me = $this->makeUser();
+        $s = $this->makeSession($me);
+        $s->delete();
+
+        $this->actingAs($me)
+            ->postJson('/api/history/bulk', ['action' => 'purge', 'ids' => [$s->id]])
+            ->assertOk();
+
+        $this->assertNull(ChatSession::withTrashed()->find($s->id));
+        $this->assertDatabaseMissing('chat_sessions', ['id' => $s->id]);
+    }
+
+    public function test_bulk_rejects_unknown_action(): void
+    {
+        $me = $this->makeUser();
+        $s = $this->makeSession($me);
+
+        $this->actingAs($me)
+            ->postJson('/api/history/bulk', ['action' => 'nuke', 'ids' => [$s->id]])
+            ->assertStatus(422);
     }
 }

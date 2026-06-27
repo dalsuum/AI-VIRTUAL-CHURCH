@@ -61,7 +61,13 @@ class MusicRecommendationService
         $candidates = WorshipTrack::query()
             ->where('active', true)
             ->when($excludeIds !== [], fn ($q) => $q->whereNotIn('id', $excludeIds))
-            ->get();
+            ->get()
+            // Re-apply the content filter at serve time: discovery only screens
+            // NEW search hits, so a channel/URL blocked after a track was already
+            // persisted would otherwise keep playing. This drops it on the next
+            // request — no purge needed.
+            ->filter(fn (WorshipTrack $t) => $this->passesContentFilter($t))
+            ->values();
 
         $maxPopularity = (int) $candidates->max('popularity') ?: 1;
 
@@ -204,7 +210,10 @@ class MusicRecommendationService
             ->count();
 
         $ttl       = max(60, (int) Setting::get('music.youtube_discovery_ttl', 21600)); // 6h default
-        $cacheKey  = 'music:yt-discover:' . $language . ':' . md5($this->lower($mood));
+        // Fold the content-filter epoch into the key so any block/allow edit
+        // invalidates every cached discovery marker and forces a fresh, filtered search.
+        $epoch     = (string) Setting::get('content_filter_epoch', '0');
+        $cacheKey  = 'music:yt-discover:' . $epoch . ':' . $language . ':' . md5($this->lower($mood));
         $searchedRecently = \Illuminate\Support\Facades\Cache::has($cacheKey);
 
         // Skip the network call only when we already searched this mood recently
@@ -247,6 +256,33 @@ class MusicRecommendationService
         }
     }
 
+    /**
+     * Whether a catalogue track survives the admin content filter. Matches the
+     * block/allow firewall used by YouTube discovery (scope 'sermon') against the
+     * track's title, artist (= channel), and URL — so blocking a channel by name,
+     * id, or URL also removes tracks saved before the block. Allow wins over block.
+     */
+    private function passesContentFilter(WorshipTrack $track): bool
+    {
+        $haystack = mb_strtolower(trim(
+            $track->title . ' ' . $track->artist . ' ' . $track->youtube_url
+        ));
+        if ($haystack === '') {
+            return true;
+        }
+        foreach (Setting::allowKeywordsForScope('sermon') as $a) {
+            if ($a !== '' && str_contains($haystack, mb_strtolower($a))) {
+                return true;
+            }
+        }
+        foreach (Setting::filterKeywordsForScope('sermon', 'block') as $b) {
+            if ($b !== '' && str_contains($haystack, mb_strtolower($b))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     /** Build the YouTube search query for discovery from mood + top theme + language. */
     private function discoveryQuery(string $language, string $mood, array $themes): string
     {
@@ -259,7 +295,13 @@ class MusicRecommendationService
         }
         $hint = self::LANGUAGE_SEARCH_HINT[$language] ?? 'worship song';
 
-        return trim(sprintf('%s %s %s', trim($mood), $topTheme, $hint));
+        // Search in the worshipper's language: a chip mood ("happy") becomes its
+        // native term ("ပျော်ရွှင်" / "Lungdam") so discovery surfaces real
+        // Burmese/Zolai worship instead of English-keyword results. Free text the
+        // worshipper typed is already in their language and passes through as-is.
+        $nativeMood = $this->moods->label($mood, $language);
+
+        return trim(sprintf('%s %s %s', trim($nativeMood), $topTheme, $hint));
     }
 
     /** Clamp the requested size to the admin-configured [min, max] window. */

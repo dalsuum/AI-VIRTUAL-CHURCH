@@ -17,6 +17,10 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import time
+
+import requests
 
 # Reuse the OpenRouter client + HMAC-signed POST helper (single source of truth).
 from plugins.bible_study.driver import OpenRouterLLM, _signed_post
@@ -28,6 +32,65 @@ _LANG_NAME = {
     "en": "English", "my": "Burmese (Myanmar)", "td": "Tedim (Zolai)",
     "cnh": "Hakha Chin", "cfm": "Falam Chin", "lus": "Mizo",
 }
+
+# Low-resource languages with a native local model (FastAPI on aivc-tedim-api, :8001).
+# These models are fine-tuned for native prose; we try them first and fall back to the
+# cloud LLM when they 502 (degenerate output) or are unreachable. code -> URL path prefix.
+_LOCAL_LLM_BASE = os.getenv("LOCAL_LLM_BASE_URL", "http://127.0.0.1:8001")
+_LOCAL_LANG_PATH = {"td": "tedim", "cfm": "falam", "cnh": "hakha", "lus": "mizo"}
+
+
+def _local_pastor_reply(language: str, system: str, messages: list) -> str | None:
+    """Generate a pastoral reply from the native local model, or None to fall back.
+
+    The local endpoints take a single {prompt, system} and self-validate, returning 502
+    when their output is degenerate — in which case (or on any error) we return None so
+    the caller uses the cloud LLM instead.
+    """
+    path = _LOCAL_LANG_PATH.get(language)
+    if not path:
+        return None
+    convo = "\n".join(
+        f"{'Pastor' if m['role'] == 'assistant' else 'Worshipper'}: {m['content']}"
+        for m in messages if m.get("content")
+    )
+    prompt = f"{convo}\nPastor:" if convo else "Pastor:"
+
+    # ms is the FULL local round-trip (request start → response or error) on EVERY exit
+    # path, so success and all fallback reasons are latency-comparable and the dataset
+    # isn't biased toward fast paths. Aggregate median/P95 ms by lang and by reason.
+    started = time.monotonic()
+
+    def _elapsed_ms() -> int:
+        return int((time.monotonic() - started) * 1000)
+
+    def _fallback(reason: str) -> None:
+        # Structured reason aids production diagnostics: http_<code> (the service 502s on
+        # failed Tedim-marker validation), empty (200 but no usable text), network (down).
+        print(f"[history] pastor local fallback reason={reason} lang={language} path={path} ms={_elapsed_ms()}", flush=True)
+        return None
+
+    try:
+        r = requests.post(
+            f"{_LOCAL_LLM_BASE}/{path}/generate",
+            json={"prompt": prompt, "system": system},
+            # Short read timeout: on a CPU-only / memory-pressured box the local
+            # model can stall well past a usable chat latency. Cap the wasted wait
+            # so we fall back to the cloud LLM fast and the reply still feels live.
+            timeout=15,
+        )
+        if r.status_code != 200:
+            return _fallback(f"http_{r.status_code}")
+        text = (r.json().get("text") or "").strip()
+        if not text:
+            return _fallback("empty")
+        # Symmetric with the fallback line so the success-vs-fallback distribution is
+        # fully countable from logs alone (no silent success path).
+        print(f"[history] pastor local success lang={language} path={path} ms={_elapsed_ms()}", flush=True)
+        return text
+    except (requests.exceptions.RequestException, ValueError) as exc:
+        print(f"[history] local {path} model error: {exc}", flush=True)
+        return _fallback("network")
 
 
 def _pastor_system(language: str, memory: list) -> str:
@@ -51,19 +114,43 @@ def _pastor_system(language: str, memory: list) -> str:
 
 
 def _detect_language(text: str, llm: OpenRouterLLM) -> str:
-    """Classify the worshipper's first message into one supported code (default en)."""
+    """Classify the worshipper's first message into one supported code (default en).
+
+    Burmese (my) is written in Myanmar script, so any Myanmar-range character is a
+    decisive signal — and, conversely, Latin-only text can NOT be Burmese. Tedim,
+    Hakha, Falam and Mizo are Chin languages all written in Latin script and look
+    alike, so the LLM only has to disambiguate among the Latin set (and English).
+    """
     sample = (text or "").strip()[:500]
     if not sample:
         return "en"
+    # Decisive: Myanmar script => Burmese.
+    if any("က" <= c <= "႟" for c in sample):
+        return "my"
+    # Decisive: Tedim/Zolai-specific tokens that Mizo, English and the other Chin
+    # languages do not use. The cloud LLM tends to over-collapse the closely related
+    # Latin-script Chin languages onto "Mizo", so a lexical short-circuit keeps Tedim
+    # from being misrouted (e.g. "Biakinn pai hoih hia?" => td, not lus).
+    if re.search(
+        r"\b(hia|hiam|hoih|pasian|topa|zeisu|tuni|nuntakna|lametna|lungdamna|"
+        r"hehpihna|kong|hong|siam|biakinn|pai)\b",
+        sample.lower(),
+    ):
+        return "td"
+    # Latin script => never Burmese; restrict the candidate set accordingly.
+    latin_codes = [c for c in _LANG_NAME if c != "my"]  # en, td, cnh, cfm, lus
     out, _ = llm.complete(
-        system=("Identify the language of the worshipper's message. Reply with ONLY one "
-                f"code from this list and nothing else: {', '.join(_LANG_NAME)}. "
-                "If unsure, reply 'en'."),
+        system=("Identify the language of this message, which is written in Latin script "
+                "(so it is NOT Burmese). Reply with ONLY one code and nothing else from: "
+                f"{', '.join(latin_codes)}. Tedim/Zolai (td), Hakha (cnh), Falam (cfm) and "
+                "Mizo (lus) are closely related Chin languages — pick the closest. Use 'en' "
+                "only for clearly English text; if it is non-English but you are unsure which "
+                "Chin language, prefer 'td'."),
         messages=[{"role": "user", "content": sample}],
         temperature=0.0, max_tokens=4, role="detect",
     )
     code = (out or "").strip().lower().split(maxsplit=1)[0] if (out or "").strip() else "en"
-    return code if code in _LANG_NAME else "en"
+    return code if code in latin_codes else "en"
 
 
 def _run_pastor_reply(job: dict, llm: OpenRouterLLM) -> None:
@@ -81,14 +168,21 @@ def _run_pastor_reply(job: dict, llm: OpenRouterLLM) -> None:
         language = detected = _detect_language(first_user, llm)
 
     system = _pastor_system(language, job.get("memory") or [])
-    text, usage = llm.complete(
-        system=system, messages=messages, temperature=0.7, max_tokens=700, role="pastor"
-    )
+
+    # Low-resource languages: prefer the native local model, fall back to the cloud LLM.
+    reply = _local_pastor_reply(language, system, messages)
+    token_usage = 0
+    if reply is None:
+        reply, usage = llm.complete(
+            system=system, messages=messages, temperature=0.7, max_tokens=700, role="pastor"
+        )
+        token_usage = int(usage.get("total_tokens", 0) or 0)
+
     _signed_post(_HISTORY_WEBHOOK, {
         "mode": "pastor_reply",
         "session_id": job["session_id"],
-        "reply": text.strip(),
-        "token_usage": int(usage.get("total_tokens", 0) or 0),
+        "reply": reply.strip(),
+        "token_usage": token_usage,
         "detected_language": detected,
     })
 

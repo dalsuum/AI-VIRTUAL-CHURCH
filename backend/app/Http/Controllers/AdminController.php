@@ -3,11 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Jobs\DispatchServiceJob;
+use App\Models\ChatSession;
 use App\Models\CrisisIntercept;
 use App\Models\FinancialLedger;
 use App\Models\MusicTrack;
 use App\Models\ServiceIntake;
 use App\Models\ServiceSession;
+use App\Models\ServiceSessionMeta;
 use App\Models\Setting;
 use App\Models\Testimony;
 use App\Models\User;
@@ -201,11 +203,26 @@ class AdminController extends Controller
     public function deleteService(ServiceSession $service): JsonResponse
     {
         PermissionService::require(request()->user(), 'services.delete');
+        $this->purgeService($service);
+
+        return response()->json(['ok' => true]);
+    }
+
+    /**
+     * Hard-delete a service and the worshipper's linked unified-history entry.
+     * The history spine (`chat_sessions`) links via `service_sessions_meta`, whose
+     * `service_session_id` FK is nullOnDelete — so dropping only the ServiceSession
+     * would leave an orphaned "Church Service" row in the user's profile history.
+     * Admin deletion is final, so we forceDelete the spine (cascading meta + any
+     * messages/tags) instead of soft-deleting it.
+     */
+    private function purgeService(ServiceSession $service): void
+    {
+        $chatIds = ServiceSessionMeta::where('service_session_id', $service->id)->pluck('chat_session_id');
+        ChatSession::withTrashed()->whereIn('id', $chatIds)->forceDelete();
         $service->assets()->delete();
         $service->intake()->delete();
         $service->delete();
-
-        return response()->json(['ok' => true]);
     }
 
     /** Delete many services (and their assets/intakes) atomically. */
@@ -224,9 +241,7 @@ class AdminController extends Controller
             $services = ServiceSession::whereIn('id', $data['service_ids'])->get();
 
             foreach ($services as $service) {
-                $service->assets()->delete();
-                $service->intake()->delete();
-                $service->delete();
+                $this->purgeService($service);
                 $deleted++;
             }
         });

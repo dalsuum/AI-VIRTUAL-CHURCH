@@ -55,18 +55,20 @@ class HistoryController extends Controller
         $userId = (int) $request->user()->id;
         $type   = $request->query('type');
         $archived = $request->boolean('archived');
+        $trashed = $request->boolean('trashed');
         $cursor = $request->query('cursor');
         $folderId = $request->query('folder_id');
 
         // First, unfiltered page is hot — cache it briefly per user.
-        $cacheable = ! $type && ! $archived && ! $cursor && $folderId === null;
+        $cacheable = ! $type && ! $archived && ! $trashed && ! $cursor && $folderId === null;
         if ($cacheable && ($hit = Cache::get("history:list:{$userId}"))) {
             return response()->json($hit);
         }
 
-        $query = ChatSession::forUser($userId)
+        $query = ($trashed ? ChatSession::onlyTrashed() : ChatSession::query())
+            ->forUser($userId)
             ->with('tags')
-            ->where('archived', $archived)
+            ->when(! $trashed, fn ($q) => $q->where('archived', $archived))
             ->when($type, fn ($q) => $q->where('session_type', $type))
             ->when($folderId !== null, fn ($q) => $q->where('folder_id', $folderId ?: null))
             ->orderByDesc('last_activity_at');
@@ -74,7 +76,7 @@ class HistoryController extends Controller
         $page = $query->cursorPaginate(30, ['*'], 'cursor', $cursor);
 
         $payload = [
-            'pinned'      => $cursor ? [] : $this->summaryList(
+            'pinned'      => ($cursor || $trashed) ? [] : $this->summaryList(
                 ChatSession::forUser($userId)->where('pinned', true)
                     ->where('archived', false)->with('tags')
                     ->orderByDesc('last_activity_at')->get()
@@ -251,6 +253,42 @@ class HistoryController extends Controller
         $this->history->forgetListCache($session->user_id);
 
         return response()->json(['session' => $session]);
+    }
+
+    /**
+     * Apply one action to many owned sessions at once (sidebar multi-select).
+     * Owner-scoped via forUser(); withTrashed() so 'untrash' can reach soft-deleted rows.
+     * delete = soft delete · archive/unarchive = toggle archived · untrash = restore ·
+     * purge = permanent force-delete (children cascade via FK; not recoverable).
+     */
+    public function bulk(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'action' => ['required', 'in:delete,archive,unarchive,untrash,purge'],
+            'ids'    => ['required', 'array', 'min:1', 'max:200'],
+            'ids.*'  => ['string'],
+        ]);
+        $userId = (int) $request->user()->id;
+
+        $sessions = ChatSession::withTrashed()->forUser($userId)
+            ->whereIn('id', $data['ids'])->get();
+
+        DB::transaction(function () use ($sessions, $data) {
+            foreach ($sessions as $session) {
+                match ($data['action']) {
+                    'delete'    => $session->delete(),                  // soft delete
+                    'archive'   => $session->update(['archived' => true]),
+                    'unarchive' => $session->update(['archived' => false]),
+                    'untrash'   => $session->restore(),
+                    'purge'     => $session->forceDelete(),             // permanent
+                };
+            }
+        });
+
+        $this->history->forgetListCache($userId);
+        $this->audit($request, "history.bulk.{$data['action']}", implode(',', $sessions->pluck('id')->all()));
+
+        return response()->json(['ok' => true, 'affected' => $sessions->count()]);
     }
 
     /** Single-session export, or the whole journal via export-all. */

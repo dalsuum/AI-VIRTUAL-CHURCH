@@ -44,6 +44,8 @@ const LANG_NAMES = {
 const session = ref(null);
 const bubbles = ref([]);            // { turn, persona_id, name, role, text, refs:[] }
 const notice = ref("");
+const restored = ref(false);        // viewing a past session loaded from history (read-only)
+const recap = ref("");              // the original stored end-of-discussion summary (chat-spine)
 const inputOpen = ref(false);
 const followUp = ref("");
 const composerInput = ref(null);
@@ -104,7 +106,50 @@ onMounted(async () => {
     const res = await api.fetchActiveAds();
     ads.value = res.ads || [];
   } catch (_) { /* ignore */ }
+  // Restore a past discussion opened from the history sidebar (#bible-study?session=ID):
+  // load its transcript read-only, showing the summary when one was generated.
+  const id = new URLSearchParams(window.location.hash.split("?")[1] || "").get("session");
+  if (id) await restore(id);
 });
+
+async function restore(chatId) {
+  try {
+    const { session: s } = await api.historyShow(chatId);
+    const studyId = s.bibleMeta?.study_session_id;
+    restored.value = true;
+    if (studyId) {
+      // Bridged multi-pastor discussion: rich transcript lives in study_sessions.
+      const full = await api.studyShow(studyId);
+      session.value = { id: full.id, topic: full.topic };
+      form.question = full.topic || "";
+      bubbles.value = (full.messages || []).map((m) => ({
+        turn: m.turn,
+        persona_id: m.persona_id ?? null,
+        name: m.role === "user" ? "You" : (m.role === "moderator" || m.role === "synthesis" ? "Moderator" : "Pastor"),
+        role: m.role,
+        text: m.content || "",
+        refs: (m.scripture_refs || []).map((r) => ({ ref: r, translation: full.translation || "" })),
+      }));
+      if (full.summary) { summary.value = full.summary; phase.value = "summary"; return; }
+    } else {
+      // Chat-spine study (AI-platform /v1/chat/study): turns are on the session graph.
+      session.value = { id: s.id, topic: s.title };
+      form.question = s.title || "";
+      recap.value = s.summary || "";   // the summary stored when this discussion ended
+      bubbles.value = (s.messages || []).map((m, i) => ({
+        turn: i,
+        persona_id: null,
+        name: m.sender === "user" ? "You" : "Pastor",
+        role: m.sender === "user" ? "user" : "pastor",
+        text: m.content || "",
+        refs: [],
+      }));
+    }
+    phase.value = "discussion";
+  } catch {
+    error.value = "Could not open that study session.";
+  }
+}
 
 onBeforeUnmount(() => stream.close());
 
@@ -327,6 +372,8 @@ function newDiscussion() {
   bubbles.value = [];
   notice.value = "";
   session.value = null;
+  restored.value = false;
+  if (window.location.hash.startsWith("#bible-study?")) window.location.hash = "#bible-study";
   phase.value = "setup";
 }
 
@@ -389,11 +436,18 @@ function goHome() { window.location.hash = ""; }
     <!-- DISCUSSION -->
     <section v-else-if="phase === 'discussion'" class="discussion">
       <div class="status">
-        <span :class="['dot', connected ? 'on' : 'off']"></span>
-        <span v-if="reconnecting">Reconnecting…</span>
-        <span v-else-if="connected">Live</span>
-        <span v-else>Connecting…</span>
-        <button class="ghost end" @click="end">End Discussion</button>
+        <template v-if="restored">
+          <span class="dot off"></span>
+          <span>Past discussion</span>
+          <button class="ghost end" @click="newDiscussion">New Study</button>
+        </template>
+        <template v-else>
+          <span :class="['dot', connected ? 'on' : 'off']"></span>
+          <span v-if="reconnecting">Reconnecting…</span>
+          <span v-else-if="connected">Live</span>
+          <span v-else>Connecting…</span>
+          <button class="ghost end" @click="end">End Discussion</button>
+        </template>
       </div>
 
       <p v-if="notice" class="notice">{{ notice }}</p>
@@ -406,6 +460,11 @@ function goHome() { window.location.hash = ""; }
             <span v-for="r in b.refs" :key="r.ref" class="verse-card">📖 {{ r.ref }} <em>{{ r.translation }}</em></span>
           </div>
         </article>
+      </div>
+
+      <div v-if="restored && recap" class="recap">
+        <h3>📝 Summary</h3>
+        <p>{{ recap }}</p>
       </div>
 
       <div v-if="inputOpen" class="composer">
@@ -538,6 +597,9 @@ function goHome() { window.location.hash = ""; }
 .verse-card { background: var(--primary-soft); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0.2rem 0.55rem; font-size: 0.9em; }
 .verse-card em { color: var(--text-muted); }
 
+.recap { margin-top: 1rem; padding: 0.9rem 1rem; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-md, 12px); }
+.recap h3 { margin: 0 0 0.5rem; font-size: 1rem; }
+.recap p { margin: 0; line-height: 1.55; white-space: pre-wrap; }
 .composer { display: flex; align-items: flex-end; gap: 0.5rem; margin-top: 0.9rem; position: sticky; bottom: 0; background: var(--bg); padding-top: 0.5rem; }
 .composer textarea { flex: 1; padding: 0.7rem 0.85rem; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-md, 12px); font: inherit; line-height: 1.45; resize: none; min-height: 2.75rem; max-height: 11rem; overflow-y: auto; }
 .composer textarea:focus { outline: none; border-color: var(--accent, #3b82f6); }

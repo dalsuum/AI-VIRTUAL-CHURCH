@@ -27,9 +27,11 @@ routing (e.g. to a different strategy class for hymn sources).
     3. channel_reject_any       — reject off-topic channels
 
 After the hardcoded gates, the admin-curated content filter applies as a final
-firewall: blocklist keywords reject a result, but an allowlist keyword on the
-title/channel overrides the blocklist and keeps the result (allow wins over
-block). Both lists are scope-aware (music / sermon) and admin-editable.
+firewall: blocklist keywords reject a result, but an allowlist keyword overrides
+the blocklist and keeps the result (allow wins over block). Filter terms are
+matched against the title, channel name, channel id, and the video/channel URLs
+— so an admin can block a whole channel (by name, id, or URL) or a specific URL.
+Both lists are scope-aware (music / sermon) and admin-editable.
 
 "sunday" is intentionally absent from every sermon_title_require_any list —
 it caused "Mission Sunday Choir" events to appear as the sermon segment.
@@ -332,6 +334,21 @@ def _keyword_hit(kw: str, text: str) -> bool:
     return _wb(kw, text) if kw.isascii() else kw in text
 
 
+def _url_meta(video_id: str, channel_id: str) -> str:
+    """Lowercased channel id + canonical URLs an admin filter term can target,
+    so a pasted channel/video URL or channel id blocks the whole result."""
+    parts = [channel_id, f"https://www.youtube.com/watch?v={video_id}"]
+    if channel_id:
+        parts.append(f"https://www.youtube.com/channel/{channel_id}")
+    return " ".join(p for p in parts if p).lower()
+
+
+def _admin_hit(kw: str, title: str, channel: str, meta: str) -> bool:
+    """Admin filter match: word-boundary on title/channel name, substring on the
+    channel-id/URL metadata (channel and URL blocking)."""
+    return _keyword_hit(kw, title) or _keyword_hit(kw, channel) or (kw in meta)
+
+
 # ── public music strategy ──────────────────────────────────────────────────────
 
 class YouTubeStrategy(MusicStrategy):
@@ -392,6 +409,7 @@ class YouTubeStrategy(MusicStrategy):
                 title = (snippet.get("title") or "").lower()
                 channel = (snippet.get("channelTitle") or "").lower()
                 desc = (snippet.get("description") or "").lower()
+                meta = _url_meta(item.get("id", {}).get("videoId") or "", snippet.get("channelId") or "")
 
                 # Burmese-mode music must show Myanmar script in the title.
                 if self.language == "my" and not _has_myanmar(title):
@@ -412,8 +430,8 @@ class YouTubeStrategy(MusicStrategy):
                     continue
                 # Gate 4: admin-curated content filter (title or channel).
                 # Firewall model — an allowlist hit overrides the blocklist (allow wins).
-                allowed = any(_keyword_hit(kw, title) or _keyword_hit(kw, channel) for kw in admin_allow)
-                if not allowed and any(_keyword_hit(kw, title) or _keyword_hit(kw, channel) for kw in admin_reject):
+                allowed = any(_admin_hit(kw, title, channel, meta) for kw in admin_allow)
+                if not allowed and any(_admin_hit(kw, title, channel, meta) for kw in admin_reject):
                     continue
 
                 # Score by mood relevance; title matches outweigh description.
@@ -534,6 +552,7 @@ def find_sermon_video(
             title = (snippet.get("title") or "").lower()
             channel = (snippet.get("channelTitle") or "").lower()
             desc = (snippet.get("description") or "").lower()
+            meta = _url_meta(video_id, snippet.get("channelId") or "")
 
             # Burmese-mode sermons must show Myanmar script in the title.
             # Channel/description text is too weak: an English sermon from a
@@ -559,8 +578,8 @@ def find_sermon_video(
                 continue
             # Gate 4: admin-curated content filter (title or channel).
             # Firewall model — an allowlist hit overrides the blocklist (allow wins).
-            allowed = any(_keyword_hit(kw, title) or _keyword_hit(kw, channel) for kw in admin_allow)
-            if not allowed and any(_keyword_hit(kw, title) or _keyword_hit(kw, channel) for kw in admin_reject):
+            allowed = any(_admin_hit(kw, title, channel, meta) for kw in admin_allow)
+            if not allowed and any(_admin_hit(kw, title, channel, meta) for kw in admin_reject):
                 continue
 
             score = sum(3 if kw in title else (1 if kw in desc else 0) for kw in mood_keywords)

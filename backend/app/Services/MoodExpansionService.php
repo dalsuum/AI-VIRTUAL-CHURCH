@@ -42,6 +42,62 @@ class MoodExpansionService
     ];
 
     /**
+     * Native-language display label + search term per canonical mood key. The
+     * English key remains the search anchor (theme expansion below is keyed on
+     * it); these native words are what the worshipper sees on the chip AND what
+     * gets injected into the YouTube discovery query so Burmese/Zolai moods
+     * actually surface Burmese/Zolai worship — not just an English label.
+     * Tedim (`td`) strings are best-effort; correct here in one place if needed.
+     */
+    public const LABELS_I18N = [
+        'happy'        => ['my' => 'ပျော်ရွှင်',        'td' => 'Lungdam'],
+        'joyful'       => ['my' => 'ဝမ်းမြောက်',        'td' => 'Nuamna'],
+        'sad'          => ['my' => 'ဝမ်းနည်း',          'td' => 'Lungkham'],
+        'depression'   => ['my' => 'စိတ်ဓာတ်ကျ',        'td' => 'Lungsim nuamlou'],
+        'anxiety'      => ['my' => 'စိုးရိမ်ပူပန်',       'td' => 'Mangbatna'],
+        'anxious'      => ['my' => 'စိတ်မငြိမ်',         'td' => 'Lungsim buai'],
+        'lonely'       => ['my' => 'အထီးကျန်',          'td' => 'Kiguak'],
+        'broken heart' => ['my' => 'နှလုံးကွဲ',          'td' => 'Lungtang kitan'],
+        'angry'        => ['my' => 'ဒေါသ',             'td' => 'Hehna'],
+        'tired'        => ['my' => 'ပင်ပန်း',           'td' => 'Gimna'],
+        'peace'        => ['my' => 'ငြိမ်သက်',           'td' => 'Lungmuanna'],
+        'repentance'   => ['my' => 'နောင်တ',            'td' => 'Kisikna'],
+        'thankful'     => ['my' => 'ကျေးဇူးတင်',         'td' => 'Lungdamna'],
+        'grateful'     => ['my' => 'ကျေးဇူးသိတတ်',       'td' => 'Lungdam kohna'],
+        'revival'      => ['my' => 'အသက်ဝိညာဉ်နိုးထ',    'td' => 'Nuntak kikna'],
+        'need prayer'  => ['my' => 'ဆုတောင်းလို',         'td' => 'Thungetna kisam'],
+        'grieving'     => ['my' => 'ဝမ်းနည်းပူဆွေး',      'td' => 'Sunna'],
+        'seeking'      => ['my' => 'ရှာဖွေ',             'td' => 'Zonna'],
+        'hopeful'      => ['my' => 'မျှော်လင့်ချက်',       'td' => 'Lametna'],
+    ];
+
+    /**
+     * Native display label for a mood key in the given language. Falls back to
+     * the title-cased English key for `en` or any unmapped key/free text.
+     */
+    public function label(string $mood, string $language): string
+    {
+        $norm = $this->normalize($mood);
+        if ($language === 'en' || $norm === '') {
+            return ucwords($norm !== '' ? $norm : trim($mood));
+        }
+
+        return self::LABELS_I18N[$norm][$language] ?? ucwords($norm);
+    }
+
+    /** Per-language label map ({en, my, td}) for one canonical mood key. */
+    public function labels(string $mood): array
+    {
+        $norm = $this->normalize($mood);
+
+        return [
+            'en' => ucwords($norm),
+            'my' => self::LABELS_I18N[$norm]['my'] ?? ucwords($norm),
+            'td' => self::LABELS_I18N[$norm]['td'] ?? ucwords($norm),
+        ];
+    }
+
+    /**
      * Expand a mood string into a de-duplicated, lower-cased list of theme tags.
      * Always includes the normalized mood itself so an unmatched mood still
      * carries at least one usable tag.

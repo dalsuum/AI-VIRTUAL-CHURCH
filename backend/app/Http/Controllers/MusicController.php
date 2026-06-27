@@ -36,9 +36,10 @@ class MusicController extends Controller
     public function moods(): JsonResponse
     {
         $moods = array_map(fn ($key) => [
-            'key'   => $key,
-            'label' => ucwords($key),
-            'emoji' => self::MOOD_EMOJI[$key] ?? '🎵',
+            'key'    => $key,
+            'label'  => ucwords($key),
+            'labels' => $this->moods->labels($key),   // {en, my, td} for the language switcher
+            'emoji'  => self::MOOD_EMOJI[$key] ?? '🎵',
         ], $this->moods->moodKeys());
 
         return response()->json(['moods' => $moods]);

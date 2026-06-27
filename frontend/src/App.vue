@@ -45,8 +45,10 @@ const isAdminRoute  = ref(window.location.hash === "#admin");
 const isVocabRoute  = ref(window.location.hash === "#vocabulary");
 const isLyricsRoute = ref(window.location.hash === "#lyrics");
 const isBibleRoute  = ref(window.location.hash === "#bible");
-const isStudyRoute  = ref(window.location.hash === "#bible-study");
-const isWorshipRoute = ref(window.location.hash === "#worship");
+// Bible Study + Worship Radio carry an optional ?session=/?mood= suffix when
+// resumed from history, so match on the base hash (query stripped).
+const isStudyRoute  = ref(window.location.hash.split("?")[0] === "#bible-study");
+const isWorshipRoute = ref(window.location.hash.split("?")[0] === "#worship");
 // Pastor Chat + Spiritual Journey carry an optional ?session= suffix, so match the prefix.
 const isPastorRoute = ref(window.location.hash.startsWith("#pastor"));
 const isJourneyRoute = ref(window.location.hash.startsWith("#journey"));
@@ -80,8 +82,8 @@ window.addEventListener("hashchange", () => {
   isVocabRoute.value  = window.location.hash === "#vocabulary";
   isLyricsRoute.value = window.location.hash === "#lyrics";
   isBibleRoute.value  = window.location.hash === "#bible";
-  isStudyRoute.value  = window.location.hash === "#bible-study";
-  isWorshipRoute.value = window.location.hash === "#worship";
+  isStudyRoute.value  = window.location.hash.split("?")[0] === "#bible-study";
+  isWorshipRoute.value = window.location.hash.split("?")[0] === "#worship";
   isPastorRoute.value = window.location.hash.startsWith("#pastor");
   isJourneyRoute.value = window.location.hash.startsWith("#journey");
   isFathersDayRoute.value = window.location.hash === "#fathers-day";

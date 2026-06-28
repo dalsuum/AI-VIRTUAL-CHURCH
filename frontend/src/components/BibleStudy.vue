@@ -4,9 +4,14 @@
 // useStudyStream over SSE; the seq-based composable handles reconnect/replay so a
 // dropped connection never loses or duplicates content.
 import { onMounted, onBeforeUnmount, reactive, ref, computed, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import { api } from "../composables/useApi";
 import { useStudyStream } from "../composables/useStudyStream";
 import AdCarousel from "./AdCarousel.vue";
+
+const { t } = useI18n();
+// Display label per study style; the English STYLES value is still what we send.
+const STYLE_KEYS = { "Gentle": "gentle", "Teaching": "teaching", "Encouraging": "encouraging", "Deep Theology": "deepTheology", "Youth": "youth", "Family": "family", "Hope": "hope" };
 
 // Bible translations offered per language. The first entry is that language's
 // DEFAULT (its own version where available); English versions are offered as a
@@ -137,7 +142,7 @@ async function narrate(b) {
   stopPlayback();
   played.add(b.turn);
   try { await playBubble(b); }
-  catch { flash("Narration is not available right now."); }
+  catch { flash(t("study.msg.narrationUnavailable")); }
 }
 
 // Auto-play: queue an assistant reply (skips the user's own bubbles).
@@ -198,7 +203,7 @@ onMounted(async () => {
     config.value = await api.studyConfig();
     form.agent_count = config.value.default_agent_count ?? 2;
   } catch (e) {
-    error.value = "Bible Study is not available right now.";
+    error.value = t("study.msg.notAvailable");
   }
   // Active ads for the box below the setup form — fire-and-forget so a
   // failure here never blocks the study experience.
@@ -254,7 +259,7 @@ async function restore(chatId) {
     }
     phase.value = "discussion";
   } catch {
-    error.value = "Could not open that study session.";
+    error.value = t("study.msg.openFailed");
   }
 }
 
@@ -298,7 +303,7 @@ function attachHandlers() {
       if (!b.refs.some((r) => r.ref === e.ref)) b.refs.push({ ref: e.ref, translation: e.translation });
     },
     "safety.blocked": () => {
-      notice.value = "A response was filtered for safety.";
+      notice.value = t("study.msg.filtered");
     },
     "round.complete": () => {
       inputOpen.value = true;
@@ -314,7 +319,7 @@ function attachHandlers() {
 async function start() {
   error.value = "";
   if (form.question.trim().length < 3) {
-    error.value = "Please enter a question.";
+    error.value = t("study.msg.enterQuestion");
     return;
   }
   loading.value = true;
@@ -333,7 +338,7 @@ async function start() {
     pushUserBubble(form.question.trim());   // show the worshipper's question first
     attachHandlers();
   } catch (e) {
-    error.value = e?.message || "Could not start the discussion.";
+    error.value = e?.message || t("study.msg.startFailed");
   } finally {
     loading.value = false;
   }
@@ -349,7 +354,7 @@ async function send() {
   try {
     await api.studyPostMessage(session.value.id, text);
   } catch (e) {
-    error.value = e?.message || "Could not send your message.";
+    error.value = e?.message || t("study.msg.sendFailed");
     inputOpen.value = true;
   }
 }
@@ -357,11 +362,11 @@ async function send() {
 async function end() {
   try {
     await api.studyEnd(session.value.id);
-    notice.value = "Preparing your study summary…";
+    notice.value = t("study.msg.preparingSummary");
     // Fallback poll in case the summarized event is missed.
     setTimeout(loadSummary, 4000);
   } catch (e) {
-    error.value = e?.message || "Could not end the discussion.";
+    error.value = e?.message || t("study.msg.endFailed");
   }
 }
 
@@ -406,8 +411,8 @@ const actionMsg = ref("");
 function flash(m) { actionMsg.value = m; setTimeout(() => (actionMsg.value = ""), 2500); }
 
 async function copySummary() {
-  try { await navigator.clipboard.writeText(summaryText()); flash("Copied to clipboard."); }
-  catch { flash("Could not copy."); }
+  try { await navigator.clipboard.writeText(summaryText()); flash(t("study.msg.copied")); }
+  catch { flash(t("study.msg.copyFailed")); }
 }
 
 async function shareSummary() {
@@ -415,22 +420,22 @@ async function shareSummary() {
   if (navigator.share) {
     try { await navigator.share({ title: "AI Bible Study", text }); return; } catch { /* cancelled */ }
   }
-  try { await navigator.clipboard.writeText(text); flash("Copied — paste it anywhere to share."); }
-  catch { flash("Sharing not supported on this device."); }
+  try { await navigator.clipboard.writeText(text); flash(t("study.msg.shareCopied")); }
+  catch { flash(t("study.msg.shareUnsupported")); }
 }
 
 async function emailSummary() {
   let email = "";
   try {
     const res = await api.studyEmail(session.value.id);
-    if (res?.ok) { flash("Summary emailed."); return; }
+    if (res?.ok) { flash(t("study.msg.emailed")); return; }
   } catch (e) {
     if (e?.status === 422) {
-      email = window.prompt("Send the summary to which email address?") || "";
+      email = window.prompt(t("study.msg.emailPrompt")) || "";
       if (!email) return;
-      try { await api.studyEmail(session.value.id, email); flash("Summary emailed."); }
-      catch { flash("Could not send the email."); }
-    } else { flash("Could not send the email."); }
+      try { await api.studyEmail(session.value.id, email); flash(t("study.msg.emailed")); }
+      catch { flash(t("study.msg.emailFailed")); }
+    } else { flash(t("study.msg.emailFailed")); }
   }
 }
 
@@ -462,14 +467,14 @@ async function exportPdf() {
       const url = URL.createObjectURL(blob);
       const win = window.open(url, "_blank");
       if (!win) {
-        flash("Tap ••• and choose “Open in browser” to save the PDF.");
+        flash(t("study.msg.pdfMobileHint"));
       }
       setTimeout(() => URL.revokeObjectURL(url), 60000);
     } else {
       await worker.save();
     }
   } catch {
-    flash("Could not export the PDF — try opening this page in your browser.");
+    flash(t("study.msg.pdfFailed"));
   } finally {
     el.classList.remove("pdf-mode");
   }
@@ -495,20 +500,20 @@ function goHome() { window.location.hash = ""; }
          this view only renders its own content. -->
     <main class="study">
     <header class="study-head">
-      <h1>AI Bible Study</h1>
-      <p class="sub" v-if="phase === 'setup'">Sit with experienced pastors. Ask anything. Study together.</p>
+      <h1>{{ t("study.title") }}</h1>
+      <p class="sub" v-if="phase === 'setup'">{{ t("study.setupSub") }}</p>
     </header>
 
     <p v-if="error" class="err">{{ error }}</p>
 
     <!-- SETUP -->
     <section v-if="phase === 'setup'" class="setup card">
-      <label>Language
+      <label>{{ t("common.language") }}
         <select v-model="form.language">
           <option v-for="l in (config?.languages || ['en'])" :key="l" :value="l">{{ LANG_NAMES[l] || l }}</option>
         </select>
       </label>
-      <label>Translation
+      <label>{{ t("study.translation") }}
         <select v-model="form.translation">
           <option v-for="[code, name] in translationOptions" :key="code" :value="code">{{ name }}</option>
         </select>
@@ -517,20 +522,20 @@ function goHome() { window.location.hash = ""; }
         <button
           v-for="s in STYLES" :key="s" type="button"
           :class="['chip', { active: form.style === s }]"
-          @click="form.style = form.style === s ? '' : s">{{ s }}</button>
+          @click="form.style = form.style === s ? '' : s">{{ t('study.styles.' + STYLE_KEYS[s]) }}</button>
       </div>
-      <label>Pastors: {{ form.agent_count }}
+      <label>{{ t("study.pastors", { n: form.agent_count }) }}
         <input type="range" v-model.number="form.agent_count" :min="agentMin" :max="agentMax" :disabled="agentMin >= agentMax" />
       </label>
       <p class="tier-note">
-        Your plan allows up to <strong>{{ agentMax }}</strong> pastor{{ agentMax === 1 ? '' : 's' }}<span v-if="config?.tier"> ({{ config.tier }})</span>.
-        <span v-if="config?.tier === 'guest'">Register for more.</span>
+        <i18n-t keypath="study.planAllows" :plural="agentMax" tag="span"><template #max><strong>{{ agentMax }}</strong></template></i18n-t><span v-if="config?.tier"> ({{ config.tier }})</span>.
+        <span v-if="config?.tier === 'guest'">{{ t("study.registerMore") }}</span>
       </p>
-      <label>Your question
-        <textarea v-model="form.question" rows="3" placeholder="e.g. What does John 3:16 mean for me?" @focus="focusScroll"></textarea>
+      <label>{{ t("study.yourQuestion") }}
+        <textarea v-model="form.question" rows="3" :placeholder="t('study.questionPlaceholder')" @focus="focusScroll"></textarea>
       </label>
       <button class="primary" :disabled="loading" @click="start">
-        {{ loading ? "Starting…" : "Begin Discussion →" }}
+        {{ loading ? t("study.starting") : t("study.begin") }}
       </button>
     </section>
 
@@ -547,19 +552,19 @@ function goHome() { window.location.hash = ""; }
       <div class="status">
         <template v-if="restored">
           <span class="dot off"></span>
-          <span>Past discussion</span>
-          <button class="ghost end" @click="newDiscussion">New Study</button>
+          <span>{{ t("study.pastDiscussion") }}</span>
+          <button class="ghost end" @click="newDiscussion">{{ t("study.newStudy") }}</button>
         </template>
         <template v-else>
           <span :class="['dot', connected ? 'on' : 'off']"></span>
-          <span v-if="reconnecting">Reconnecting…</span>
-          <span v-else-if="connected">Live</span>
-          <span v-else>Connecting…</span>
-          <button class="ghost end" @click="end">End Discussion</button>
+          <span v-if="reconnecting">{{ t("study.reconnecting") }}</span>
+          <span v-else-if="connected">{{ t("study.live") }}</span>
+          <span v-else>{{ t("study.connecting") }}</span>
+          <button class="ghost end" @click="end">{{ t("study.endDiscussion") }}</button>
         </template>
         <label class="narration-toggle" :class="{ standalone: restored }">
           <input type="checkbox" v-model="narrationOn" />
-          🔊 Narration
+          🔊 {{ t("study.narration") }}
         </label>
       </div>
 
@@ -569,7 +574,7 @@ function goHome() { window.location.hash = ""; }
         <article v-for="b in bubbles" :key="b.turn" :class="['bubble', roleClass(b.role)]">
           <div class="who">{{ b.name }}<span class="role">· {{ b.role }}</span>
             <button v-if="narrationOn && b.role !== 'user' && b.text.trim()" type="button"
-              class="narrate-btn" :title="narratingTurn === b.turn ? 'Stop' : 'Listen'"
+              class="narrate-btn" :title="narratingTurn === b.turn ? t('study.stop') : t('study.listen')"
               @click="narrate(b)">{{ narratingTurn === b.turn ? '⏸' : '🔊' }}</button>
           </div>
           <div class="body">{{ b.text }}<span v-if="!b.text" class="typing">…</span></div>
@@ -580,7 +585,7 @@ function goHome() { window.location.hash = ""; }
       </div>
 
       <div v-if="restored && recap" class="recap">
-        <h3>📝 Summary</h3>
+        <h3>📝 {{ t("study.summary") }}</h3>
         <p>{{ recap }}</p>
       </div>
 
@@ -588,56 +593,56 @@ function goHome() { window.location.hash = ""; }
         <textarea
           ref="composerInput"
           v-model="followUp"
-          placeholder="Ask a follow-up…"
+          :placeholder="t('study.followUpPlaceholder')"
           rows="1"
           @keydown.enter.exact.prevent="send"
           @input="autoGrow"
           @focus="focusScroll"
         ></textarea>
-        <button class="primary" @click="send">Send →</button>
+        <button class="primary" @click="send">{{ t("common.send") }} →</button>
       </div>
     </section>
 
     <!-- SUMMARY -->
     <section v-else-if="phase === 'summary'" class="summary card">
       <div id="study-summary-print" class="print-area">
-        <h2>Your Study Summary</h2>
+        <h2>{{ t("study.summaryTitle") }}</h2>
         <p v-if="session?.topic || form.question" class="topic">{{ session?.topic || form.question }}</p>
         <div v-if="summary.key_verses?.length" class="block">
-          <h3>📖 Key Verses</h3>
+          <h3>📖 {{ t("study.keyVerses") }}</h3>
           <ul><li v-for="(v, i) in summary.key_verses" :key="i">{{ v }}</li></ul>
         </div>
         <div v-if="summary.lessons?.length" class="block">
-          <h3>💡 Main Lessons</h3>
+          <h3>💡 {{ t("study.mainLessons") }}</h3>
           <ul><li v-for="(v, i) in summary.lessons" :key="i">{{ v }}</li></ul>
         </div>
         <div v-if="summary.prayer" class="block">
-          <h3>🙏 Prayer</h3><p>{{ summary.prayer }}</p>
+          <h3>🙏 {{ t("study.prayer") }}</h3><p>{{ summary.prayer }}</p>
         </div>
         <div v-if="summary.action_points?.length" class="block">
-          <h3>✅ Action Points</h3>
+          <h3>✅ {{ t("study.actionPoints") }}</h3>
           <ol><li v-for="(v, i) in summary.action_points" :key="i">{{ v }}</li></ol>
         </div>
         <div v-if="summary.reflection_questions?.length" class="block">
-          <h3>❓ Reflection</h3>
+          <h3>❓ {{ t("study.reflection") }}</h3>
           <ul><li v-for="(v, i) in summary.reflection_questions" :key="i">{{ v }}</li></ul>
         </div>
         <div v-if="summary.study_plan?.length" class="block">
-          <h3>🗓 Study Plan</h3>
+          <h3>🗓 {{ t("study.studyPlan") }}</h3>
           <ol><li v-for="(v, i) in summary.study_plan" :key="i">{{ v }}</li></ol>
         </div>
       </div>
 
       <p v-if="actionMsg" class="action-msg">{{ actionMsg }}</p>
       <div class="actions">
-        <button class="primary" @click="exportPdf">⬇ Export PDF</button>
-        <button class="ghost" @click="copySummary">📋 Copy</button>
-        <button class="ghost" @click="shareSummary">🔗 Share</button>
-        <button class="ghost" @click="emailSummary">✉ Email me</button>
+        <button class="primary" @click="exportPdf">⬇ {{ t("study.exportPdf") }}</button>
+        <button class="ghost" @click="copySummary">📋 {{ t("common.copy") }}</button>
+        <button class="ghost" @click="shareSummary">🔗 {{ t("study.share") }}</button>
+        <button class="ghost" @click="emailSummary">✉ {{ t("study.emailMe") }}</button>
       </div>
       <div class="actions">
-        <button class="primary" @click="newDiscussion">➕ New Discussion</button>
-        <button class="ghost" @click="goHome">🏠 Church Home</button>
+        <button class="primary" @click="newDiscussion">➕ {{ t("study.newDiscussion") }}</button>
+        <button class="ghost" @click="goHome">🏠 {{ t("study.churchHome") }}</button>
       </div>
     </section>
     </main>

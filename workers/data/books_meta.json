@@ -17,9 +17,67 @@
         "Gen",
         "Ge"
       ],
-      "keywords": [],
-      "themes": [],
-      "pronunciation": null
+      "keywords": [
+        "beginning",
+        "creation",
+        "covenant",
+        "abraham",
+        "blessing"
+      ],
+      "themes": [
+        "creation",
+        "covenant",
+        "promise",
+        "providence",
+        "sin"
+      ],
+      "pronunciation": null,
+      "author": "Moses (traditional)",
+      "approximate_date": "c. 1446-1406 BC (composition; events from creation to c. 1800 BC)",
+      "historical_period": "Primeval & Patriarchal",
+      "audience": "Israel",
+      "major_events": [
+        "Creation",
+        "The Fall",
+        "The Flood",
+        "Tower of Babel",
+        "Call of Abraham",
+        "Binding of Isaac",
+        "Joseph in Egypt"
+      ],
+      "key_people": [
+        "Adam",
+        "Eve",
+        "Noah",
+        "Abraham",
+        "Sarah",
+        "Isaac",
+        "Jacob",
+        "Joseph"
+      ],
+      "key_places": [
+        "Eden",
+        "Ararat",
+        "Babel",
+        "Ur",
+        "Canaan",
+        "Egypt"
+      ],
+      "related_books": [
+        "exodus",
+        "romans",
+        "galatians",
+        "hebrews"
+      ],
+      "messianic_references": [
+        "Genesis 3:15",
+        "Genesis 22:18",
+        "Genesis 49:10"
+      ],
+      "prophecy_links": [
+        "genesis",
+        "revelation"
+      ]
     },
     "exodus": {
       "id": "exodus",
@@ -36,9 +94,58 @@
         "Ex",
         "Exod"
       ],
-      "keywords": [],
-      "themes": [],
-      "pronunciation": null
+      "keywords": [
+        "exodus",
+        "passover",
+        "law",
+        "tabernacle",
+        "deliverance"
+      ],
+      "themes": [
+        "redemption",
+        "deliverance",
+        "law",
+        "covenant",
+        "worship"
+      ],
+      "pronunciation": null,
+      "author": "Moses (traditional)",
+      "approximate_date": "c. 1446-1406 BC",
+      "historical_period": "Exodus & Wilderness",
+      "audience": "Israel",
+      "major_events": [
+        "Burning bush",
+        "The Ten Plagues",
+        "Passover",
+        "Crossing the Red Sea",
+        "Giving of the Law at Sinai",
+        "The Golden Calf",
+        "Building the Tabernacle"
+      ],
+      "key_people": [
+        "Moses",
+        "Aaron",
+        "Pharaoh",
+        "Miriam",
+        "Jethro"
+      ],
+      "key_places": [
+        "Egypt",
+        "Red Sea",
+        "Mount Sinai",
+        "Wilderness of Sin"
+      ],
+      "related_books": [
+        "genesis",
+        "leviticus",
+        "numbers",
+        "deuteronomy",
+        "hebrews"
+      ],
+      "messianic_references": [
+        "Exodus 12:1-13"
+      ],
+      "prophecy_links": []
     },
     "leviticus": {
       "id": "leviticus",
@@ -54,9 +161,50 @@
         "Lev",
         "Le"
       ],
-      "keywords": [],
-      "themes": [],
-      "pronunciation": null
+      "keywords": [
+        "holiness",
+        "sacrifice",
+        "atonement",
+        "clean",
+        "priest"
+      ],
+      "themes": [
+        "holiness",
+        "atonement",
+        "sacrifice",
+        "priesthood"
+      ],
+      "pronunciation": null,
+      "author": "Moses (traditional)",
+      "approximate_date": "c. 1446-1406 BC",
+      "historical_period": "Wilderness (Sinai)",
+      "audience": "Israel (priests & people)",
+      "major_events": [
+        "Sacrificial system instituted",
+        "Ordination of Aaron",
+        "Day of Atonement",
+        "Holiness Code"
+      ],
+      "key_people": [
+        "Moses",
+        "Aaron",
+        "Nadab",
+        "Abihu"
+      ],
+      "key_places": [
+        "Mount Sinai",
+        "Tabernacle"
+      ],
+      "related_books": [
+        "exodus",
+        "numbers",
+        "hebrews"
+      ],
+      "messianic_references": [
+        "Leviticus 16",
+        "Leviticus 17:11"
+      ],
+      "prophecy_links": []
     },
     "numbers": {
       "id": "numbers",
@@ -72,9 +220,55 @@
         "Num",
         "Nu"
       ],
-      "keywords": [],
-      "themes": [],
-      "pronunciation": null
+      "keywords": [
+        "census",
+        "wilderness",
+        "wandering",
+        "rebellion",
+        "journey"
+      ],
+      "themes": [
+        "wilderness",
+        "faithfulness",
+        "rebellion",
+        "guidance"
+      ],
+      "pronunciation": null,
+      "author": "Moses (traditional)",
+      "approximate_date": "c. 1446-1406 BC",
+      "historical_period": "Wilderness wanderings",
+      "audience": "Israel",
+      "major_events": [
+        "Census of Israel",
+        "Spies sent into Canaan",
+        "Rebellion & 40 years wandering",
+        "Bronze serpent",
+        "Balaam's oracles"
+      ],
+      "key_people": [
+        "Moses",
+        "Aaron",
+        "Joshua",
+        "Caleb",
+        "Balaam",
+        "Korah"
+      ],
+      "key_places": [
+        "Sinai",
+        "Kadesh",
+        "Wilderness of Paran",
+        "Plains of Moab"
+      ],
+      "related_books": [
+        "exodus",
+        "deuteronomy",
+        "joshua"
+      ],
+      "messianic_references": [
+        "Numbers 21:8-9",
+        "Numbers 24:17"
+      ],
+      "prophecy_links": []
     },
     "deuteronomy": {
       "id": "deuteronomy",
@@ -92,9 +286,49 @@
         "Deut",
         "Dt"
       ],
-      "keywords": [],
-      "themes": [],
-      "pronunciation": null
+      "keywords": [
+        "law",
+        "covenant",
+        "obedience",
+        "remember",
+        "blessing"
+      ],
+      "themes": [
+        "covenant",
+        "obedience",
+        "love of God",
+        "remembrance"
+      ],
+      "pronunciation": null,
+      "author": "Moses (traditional)",
+      "approximate_date": "c. 1406 BC",
+      "historical_period": "Plains of Moab (before entering Canaan)",
+      "audience": "Israel (new generation)",
+      "major_events": [
+        "Moses' farewell addresses",
+        "Restatement of the Law",
+        "Covenant renewal",
+        "Blessings and curses",
+        "Death of Moses"
+      ],
+      "key_people": [
+        "Moses",
+        "Joshua"
+      ],
+      "key_places": [
+        "Plains of Moab",
+        "Mount Nebo",
+        "Jordan River"
+      ],
+      "related_books": [
+        "numbers",
+        "joshua",
+        "matthew"
+      ],
+      "messianic_references": [
+        "Deuteronomy 18:15"
+      ],
+      "prophecy_links": []
     },
     "joshua": {
       "id": "joshua",

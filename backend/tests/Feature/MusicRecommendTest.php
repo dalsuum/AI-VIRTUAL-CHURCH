@@ -227,6 +227,69 @@ class MusicRecommendTest extends TestCase
         $this->assertSame('Lungmuanna', $relax['labels']['td']);
     }
 
+    public function test_discovery_rejects_foreign_script_titles(): void
+    {
+        // An English search returns a Hindi (Devanagari) upload; it must NOT be
+        // persisted as `en`. A clean English result from the same batch is kept.
+        $yt = \Mockery::mock(\App\Services\YoutubeSongSearchService::class);
+        $yt->shouldReceive('isConfigured')->andReturn(true);
+        $yt->shouldReceive('search')->andReturn([
+            ['video_id' => 'hindivideo0', 'url' => 'https://www.youtube.com/watch?v=hindivideo0',
+             'title' => 'आराधना स्तुति गीत CHRISTIAN WORSHIP', 'channel' => 'Jesus Songs', 'thumbnail' => null],
+            ['video_id' => 'englishvid0', 'url' => 'https://www.youtube.com/watch?v=englishvid0',
+             'title' => 'Goodness of God Worship', 'channel' => 'Bethel', 'thumbnail' => null],
+        ]);
+        $this->app->instance(\App\Services\YoutubeSongSearchService::class, $yt);
+
+        $titles = array_column(
+            $this->postJson('/api/music/recommend', ['language' => 'en', 'mood' => 'relax'])->json('playlist'),
+            'title',
+        );
+
+        $this->assertContains('Goodness of God Worship', $titles);
+        $this->assertNotContains('आराधना स्तुति गीत CHRISTIAN WORSHIP', $titles, 'Hindi title not served as English');
+        $this->assertDatabaseMissing('worship_tracks', ['youtube_url' => 'https://www.youtube.com/watch?v=hindivideo0']);
+    }
+
+    public function test_serve_time_drops_existing_mislabelled_discovered_track(): void
+    {
+        // A Devanagari title was saved as `en` before the script gate existed
+        // (auto-discovered = metadata_only). It must self-heal: dropped at serve
+        // time without a migration. A curated en row is unaffected.
+        WorshipTrack::create([
+            'title' => 'आराधना स्तुति गीत', 'language' => 'en', 'moods' => ['peace'],
+            'youtube_url' => 'https://www.youtube.com/watch?v=oldhindivid', 'copyright_status' => 'metadata_only',
+            'popularity' => 20, 'active' => true,
+        ]);
+        WorshipTrack::create([
+            'title' => 'Amazing Grace', 'language' => 'en', 'moods' => ['peace'], 'popularity' => 50, 'active' => true,
+        ]);
+
+        $titles = array_column(
+            $this->postJson('/api/music/recommend', ['language' => 'en', 'mood' => 'relax'])->json('playlist'),
+            'title',
+        );
+
+        $this->assertContains('Amazing Grace', $titles);
+        $this->assertNotContains('आराधना स्तुति गीत', $titles);
+    }
+
+    public function test_burmese_script_is_kept_for_my_requests(): void
+    {
+        WorshipTrack::create([
+            'title' => 'အေးချမ်းခြင်း ဓမ္မသီချင်း', 'language' => 'my', 'moods' => ['peace'],
+            'youtube_url' => 'https://www.youtube.com/watch?v=burmesevid0', 'copyright_status' => 'metadata_only',
+            'popularity' => 20, 'active' => true,
+        ]);
+
+        $titles = array_column(
+            $this->postJson('/api/music/recommend', ['language' => 'my', 'mood' => 'relax'])->json('playlist'),
+            'title',
+        );
+
+        $this->assertContains('အေးချမ်းခြင်း ဓမ္မသီချင်း', $titles, 'Myanmar script allowed for my');
+    }
+
     public function test_invalid_language_is_rejected(): void
     {
         $this->postJson('/api/music/recommend', [

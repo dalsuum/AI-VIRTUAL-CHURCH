@@ -64,8 +64,13 @@ class MusicRecommendationService
             // Re-apply the content filter at serve time: discovery only screens
             // NEW search hits, so a channel/URL blocked after a track was already
             // persisted would otherwise keep playing. This drops it on the next
-            // request — no purge needed.
-            ->filter(fn (WorshipTrack $t) => $this->passesContentFilter($t))
+            // request — no purge needed. The same self-heal drops auto-discovered
+            // tracks whose title script doesn't match their language (e.g. a Hindi
+            // title saved as `en` before this gate existed) — curated catalogue
+            // rows are left untouched.
+            ->filter(fn (WorshipTrack $t) => $this->passesContentFilter($t)
+                && ($t->copyright_status !== 'metadata_only'
+                    || $this->titleLanguageScriptOk((string) $t->title, (string) $t->language)))
             ->values();
 
         $maxPopularity = (int) $candidates->max('popularity') ?: 1;
@@ -266,6 +271,15 @@ class MusicRecommendationService
                 continue;
             }
 
+            // Don't persist a result whose title is in a script that doesn't
+            // belong to the searched language: an English search can return a
+            // Hindi (Devanagari) or Chinese (CJK) upload, and stamping it `en`
+            // contaminates the catalogue. (Title is the reliable signal; channel
+            // branding is often Latin regardless of the song's language.)
+            if (! $this->titleLanguageScriptOk((string) $r['title'], $language)) {
+                continue;
+            }
+
             WorshipTrack::updateOrCreate(
                 ['youtube_url' => $r['url']],
                 [
@@ -308,6 +322,46 @@ class MusicRecommendationService
                 return false;
             }
         }
+        return true;
+    }
+
+    /**
+     * Whether a title's script is compatible with the target language, used to
+     * keep cross-language YouTube results out of a catalogue. Latin is allowed
+     * for every language (en/td are Latin-script; Burmese titles are often
+     * romanised); Myanmar script is additionally allowed for `my`. A title that
+     * carries any OTHER major script (Devanagari, CJK/kana/Hangul, Arabic,
+     * Hebrew, Thai, Cyrillic, other Indic) belongs to a different language and
+     * is rejected. Emoji/punctuation/digits live outside these ranges and are
+     * ignored, so they never trigger a false rejection.
+     */
+    private function titleLanguageScriptOk(string $title, string $language): bool
+    {
+        // Foreign-script Unicode ranges that signal a non-target language.
+        $foreign = [
+            'myanmar'    => '\x{1000}-\x{109F}',
+            'devanagari' => '\x{0900}-\x{097F}',
+            'bengali'    => '\x{0980}-\x{09FF}',
+            'tamil'      => '\x{0B80}-\x{0BFF}',
+            'telugu'     => '\x{0C00}-\x{0C7F}',
+            'thai'       => '\x{0E00}-\x{0E7F}',
+            'arabic'     => '\x{0600}-\x{06FF}',
+            'hebrew'     => '\x{0590}-\x{05FF}',
+            'cyrillic'   => '\x{0400}-\x{04FF}',
+            'cjk'        => '\x{3040}-\x{30FF}\x{3400}-\x{9FFF}\x{AC00}-\x{D7AF}', // kana + CJK + Hangul
+        ];
+        // Scripts a language legitimately uses besides Latin.
+        $allowed = ['my' => ['myanmar']];
+
+        foreach ($foreign as $name => $range) {
+            if (in_array($name, $allowed[$language] ?? [], true)) {
+                continue;
+            }
+            if (preg_match('/[' . $range . ']/u', $title)) {
+                return false;
+            }
+        }
+
         return true;
     }
 

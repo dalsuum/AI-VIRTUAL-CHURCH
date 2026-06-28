@@ -1,0 +1,28 @@
+{
+  "brand": "AI Virtual Church",
+  "nav": {
+    "bible": "Bible",
+    "bibleStudy": "Bible Study",
+    "pastor": "Pastor",
+    "worship": "Worship",
+    "lyrics": "Songs",
+    "vocabulary": "Vocabulary",
+    "journey": "Journey",
+    "stickers": "Stickers",
+    "admin": "Admin",
+    "account": "Account"
+  },
+  "auth": {
+    "login": "Login",
+    "register": "Register",
+    "logout": "Logout"
+  },
+  "footer": {
+    "disclaimer": "AI can make mistakes. Please verify important information.",
+    "donate": "Buy me a coffee"
+  },
+  "common": {
+    "language": "Language",
+    "selectLanguage": "Select language"
+  }
+}

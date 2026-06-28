@@ -3,7 +3,11 @@
 // The nav is data-driven: add a page by adding one entry to NAV_ITEMS below and
 // its route in App.vue. `active` highlighting is derived from the current hash.
 import { computed } from "vue";
+import { useI18n } from "vue-i18n";
 import ThemeToggle from "../ThemeToggle.vue";
+import LanguageSwitcher from "./LanguageSwitcher.vue";
+
+const { t } = useI18n();
 
 const props = defineProps({
   currentHash: { type: String, default: "" },
@@ -21,21 +25,21 @@ defineEmits(["logout", "toggle-journey"]);
 // full/short label pair that collapses to the short form (or icon) on phones.
 const navItems = computed(() =>
   [
-    { href: "#bible", label: "📖 Bible" },
-    { href: "#bible-study", label: "💬 Bible Study" },
-    { href: "#pastor", label: "💬 Pastor", prefix: true },
-    { href: "#worship", label: "🎶 Worship" },
-    { href: "#lyrics", label: "🎵 သီချင်း" },
-    { href: "#vocabulary", label: "📖 Vocabulary" },
-    { href: "#journey", label: "📊 Journey", prefix: true, show: props.isAuthed },
+    { href: "#bible", label: `📖 ${t("nav.bible")}` },
+    { href: "#bible-study", label: `💬 ${t("nav.bibleStudy")}` },
+    { href: "#pastor", label: `💬 ${t("nav.pastor")}`, prefix: true },
+    { href: "#worship", label: `🎶 ${t("nav.worship")}` },
+    { href: "#lyrics", label: `🎵 ${t("nav.lyrics")}` },
+    { href: "#vocabulary", label: `📖 ${t("nav.vocabulary")}` },
+    { href: "#journey", label: `📊 ${t("nav.journey")}`, prefix: true, show: props.isAuthed },
     {
       href: "#fathers-day", icon: "💙", labelFull: props.fdTitle, labelShort: "MV",
       responsive: true, show: props.fathersDayEnabled,
     },
-    { href: "#stickers", label: "🎨 Stickers", show: props.stickersEnabled },
-    { href: "#admin", label: "🛠 Admin", show: props.isAdmin },
+    { href: "#stickers", label: `🎨 ${t("nav.stickers")}`, show: props.stickersEnabled },
+    { href: "#admin", label: `🛠 ${t("nav.admin")}`, show: props.isAdmin },
     {
-      href: "#account", icon: "👤", labelFull: "Account", labelShort: "",
+      href: "#account", icon: "👤", labelFull: t("nav.account"), labelShort: "",
       responsive: true, show: props.isAuthed,
     },
   ].filter((item) => item.show !== false),
@@ -59,7 +63,7 @@ function isActive(item) {
     >☰</button>
     <a class="brand" href="#">
       <span class="brand-mark" aria-hidden="true">✝</span>
-      <span class="brand-name">AI Virtual Church</span>
+      <span class="brand-name">{{ t("brand") }}</span>
     </a>
     <div class="topbar-right">
       <nav class="topbar-nav">
@@ -78,12 +82,13 @@ function isActive(item) {
         </a>
 
         <!-- Identity-aware auth controls: Logout for members, Login/Register for guests. -->
-        <button v-if="isAuthed" class="nav-link nav-btn" @click="$emit('logout')">Logout</button>
+        <button v-if="isAuthed" class="nav-link nav-btn" @click="$emit('logout')">{{ t("auth.logout") }}</button>
         <template v-else>
-          <a href="#login" class="nav-link" :class="{ active: currentHash === '#login' }">Login</a>
-          <a href="#register" class="nav-link" :class="{ active: currentHash === '#register' }">Register</a>
+          <a href="#login" class="nav-link" :class="{ active: currentHash === '#login' }">{{ t("auth.login") }}</a>
+          <a href="#register" class="nav-link" :class="{ active: currentHash === '#register' }">{{ t("auth.register") }}</a>
         </template>
       </nav>
+      <LanguageSwitcher />
       <ThemeToggle />
     </div>
   </header>

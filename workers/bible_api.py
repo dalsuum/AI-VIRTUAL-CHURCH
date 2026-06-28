@@ -234,6 +234,28 @@ def languages() -> list[str]:
     return list(_LANGS)
 
 
+# Canonical Bible knowledge model (platform ontology). Additive + structural;
+# keyed by stable canonical id ('genesis'…'revelation'). IDs are infrastructure,
+# display names are localization — see docs/BIBLE_KNOWLEDGE_MODEL_INVARIANTS.md.
+# This is read ALONGSIDE the existing book index/alias search, which is unchanged.
+_BOOKS_META_FILE = os.path.join(_DATA_DIR, "books_meta.json")
+
+
+@functools.lru_cache(maxsize=1)
+def books_meta() -> dict:
+    """The ontology keyed by canonical book id. Returns {} if the file isn't
+    vendored, so reader/search behavior never depends on it being present."""
+    if not os.path.exists(_BOOKS_META_FILE):
+        return {}
+    with open(_BOOKS_META_FILE, encoding="utf-8") as fh:
+        return json.load(fh).get("books", {})
+
+
+def book_meta(book_id: str) -> dict | None:
+    """Ontology entry for a canonical book id (e.g. 'genesis'), or None if unknown."""
+    return books_meta().get(book_id)
+
+
 @functools.lru_cache(maxsize=32)
 def list_books(lang: str = "en") -> list[dict]:
     """Every book in `lang`: [{'num', 'name', 'chapters', 'available'}], canonical order.

@@ -110,6 +110,55 @@ def test_accented_book_name_resolves_after_normalization():
     assert bible_api._norm("Genèse") in names
 
 
+def test_books_meta_is_complete_canonical_and_stable():
+    import bible_api
+    meta = bible_api.books_meta()
+    # Full canon, keyed by stable id; numbers 1-66 present exactly once.
+    assert len(meta) == 66
+    assert {b["number"] for b in meta.values()} == set(range(1, 67))
+    assert all(bid == b["id"] for bid, b in meta.items())  # key == id
+    # Stable canonical ids (these must never change).
+    assert "genesis" in meta and "revelation" in meta
+    assert meta["genesis"]["canonical_order"] == 1
+    assert meta["revelation"]["number"] == 66
+
+
+def test_books_meta_testament_and_category_ids():
+    import bible_api
+    meta = bible_api.books_meta()
+    by_num = {b["number"]: b for b in meta.values()}
+    # Testament uses canonical ids, derived from book number (1-39 / 40-66).
+    assert by_num[1]["testament"] == "old_testament"
+    assert by_num[39]["testament"] == "old_testament"
+    assert by_num[40]["testament"] == "new_testament"
+    # Category uses canonical ids, not display strings.
+    assert by_num[1]["category"] == "pentateuch"
+    assert by_num[19]["category"] == "wisdom"
+    assert by_num[40]["category"] == "gospels"
+    assert by_num[66]["category"] == "apocalyptic"
+    assert all("_" in c or c.islower() for c in (b["category"] for b in meta.values()))
+
+
+def test_books_meta_reserved_fields_present_and_empty():
+    import bible_api
+    g = bible_api.book_meta("genesis")
+    assert g is not None
+    # Future-facing fields exist but are empty/null now (additive, no redesign later).
+    assert g["keywords"] == [] and g["themes"] == []
+    assert g["pronunciation"] is None
+    assert g["localized_name"] is None and g["localized_short_name"] is None
+    assert bible_api.book_meta("not-a-book") is None
+
+
+def test_books_meta_does_not_change_existing_index_or_search():
+    import bible_api
+    # The ontology is additive: the existing English book index + reference
+    # resolution are unchanged whether or not meta is consulted.
+    assert bible_api._book_index("en")  # still builds
+    vo = scripture.resolve_ref("Genesis 1:1", "en")
+    assert vo.resolved and "beginning" in vo.text.lower()
+
+
 def test_unknown_translation_falls_back():
     vo = scripture.resolve_ref("John 3:16", "niv")  # not vendored in v1
     assert vo.translation_fallback is True

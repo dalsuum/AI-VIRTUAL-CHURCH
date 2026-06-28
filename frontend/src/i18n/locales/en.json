@@ -23,6 +23,19 @@
   },
   "common": {
     "language": "Language",
-    "selectLanguage": "Select language"
+    "selectLanguage": "Select language",
+    "you": "You",
+    "send": "Send"
+  },
+  "pastor": {
+    "title": "AI Pastor Chat",
+    "subtitle": "A caring, Scripture-grounded companion. Your conversation is saved to your journal.",
+    "autoDetect": "Auto Detect",
+    "changeLanguageHint": "Start a new chat to change language",
+    "empty": "Share what's on your heart. The pastor is listening. 🙏",
+    "role": "Pastor",
+    "placeholder": "Type your message…",
+    "loadError": "Could not load this conversation.",
+    "reachError": "Could not reach the pastor right now."
   }
 }

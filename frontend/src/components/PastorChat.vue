@@ -4,7 +4,10 @@
 // webhook; we poll the owner-scoped messages endpoint until the assistant turn lands.
 // Resumes a prior session when the hash carries ?session=<id>.
 import { ref, nextTick, onMounted, onBeforeUnmount } from "vue";
+import { useI18n } from "vue-i18n";
 import { api } from "../composables/useApi";
+
+const { t } = useI18n();
 
 const messages = ref([]);          // { sender, content }
 const draft = ref("");
@@ -18,7 +21,7 @@ let poll = null;
 // switch languages by starting a new chat). "auto" lets the worker detect from the first
 // message. Codes mirror the worker's supported set (driver.py _LANG_NAME).
 const LANGUAGES = [
-  { code: "auto", label: "Auto Detect" },
+  { code: "auto", label: t("pastor.autoDetect") },
   { code: "en", label: "English" },
   { code: "my", label: "မြန်မာ" },
   { code: "td", label: "Tedim" },
@@ -47,7 +50,7 @@ async function hydrate(id) {
     const res = await api.pastorMessages(id);
     messages.value = res.messages || [];
     scrollDown();
-  } catch { error.value = "Could not load this conversation."; }
+  } catch { error.value = t("pastor.loadError"); }
 }
 
 function waitForReply(prevCount) {
@@ -91,7 +94,7 @@ async function send() {
     }
     waitForReply(messages.value.length);
   } catch (e) {
-    error.value = e?.body?.message || "Could not reach the pastor right now.";
+    error.value = e?.body?.message || t("pastor.reachError");
     waiting.value = false;
   }
 }
@@ -107,12 +110,12 @@ onBeforeUnmount(() => clearInterval(poll));
 <template>
   <section class="pastor">
     <header class="pastor-head">
-      <h2>💬 AI Pastor Chat</h2>
-      <p>A caring, Scripture-grounded companion. Your conversation is saved to your journal.</p>
+      <h2>💬 {{ t("pastor.title") }}</h2>
+      <p>{{ t("pastor.subtitle") }}</p>
       <label class="pastor-lang">
-        <span>Language</span>
+        <span>{{ t("common.language") }}</span>
         <select v-model="language" :disabled="!!sessionId"
-          :title="sessionId ? 'Start a new chat to change language' : ''">
+          :title="sessionId ? t('pastor.changeLanguageHint') : ''">
           <option v-for="l in LANGUAGES" :key="l.code" :value="l.code">{{ l.label }}</option>
         </select>
       </label>
@@ -120,21 +123,21 @@ onBeforeUnmount(() => clearInterval(poll));
 
     <div ref="scroller" class="pastor-thread">
       <p v-if="!messages.length" class="pastor-empty">
-        Share what's on your heart. The pastor is listening. 🙏
+        {{ t("pastor.empty") }}
       </p>
       <div v-for="(m, i) in messages" :key="i" :class="['bubble', m.sender]">
-        <span class="who">{{ m.sender === 'user' ? 'You' : 'Pastor' }}</span>
+        <span class="who">{{ m.sender === 'user' ? t('common.you') : t('pastor.role') }}</span>
         <p>{{ m.content }}</p>
       </div>
-      <div v-if="waiting" class="bubble assistant typing"><span class="who">Pastor</span><p>…</p></div>
+      <div v-if="waiting" class="bubble assistant typing"><span class="who">{{ t('pastor.role') }}</span><p>…</p></div>
     </div>
 
     <p v-if="error" class="pastor-err">{{ error }}</p>
 
     <form class="pastor-input" @submit.prevent="send">
-      <textarea v-model="draft" rows="2" placeholder="Type your message…"
+      <textarea v-model="draft" rows="2" :placeholder="t('pastor.placeholder')"
         @keydown.enter.exact.prevent="send"></textarea>
-      <button type="submit" :disabled="waiting || !draft.trim()">Send</button>
+      <button type="submit" :disabled="waiting || !draft.trim()">{{ t("common.send") }}</button>
     </form>
   </section>
 </template>

@@ -51,6 +51,65 @@ def test_unparseable_ref_is_unresolved_not_fabricated():
     assert vo.canonical_id == ""
 
 
+def test_world_language_bibles_resolve():
+    # Public-domain / CC world-language Bibles vendored from dalsuum/bible.
+    # English references resolve against the canonical book index; native text
+    # is returned without fabrication or fallback.
+    for lang in ("de", "fr", "ta"):
+        vo = scripture.resolve_ref("John 3:16", lang)
+        assert vo.resolved is True, lang
+        assert vo.translation == lang and vo.translation_fallback is False, lang
+        assert vo.book_num == 43 and vo.chapter == 3 and vo.verse_start == 16, lang
+        assert vo.text.strip(), lang
+
+
+def test_list_books_carries_english_aliases_for_non_english():
+    # Non-English Bibles expose English name/abbr aliases so a book is findable
+    # by its English name as well as its native heading (Bible reader search).
+    import bible_api
+    ta = bible_api.list_books("ta")
+    assert ta[0]["name"] != "Genesis"  # native Tamil heading
+    aliases = [a.lower() for a in ta[0]["aliases"]]
+    assert "genesis" in aliases and "gen" in aliases
+
+
+def test_bible_discover_license_triage():
+    # The discovery helper's conservative verdict: public-domain by age, free CC
+    # grants pass, anything copyrighted or NC/ND is restricted, unclear → review.
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "bible_discover", os.path.join(os.path.dirname(__file__), "tools", "bible_discover.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    assert mod.verdict(1912, "") == "public-domain"
+    assert mod.verdict(2019, "Creative Commons CC BY-SA") == "free-license"
+    assert mod.verdict(1611, "CC BY-NC-ND") == "restricted"
+    assert mod.verdict(1978, "Copyright © 1978 Biblica") == "restricted"
+    assert mod.verdict(2012, "") == "review"  # modern, no metadata → human checks
+
+
+def test_norm_folds_latin_accents_but_preserves_other_scripts():
+    import bible_api
+    # Latin accents fold + casefold so accented queries match plain ASCII keys.
+    assert bible_api._norm("Genèse") == bible_api._norm("genese")
+    assert bible_api._norm("CAFÉ") == "cafe"
+    # Non-Latin combining marks (Tamil/Arabic) are NOT stripped — they carry
+    # meaning and live outside U+0300–U+036F.
+    tamil = "ஆதியாகமம்"
+    assert bible_api._norm(tamil) == tamil.casefold()
+    # Arabic harakat (vowel marks, U+064B–U+0652) survive normalization.
+    normalized = bible_api._norm("الْكِتَاب")
+    assert any(0x064B <= ord(c) <= 0x0652 for c in normalized)
+
+
+def test_accented_book_name_resolves_after_normalization():
+    import bible_api
+    # French/German book names with accents normalize for the reader's book index.
+    fr = bible_api.list_books("fr")
+    names = {bible_api._norm(b["name"]) for b in fr}
+    assert bible_api._norm("Genèse") in names
+
+
 def test_unknown_translation_falls_back():
     vo = scripture.resolve_ref("John 3:16", "niv")  # not vendored in v1
     assert vo.translation_fallback is True

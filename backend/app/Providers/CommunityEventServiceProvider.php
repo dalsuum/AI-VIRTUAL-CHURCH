@@ -34,5 +34,11 @@ class CommunityEventServiceProvider extends ServiceProvider
         // Friendships
         Event::listen(FriendRequestSent::class, SendFriendRequestNotification::class);
         Event::listen(FriendRequestAccepted::class, NotifyFriendRequestAccepted::class);
+
+        // Bible reading
+        Event::listen(
+            \App\Domains\Bible\Events\ReadingDayCompleted::class,
+            \App\Domains\Bible\Listeners\UpdateReadingStreak::class,
+        );
     }
 }

@@ -16,6 +16,10 @@ Schedule::command('services:dispatch-due')->everyMinute();
 // path (fires InvitationExpired). Idempotent; every five minutes is ample.
 Schedule::command('invitations:expire')->everyFiveMinutes()->withoutOverlapping();
 
+// Deliver due daily Bible-reading reminders in each user's timezone. Idempotent per
+// (user, slot, local-date); the 5-minute window matches ReminderService::WINDOW_MINUTES.
+Schedule::command('reading:remind')->everyFiveMinutes()->withoutOverlapping();
+
 // Evaluate the special-Sunday window once a day (early, before traffic) so the
 // current-observance cache is warm and the active observance is logged. The
 // resolver is also consulted live at dispatch/request time, so this is a warmer,

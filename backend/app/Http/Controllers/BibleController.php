@@ -20,11 +20,15 @@ use Illuminate\Support\Facades\Storage;
  */
 class BibleController extends Controller
 {
-    /** Translations the reader exposes — also the validation allow-list. */
-    private const LANGS = [
-        'en', 'kjv', 'my', 'td', 'he',
-        'cfm', 'cnh', 'lus', 'pck', 'csy', 'mrh', 'hlt',
-    ];
+    /**
+     * Reader translation codes. Single source of truth is Setting::BIBLE_VERSIONS
+     * so adding a Bible there (e.g. de/fr/ta) is enough — no separate list to keep
+     * in sync here (a drift that previously 404'd new translations' chapters).
+     */
+    private static function langs(): array
+    {
+        return array_keys(Setting::BIBLE_VERSIONS);
+    }
 
     private function base(): string
     {
@@ -35,7 +39,7 @@ class BibleController extends Controller
     {
         $lang = (string) $request->query('lang', 'en');
 
-        return in_array($lang, self::LANGS, true) ? $lang : 'en';
+        return in_array($lang, self::langs(), true) ? $lang : 'en';
     }
 
     /**
@@ -51,7 +55,7 @@ class BibleController extends Controller
     public function config()
     {
         $narratable = [];
-        foreach (self::LANGS as $l) {
+        foreach (self::langs() as $l) {
             $narratable[$l] = in_array(Setting::bibleNarrationMode($l), Setting::SERVER_NARRATION_MODES, true);
         }
 
@@ -76,7 +80,7 @@ class BibleController extends Controller
     public function bgMusic(Request $request)
     {
         $data = $request->validate([
-            'lang'    => ['nullable', 'in:' . implode(',', self::LANGS)],
+            'lang'    => ['nullable', 'in:' . implode(',', self::langs())],
             'book'    => ['required', 'integer', 'between:1,66'],
             'chapter' => ['required', 'integer', 'min:1'],
             'hour'    => ['nullable', 'integer', 'between:0,23'],
@@ -136,7 +140,7 @@ class BibleController extends Controller
     public function bgMusicMatch(Request $request, \App\Services\BibleBgMusicLibrary $library)
     {
         $data = $request->validate([
-            'lang'    => ['nullable', 'in:' . implode(',', self::LANGS)],
+            'lang'    => ['nullable', 'in:' . implode(',', self::langs())],
             'book'    => ['required', 'integer', 'between:1,66'],
             'chapter' => ['required', 'integer', 'min:1'],
             'hour'    => ['nullable', 'integer', 'between:0,23'],
@@ -217,7 +221,7 @@ class BibleController extends Controller
     public function chapter(Request $request)
     {
         $data = $request->validate([
-            'lang'    => ['nullable', 'in:' . implode(',', self::LANGS)],
+            'lang'    => ['nullable', 'in:' . implode(',', self::langs())],
             'book'    => ['required', 'integer', 'between:1,66'],
             'chapter' => ['required', 'integer', 'min:1'],
         ]);
@@ -251,7 +255,7 @@ class BibleController extends Controller
     public function audio(Request $request)
     {
         $data = $request->validate([
-            'lang'    => ['nullable', 'in:' . implode(',', self::LANGS)],
+            'lang'    => ['nullable', 'in:' . implode(',', self::langs())],
             'book'    => ['required', 'integer', 'between:1,66'],
             'chapter' => ['required', 'integer', 'min:1'],
             'gender'  => ['nullable', 'in:male,female'],
@@ -295,6 +299,51 @@ class BibleController extends Controller
         if ($resp->status() === 404) {
             abort(404, 'Chapter not found');
         }
+        abort_unless($resp->successful(), 502, 'Narration service unavailable');
+
+        return $resp->json();
+    }
+
+    /**
+     * Narrate an AI Bible Study reply aloud. Reuses the exact provider/voice
+     * resolution of chapter narration (Setting::bibleNarrationMode + edgeVoice),
+     * so Bible Study narration follows the same per-language voice mapping. The
+     * worker caches by content, so a re-narrated reply is synthesized only once.
+     */
+    public function narrateText(Request $request)
+    {
+        $data = $request->validate([
+            'lang'   => ['nullable', 'in:' . implode(',', self::langs())],
+            'text'   => ['required', 'string', 'max:8000'],
+            'gender' => ['nullable', 'in:male,female'],
+        ]);
+
+        $lang   = $data['lang'] ?? 'en';
+        $gender = $data['gender'] ?? 'female';
+
+        $this->assertVersionEnabled($lang);
+
+        $mode = Setting::bibleNarrationMode($lang);
+        if (! in_array($mode, Setting::SERVER_NARRATION_MODES, true)) {
+            abort(409, 'Voice narration is not available for this language.');
+        }
+
+        $voice = match ($mode) {
+            'edge_tts' => $this->edgeVoice($lang, $gender),
+            'voicebox' => Setting::get('voicebox_engine', 'qwen'),
+            default    => '',
+        };
+
+        $resp = Http::timeout((int) config('services.tedim_llm.bible_audio_timeout', 600))
+            ->post("{$this->base()}/bible/narrate-text", [
+                'lang'            => $lang,
+                'text'            => $data['text'],
+                'mode'            => $mode,
+                'gender'          => $gender,
+                'voice'           => $voice,
+                'storage_backend' => (string) Setting::get('storage_backend', 'local'),
+            ]);
+
         abort_unless($resp->successful(), 502, 'Narration service unavailable');
 
         return $resp->json();

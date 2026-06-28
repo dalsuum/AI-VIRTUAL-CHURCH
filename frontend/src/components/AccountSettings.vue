@@ -1,6 +1,6 @@
 <template>
   <div class="account">
-    <h2 class="acct-title">My Account</h2>
+    <h2 class="acct-title">{{ t("account.title") }}</h2>
 
     <!-- Role badge -->
     <div class="role-row">
@@ -9,11 +9,11 @@
 
     <!-- Name -->
     <section class="acct-section">
-      <h3>Display Name</h3>
+      <h3>{{ t("account.displayName") }}</h3>
       <form @submit.prevent="saveName" class="acct-form">
-        <input v-model="nameVal" type="text" placeholder="Your name" maxlength="255" class="acct-input" />
+        <input v-model="nameVal" type="text" :placeholder="t('account.namePlaceholder')" maxlength="255" class="acct-input" />
         <button type="submit" class="acct-btn" :disabled="savingName || !nameVal.trim()">
-          {{ savingName ? 'Saving…' : 'Save Name' }}
+          {{ savingName ? t("common.saving") : t("account.saveName") }}
         </button>
       </form>
       <p v-if="nameMsg" class="acct-msg" :class="nameMsgClass">{{ nameMsg }}</p>
@@ -21,33 +21,33 @@
 
     <!-- Spiritual profile preferences (registered users only) -->
     <section class="acct-section" v-if="!isGuest">
-      <h3>Spiritual Profile</h3>
+      <h3>{{ t("account.spiritualProfile") }}</h3>
       <form @submit.prevent="saveProfile" class="acct-form col">
-        <label class="acct-label">Favorite language
+        <label class="acct-label">{{ t("account.favLanguage") }}
           <select v-model="profile.fav_language" class="acct-input">
             <option value="">—</option><option value="en">English</option>
             <option value="my">Burmese</option><option value="td">Tedim (Zolai)</option>
           </select>
         </label>
-        <label class="acct-label">Favorite Bible version
-          <input v-model="profile.fav_bible_version" class="acct-input" maxlength="12" placeholder="e.g. BSB" />
+        <label class="acct-label">{{ t("account.favBibleVersion") }}
+          <input v-model="profile.fav_bible_version" class="acct-input" maxlength="12" :placeholder="t('account.favBiblePlaceholder')" />
         </label>
-        <label class="acct-label">Favorite worship language
+        <label class="acct-label">{{ t("account.favWorshipLanguage") }}
           <select v-model="profile.fav_worship_language" class="acct-input">
             <option value="">—</option><option value="en">English</option>
             <option value="my">Burmese</option><option value="td">Tedim (Zolai)</option>
           </select>
         </label>
-        <label class="acct-label">Spiritual goals
+        <label class="acct-label">{{ t("account.spiritualGoals") }}
           <textarea v-model="profile.spiritual_goals" class="acct-input" rows="2" maxlength="2000"
-            placeholder="What are you seeking in this season?"></textarea>
+            :placeholder="t('account.goalsPlaceholder')"></textarea>
         </label>
         <label class="acct-checkbox">
           <input type="checkbox" v-model="profile.ai_memory_enabled" />
-          Allow AI to reference my past sessions ("Last week we studied…")
+          {{ t("account.aiMemory") }}
         </label>
         <button type="submit" class="acct-btn" :disabled="savingProfile">
-          {{ savingProfile ? 'Saving…' : 'Save Profile' }}
+          {{ savingProfile ? t("common.saving") : t("account.saveProfile") }}
         </button>
       </form>
       <p v-if="profileMsg" class="acct-msg" :class="profileMsgClass">{{ profileMsg }}</p>
@@ -55,13 +55,13 @@
 
     <!-- Change password (registered users only) -->
     <section class="acct-section" v-if="!isGuest">
-      <h3>Change Password</h3>
+      <h3>{{ t("account.changePassword") }}</h3>
       <form @submit.prevent="savePassword" class="acct-form col">
-        <input v-model="currentPw" type="password" placeholder="Current password" class="acct-input" autocomplete="current-password" />
-        <input v-model="newPw"     type="password" placeholder="New password (8+ chars)" class="acct-input" autocomplete="new-password" />
-        <input v-model="confirmPw" type="password" placeholder="Confirm new password" class="acct-input" autocomplete="new-password" />
+        <input v-model="currentPw" type="password" :placeholder="t('account.currentPassword')" class="acct-input" autocomplete="current-password" />
+        <input v-model="newPw"     type="password" :placeholder="t('account.newPassword')" class="acct-input" autocomplete="new-password" />
+        <input v-model="confirmPw" type="password" :placeholder="t('account.confirmPassword')" class="acct-input" autocomplete="new-password" />
         <button type="submit" class="acct-btn" :disabled="savingPw">
-          {{ savingPw ? 'Saving…' : 'Change Password' }}
+          {{ savingPw ? t("common.saving") : t("account.changePassword") }}
         </button>
       </form>
       <p v-if="pwMsg" class="acct-msg" :class="pwMsgClass">{{ pwMsg }}</p>
@@ -69,7 +69,7 @@
 
     <!-- Subscription & tokens (registered users only) -->
     <section class="acct-section" v-if="!isGuest">
-      <h3>Subscription</h3>
+      <h3>{{ t("account.subscription") }}</h3>
       <div class="sub-card">
         <div class="sub-row">
           <span class="plan-badge" :class="plan">{{ planLabel }}</span>
@@ -81,10 +81,10 @@
           <div class="token-bar">
             <div class="token-fill" :style="{ width: tokenPct + '%' }"></div>
           </div>
-          <span class="token-text">{{ tokenBalance }} / {{ monthlyAllowance }} tokens</span>
+          <span class="token-text">{{ t("account.tokens", { balance: tokenBalance, allowance: monthlyAllowance }) }}</span>
         </div>
 
-        <p v-if="expiresAt" class="sub-meta">Renews / ends: {{ formatDate(expiresAt) }}</p>
+        <p v-if="expiresAt" class="sub-meta">{{ t("account.renewsEnds", { date: formatDate(expiresAt) }) }}</p>
 
         <div class="sub-actions">
           <!-- Hide the upgrade CTA entirely when no payment provider is configured,
@@ -92,15 +92,15 @@
                still cancel (that path doesn't need a new checkout). -->
           <template v-if="isPremium">
             <button class="acct-btn ghost" :disabled="subBusy" @click="cancel">
-              {{ subBusy ? "Working…" : "Cancel subscription" }}
+              {{ subBusy ? t("account.working") : t("account.cancel") }}
             </button>
           </template>
           <template v-else-if="billingEnabled">
             <button class="acct-btn" :disabled="subBusy" @click="upgrade">
-              {{ subBusy ? "Redirecting…" : "Upgrade to Premium" }}
+              {{ subBusy ? t("account.redirecting") : t("account.upgrade") }}
             </button>
           </template>
-          <p v-else class="sub-meta">Premium upgrades are not available right now.</p>
+          <p v-else class="sub-meta">{{ t("account.noUpgrade") }}</p>
         </div>
         <p v-if="subMsg" class="acct-msg" :class="subMsgClass">{{ subMsg }}</p>
       </div>
@@ -109,8 +109,8 @@
     <!-- Token history (registered users only) -->
     <section class="acct-section" v-if="!isGuest">
       <h3>
-        Token History
-        <button class="link-btn" @click="toggleHistory">{{ showHistory ? "hide" : "show" }}</button>
+        {{ t("account.tokenHistory") }}
+        <button class="link-btn" @click="toggleHistory">{{ showHistory ? t("common.hide") : t("common.show") }}</button>
       </h3>
       <ul v-if="showHistory" class="ledger">
         <li v-for="(e, i) in history" :key="i" class="ledger-row">
@@ -120,27 +120,24 @@
             {{ e.amount > 0 ? "+" : "" }}{{ e.amount }}
           </span>
         </li>
-        <li v-if="!history.length" class="ledger-empty">No activity yet.</li>
+        <li v-if="!history.length" class="ledger-empty">{{ t("account.noActivity") }}</li>
       </ul>
     </section>
 
-    <button class="close-btn" @click="emit('close')">← Back</button>
+    <button class="close-btn" @click="emit('close')">← {{ t("common.back") }}</button>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from "vue";
+import { useI18n } from "vue-i18n";
 import { api } from "../composables/useApi";
+
+const { t, te } = useI18n();
 
 const emit = defineEmits(["close", "nameChanged"]);
 
-const ROLE_LABELS = {
-  admin: "Administrator",
-  moderator: "Moderator",
-  presenter: "Presenter",
-  member: "Member",
-  guest: "Guest",
-};
+
 
 const role    = ref("member");
 const isGuest = ref(false);
@@ -166,10 +163,9 @@ const savingPw  = ref(false);
 const pwMsg     = ref("");
 const pwMsgClass = ref("ok");
 
-const roleLabel = computed(() => ROLE_LABELS[role.value] || role.value);
+const roleLabel = computed(() => te(`account.roles.${role.value}`) ? t(`account.roles.${role.value}`) : role.value);
 
 // Subscription + token state.
-const PLAN_LABELS = { guest: "Guest", member: "Member", premium: "Premium" };
 const plan             = ref("member");
 const subStatus        = ref("active");
 const isPremium        = ref(false);
@@ -183,7 +179,7 @@ const subMsgClass      = ref("ok");
 const showHistory      = ref(false);
 const history          = ref([]);
 
-const planLabel = computed(() => PLAN_LABELS[plan.value] || plan.value);
+const planLabel = computed(() => te(`account.plans.${plan.value}`) ? t(`account.plans.${plan.value}`) : plan.value);
 const tokenPct  = computed(() => {
   if (!monthlyAllowance.value) return 0;
   return Math.max(0, Math.min(100, Math.round((tokenBalance.value / monthlyAllowance.value) * 100)));
@@ -212,7 +208,7 @@ async function upgrade() {
     const { checkout_url } = await api.subscriptionCheckout();
     if (checkout_url) window.location.href = checkout_url;
   } catch (e) {
-    subMsg.value = e.data?.message || "Could not start checkout.";
+    subMsg.value = e.data?.message || t("account.errCheckout");
     subMsgClass.value = "err";
     subBusy.value = false;
   }
@@ -226,7 +222,7 @@ async function cancel() {
     subMsg.value = res.message; subMsgClass.value = "ok";
     await loadSubscription();
   } catch (e) {
-    subMsg.value = e.data?.message || "Could not cancel.";
+    subMsg.value = e.data?.message || t("account.errCancel");
     subMsgClass.value = "err";
   } finally {
     subBusy.value = false;
@@ -263,10 +259,10 @@ async function saveProfile() {
   profileMsg.value = "";
   try {
     await api.updateProfile(profile.value);
-    profileMsg.value = "Profile saved.";
+    profileMsg.value = t("account.profileSaved");
     profileMsgClass.value = "ok";
   } catch (e) {
-    profileMsg.value = e.data?.message || "Failed to save profile.";
+    profileMsg.value = e.data?.message || t("account.errSaveProfile");
     profileMsgClass.value = "err";
   } finally {
     savingProfile.value = false;
@@ -279,11 +275,11 @@ async function saveName() {
   nameMsg.value = "";
   try {
     await api.updateName(nameVal.value.trim());
-    nameMsg.value = "Name updated.";
+    nameMsg.value = t("account.nameUpdated");
     nameMsgClass.value = "ok";
     emit("nameChanged", nameVal.value.trim());
   } catch (e) {
-    nameMsg.value = e.data?.message || "Failed to update name.";
+    nameMsg.value = e.data?.message || t("account.errSaveName");
     nameMsgClass.value = "err";
   } finally {
     savingName.value = false;
@@ -293,23 +289,23 @@ async function saveName() {
 async function savePassword() {
   pwMsg.value = "";
   if (newPw.value !== confirmPw.value) {
-    pwMsg.value = "New passwords do not match.";
+    pwMsg.value = t("account.pwMismatch");
     pwMsgClass.value = "err";
     return;
   }
   if (newPw.value.length < 8) {
-    pwMsg.value = "New password must be at least 8 characters.";
+    pwMsg.value = t("account.pwTooShort");
     pwMsgClass.value = "err";
     return;
   }
   savingPw.value = true;
   try {
     await api.changePassword(currentPw.value, newPw.value);
-    pwMsg.value = "Password changed.";
+    pwMsg.value = t("account.pwChanged");
     pwMsgClass.value = "ok";
     currentPw.value = newPw.value = confirmPw.value = "";
   } catch (e) {
-    pwMsg.value = e.data?.message || "Failed to change password.";
+    pwMsg.value = e.data?.message || t("account.errChangePassword");
     pwMsgClass.value = "err";
   } finally {
     savingPw.value = false;

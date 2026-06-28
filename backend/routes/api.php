@@ -24,6 +24,9 @@ use Illuminate\Support\Facades\Route;
 // Public app configuration (intake options) — read before a worshipper has a session.
 Route::get('/config', [ConfigController::class, 'show']);
 
+// Public interface-locale registry — feeds every language selector in the SPA.
+Route::get('/languages', [\App\Http\Controllers\LocaleController::class, 'index'])->middleware('throttle:120,1');
+
 // Public worship song library — feeds the front song panel (my/td).
 Route::get('/songs', [SongController::class, 'index']);
 
@@ -207,6 +210,19 @@ Route::middleware(['auth:sanctum', 'account.usable'])->group(function () {
     Route::get('/churches',                    [\App\Http\Controllers\ChurchController::class, 'index']);
     Route::get('/churches/{church}/members',   [\App\Http\Controllers\ChurchController::class, 'members']);
 
+    // ── Bible reading plans & daily reminders (Phase 2 — PR 5) ────────────────
+    // Progress is mutated only by ReadingPlanService. "Today" is the current plan day.
+    Route::get('/bible/plans',                    [\App\Http\Controllers\BibleReadingController::class, 'plans']);
+    Route::post('/bible/plans/{plan}/enroll',     [\App\Http\Controllers\BibleReadingController::class, 'enroll'])
+        ->middleware('throttle:30,1');
+    Route::get('/bible/reading/today',            [\App\Http\Controllers\BibleReadingController::class, 'today']);
+    Route::post('/bible/reading/today/complete',  [\App\Http\Controllers\BibleReadingController::class, 'complete'])
+        ->middleware('throttle:60,1');
+    Route::get('/me/streak',                      [\App\Http\Controllers\BibleReadingController::class, 'streak']);
+    Route::get('/me/reminders',                   [\App\Http\Controllers\ReminderController::class, 'show']);
+    Route::put('/me/reminders',                   [\App\Http\Controllers\ReminderController::class, 'update'])
+        ->middleware('throttle:60,1');
+
     // ── Unified Conversation & Spiritual History ──────────────────────────────
     // Every route is owner-scoped inside the controller (findOwned → 404 on miss).
     Route::get('/history',                 [\App\Http\Controllers\HistoryController::class, 'index']);
@@ -330,6 +346,9 @@ Route::middleware(['auth:sanctum', 'account.usable'])->group(function () {
         Route::get('/worship-tracks/youtube-search',  [\App\Http\Controllers\WorshipTrackAdminController::class, 'youtubeSearch']);
         Route::get('/worship-tracks',                 [\App\Http\Controllers\WorshipTrackAdminController::class, 'index']);
         Route::post('/worship-tracks',                [\App\Http\Controllers\WorshipTrackAdminController::class, 'store']);
+        // Static segments registered before {worshipTrack} so they aren't captured as ids.
+        Route::get('/worship-tracks/export',          [\App\Http\Controllers\WorshipTrackAdminController::class, 'export']);
+        Route::post('/worship-tracks/import',         [\App\Http\Controllers\WorshipTrackAdminController::class, 'import']);
         Route::get('/worship-tracks/{worshipTrack}',  [\App\Http\Controllers\WorshipTrackAdminController::class, 'show']);
         Route::patch('/worship-tracks/{worshipTrack}',[\App\Http\Controllers\WorshipTrackAdminController::class, 'update']);
         Route::delete('/worship-tracks/{worshipTrack}',[\App\Http\Controllers\WorshipTrackAdminController::class, 'destroy']);
@@ -500,6 +519,10 @@ Route::middleware(['auth:sanctum', 'account.usable'])->prefix('v1/study')->group
     Route::post('/sessions/{session}/end', [StudyController::class, 'endSession']);
     Route::post('/sessions/{session}/email', [StudyController::class, 'emailSummary'])
         ->middleware('throttle:6,1');
+    // Optional Text-to-Speech for a discussion reply (user-toggled, off by default).
+    // Reuses the chapter-narration pipeline + per-language voice mapping.
+    Route::post('/narrate', [BibleController::class, 'narrateText'])
+        ->middleware('throttle:30,1');
 });
 
 // AI Core / Bible Study admin console. Entry gated by `staff`; each method enforces

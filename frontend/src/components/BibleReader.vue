@@ -5,8 +5,11 @@
 // language Bibles from the Bible Society of Myanmar (Tedim, Falam, Hakha, Mizo,
 // Paite, Sizang, Mara, Matu). Read-only, no auth required.
 import { ref, computed, watch, onMounted, nextTick } from "vue";
+import { useI18n } from "vue-i18n";
 import { api } from "../composables/useApi.js";
 import AppIcon from "./AppIcon.vue";
+
+const { t } = useI18n();
 
 // Tab order: KJV, English, Hebrew, Burmese first, then the Chin/Zo Bibles
 // alphabetically by label.
@@ -25,6 +28,10 @@ const LANGS = [
   { code: "pck", label: "Paite", note: "Paite Bible (1971)" },
   { code: "csy", label: "Sizang", note: "Lai Siangtho (Sizang, 1932)" },
   { code: "td", label: "Tedim", note: "Lai Siangtho 1932" },
+  // World-language Bibles (public-domain / Creative Commons). A→Z by label.
+  { code: "de", label: "Deutsch", note: "Luther Bibel (1912)" },
+  { code: "fr", label: "Français", note: "Bible Ostervald (1877)" },
+  { code: "ta", label: "தமிழ்", note: "Indian Revised Version (Tamil, 2019)" },
 ];
 
 // Right-to-left scripts (Hebrew) need the reader heading and verse body laid out
@@ -37,6 +44,9 @@ const LATIN_LANGS = new Set([
   "en", "kjv",
   // The Chin/Zo Bibles are written in Latin script.
   "cfm", "cnh", "lus", "pck", "csy", "mrh", "hlt",
+  // German and French are Latin script too (Tamil is not — it keeps the large
+  // `mm` script class, like Myanmar/Hebrew).
+  "de", "fr",
 ]);
 
 const lang = ref("en");
@@ -278,9 +288,9 @@ function toggleControls() {
 // A scale factor applied to the verse font-size, remembered per-device.
 const SIZE_KEY = "bible_text_size";
 const TEXT_SIZES = [
-  { id: "normal", label: "Normal", scale: 1 },
-  { id: "medium", label: "Medium", scale: 1.2 },
-  { id: "large",  label: "Large",  scale: 1.45 },
+  { id: "normal", scale: 1 },
+  { id: "medium", scale: 1.2 },
+  { id: "large", scale: 1.45 },
 ];
 const _storedSize = localStorage.getItem(SIZE_KEY);
 const textSize = ref(TEXT_SIZES.some((s) => s.id === _storedSize) ? _storedSize : "normal");
@@ -364,9 +374,9 @@ async function copySelection() {
   const text = `${selectionReference()}\n\n${body}`;
   try {
     await navigator.clipboard.writeText(text);
-    copyStatus.value = `Copied ${picked.length} verse${picked.length > 1 ? "s" : ""}`;
+    copyStatus.value = t("bible.copied", { n: picked.length }, picked.length);
   } catch {
-    copyStatus.value = "Copy failed — long-press to select instead";
+    copyStatus.value = t("bible.copyFailed");
   }
   setTimeout(() => { copyStatus.value = ""; }, 2500);
 }
@@ -408,10 +418,21 @@ function scrollVerseIntoView(i) {
   if (node) node.scrollIntoView({ block: "center", behavior: "smooth" });
 }
 
+// Accent- and case-insensitive, Unicode-safe (mirrors bible_api._norm): fold
+// Latin diacritics (Genèse → genese) without harming Tamil/Arabic/etc marks.
+const normSearch = (s) =>
+  (s || "").normalize("NFKD").replace(new RegExp("[\\u0300-\\u036f]", "g"), "").toLowerCase().trim();
+
 const filteredBooks = computed(() => {
-  const q = bookSearch.value.trim().toLowerCase();
+  const q = normSearch(bookSearch.value);
   if (!q) return books.value;
-  return books.value.filter((b) => b.name.toLowerCase().includes(q));
+  // Match the native heading or any English alias (name/shortname/abbr) so a
+  // book is findable by its English or localized name (accent-insensitive).
+  return books.value.filter(
+    (b) =>
+      normSearch(b.name).includes(q) ||
+      (b.aliases || []).some((a) => normSearch(a).includes(q)),
+  );
 });
 
 const chapterList = computed(() =>
@@ -425,7 +446,7 @@ async function loadBooks() {
     const res = await api.bibleBooks(lang.value);
     books.value = res.books || [];
   } catch (e) {
-    error.value = "Could not load the Bible. Please try again.";
+    error.value = t("bible.errors.loadBible");
     books.value = [];
   } finally {
     loadingBooks.value = false;
@@ -451,7 +472,7 @@ async function loadChapter() {
       syncBgMusic("play");
     }
   } catch (e) {
-    error.value = "Could not load that chapter.";
+    error.value = t("bible.errors.loadChapter");
     chapter.value = null;
   } finally {
     loadingChapter.value = false;
@@ -546,12 +567,12 @@ onMounted(() => {
     <!-- While reading, the app header folds away with the controls so a
          collapsed panel leaves only the slim handle bar above the verses. -->
     <header v-show="!selectedBook || controlsOpen" class="bible-header">
-      <a href="#" class="back-link"><AppIcon name="mdi:arrow-left" size="18px" /> Back to worship</a>
+      <a href="#" class="back-link"><AppIcon name="mdi:arrow-left" size="18px" /> {{ t("bible.backToWorship") }}</a>
       <div class="bible-title-block">
-        <h1 class="bible-title"><AppIcon name="mdi:book-cross" size="22px" /> Online Bible</h1>
-        <p class="bible-sub">Read Scripture in English (King James Version &amp; Berean Standard Bible, 2020), Hebrew (Westminster Leningrad Codex — Tanakh), Burmese (Judson, 1835) and the Chin/Zo languages (Falam, Hakha, Mara, Matu, Mizo, Paite, Sizang, Tedim) — public-domain translations.</p>
+        <h1 class="bible-title"><AppIcon name="mdi:book-cross" size="22px" /> {{ t("bible.title") }}</h1>
+        <p class="bible-sub">{{ t("bible.subtitle") }}</p>
       </div>
-      <div class="lang-tabs" role="group" aria-label="Translation">
+      <div class="lang-tabs" role="group" :aria-label="t('bible.translation')">
         <button
           v-for="l in visibleLangs"
           :key="l.code"
@@ -574,10 +595,10 @@ onMounted(() => {
         v-model="bookSearch"
         class="search-input"
         type="search"
-        placeholder="Search books…"
-        aria-label="Search books"
+        :placeholder="t('bible.searchBooks')"
+        :aria-label="t('bible.searchBooksAria')"
       />
-      <p v-if="loadingBooks" class="muted">Loading…</p>
+      <p v-if="loadingBooks" class="muted">{{ t("common.loading") }}</p>
       <div v-else class="book-grid">
         <button
           v-for="b in filteredBooks"
@@ -585,14 +606,14 @@ onMounted(() => {
           class="book-card"
           :class="{ unavailable: b.available === false }"
           :disabled="b.available === false"
-          :title="b.available === false ? 'Not in this translation' : b.name"
+          :title="b.available === false ? t('bible.notInTranslation') : b.name"
           @click="openBook(b)"
         >
           <span class="book-name">{{ b.name }}</span>
-          <span class="book-ch">{{ b.available === false ? '—' : b.chapters + ' ch.' }}</span>
+          <span class="book-ch">{{ b.available === false ? '—' : t('bible.chaptersShort', { n: b.chapters }) }}</span>
         </button>
       </div>
-      <p v-if="!loadingBooks && filteredBooks.length === 0" class="muted">No books found.</p>
+      <p v-if="!loadingBooks && filteredBooks.length === 0" class="muted">{{ t("bible.noBooks") }}</p>
     </div>
 
     <!-- Chapter reader -->
@@ -601,7 +622,7 @@ onMounted(() => {
            only the verses scroll (like Excel freeze panes). -->
       <div class="reader-top">
       <div class="reader-handle">
-        <button class="link-btn" @click="backToBooks" aria-label="All books" title="All books">
+        <button class="link-btn" @click="backToBooks" :aria-label="t('bible.allBooks')" :title="t('bible.allBooks')">
           <AppIcon name="mdi:arrow-left" size="18px" /><span class="btn-label"> All books</span>
         </button>
         <h2 class="reader-heading" :dir="isRtl ? 'rtl' : 'ltr'">{{ chapter?.name || selectedBook.name }} {{ chapterNum }}</h2>
@@ -609,8 +630,8 @@ onMounted(() => {
           type="button"
           class="collapse-btn"
           :aria-expanded="controlsOpen"
-          :aria-label="controlsOpen ? 'Hide controls' : 'Show controls'"
-          :title="controlsOpen ? 'Hide controls' : 'Show controls'"
+          :aria-label="controlsOpen ? t('bible.hideControls') : t('bible.showControls')"
+          :title="controlsOpen ? t('bible.hideControls') : t('bible.showControls')"
           @click="toggleControls"
         >
           <AppIcon :name="controlsOpen ? 'mdi:chevron-up' : 'mdi:chevron-down'" size="20px" />
@@ -624,12 +645,12 @@ onMounted(() => {
             v-if="canNarrate && feat('listen')"
             class="listen-btn"
             :disabled="loadingAudio || loadingChapter"
-            :aria-label="loadingAudio ? 'Preparing audio' : 'Listen'"
-            :title="loadingAudio ? 'Preparing audio' : 'Listen'"
+            :aria-label="loadingAudio ? t('bible.preparingAudio') : t('bible.listen')"
+            :title="loadingAudio ? t('bible.preparingAudio') : t('bible.listen')"
             @click="listen"
           >
             <AppIcon :name="loadingAudio ? 'mdi:loading' : 'mdi:volume-high'" size="18px" :class="{ spin: loadingAudio }" />
-            <span class="btn-label"> {{ loadingAudio ? 'Preparing…' : 'Listen' }}</span>
+            <span class="btn-label"> {{ loadingAudio ? t('bible.preparing') : t('bible.listen') }}</span>
           </button>
           <button
             v-if="feat('highlight')"
@@ -637,11 +658,11 @@ onMounted(() => {
             class="icon-toggle"
             :class="{ active: highlightEnabled }"
             :aria-pressed="highlightEnabled"
-            :aria-label="`Verse highlighting ${highlightEnabled ? 'on' : 'off'}`"
-            :title="`Verse highlighting ${highlightEnabled ? 'on' : 'off'}`"
+            :aria-label="t('bible.highlightAria', { status: (highlightEnabled ? t('common.on') : t('common.off')) })"
+            :title="t('bible.highlightAria', { status: (highlightEnabled ? t('common.on') : t('common.off')) })"
             @click="toggleHighlight"
           >
-            <AppIcon name="mdi:format-color-highlight" size="18px" /><span class="btn-label"> Highlight: {{ highlightEnabled ? 'On' : 'Off' }}</span>
+            <AppIcon name="mdi:format-color-highlight" size="18px" /><span class="btn-label"> {{ t('bible.highlight') }}: {{ (highlightEnabled ? t('common.on') : t('common.off')) }}</span>
           </button>
           <button
             v-if="canNarrate && feat('continuous')"
@@ -649,11 +670,11 @@ onMounted(() => {
             class="icon-toggle"
             :class="{ active: continuousRead }"
             :aria-pressed="continuousRead"
-            :aria-label="`Read whole Bible continuously ${continuousRead ? 'on' : 'off'}`"
-            :title="`Read whole Bible continuously ${continuousRead ? 'on' : 'off'}`"
+            :aria-label="t('bible.continuousAria', { status: continuousRead ? t('common.on') : t('common.off') })"
+            :title="t('bible.continuousAria', { status: continuousRead ? t('common.on') : t('common.off') })"
             @click="toggleContinuous"
           >
-            <AppIcon name="mdi:autorenew" size="18px" /><span class="btn-label"> Continuous: {{ continuousRead ? 'On' : 'Off' }}</span>
+            <AppIcon name="mdi:autorenew" size="18px" /><span class="btn-label"> {{ t('bible.continuous') }}: {{ continuousRead ? t('common.on') : t('common.off') }}</span>
           </button>
           <button
             v-if="musicAvailable && feat('music')"
@@ -661,11 +682,11 @@ onMounted(() => {
             class="icon-toggle"
             :class="{ active: bgMusicPref }"
             :aria-pressed="bgMusicPref"
-            :aria-label="`Background music ${bgMusicPref ? 'on' : 'off'}`"
-            :title="`Background music ${bgMusicPref ? 'on' : 'off'}`"
+            :aria-label="t('bible.musicAria', { status: bgMusicPref ? t('common.on') : t('common.off') })"
+            :title="t('bible.musicAria', { status: bgMusicPref ? t('common.on') : t('common.off') })"
             @click="toggleBgMusic"
           >
-            <AppIcon name="mdi:music-note" size="18px" /><span class="btn-label"> Music: {{ bgMusicPref ? 'On' : 'Off' }}</span>
+            <AppIcon name="mdi:music-note" size="18px" /><span class="btn-label"> {{ t('bible.music') }}: {{ bgMusicPref ? t('common.on') : t('common.off') }}</span>
           </button>
           <!-- Background-music element lives here (not inside the narration audio
                wrapper) so it exists and can play on its own even when there's no
@@ -684,14 +705,14 @@ onMounted(() => {
             class="icon-toggle"
             :class="{ active: selectMode }"
             :aria-pressed="selectMode"
-            :aria-label="`Select verses to copy ${selectMode ? 'on' : 'off'}`"
-            :title="`Select verses to copy ${selectMode ? 'on' : 'off'}`"
+            :aria-label="t('bible.selectAria', { status: selectMode ? t('common.on') : t('common.off') })"
+            :title="t('bible.selectAria', { status: selectMode ? t('common.on') : t('common.off') })"
             @click="toggleSelectMode"
           >
-            <AppIcon name="mdi:clipboard-check-outline" size="18px" /><span class="btn-label"> Select: {{ selectMode ? 'On' : 'Off' }}</span>
+            <AppIcon name="mdi:clipboard-check-outline" size="18px" /><span class="btn-label"> {{ t('bible.select') }}: {{ selectMode ? t('common.on') : t('common.off') }}</span>
           </button>
-          <select class="ch-select" :value="chapterNum" aria-label="Chapter" @change="goChapter(Number($event.target.value))">
-            <option v-for="n in chapterList" :key="n" :value="n">Chapter {{ n }}</option>
+          <select class="ch-select" :value="chapterNum" :aria-label="t('bible.chapter')" @change="goChapter(Number($event.target.value))">
+            <option v-for="n in chapterList" :key="n" :value="n">{{ t('bible.chapterN', { n }) }}</option>
           </select>
         </div>
 
@@ -706,22 +727,22 @@ onMounted(() => {
             class="pref-chip"
             :class="{ active: textSize === s.id }"
             @click="setTextSize(s.id)"
-          >{{ s.label }}</button>
+          >{{ t('bible.textSize.' + s.id) }}</button>
           </template>
           <span v-if="feat('textsize') && feat('color')" class="prefs-sep" aria-hidden="true">·</span>
           <template v-if="feat('color')">
-          <span class="prefs-label">Color</span>
+          <span class="prefs-label">{{ t("bible.color") }}</span>
           <button
-            v-for="t in BG_THEMES"
-            :key="t.id"
+            v-for="bt in BG_THEMES"
+            :key="bt.id"
             type="button"
             class="swatch"
-            :class="{ active: bgTheme === t.id, 'swatch-default': t.id === 'default' }"
-            :style="t.swatch ? { background: t.swatch } : {}"
-            :aria-label="`Reading background ${t.label}`"
-            :title="t.label"
-            @click="setBgTheme(t.id)"
-          >{{ t.id === 'default' ? 'A' : '' }}</button>
+            :class="{ active: bgTheme === bt.id, 'swatch-default': bt.id === 'default' }"
+            :style="bt.swatch ? { background: bt.swatch } : {}"
+            :aria-label="t('bible.readingBackgroundAria', { name: t('bible.bgTheme.' + bt.id) })"
+            :title="t('bible.bgTheme.' + bt.id)"
+            @click="setBgTheme(bt.id)"
+          >{{ bt.id === 'default' ? 'A' : '' }}</button>
           </template>
         </div>
       </div>
@@ -742,8 +763,8 @@ onMounted(() => {
           @pause="syncBgMusic('pause')"
           @ended="onNarrationEnded"
         ></audio>
-        <div v-if="feat('speed')" class="speed-row" role="group" aria-label="Playback speed">
-          <span class="speed-label">Speed</span>
+        <div v-if="feat('speed')" class="speed-row" role="group" :aria-label="t('bible.playbackSpeedAria')">
+          <span class="speed-label">{{ t("bible.speed") }}</span>
           <button
             v-for="s in SPEEDS"
             :key="s"
@@ -752,7 +773,7 @@ onMounted(() => {
             :class="{ active: playbackRate === s }"
             @click="setSpeed(s)"
           >
-            {{ s === 1 ? 'Normal' : s + '×' }}
+            {{ s === 1 ? t('bible.normal') : s + '×' }}
           </button>
         </div>
       </div>
@@ -763,7 +784,7 @@ onMounted(() => {
       <!-- The only scrolling region: verses scroll while the top bar and the
            Prev/Next footer stay frozen (Excel-style freeze panes). -->
       <div class="verses-scroll" :style="readingStyle">
-        <p v-if="loadingChapter" class="muted">Loading…</p>
+        <p v-if="loadingChapter" class="muted">{{ t("common.loading") }}</p>
         <div
           v-else-if="chapter"
           class="verses"
@@ -788,22 +809,22 @@ onMounted(() => {
 
       <!-- Selection action bar: copy the picked verses (with reference) to share. -->
       <div v-if="selectMode && selectedCount > 0" class="copy-bar">
-        <span class="copy-count">{{ selectedCount }} selected</span>
+        <span class="copy-count">{{ t("bible.selectedCount", { n: selectedCount }) }}</span>
         <span v-if="copyStatus" class="copy-status">{{ copyStatus }}</span>
-        <button type="button" class="copy-clear" @click="clearSelection">Clear</button>
-        <button type="button" class="copy-btn" @click="copySelection"><AppIcon name="mdi:content-copy" size="16px" /> Copy</button>
+        <button type="button" class="copy-clear" @click="clearSelection">{{ t("common.clear") }}</button>
+        <button type="button" class="copy-btn" @click="copySelection"><AppIcon name="mdi:content-copy" size="16px" /> {{ t("common.copy") }}</button>
       </div>
 
       <div class="reader-nav">
         <button class="nav-btn" :disabled="chapterNum <= 1" @click="goChapter(chapterNum - 1)">
-          <AppIcon name="mdi:chevron-left" size="20px" /> Previous
+          <AppIcon name="mdi:chevron-left" size="20px" /> {{ t("common.previous") }}
         </button>
         <button
           class="nav-btn"
           :disabled="chapterNum >= selectedBook.chapters"
           @click="goChapter(chapterNum + 1)"
         >
-          Next <AppIcon name="mdi:chevron-right" size="20px" />
+          {{ t("common.next") }} <AppIcon name="mdi:chevron-right" size="20px" />
         </button>
       </div>
     </div>

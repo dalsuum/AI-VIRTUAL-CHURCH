@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Setting;
 use App\Models\WorshipTrack;
+use App\Services\MoodExpansionService;
 use App\Services\MusicRecommendationService;
 use App\Services\PermissionService;
 use App\Services\YoutubeSongSearchService;
@@ -28,7 +29,7 @@ class WorshipTrackAdminController extends Controller
         $q = WorshipTrack::query()->orderBy('title');
 
         $language = trim((string) $request->query('language', ''));
-        if (in_array($language, MusicRecommendationService::SUPPORTED_LANGUAGES, true)) {
+        if (in_array($language, MusicRecommendationService::supportedLanguages(), true)) {
             $q->where('language', $language);
         }
 
@@ -135,6 +136,12 @@ class WorshipTrackAdminController extends Controller
     /** Shared validation. On update every field is optional ('sometimes'). */
     private function validated(Request $request, bool $partial = false): array
     {
+        return $request->validate($this->rules($partial));
+    }
+
+    /** Field rule set shared by store/update and the JSON importer. */
+    private function rules(bool $partial = false): array
+    {
         $rule = fn (array $rules) => $partial ? array_merge(['sometimes'], $rules) : $rules;
 
         // http(s)-only URL: blocks javascript:/data: XSS vectors.
@@ -144,10 +151,10 @@ class WorshipTrackAdminController extends Controller
             }
         }];
 
-        return $request->validate([
+        return [
             'title'            => $rule(['required', 'string', 'max:255']),
             'artist'           => $rule(['nullable', 'string', 'max:255']),
-            'language'         => $rule(['required', Rule::in(MusicRecommendationService::SUPPORTED_LANGUAGES)]),
+            'language'         => $rule(['required', Rule::in(MusicRecommendationService::supportedLanguages())]),
             'genre'            => $rule(['nullable', 'string', 'max:100']),
             'themes'           => $rule(['nullable', 'array', 'max:50']),
             'themes.*'         => ['string', 'max:60'],
@@ -164,6 +171,126 @@ class WorshipTrackAdminController extends Controller
             'copyright_status' => $rule(['nullable', 'string', 'max:60']),
             'popularity'       => $rule(['nullable', 'integer', 'min:0', 'max:1000000']),
             'active'           => $rule(['boolean']),
+        ];
+    }
+
+    /**
+     * Export the catalog (optionally one language) as a portable JSON document
+     * the importer round-trips: administrators keep curated libraries under
+     * version control, review diffs, and re-import into any environment.
+     */
+    public function export(Request $request): JsonResponse
+    {
+        PermissionService::require($request->user(), 'music.manage');
+
+        $q = WorshipTrack::query()->orderBy('language')->orderBy('title');
+
+        $language = trim((string) $request->query('language', ''));
+        if (in_array($language, MusicRecommendationService::supportedLanguages(), true)) {
+            $q->where('language', $language);
+        }
+
+        $tracks = $q->get()->map(fn (WorshipTrack $t) => [
+            'title'            => $t->title,
+            'artist'           => $t->artist,
+            'language'         => $t->language,
+            'genre'            => $t->genre,
+            'duration'         => $t->duration,
+            'popularity'       => $t->popularity,
+            'themes'           => $t->themes ?? [],
+            'moods'            => $t->moods ?? [],
+            'scriptures'       => $t->scriptures ?? [],
+            'youtube'          => $t->youtube_url,
+            'spotify'          => $t->spotify_url,
+            'apple_music'      => $t->apple_music_url,
+            'cover_image'      => $t->cover_image,
+            'lyrics_available' => $t->lyrics_available,
+            'active'           => $t->active,
+            'license'          => $t->copyright_status,
+        ]);
+
+        return response()->json(['tracks' => $tracks]);
+    }
+
+    /**
+     * Bulk-import tracks from the export schema. Each row is independently
+     * validated; moods are normalized to canonical ids (so pre-collapse catalogs
+     * still import); duplicates (same title+artist+youtube) are skipped, not
+     * inserted twice. Invalid rows are rejected and reported, valid rows commit.
+     */
+    public function import(Request $request, MoodExpansionService $moods): JsonResponse
+    {
+        PermissionService::require($request->user(), 'music.manage');
+
+        $data = $request->validate([
+            'tracks'   => ['required', 'array', 'min:1', 'max:1000'],
+            'tracks.*' => ['array'],
+        ]);
+
+        $imported = 0;
+        $skipped  = 0;
+        $errors   = [];
+
+        foreach ($data['tracks'] as $i => $row) {
+            $label = trim((string) ($row['title'] ?? '')) ?: 'untitled';
+
+            // Accept the documented schema keys, mapping to the DB columns.
+            $row['youtube_url']     = $row['youtube']     ?? $row['youtube_url']     ?? null;
+            $row['spotify_url']     = $row['spotify']     ?? $row['spotify_url']     ?? null;
+            $row['apple_music_url'] = $row['apple_music'] ?? $row['apple_music_url'] ?? null;
+            $row['copyright_status'] = $row['license']    ?? $row['copyright_status'] ?? 'curated';
+
+            // Normalize every mood to a canonical id; reject unknown moods.
+            $badMood = null;
+            $row['moods'] = collect((array) ($row['moods'] ?? []))
+                ->map(function ($m) use ($moods, &$badMood) {
+                    $id = $moods->canonical((string) $m);
+                    if ($id === null && trim((string) $m) !== '') {
+                        $badMood = $m;
+                    }
+
+                    return $id;
+                })
+                ->filter()->unique()->values()->all();
+
+            if ($badMood !== null) {
+                $errors[] = "Row " . ($i + 1) . " ({$label}): unknown mood '{$badMood}'.";
+
+                continue;
+            }
+
+            $v = \Illuminate\Support\Facades\Validator::make($row, array_merge($this->rules(), [
+                'artist' => ['required', 'string', 'max:255'],
+            ]));
+
+            if ($v->fails()) {
+                $errors[] = "Row " . ($i + 1) . " ({$label}): " . $v->errors()->first();
+
+                continue;
+            }
+
+            $clean = $v->validated();
+
+            $isDuplicate = WorshipTrack::where('title', $clean['title'])
+                ->where('artist', $clean['artist'])
+                ->where('youtube_url', $clean['youtube_url'] ?? null)
+                ->exists();
+
+            if ($isDuplicate) {
+                $skipped++;
+
+                continue;
+            }
+
+            WorshipTrack::create($clean);
+            $imported++;
+        }
+
+        return response()->json([
+            'ok'       => true,
+            'imported' => $imported,
+            'skipped'  => $skipped,
+            'errors'   => $errors,
         ]);
     }
 }

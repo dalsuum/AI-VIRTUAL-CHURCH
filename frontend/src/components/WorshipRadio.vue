@@ -11,7 +11,10 @@
  * track ends.
  */
 import { ref, computed, onMounted, onUnmounted } from "vue";
+import { useI18n } from "vue-i18n";
 import { api } from "../composables/useApi";
+
+const { t } = useI18n();
 
 const LANGUAGES = [
   { code: "en", label: "English" },
@@ -39,8 +42,14 @@ const recentIds = [];           // rolling last-50 ids
 let player = null;              // YT.Player instance
 let ytReady = null;            // Promise resolving when the IFrame API is loaded
 let fallbackTimer = null;      // auto-advance timer for non-embeddable tracks
+let watchdog = null;           // skips a track that never starts playing
 
 function clearFallback() { if (fallbackTimer) { clearTimeout(fallbackTimer); fallbackTimer = null; } }
+function clearWatchdog() { if (watchdog) { clearTimeout(watchdog); watchdog = null; } }
+// Some YouTube videos (Shorts, embed/region-restricted) never fire onError —
+// they loop buffering→unstarted and never reach PLAYING, hanging the radio. If a
+// track hasn't actually started within the window, skip to the next one.
+function armWatchdog() { clearWatchdog(); watchdog = setTimeout(() => playNext(), 12000); }
 
 /** Mood chip text in the currently selected language (falls back to English). */
 function moodLabel(m) {
@@ -58,7 +67,7 @@ onMounted(async () => {
     const res = await api.musicMoods();
     moods.value = res.moods || [];
   } catch {
-    error.value = "Could not load moods.";
+    error.value = t("worship.errors.loadMoods");
   }
   // Reuse a saved worship session: prefill mood + language from the hash and
   // auto-start. A stored mood that matches a chip key fills the chip; anything
@@ -75,6 +84,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   clearFallback();
+  clearWatchdog();
   try { player && player.destroy(); } catch {}
 });
 
@@ -100,7 +110,7 @@ function youtubeId(url) {
 }
 
 function payload(extra = {}) {
-  // Send the canonical mood KEY (e.g. "happy"), not the localized label, so the
+  // Send the canonical mood KEY (e.g. "relax"), not the localized label, so the
   // server's theme expansion + keyword search stay language-independent; the
   // server translates the key back to a native search term per language. Free
   // text (already in the worshipper's language) is sent verbatim.
@@ -110,7 +120,7 @@ function payload(extra = {}) {
 
 /** Start a brand-new radio session for the chosen mood. */
 async function start() {
-  if (!activeMoodLabel.value) { error.value = "Pick a mood or describe how you feel."; return; }
+  if (!activeMoodLabel.value) { error.value = t("worship.errors.pickMood"); return; }
   error.value = "";
   loading.value = true;
   recentIds.length = 0;
@@ -121,10 +131,10 @@ async function start() {
     reason.value = res.reason || "";
     themes.value = res.themes || [];
     queue.value = res.playlist || [];
-    if (!queue.value.length) { error.value = "No songs matched yet — try another mood."; return; }
+    if (!queue.value.length) { error.value = t("worship.errors.noMatch"); return; }
     await playNext();
   } catch (e) {
-    error.value = "Could not build a playlist. Please try again.";
+    error.value = t("worship.errors.buildFailed");
   } finally {
     loading.value = false;
   }
@@ -160,7 +170,7 @@ async function refill() {
 async function playNext() {
   if (queue.value.length <= REFILL_AT) await refill();
   const next = queue.value.shift();
-  if (!next) { error.value = "Radio stopped — no more songs."; stop(); return; }
+  if (!next) { error.value = t("worship.errors.stopped"); stop(); return; }
   current.value = next;
   recentIds.push(next.id);
   if (recentIds.length > RECENT_CAP) recentIds.shift();
@@ -169,6 +179,7 @@ async function playNext() {
 
 async function playCurrent() {
   clearFallback();
+  clearWatchdog();
   const id = youtubeId(current.value?.youtube_url);
 
   // No embeddable video (e.g. a metadata-only track without a YouTube link):
@@ -196,10 +207,11 @@ async function playCurrent() {
         playsinline: 1, origin: window.location.origin,
       },
       events: {
-        onReady: () => { playing.value = true; },
+        onReady: () => { armWatchdog(); },
         onStateChange: (e) => {
           if (e.data === window.YT.PlayerState.ENDED) playNext();
-          if (e.data === window.YT.PlayerState.PLAYING) playing.value = true;
+          // Real playback started — cancel the no-start watchdog.
+          if (e.data === window.YT.PlayerState.PLAYING) { playing.value = true; clearWatchdog(); }
           if (e.data === window.YT.PlayerState.PAUSED) playing.value = false;
         },
         // Dead/unavailable/embedding-disabled video → don't get stuck, skip on.
@@ -208,7 +220,7 @@ async function playCurrent() {
     });
   } else {
     player.loadVideoById(id);
-    playing.value = true;
+    armWatchdog();
   }
 }
 
@@ -229,6 +241,7 @@ function togglePlay() {
 function skip() { clearFallback(); playNext(); }
 function stop() {
   clearFallback();
+  clearWatchdog();
   try { player && player.stopVideo(); } catch {}
   playing.value = false;
   noEmbed.value = false;
@@ -251,9 +264,9 @@ function streamLink(t) {
 <template>
   <div class="worship">
     <header class="wr-head">
-      <a class="wr-back" href="#">← Back</a>
-      <h1>🎶 AI Worship Radio</h1>
-      <p class="wr-sub">Tell us how you feel — we'll keep the worship playing.</p>
+      <a class="wr-back" href="#">← {{ t("worship.back") }}</a>
+      <h1>🎶 {{ t("worship.title") }}</h1>
+      <p class="wr-sub">{{ t("worship.subtitle") }}</p>
     </header>
 
     <section class="wr-controls">
@@ -278,11 +291,11 @@ function streamLink(t) {
       <div class="wr-free">
         <input
           v-model="freeText" type="text" maxlength="100"
-          placeholder="…or describe it: “I feel anxious and tired”"
+          :placeholder="t('worship.describePlaceholder')"
           @keyup.enter="start"
         />
         <button class="wr-start" :disabled="loading" @click="start">
-          {{ loading ? "Finding songs…" : "Start Worship" }}
+          {{ loading ? t("worship.finding") : t("worship.start") }}
         </button>
       </div>
 
@@ -296,11 +309,11 @@ function streamLink(t) {
       <div v-if="noEmbed" class="wr-noembed">
         <strong>{{ current.title }}</strong>
         <span>{{ current.artist }}</span>
-        <p>No in-app player link for this track yet.</p>
+        <p>{{ t("worship.noEmbed") }}</p>
         <a v-if="streamLink(current)" :href="streamLink(current)" target="_blank" rel="noopener" class="wr-open">
-          Open externally ↗
+          {{ t("worship.openExternally") }}
         </a>
-        <small>Auto-advancing to the next song…</small>
+        <small>{{ t("worship.autoAdvancing") }}</small>
       </div>
     </section>
 
@@ -308,7 +321,7 @@ function streamLink(t) {
       <article v-if="current" class="wr-card now">
         <img v-if="current.cover_image" :src="current.cover_image" alt="" class="wr-cover" />
         <div class="wr-meta">
-          <span class="wr-badge">Now playing</span>
+          <span class="wr-badge">{{ t("worship.nowPlaying") }}</span>
           <strong>{{ current.title }}</strong>
           <span class="wr-artist">{{ current.artist }} · {{ fmtDuration(current.duration) }}</span>
         </div>
@@ -327,11 +340,11 @@ function streamLink(t) {
     <footer v-if="current" class="wr-player">
       <span class="wr-current">{{ current.title }} — {{ current.artist }}</span>
       <div class="wr-buttons">
-        <button @click="togglePlay">{{ playing ? "⏸ Pause" : "▶ Play" }}</button>
-        <button @click="skip">⏭ Next</button>
-        <button class="wr-stop" @click="stop">⏹ Stop</button>
+        <button @click="togglePlay">{{ playing ? t("worship.pause") : t("worship.play") }}</button>
+        <button @click="skip">{{ t("worship.next") }}</button>
+        <button class="wr-stop" @click="stop">{{ t("worship.stop") }}</button>
       </div>
-      <span class="wr-mood-tag" v-if="activeMoodLabel">Mood: {{ activeMoodLabel }}</span>
+      <span class="wr-mood-tag" v-if="activeMoodLabel">{{ t("worship.moodTag", { mood: activeMoodLabel }) }}</span>
     </footer>
   </div>
 </template>

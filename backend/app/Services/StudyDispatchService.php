@@ -136,9 +136,12 @@ class StudyDispatchService
 
     private function languageName(string $code): string
     {
-        return [
-            'en' => 'English', 'my' => 'Burmese (Myanmar)', 'td' => 'Tedim (Zolai)',
-            'cnh' => 'Hakha Chin', 'cfm' => 'Falam Chin', 'lus' => 'Mizo', 'hlt' => 'Matu Chin',
-        ][$code] ?? 'English';
+        // Interface locales come from the central registry (config/languages.php),
+        // so every UI language (fr/de/ja/zh-CN/hi/ko/ar/th/es/ta, …) drives the
+        // AI's "respond in X" directive automatically. Chin/Zo content languages
+        // aren't UI locales, so keep their explicit names as a fallback.
+        $extra = ['cnh' => 'Hakha Chin', 'cfm' => 'Falam Chin', 'lus' => 'Mizo', 'hlt' => 'Matu Chin'];
+
+        return config("languages.list.{$code}.english_name") ?? $extra[$code] ?? 'English';
     }
 }

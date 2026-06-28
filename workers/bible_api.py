@@ -43,6 +43,7 @@ import functools
 import json
 import os
 import re
+import unicodedata
 
 _DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 DATA_FILE = os.getenv("BIBLE_DATA_FILE", os.path.join(_DATA_DIR, "bsb.json"))
@@ -69,6 +70,16 @@ _LANG_FILES = {
     "csy": os.getenv("BIBLE_DATA_FILE_CSY", os.path.join(_DATA_DIR, "sizang1932.json")),
     "mrh": os.getenv("BIBLE_DATA_FILE_MRH", os.path.join(_DATA_DIR, "mara2011.json")),
     "hlt": os.getenv("BIBLE_DATA_FILE_HLT", os.path.join(_DATA_DIR, "matu2009.json")),
+    # World-language Bibles from dalsuum/bible, same schema + canonical 1-66
+    # numbering. Only public-domain / freely-licensed editions are vendored:
+    #   'de' Luther 1912 (public domain), 'fr' Ostervald 1877 (public domain),
+    #   'ta' Indian Revised Version 2019 (Creative Commons BY-SA — Tamil).
+    # Copyrighted editions (Japanese, Chinese, Korean, Spanish, Hindi, Thai,
+    # Arabic Van Dyck vocalized) are NOT bundled; drop their json into data/ and
+    # set the matching env var (or add a line here) to enable them — see README.
+    "de": os.getenv("BIBLE_DATA_FILE_DE", os.path.join(_DATA_DIR, "luther1912.json")),
+    "fr": os.getenv("BIBLE_DATA_FILE_FR", os.path.join(_DATA_DIR, "ostervald1877.json")),
+    "ta": os.getenv("BIBLE_DATA_FILE_TA", os.path.join(_DATA_DIR, "tamil_irv2019.json")),
 }
 
 # Translations whose source file has correct, canonically-positioned verse
@@ -104,8 +115,20 @@ _REF_RE = re.compile(
 
 
 def _norm(s: str) -> str:
-    """Lowercase, drop periods, collapse whitespace — for case/spacing-insensitive keys."""
-    return re.sub(r"\s+", " ", s.replace(".", "").strip().lower())
+    """Normalize a name/query for case-, accent- and spacing-insensitive matching.
+
+    Unicode-aware so non-English book names and queries compare reliably:
+      - NFKD decompose, then drop combining marks U+0300–U+036F only. That folds
+        Latin accents (Genèse → genese, Café → cafe) WITHOUT touching the
+        combining marks that carry meaning in Tamil/Devanagari/Thai or the
+        optional Arabic harakat / Hebrew niqqud (all outside that range).
+      - casefold() for robust, language-aware lowercasing.
+      - drop periods, collapse whitespace, NFC recompose.
+    """
+    s = unicodedata.normalize("NFKD", s)
+    s = "".join(c for c in s if not (0x300 <= ord(c) <= 0x36F))
+    s = unicodedata.normalize("NFC", s).casefold()
+    return re.sub(r"\s+", " ", s.replace(".", "").strip())
 
 
 @functools.lru_cache(maxsize=32)
@@ -201,6 +224,8 @@ def book_title(reference: str, lang: str = "en") -> str:
 _LANGS = (
     "kjv", "en", "he", "my",
     "cfm", "cnh", "mrh", "hlt", "lus", "pck", "csy", "td",
+    # World-language Bibles (only those whose data file is actually vendored).
+    "de", "fr", "ta",
 )
 
 
@@ -221,8 +246,12 @@ def list_books(lang: str = "en") -> list[dict]:
     hide the rest of the canon.
     """
     books = _bible(lang).get("book", {})
+    # Canonical English names per book number — used to label name-unreliable
+    # translations (Matu) and, for every non-English translation, to attach
+    # English search `aliases` so readers can find a book by its English name or
+    # abbreviation ("Genesis"/"Gen"/"Ge") as well as its native heading.
     canon_names: dict[str, dict] = {}
-    if lang in _BOOK_NAMES_FROM_CANON:
+    if lang in _BOOK_NAMES_FROM_CANON or lang in _LANG_FILES:
         with open(BOOKS_EN_FILE, encoding="utf-8") as fh:
             canon_names = json.load(fh)
     out: list[dict] = []
@@ -238,9 +267,14 @@ def list_books(lang: str = "en") -> list[dict]:
             name = canon_names.get(num, {}).get("name", "") or f"Book {num}"
         else:
             name = book.get("info", {}).get("name", "") or f"Book {num}"
+        ci = canon_names.get(num, {})
+        aliases = list(dict.fromkeys(
+            a for a in [ci.get("name", ""), ci.get("shortname", ""),
+                        *ci.get("abbr", [])] if a))
         out.append({
             "num": int(num),
             "name": name,
+            "aliases": aliases,
             "chapters": len(book.get("chapter", {})),
             "available": True,
         })

@@ -45,6 +45,11 @@ class UpdateSettingsRequest extends FormRequest
             'bible_narration_mode_lus' => ['sometimes', 'string', 'in:edge_tts,off'],
             'bible_narration_mode_pck' => ['sometimes', 'string', 'in:edge_tts,off'],
             'bible_narration_mode_csy' => ['sometimes', 'string', 'in:edge_tts,off'],
+            // World-language Bibles: Edge TTS has native de-DE/fr-FR/ta-IN voices
+            // (enable once EDGE_TTS_VOICE_DE/FR/TA is configured); default off.
+            'bible_narration_mode_de'  => ['sometimes', 'string', 'in:edge_tts,off'],
+            'bible_narration_mode_fr'  => ['sometimes', 'string', 'in:edge_tts,off'],
+            'bible_narration_mode_ta'  => ['sometimes', 'string', 'in:edge_tts,off'],
             // Highlight verses in the Bible reader as narration plays.
             'bible_text_highlight_enabled' => ['sometimes', 'boolean'],
             // Background music behind Bible narration: off | static mp3 | AI-generated.

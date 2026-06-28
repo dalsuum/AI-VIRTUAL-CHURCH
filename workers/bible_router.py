@@ -93,6 +93,39 @@ def narrate(req: NarrateRequest):  # sync: TTS calls block, and Edge TTS runs it
     return {"url": url, "name": data["name"], "chapter": data["chapter"]}
 
 
+class NarrateTextRequest(BaseModel):
+    lang: str = "en"
+    text: str = ""
+    mode: str = "edge_tts"
+    gender: str = "female"
+    voice: str = ""           # edge voice name or voicebox engine, resolved by Laravel
+    storage_backend: str = "" # 'local' | 's3'
+
+
+@router.post("/narrate-text")
+def narrate_text(req: NarrateTextRequest):  # sync: TTS calls block (Edge TTS runs its own loop)
+    """Read an arbitrary passage aloud (cached by content). Used by AI Bible Study to
+    narrate a discussion reply with the same providers/voices as chapter narration."""
+    _check_lang(req.lang)
+    if req.mode not in _AUDIO_MODES:
+        raise HTTPException(status_code=422, detail=f"Unsupported narration mode '{req.mode}'")
+    text = (req.text or "").strip()
+    if not text:
+        raise HTTPException(status_code=422, detail="No text to narrate")
+
+    if req.storage_backend:
+        storage.set_backend(req.storage_backend)
+
+    try:
+        url = narrator.narrate_text(
+            req.lang, text, mode=req.mode, voice=req.voice, gender=req.gender,
+        )
+    except Exception as exc:  # noqa: BLE001 — surface a clean 502 to Laravel
+        raise HTTPException(status_code=502, detail=f"Narration failed: {exc}") from exc
+
+    return {"url": url}
+
+
 class BgMusicRequest(BaseModel):
     lang: str = "en"
     book: int = 1

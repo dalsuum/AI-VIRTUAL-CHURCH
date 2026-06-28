@@ -140,6 +140,23 @@ class User extends Authenticatable
         return $this->hasOne(\App\Domains\Accounts\Models\Presence::class);
     }
 
+    // --- Bible reading (Phase 2) ----------------------------------------------
+
+    public function readingPlans(): HasMany
+    {
+        return $this->hasMany(\App\Domains\Bible\Models\UserReadingPlan::class);
+    }
+
+    public function reminderSetting(): HasOne
+    {
+        return $this->hasOne(\App\Domains\Bible\Models\ReminderSetting::class);
+    }
+
+    public function readingStreak(): HasOne
+    {
+        return $this->hasOne(\App\Domains\Bible\Models\ReadingStreak::class);
+    }
+
     /** The user's contextual role in a given church (by id), or null if not a member. */
     public function churchRole(int $churchId): ?\App\Enums\ChurchRole
     {

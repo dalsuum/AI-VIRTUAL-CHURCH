@@ -24,16 +24,25 @@ _CATEGORIES = {
     "gospels", "acts", "pauline_epistles", "general_epistles", "apocalyptic",
 }
 _TESTAMENTS = {"old_testament", "new_testament"}
+_ATTRIBUTION = {"traditional", "stated", "anonymous", "disputed"}  # or null
+_DATE_BASIS = {"traditional", "estimated"}  # or null
 _ID_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
-# Fields every book must define (reserved ones may be empty/null but must exist).
+# The canonical field set every book must define (uniform schema). Scalar fields
+# may be null and list fields may be empty, but the keys must be present — empty
+# arrays are preferred over missing arrays.
 _REQUIRED = [
     "id", "number", "canonical_order", "testament", "category", "english_name",
-    "localized_name", "localized_short_name", "aliases", "keywords", "themes",
-    "pronunciation",
+    "author", "attribution", "authorship_note", "date_written", "date_basis",
+    "date_note", "historical_period", "audience", "localized_name",
+    "localized_short_name", "aliases", "major_events", "key_people", "key_places",
+    "related_books", "messianic_references", "prophecy_links", "keywords",
+    "themes", "pronunciation",
 ]
-# Optional Phase-1 expansion fields; if present, types are checked.
 _LIST_FIELDS = ["aliases", "keywords", "themes", "major_events", "key_people",
                 "key_places", "related_books", "messianic_references", "prophecy_links"]
+# Entity-reference lists must use canonical slugs (IDs), not display strings, and
+# be unique within a book — ready for future people/place ontologies.
+_SLUG_LIST_FIELDS = ["key_people", "key_places"]
 
 
 def validate(data: dict) -> list[str]:
@@ -83,6 +92,23 @@ def validate(data: dict) -> list[str]:
             if f in b and not isinstance(b[f], list):
                 errs.append(f"{where}: {f} must be a list")
 
+        # Debated-history conventions: explicit enums, never a forced value.
+        if b.get("attribution") not in (None,) and b.get("attribution") not in _ATTRIBUTION:
+            errs.append(f"{where}: attribution must be null or one of {_ATTRIBUTION}")
+        if b.get("date_basis") not in (None,) and b.get("date_basis") not in _DATE_BASIS:
+            errs.append(f"{where}: date_basis must be null or one of {_DATE_BASIS}")
+        if b.get("author") not in (None, "") and not _ID_RE.match(str(b.get("author"))):
+            errs.append(f"{where}: author must be a canonical slug or null")
+
+        # Entity references are canonical slugs, unique within the book.
+        for f in _SLUG_LIST_FIELDS:
+            vals = b.get(f) or []
+            for v in vals:
+                if not isinstance(v, str) or not _ID_RE.match(v):
+                    errs.append(f"{where}: {f} entry {v!r} is not a canonical slug")
+            if len(vals) != len(set(vals)):
+                errs.append(f"{where}: duplicate entries in {f}")
+
         # Aliases: non-empty, unique within the book AND unique across books
         # (a shared alias would make reference/search ambiguous).
         aliases = b.get("aliases") or []
@@ -106,12 +132,19 @@ def validate(data: dict) -> list[str]:
     if sorted(o for o in orders if isinstance(o, int)) != list(range(1, 67)):
         errs.append("canonical_order is not a gap-free 1..66")
 
-    # Referential integrity: every related_books / *_links id must be a real book id.
+    # Referential integrity for book-id relationships: every entry must be a real
+    # book id, unique, and not a self-reference (no unintended circularity).
     ids = set(books)
     for bid, b in books.items():
-        for ref in (b.get("related_books") or []):
-            if ref not in ids:
-                errs.append(f"book {bid!r}: related_books -> unknown id {ref!r}")
+        for field in ("related_books", "prophecy_links"):
+            refs = b.get(field) or []
+            if len(refs) != len(set(refs)):
+                errs.append(f"book {bid!r}: duplicate entries in {field}")
+            for ref in refs:
+                if ref not in ids:
+                    errs.append(f"book {bid!r}: {field} -> unknown id {ref!r}")
+                elif ref == bid:
+                    errs.append(f"book {bid!r}: {field} references itself")
 
     return errs
 

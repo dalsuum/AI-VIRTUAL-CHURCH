@@ -10,12 +10,61 @@
       "testament": "old_testament",
       "category": "pentateuch",
       "english_name": "Genesis",
+      "author": "moses",
+      "attribution": "traditional",
+      "authorship_note": "Traditionally attributed to Moses.",
+      "date_written": "c. 1446-1406 BC",
+      "date_basis": "traditional",
+      "date_note": "Composition traditional; narrated events span creation to c. 1800 BC.",
+      "historical_period": "Primeval & Patriarchal",
+      "audience": "Israel",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
         "Genesis",
         "Gen",
         "Ge"
+      ],
+      "major_events": [
+        "creation",
+        "the fall",
+        "the flood",
+        "tower of babel",
+        "call of abraham",
+        "binding of isaac",
+        "joseph in egypt"
+      ],
+      "key_people": [
+        "adam",
+        "eve",
+        "noah",
+        "abraham",
+        "sarah",
+        "isaac",
+        "jacob",
+        "joseph"
+      ],
+      "key_places": [
+        "eden",
+        "ararat",
+        "babel",
+        "ur",
+        "canaan",
+        "egypt"
+      ],
+      "related_books": [
+        "exodus",
+        "romans",
+        "galatians",
+        "hebrews"
+      ],
+      "messianic_references": [
+        "Genesis 3:15",
+        "Genesis 22:18",
+        "Genesis 49:10"
+      ],
+      "prophecy_links": [
+        "revelation"
       ],
       "keywords": [
         "beginning",
@@ -31,53 +80,7 @@
         "providence",
         "sin"
       ],
-      "pronunciation": null,
-      "author": "Moses (traditional)",
-      "approximate_date": "c. 1446-1406 BC (composition; events from creation to c. 1800 BC)",
-      "historical_period": "Primeval & Patriarchal",
-      "audience": "Israel",
-      "major_events": [
-        "Creation",
-        "The Fall",
-        "The Flood",
-        "Tower of Babel",
-        "Call of Abraham",
-        "Binding of Isaac",
-        "Joseph in Egypt"
-      ],
-      "key_people": [
-        "Adam",
-        "Eve",
-        "Noah",
-        "Abraham",
-        "Sarah",
-        "Isaac",
-        "Jacob",
-        "Joseph"
-      ],
-      "key_places": [
-        "Eden",
-        "Ararat",
-        "Babel",
-        "Ur",
-        "Canaan",
-        "Egypt"
-      ],
-      "related_books": [
-        "exodus",
-        "romans",
-        "galatians",
-        "hebrews"
-      ],
-      "messianic_references": [
-        "Genesis 3:15",
-        "Genesis 22:18",
-        "Genesis 49:10"
-      ],
-      "prophecy_links": [
-        "genesis",
-        "revelation"
-      ]
+      "pronunciation": null
     },
     "exodus": {
       "id": "exodus",
@@ -86,6 +89,14 @@
       "testament": "old_testament",
       "category": "pentateuch",
       "english_name": "Exodus",
+      "author": "moses",
+      "attribution": "traditional",
+      "authorship_note": "Traditionally attributed to Moses.",
+      "date_written": "c. 1446-1406 BC",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Exodus & Wilderness",
+      "audience": "Israel",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -94,6 +105,39 @@
         "Ex",
         "Exod"
       ],
+      "major_events": [
+        "burning bush",
+        "the ten plagues",
+        "passover",
+        "crossing the red sea",
+        "giving of the law at sinai",
+        "the golden calf",
+        "building the tabernacle"
+      ],
+      "key_people": [
+        "moses",
+        "aaron",
+        "pharaoh",
+        "miriam",
+        "jethro"
+      ],
+      "key_places": [
+        "egypt",
+        "red-sea",
+        "mount-sinai",
+        "wilderness-of-sin"
+      ],
+      "related_books": [
+        "genesis",
+        "leviticus",
+        "numbers",
+        "deuteronomy",
+        "hebrews"
+      ],
+      "messianic_references": [
+        "Exodus 12:1-13"
+      ],
+      "prophecy_links": [],
       "keywords": [
         "exodus",
         "passover",
@@ -108,44 +152,7 @@
         "covenant",
         "worship"
       ],
-      "pronunciation": null,
-      "author": "Moses (traditional)",
-      "approximate_date": "c. 1446-1406 BC",
-      "historical_period": "Exodus & Wilderness",
-      "audience": "Israel",
-      "major_events": [
-        "Burning bush",
-        "The Ten Plagues",
-        "Passover",
-        "Crossing the Red Sea",
-        "Giving of the Law at Sinai",
-        "The Golden Calf",
-        "Building the Tabernacle"
-      ],
-      "key_people": [
-        "Moses",
-        "Aaron",
-        "Pharaoh",
-        "Miriam",
-        "Jethro"
-      ],
-      "key_places": [
-        "Egypt",
-        "Red Sea",
-        "Mount Sinai",
-        "Wilderness of Sin"
-      ],
-      "related_books": [
-        "genesis",
-        "leviticus",
-        "numbers",
-        "deuteronomy",
-        "hebrews"
-      ],
-      "messianic_references": [
-        "Exodus 12:1-13"
-      ],
-      "prophecy_links": []
+      "pronunciation": null
     },
     "leviticus": {
       "id": "leviticus",
@@ -154,6 +161,14 @@
       "testament": "old_testament",
       "category": "pentateuch",
       "english_name": "Leviticus",
+      "author": "moses",
+      "attribution": "traditional",
+      "authorship_note": "Traditionally attributed to Moses.",
+      "date_written": "c. 1446-1406 BC",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Wilderness (Sinai)",
+      "audience": "Israel (priests and people)",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -161,6 +176,32 @@
         "Lev",
         "Le"
       ],
+      "major_events": [
+        "sacrificial system instituted",
+        "ordination of aaron",
+        "day of atonement",
+        "holiness code"
+      ],
+      "key_people": [
+        "moses",
+        "aaron",
+        "nadab",
+        "abihu"
+      ],
+      "key_places": [
+        "mount-sinai",
+        "tabernacle"
+      ],
+      "related_books": [
+        "exodus",
+        "numbers",
+        "hebrews"
+      ],
+      "messianic_references": [
+        "Leviticus 16",
+        "Leviticus 17:11"
+      ],
+      "prophecy_links": [],
       "keywords": [
         "holiness",
         "sacrifice",
@@ -174,37 +215,7 @@
         "sacrifice",
         "priesthood"
       ],
-      "pronunciation": null,
-      "author": "Moses (traditional)",
-      "approximate_date": "c. 1446-1406 BC",
-      "historical_period": "Wilderness (Sinai)",
-      "audience": "Israel (priests & people)",
-      "major_events": [
-        "Sacrificial system instituted",
-        "Ordination of Aaron",
-        "Day of Atonement",
-        "Holiness Code"
-      ],
-      "key_people": [
-        "Moses",
-        "Aaron",
-        "Nadab",
-        "Abihu"
-      ],
-      "key_places": [
-        "Mount Sinai",
-        "Tabernacle"
-      ],
-      "related_books": [
-        "exodus",
-        "numbers",
-        "hebrews"
-      ],
-      "messianic_references": [
-        "Leviticus 16",
-        "Leviticus 17:11"
-      ],
-      "prophecy_links": []
+      "pronunciation": null
     },
     "numbers": {
       "id": "numbers",
@@ -213,6 +224,14 @@
       "testament": "old_testament",
       "category": "pentateuch",
       "english_name": "Numbers",
+      "author": "moses",
+      "attribution": "traditional",
+      "authorship_note": "Traditionally attributed to Moses.",
+      "date_written": "c. 1446-1406 BC",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Wilderness wanderings",
+      "audience": "Israel",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -220,6 +239,37 @@
         "Num",
         "Nu"
       ],
+      "major_events": [
+        "census of israel",
+        "spies sent into canaan",
+        "rebellion and forty years wandering",
+        "bronze serpent",
+        "balaam's oracles"
+      ],
+      "key_people": [
+        "moses",
+        "aaron",
+        "joshua",
+        "caleb",
+        "balaam",
+        "korah"
+      ],
+      "key_places": [
+        "sinai",
+        "kadesh",
+        "wilderness-of-paran",
+        "plains-of-moab"
+      ],
+      "related_books": [
+        "exodus",
+        "deuteronomy",
+        "joshua"
+      ],
+      "messianic_references": [
+        "Numbers 21:8-9",
+        "Numbers 24:17"
+      ],
+      "prophecy_links": [],
       "keywords": [
         "census",
         "wilderness",
@@ -233,42 +283,7 @@
         "rebellion",
         "guidance"
       ],
-      "pronunciation": null,
-      "author": "Moses (traditional)",
-      "approximate_date": "c. 1446-1406 BC",
-      "historical_period": "Wilderness wanderings",
-      "audience": "Israel",
-      "major_events": [
-        "Census of Israel",
-        "Spies sent into Canaan",
-        "Rebellion & 40 years wandering",
-        "Bronze serpent",
-        "Balaam's oracles"
-      ],
-      "key_people": [
-        "Moses",
-        "Aaron",
-        "Joshua",
-        "Caleb",
-        "Balaam",
-        "Korah"
-      ],
-      "key_places": [
-        "Sinai",
-        "Kadesh",
-        "Wilderness of Paran",
-        "Plains of Moab"
-      ],
-      "related_books": [
-        "exodus",
-        "deuteronomy",
-        "joshua"
-      ],
-      "messianic_references": [
-        "Numbers 21:8-9",
-        "Numbers 24:17"
-      ],
-      "prophecy_links": []
+      "pronunciation": null
     },
     "deuteronomy": {
       "id": "deuteronomy",
@@ -277,6 +292,14 @@
       "testament": "old_testament",
       "category": "pentateuch",
       "english_name": "Deuteronomy",
+      "author": "moses",
+      "attribution": "traditional",
+      "authorship_note": "Traditionally attributed to Moses; the account of his death (ch. 34) is editorial.",
+      "date_written": "c. 1406 BC",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Plains of Moab (before entering Canaan)",
+      "audience": "Israel (new generation)",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -286,6 +309,31 @@
         "Deut",
         "Dt"
       ],
+      "major_events": [
+        "moses' farewell addresses",
+        "restatement of the law",
+        "covenant renewal",
+        "blessings and curses",
+        "death of moses"
+      ],
+      "key_people": [
+        "moses",
+        "joshua"
+      ],
+      "key_places": [
+        "plains-of-moab",
+        "mount-nebo",
+        "jordan-river"
+      ],
+      "related_books": [
+        "numbers",
+        "joshua",
+        "matthew"
+      ],
+      "messianic_references": [
+        "Deuteronomy 18:15"
+      ],
+      "prophecy_links": [],
       "keywords": [
         "law",
         "covenant",
@@ -296,39 +344,10 @@
       "themes": [
         "covenant",
         "obedience",
-        "love of God",
+        "love of god",
         "remembrance"
       ],
-      "pronunciation": null,
-      "author": "Moses (traditional)",
-      "approximate_date": "c. 1406 BC",
-      "historical_period": "Plains of Moab (before entering Canaan)",
-      "audience": "Israel (new generation)",
-      "major_events": [
-        "Moses' farewell addresses",
-        "Restatement of the Law",
-        "Covenant renewal",
-        "Blessings and curses",
-        "Death of Moses"
-      ],
-      "key_people": [
-        "Moses",
-        "Joshua"
-      ],
-      "key_places": [
-        "Plains of Moab",
-        "Mount Nebo",
-        "Jordan River"
-      ],
-      "related_books": [
-        "numbers",
-        "joshua",
-        "matthew"
-      ],
-      "messianic_references": [
-        "Deuteronomy 18:15"
-      ],
-      "prophecy_links": []
+      "pronunciation": null
     },
     "joshua": {
       "id": "joshua",
@@ -337,6 +356,14 @@
       "testament": "old_testament",
       "category": "history",
       "english_name": "Joshua",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -345,6 +372,12 @@
         "Js",
         "Josh"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -356,6 +389,14 @@
       "testament": "old_testament",
       "category": "history",
       "english_name": "Judges",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -366,6 +407,12 @@
         "Jdgs",
         "Judg"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -377,6 +424,14 @@
       "testament": "old_testament",
       "category": "history",
       "english_name": "Ruth",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -384,6 +439,12 @@
         "Rut",
         "Ru"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -395,6 +456,14 @@
       "testament": "old_testament",
       "category": "history",
       "english_name": "1 Samuel",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -408,6 +477,12 @@
         "I Sam",
         "I Sa"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -419,6 +494,14 @@
       "testament": "old_testament",
       "category": "history",
       "english_name": "2 Samuel",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -433,6 +516,12 @@
         "II Sa",
         "IIS"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -444,6 +533,14 @@
       "testament": "old_testament",
       "category": "history",
       "english_name": "1 Kings",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -459,6 +556,12 @@
         "I Ki",
         "1Kgs"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -470,6 +573,14 @@
       "testament": "old_testament",
       "category": "history",
       "english_name": "2 Kings",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -485,6 +596,12 @@
         "II Ki",
         "2Kgs"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -496,6 +613,14 @@
       "testament": "old_testament",
       "category": "history",
       "english_name": "1 Chronicles",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -510,6 +635,12 @@
         "I Chr",
         "I Ch"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -521,6 +652,14 @@
       "testament": "old_testament",
       "category": "history",
       "english_name": "2 Chronicles",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -535,6 +674,12 @@
         "II Chr",
         "II Ch"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -546,6 +691,14 @@
       "testament": "old_testament",
       "category": "history",
       "english_name": "Ezra",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -553,6 +706,12 @@
         "Ezr",
         "Ez"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -564,6 +723,14 @@
       "testament": "old_testament",
       "category": "history",
       "english_name": "Nehemiah",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -571,6 +738,12 @@
         "Neh",
         "Ne"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -582,6 +755,14 @@
       "testament": "old_testament",
       "category": "history",
       "english_name": "Esther",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -590,6 +771,12 @@
         "Es",
         "Esth"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -601,12 +788,26 @@
       "testament": "old_testament",
       "category": "wisdom",
       "english_name": "Job",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
         "Job",
         "Jb"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -618,6 +819,14 @@
       "testament": "old_testament",
       "category": "wisdom",
       "english_name": "Psalm",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -625,6 +834,12 @@
         "Psa",
         "Ps"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -636,6 +851,14 @@
       "testament": "old_testament",
       "category": "wisdom",
       "english_name": "Proverbs",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -644,6 +867,12 @@
         "Pr",
         "Prov"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -655,6 +884,14 @@
       "testament": "old_testament",
       "category": "wisdom",
       "english_name": "Ecclesiastes",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -663,6 +900,12 @@
         "Ec",
         "Eccl"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -674,6 +917,14 @@
       "testament": "old_testament",
       "category": "wisdom",
       "english_name": "Song of Solomon",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -686,6 +937,12 @@
         "SongofSolomon",
         "Song"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -697,6 +954,14 @@
       "testament": "old_testament",
       "category": "major_prophets",
       "english_name": "Isaiah",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -704,6 +969,12 @@
         "Isa",
         "Is"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -715,6 +986,14 @@
       "testament": "old_testament",
       "category": "major_prophets",
       "english_name": "Jeremiah",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -722,6 +1001,12 @@
         "Jer",
         "Je"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -733,6 +1018,14 @@
       "testament": "old_testament",
       "category": "major_prophets",
       "english_name": "Lamentations",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -741,6 +1034,12 @@
         "La",
         "Lament"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -752,6 +1051,14 @@
       "testament": "old_testament",
       "category": "major_prophets",
       "english_name": "Ezekiel",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -761,6 +1068,12 @@
         "Ezek",
         "Eze"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -772,6 +1085,14 @@
       "testament": "old_testament",
       "category": "major_prophets",
       "english_name": "Daniel",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -781,6 +1102,12 @@
         "Dl",
         "Dnl"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -792,6 +1119,14 @@
       "testament": "old_testament",
       "category": "minor_prophets",
       "english_name": "Hosea",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -799,6 +1134,12 @@
         "Hos",
         "Ho"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -810,6 +1151,14 @@
       "testament": "old_testament",
       "category": "minor_prophets",
       "english_name": "Joel",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -818,6 +1167,12 @@
         "Jl",
         "Joe"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -829,6 +1184,14 @@
       "testament": "old_testament",
       "category": "minor_prophets",
       "english_name": "Amos",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -836,6 +1199,12 @@
         "Amo",
         "Am"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -847,6 +1216,14 @@
       "testament": "old_testament",
       "category": "minor_prophets",
       "english_name": "Obadiah",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -857,6 +1234,12 @@
         "Odbh",
         "Obad"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -868,6 +1251,14 @@
       "testament": "old_testament",
       "category": "minor_prophets",
       "english_name": "Jonah",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -876,6 +1267,12 @@
         "Jh",
         "Jnh"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -887,6 +1284,14 @@
       "testament": "old_testament",
       "category": "minor_prophets",
       "english_name": "Micah",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -894,6 +1299,12 @@
         "Mic",
         "Mi"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -905,6 +1316,14 @@
       "testament": "old_testament",
       "category": "minor_prophets",
       "english_name": "Nahum",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -913,6 +1332,12 @@
         "Na",
         "Nah"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -924,6 +1349,14 @@
       "testament": "old_testament",
       "category": "minor_prophets",
       "english_name": "Habakkuk",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -933,6 +1366,12 @@
         "Hk",
         "Habk"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -944,6 +1383,14 @@
       "testament": "old_testament",
       "category": "minor_prophets",
       "english_name": "Zephaniah",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -953,6 +1400,12 @@
         "Zeph",
         "Ze"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -964,6 +1417,14 @@
       "testament": "old_testament",
       "category": "minor_prophets",
       "english_name": "Haggai",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -973,6 +1434,12 @@
         "Ha",
         "Hagg"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -984,6 +1451,14 @@
       "testament": "old_testament",
       "category": "minor_prophets",
       "english_name": "Zechariah",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -992,6 +1467,12 @@
         "Zc",
         "Zech"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -1003,6 +1484,14 @@
       "testament": "old_testament",
       "category": "minor_prophets",
       "english_name": "Malachi",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -1011,6 +1500,12 @@
         "Ml",
         "Mlc"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -1022,6 +1517,14 @@
       "testament": "new_testament",
       "category": "gospels",
       "english_name": "Matthew",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -1030,6 +1533,12 @@
         "Mt",
         "Matt"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -1041,6 +1550,14 @@
       "testament": "new_testament",
       "category": "gospels",
       "english_name": "Mark",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -1049,6 +1566,12 @@
         "Mk",
         "Mar"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -1060,6 +1583,14 @@
       "testament": "new_testament",
       "category": "gospels",
       "english_name": "Luke",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -1068,6 +1599,12 @@
         "Lk",
         "Lu"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -1079,6 +1616,14 @@
       "testament": "new_testament",
       "category": "gospels",
       "english_name": "John",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -1088,6 +1633,12 @@
         "Joh",
         "Jo"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -1099,6 +1650,14 @@
       "testament": "new_testament",
       "category": "acts",
       "english_name": "Acts",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -1106,6 +1665,12 @@
         "Act",
         "Ac"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -1117,6 +1682,14 @@
       "testament": "new_testament",
       "category": "pauline_epistles",
       "english_name": "Romans",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -1126,6 +1699,12 @@
         "Rmn",
         "Rmns"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -1137,6 +1716,14 @@
       "testament": "new_testament",
       "category": "pauline_epistles",
       "english_name": "1 Corinthians",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -1151,6 +1738,12 @@
         "I Cor",
         "I Co"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -1162,6 +1755,14 @@
       "testament": "new_testament",
       "category": "pauline_epistles",
       "english_name": "2 Corinthians",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -1176,6 +1777,12 @@
         "II Cor",
         "II Co"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -1187,6 +1794,14 @@
       "testament": "new_testament",
       "category": "pauline_epistles",
       "english_name": "Galatians",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -1195,6 +1810,12 @@
         "Ga",
         "Gltns"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -1206,6 +1827,14 @@
       "testament": "new_testament",
       "category": "pauline_epistles",
       "english_name": "Ephesians",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -1214,6 +1843,12 @@
         "Ep",
         "Ephn"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -1225,6 +1860,14 @@
       "testament": "new_testament",
       "category": "pauline_epistles",
       "english_name": "Philippians",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -1234,6 +1877,12 @@
         "Phi",
         "Phil"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -1245,6 +1894,14 @@
       "testament": "new_testament",
       "category": "pauline_epistles",
       "english_name": "Colossians",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -1255,6 +1912,12 @@
         "Cln",
         "Clns"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -1266,6 +1929,14 @@
       "testament": "new_testament",
       "category": "pauline_epistles",
       "english_name": "1 Thessalonians",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -1285,6 +1956,12 @@
         "I The",
         "I Th"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -1296,6 +1973,14 @@
       "testament": "new_testament",
       "category": "pauline_epistles",
       "english_name": "2 Thessalonians",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -1315,6 +2000,12 @@
         "II The",
         "II Th"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -1326,6 +2017,14 @@
       "testament": "new_testament",
       "category": "pauline_epistles",
       "english_name": "1 Timothy",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -1340,6 +2039,12 @@
         "I Tim",
         "I Ti"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -1351,6 +2056,14 @@
       "testament": "new_testament",
       "category": "pauline_epistles",
       "english_name": "2 Timothy",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -1365,6 +2078,12 @@
         "II Tim",
         "II Ti"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -1376,6 +2095,14 @@
       "testament": "new_testament",
       "category": "pauline_epistles",
       "english_name": "Titus",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -1385,6 +2112,12 @@
         "Tt",
         "Ts"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -1396,6 +2129,14 @@
       "testament": "new_testament",
       "category": "pauline_epistles",
       "english_name": "Philemon",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -1406,6 +2147,12 @@
         "Philm",
         "Phlm"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -1417,6 +2164,14 @@
       "testament": "new_testament",
       "category": "general_epistles",
       "english_name": "Hebrews",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -1425,6 +2180,12 @@
         "He",
         "Hw"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -1436,6 +2197,14 @@
       "testament": "new_testament",
       "category": "general_epistles",
       "english_name": "James",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -1445,6 +2214,12 @@
         "Jam",
         "Ja"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -1456,6 +2231,14 @@
       "testament": "new_testament",
       "category": "general_epistles",
       "english_name": "1 Peter",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -1469,6 +2252,12 @@
         "I Pet",
         "I Pe"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -1480,6 +2269,14 @@
       "testament": "new_testament",
       "category": "general_epistles",
       "english_name": "2 Peter",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -1493,6 +2290,12 @@
         "II Pet",
         "II Pe"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -1504,6 +2307,14 @@
       "testament": "new_testament",
       "category": "general_epistles",
       "english_name": "1 John",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -1518,6 +2329,12 @@
         "I Jn",
         "1John"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -1529,6 +2346,14 @@
       "testament": "new_testament",
       "category": "general_epistles",
       "english_name": "2 John",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -1543,6 +2368,12 @@
         "II Jn",
         "2John"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -1554,6 +2385,14 @@
       "testament": "new_testament",
       "category": "general_epistles",
       "english_name": "3 John",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -1568,6 +2407,12 @@
         "III Jn",
         "3John"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -1579,6 +2424,14 @@
       "testament": "new_testament",
       "category": "general_epistles",
       "english_name": "Jude",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -1586,6 +2439,12 @@
         "Jud",
         "Jd"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null
@@ -1597,6 +2456,14 @@
       "testament": "new_testament",
       "category": "apocalyptic",
       "english_name": "Revelation",
+      "author": null,
+      "attribution": null,
+      "authorship_note": null,
+      "date_written": null,
+      "date_basis": null,
+      "date_note": null,
+      "historical_period": null,
+      "audience": null,
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -1605,6 +2472,12 @@
         "Re",
         "Rvltn"
       ],
+      "major_events": [],
+      "key_people": [],
+      "key_places": [],
+      "related_books": [],
+      "messianic_references": [],
+      "prophecy_links": [],
       "keywords": [],
       "themes": [],
       "pronunciation": null

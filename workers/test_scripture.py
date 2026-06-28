@@ -160,14 +160,17 @@ def test_books_meta_testament_and_category_ids():
     assert all("_" in c or c.islower() for c in (b["category"] for b in meta.values()))
 
 
-def test_books_meta_reserved_fields_present_and_empty():
+def test_books_meta_reserved_and_typed_fields():
     import bible_api
-    g = bible_api.book_meta("genesis")
-    assert g is not None
-    # Future-facing fields exist but are empty/null now (additive, no redesign later).
-    assert g["keywords"] == [] and g["themes"] == []
-    assert g["pronunciation"] is None
-    assert g["localized_name"] is None and g["localized_short_name"] is None
+    meta = bible_api.books_meta()
+    for b in meta.values():
+        # Localized display names are NOT stored in the language-neutral ontology
+        # (they come from locale resources); these stay null here.
+        assert b["localized_name"] is None and b["localized_short_name"] is None
+        # keywords/themes are lists (empty until their batch populates them).
+        assert isinstance(b["keywords"], list) and isinstance(b["themes"], list)
+        # pronunciation reserved: null now, may become a string later.
+        assert b["pronunciation"] is None or isinstance(b["pronunciation"], str)
     assert bible_api.book_meta("not-a-book") is None
 
 

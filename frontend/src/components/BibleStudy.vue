@@ -68,6 +68,106 @@ function focusScroll(e) {
 }
 const summary = ref(null);
 
+// Optional narration (TTS) of pastor replies — independent, off by default,
+// remembered per device. When the box is checked, replies AUTO-PLAY in order
+// (one at a time); the per-bubble icon is a stop (⏸) / play (🔊) control.
+const narrationOn = ref(localStorage.getItem("bibleStudyNarration") === "1");
+const narratingTurn = ref(null);       // turn currently sounding (null = silent)
+const audioUrls = new Map();           // turn → already-synthesized audio URL
+const queue = [];                      // turns waiting to auto-play, in order
+const played = new Set();              // turns already auto-played (don't repeat)
+let audioEl = null;
+let draining = false;
+let resolveCurrent = null;             // resolves the in-flight playback promise
+
+function ensureAudio() {
+  if (audioEl) return;
+  audioEl = new Audio();
+  audioEl.onended = finishCurrent;
+  audioEl.onerror = finishCurrent;
+}
+function finishCurrent() {
+  narratingTurn.value = null;
+  const r = resolveCurrent; resolveCurrent = null;
+  if (r) r();
+}
+
+// Markdown (headings/bold/tables) reads terribly aloud — flatten it to plain prose.
+function speakable(text) {
+  return (text || "")
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/[#>*_`|]/g, " ")
+    .replace(/-{2,}/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function playBubble(b) {
+  return new Promise((resolve) => {
+    resolveCurrent = resolve;
+    ensureAudio();
+    (async () => {
+      try {
+        let url = audioUrls.get(b.turn);
+        if (!url) {
+          const res = await api.studyNarrate(form.language, speakable(b.text));
+          url = res.url;
+          audioUrls.set(b.turn, url);
+        }
+        audioEl.src = url;            // setting src stops any previous reply
+        narratingTurn.value = b.turn;
+        await audioEl.play();
+      } catch {
+        finishCurrent();
+      }
+    })();
+  });
+}
+
+function stopPlayback() {
+  queue.length = 0;
+  if (audioEl) audioEl.pause();
+  finishCurrent();
+}
+
+// Per-bubble icon: stop if it is the one sounding, otherwise play just it.
+async function narrate(b) {
+  if (!b.text.trim()) return;
+  if (narratingTurn.value === b.turn) { stopPlayback(); return; }
+  stopPlayback();
+  played.add(b.turn);
+  try { await playBubble(b); }
+  catch { flash("Narration is not available right now."); }
+}
+
+// Auto-play: queue an assistant reply (skips the user's own bubbles).
+function enqueue(b) {
+  if (!narrationOn.value || b.role === "user" || !b.text.trim()) return;
+  if (played.has(b.turn) || queue.includes(b.turn)) return;
+  queue.push(b.turn);
+  drain();
+}
+async function drain() {
+  if (draining) return;
+  draining = true;
+  while (narrationOn.value && queue.length) {
+    const turn = queue.shift();
+    const b = bubbles.value.find((x) => x.turn === turn);
+    if (!b || !b.text.trim() || played.has(turn)) continue;
+    played.add(turn);
+    await playBubble(b);
+  }
+  draining = false;
+}
+
+// Checking the box starts auto-playing any replies already on screen; unchecking
+// stops immediately. Default behaviour once enabled is to play automatically.
+watch(narrationOn, (v) => {
+  localStorage.setItem("bibleStudyNarration", v ? "1" : "0");
+  if (!v) { stopPlayback(); return; }
+  bubbles.value.forEach(enqueue);
+});
+
 // Active ads for the box below the Bible Study setup form.
 const ads = ref([]);
 const hasStudyAd = computed(() =>
@@ -151,7 +251,7 @@ async function restore(chatId) {
   }
 }
 
-onBeforeUnmount(() => stream.close());
+onBeforeUnmount(() => { stream.close(); if (audioEl) audioEl.pause(); });
 
 // User bubbles use decreasing negative turn ids so they never collide with the
 // positive turn numbers the worker assigns to moderator/pastor turns.
@@ -195,6 +295,8 @@ function attachHandlers() {
     },
     "round.complete": () => {
       inputOpen.value = true;
+      // Replies are fully streamed now — auto-play them in order if narration is on.
+      bubbles.value.forEach(enqueue);
     },
     "state.changed": (e) => {
       if (e.state === "summarized") loadSummary();
@@ -448,13 +550,21 @@ function goHome() { window.location.hash = ""; }
           <span v-else>Connecting…</span>
           <button class="ghost end" @click="end">End Discussion</button>
         </template>
+        <label class="narration-toggle" :class="{ standalone: restored }">
+          <input type="checkbox" v-model="narrationOn" />
+          🔊 Narration
+        </label>
       </div>
 
       <p v-if="notice" class="notice">{{ notice }}</p>
 
       <div class="thread">
         <article v-for="b in bubbles" :key="b.turn" :class="['bubble', roleClass(b.role)]">
-          <div class="who">{{ b.name }}<span class="role">· {{ b.role }}</span></div>
+          <div class="who">{{ b.name }}<span class="role">· {{ b.role }}</span>
+            <button v-if="narrationOn && b.role !== 'user' && b.text.trim()" type="button"
+              class="narrate-btn" :title="narratingTurn === b.turn ? 'Stop' : 'Listen'"
+              @click="narrate(b)">{{ narratingTurn === b.turn ? '⏸' : '🔊' }}</button>
+          </div>
           <div class="body">{{ b.text }}<span v-if="!b.text" class="typing">…</span></div>
           <div v-if="b.refs.length" class="verses">
             <span v-for="r in b.refs" :key="r.ref" class="verse-card">📖 {{ r.ref }} <em>{{ r.translation }}</em></span>
@@ -579,6 +689,10 @@ function goHome() { window.location.hash = ""; }
 .status .end { margin-left: auto; }
 .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
 .dot.on { background: var(--success); } .dot.off { background: #f59e0b; }
+.narration-toggle { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.85em; cursor: pointer; user-select: none; }
+.narration-toggle.standalone { margin-left: auto; }
+.narrate-btn { background: none; border: 0; cursor: pointer; font-size: 0.95em; padding: 0 0.2rem; line-height: 1; opacity: 0.75; }
+.narrate-btn:hover { opacity: 1; }
 
 .notice { background: var(--primary-soft); color: var(--text); border: 1px solid var(--border); padding: 0.45rem 0.7rem; border-radius: var(--radius-sm); }
 

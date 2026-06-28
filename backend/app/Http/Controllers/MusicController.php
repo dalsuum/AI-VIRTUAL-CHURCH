@@ -17,15 +17,6 @@ use Illuminate\Validation\Rule;
  */
 class MusicController extends Controller
 {
-    /** Emoji shown next to each mood chip in the selector (canonical keys). */
-    private const MOOD_EMOJI = [
-        'happy' => '😊', 'sad' => '😢', 'need prayer' => '🙏', 'thankful' => '❤️',
-        'revival' => '🔥', 'depression' => '😔', 'anxiety' => '😰', 'broken heart' => '💔',
-        'angry' => '😡', 'tired' => '😴', 'peace' => '😇', 'repentance' => '✝️',
-        'lonely' => '🫂', 'grieving' => '🕊️', 'seeking' => '🔎', 'hopeful' => '🌅',
-        'joyful' => '😄', 'grateful' => '🙌',
-    ];
-
     public function __construct(
         private MusicRecommendationService $recommender,
         private MoodExpansionService $moods,
@@ -37,9 +28,9 @@ class MusicController extends Controller
     {
         $moods = array_map(fn ($key) => [
             'key'    => $key,
-            'label'  => ucwords($key),
+            'label'  => $this->moods->labels($key)['en'],
             'labels' => $this->moods->labels($key),   // {en, my, td} for the language switcher
-            'emoji'  => self::MOOD_EMOJI[$key] ?? '🎵',
+            'emoji'  => $this->moods->emoji($key),
         ], $this->moods->moodKeys());
 
         return response()->json(['moods' => $moods]);
@@ -49,7 +40,7 @@ class MusicController extends Controller
     public function recommend(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'language'      => ['required', Rule::in(MusicRecommendationService::SUPPORTED_LANGUAGES)],
+            'language'      => ['required', Rule::in(MusicRecommendationService::supportedLanguages())],
             'mood'          => ['required', 'string', 'max:100'],
             'playlist_size' => ['nullable', 'integer', 'min:1', 'max:50'],
             'exclude'       => ['nullable', 'array', 'max:50'],

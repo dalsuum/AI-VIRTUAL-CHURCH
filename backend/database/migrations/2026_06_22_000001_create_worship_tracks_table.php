@@ -33,7 +33,7 @@ return new class extends Migration
             $table->string('apple_music_url')->nullable();
             $table->string('cover_image')->nullable();
             $table->boolean('lyrics_available')->default(false);
-            $table->string('copyright_status')->default('metadata_only');
+            $table->string('copyright_status')->default('curated');
             $table->unsignedInteger('popularity')->default(0);
             $table->boolean('active')->default(true)->index();
             $table->timestamps();

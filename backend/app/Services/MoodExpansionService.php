@@ -5,102 +5,57 @@ namespace App\Services;
 use App\Models\Setting;
 
 /**
- * Expands a worshipper's mood (a chip label or free text like "I feel lonely")
- * into a set of spiritual theme tags used by MusicRecommendationService.
+ * Expands a worshipper's mood into spiritual theme tags for the recommender.
  *
- * Phase 1 is purely deterministic — a built-in dictionary plus an optional
- * admin override (the `music.mood_dictionary` setting, a JSON object of
- * mood => [tags]). No LLM is involved; unmatched free text falls back to its
- * own keyword tokens so a recommendation can still be produced.
+ * Moods are the six universal categories defined in config/worship_moods.php
+ * (energy / feel_good / focus / love / relax / heartbreak) — that file is the
+ * single source of truth for ids, translated labels, emoji, expansion concepts,
+ * and free-text trigger words. This service only reads it.
+ *
+ * Expansion is deterministic (no LLM, Phase 1): an exact mood id returns its
+ * concepts; free text ("I feel lonely and afraid") is mapped by scanning each
+ * mood's trigger words and merging the concepts of every mood it touches. An
+ * optional admin JSON override (`music.mood_dictionary`, mood-id => [concepts])
+ * layers on top so concepts can be tuned without a deploy.
  */
 class MoodExpansionService
 {
-    /**
-     * Built-in mood => theme-tag dictionary. Keys are matched case-insensitively
-     * and emoji/labels from the UI map onto these canonical keys.
-     */
-    public const DICTIONARY = [
-        'happy'        => ['joy', 'celebration', 'gratitude', 'praise', 'thanksgiving'],
-        'joyful'       => ['joy', 'celebration', 'praise', 'thanksgiving'],
-        'sad'          => ['comfort', 'hope', 'healing', 'grace'],
-        'depression'   => ['hope', 'identity', 'love', 'restoration'],
-        'anxiety'      => ['peace', 'trust', 'fear', 'protection', 'faith'],
-        'anxious'      => ['peace', 'trust', 'fear', 'protection', 'faith'],
-        'lonely'       => ['presence', 'companionship', 'friendship', 'jesus'],
-        'broken heart' => ['healing', 'comfort', 'restoration', 'forgiveness'],
-        'angry'        => ['peace', 'forgiveness', 'patience', 'surrender'],
-        'tired'        => ['rest', 'renewal', 'strength', 'hope'],
-        'peace'        => ['peace', 'rest', 'trust', 'stillness'],
-        'repentance'   => ['forgiveness', 'grace', 'mercy', 'renewal'],
-        'thankful'     => ['gratitude', 'thanksgiving', 'praise', 'joy'],
-        'grateful'     => ['gratitude', 'thanksgiving', 'praise', 'joy'],
-        'revival'      => ['fire', 'holy spirit', 'worship', 'surrender', 'praise'],
-        'need prayer'  => ['intercession', 'faith', 'hope', 'surrender'],
-        'grieving'     => ['comfort', 'hope', 'healing', 'grace'],
-        'seeking'      => ['presence', 'faith', 'guidance', 'trust'],
-        'hopeful'      => ['hope', 'faith', 'promise', 'future'],
-    ];
-
-    /**
-     * Native-language display label + search term per canonical mood key. The
-     * English key remains the search anchor (theme expansion below is keyed on
-     * it); these native words are what the worshipper sees on the chip AND what
-     * gets injected into the YouTube discovery query so Burmese/Zolai moods
-     * actually surface Burmese/Zolai worship — not just an English label.
-     * Tedim (`td`) strings are best-effort; correct here in one place if needed.
-     */
-    public const LABELS_I18N = [
-        'happy'        => ['my' => 'ပျော်ရွှင်',        'td' => 'Lungdam'],
-        'joyful'       => ['my' => 'ဝမ်းမြောက်',        'td' => 'Nuamna'],
-        'sad'          => ['my' => 'ဝမ်းနည်း',          'td' => 'Lungkham'],
-        'depression'   => ['my' => 'စိတ်ဓာတ်ကျ',        'td' => 'Lungsim nuamlou'],
-        'anxiety'      => ['my' => 'စိုးရိမ်ပူပန်',       'td' => 'Mangbatna'],
-        'anxious'      => ['my' => 'စိတ်မငြိမ်',         'td' => 'Lungsim buai'],
-        'lonely'       => ['my' => 'အထီးကျန်',          'td' => 'Kiguak'],
-        'broken heart' => ['my' => 'နှလုံးကွဲ',          'td' => 'Lungtang kitan'],
-        'angry'        => ['my' => 'ဒေါသ',             'td' => 'Hehna'],
-        'tired'        => ['my' => 'ပင်ပန်း',           'td' => 'Gimna'],
-        'peace'        => ['my' => 'ငြိမ်သက်',           'td' => 'Lungmuanna'],
-        'repentance'   => ['my' => 'နောင်တ',            'td' => 'Kisikna'],
-        'thankful'     => ['my' => 'ကျေးဇူးတင်',         'td' => 'Lungdamna'],
-        'grateful'     => ['my' => 'ကျေးဇူးသိတတ်',       'td' => 'Lungdam kohna'],
-        'revival'      => ['my' => 'အသက်ဝိညာဉ်နိုးထ',    'td' => 'Nuntak kikna'],
-        'need prayer'  => ['my' => 'ဆုတောင်းလို',         'td' => 'Thungetna kisam'],
-        'grieving'     => ['my' => 'ဝမ်းနည်းပူဆွေး',      'td' => 'Sunna'],
-        'seeking'      => ['my' => 'ရှာဖွေ',             'td' => 'Zonna'],
-        'hopeful'      => ['my' => 'မျှော်လင့်ချက်',       'td' => 'Lametna'],
-    ];
-
-    /**
-     * Native display label for a mood key in the given language. Falls back to
-     * the title-cased English key for `en` or any unmapped key/free text.
-     */
+    /** Native display label for a mood id in the given language. */
     public function label(string $mood, string $language): string
     {
         $norm = $this->normalize($mood);
-        if ($language === 'en' || $norm === '') {
+        $mc   = $this->moods();
+
+        if ($language === 'en' || $norm === '' || ! isset($mc[$norm])) {
             return ucwords($norm !== '' ? $norm : trim($mood));
         }
 
-        return self::LABELS_I18N[$norm][$language] ?? ucwords($norm);
+        return $mc[$norm]['labels'][$language] ?? ucwords($norm);
     }
 
-    /** Per-language label map ({en, my, td}) for one canonical mood key. */
+    /** Per-language label map ({en, my, td}) for one mood id. */
     public function labels(string $mood): array
     {
-        $norm = $this->normalize($mood);
+        $norm   = $this->normalize($mood);
+        $labels = $this->moods()[$norm]['labels'] ?? [];
 
         return [
-            'en' => ucwords($norm),
-            'my' => self::LABELS_I18N[$norm]['my'] ?? ucwords($norm),
-            'td' => self::LABELS_I18N[$norm]['td'] ?? ucwords($norm),
+            'en' => $labels['en'] ?? ucwords($norm),
+            'my' => $labels['my'] ?? ($labels['en'] ?? ucwords($norm)),
+            'td' => $labels['td'] ?? ($labels['en'] ?? ucwords($norm)),
         ];
     }
 
+    /** Chip emoji for a mood id (🎵 fallback). */
+    public function emoji(string $mood): string
+    {
+        return $this->moods()[$this->normalize($mood)]['emoji'] ?? '🎵';
+    }
+
     /**
-     * Expand a mood string into a de-duplicated, lower-cased list of theme tags.
-     * Always includes the normalized mood itself so an unmatched mood still
-     * carries at least one usable tag.
+     * Expand a mood string into a de-duplicated, lower-cased list of concept
+     * tags. Always includes the normalized mood itself so an unmatched mood
+     * (or raw free text) still carries at least one usable tag.
      */
     public function expand(string $mood): array
     {
@@ -109,40 +64,87 @@ class MoodExpansionService
             return [];
         }
 
-        $dictionary = $this->dictionary();
+        $concepts = $this->concepts();
 
-        // 1. Exact key match (chip labels and canonical moods).
-        if (isset($dictionary[$norm])) {
-            return $this->finalize($norm, $dictionary[$norm]);
+        // 1. Exact mood id (a chip selection, e.g. "relax").
+        if (isset($concepts[$norm])) {
+            return $this->finalize($norm, $concepts[$norm]);
         }
 
-        // 2. Free text ("i feel lonely and afraid"): collect tags from every
-        //    dictionary key whose word appears in the input.
+        // 2. Free text ("i feel lonely and afraid") OR a legacy stored mood key
+        //    (anxiety/peace/…): collect concepts from every mood whose trigger
+        //    word appears in the input.
         $tags = [];
-        foreach ($dictionary as $key => $keyTags) {
-            if ($this->mentions($norm, $key)) {
-                $tags = array_merge($tags, $keyTags, [$key]);
+        foreach ($this->moods() as $id => $cfg) {
+            foreach ((array) ($cfg['triggers'] ?? []) as $trigger) {
+                if ($this->mentions($norm, $this->normalize((string) $trigger))) {
+                    $tags = array_merge($tags, $concepts[$id] ?? []);
+                    break;
+                }
             }
         }
 
         return $this->finalize($norm, $tags);
     }
 
-    /** Canonical mood keys, for the UI mood selector. */
+    /** Mood ids, in config order, for the UI selector. */
     public function moodKeys(): array
     {
-        return array_keys($this->dictionary());
+        return array_keys($this->moods());
     }
 
-    /** Built-in dictionary merged with the optional admin JSON override. */
-    private function dictionary(): array
+    /**
+     * Resolve a mood string to a canonical mood id, or null if it matches none.
+     * Accepts an id ("relax"), a legacy stored key, or an exact trigger word
+     * ("peace" => "relax"). Used by the JSON importer so older catalogs whose
+     * moods predate the six-category collapse still import cleanly.
+     */
+    public function canonical(string $mood): ?string
     {
-        $override = json_decode((string) Setting::get('music.mood_dictionary', ''), true);
-        if (! is_array($override)) {
-            return self::DICTIONARY;
+        $norm = $this->normalize($mood);
+        if ($norm === '') {
+            return null;
         }
 
-        // Override values must be arrays of strings; ignore malformed entries.
+        $moods = $this->moods();
+        if (isset($moods[$norm])) {
+            return $norm;
+        }
+
+        foreach ($moods as $id => $cfg) {
+            foreach ((array) ($cfg['triggers'] ?? []) as $trigger) {
+                if ($this->normalize((string) $trigger) === $norm) {
+                    return $id;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /** Mood config table (config defaults; not affected by the concepts override). */
+    private function moods(): array
+    {
+        return (array) config('worship_moods.moods', []);
+    }
+
+    /**
+     * mood-id => [concepts], config defaults merged with the optional admin JSON
+     * override (`music.mood_dictionary`). Override values must be arrays of
+     * strings; malformed entries are ignored.
+     */
+    private function concepts(): array
+    {
+        $base = [];
+        foreach ($this->moods() as $id => $cfg) {
+            $base[$id] = array_map(fn ($t) => $this->normalize((string) $t), (array) ($cfg['concepts'] ?? []));
+        }
+
+        $override = json_decode((string) Setting::get('music.mood_dictionary', ''), true);
+        if (! is_array($override)) {
+            return $base;
+        }
+
         $clean = [];
         foreach ($override as $key => $tags) {
             if (is_string($key) && is_array($tags)) {
@@ -153,12 +155,15 @@ class MoodExpansionService
             }
         }
 
-        return array_merge(self::DICTIONARY, $clean);
+        return array_merge($base, $clean);
     }
 
-    /** Whether $haystack contains $needle as a whole word (or substring for multi-word keys). */
+    /** Whether $haystack contains $needle as a whole word (or substring for multi-word triggers). */
     private function mentions(string $haystack, string $needle): bool
     {
+        if ($needle === '') {
+            return false;
+        }
         if (str_contains($needle, ' ')) {
             return str_contains($haystack, $needle);
         }

@@ -343,6 +343,9 @@ Route::middleware(['auth:sanctum', 'account.usable'])->group(function () {
         Route::get('/worship-tracks/youtube-search',  [\App\Http\Controllers\WorshipTrackAdminController::class, 'youtubeSearch']);
         Route::get('/worship-tracks',                 [\App\Http\Controllers\WorshipTrackAdminController::class, 'index']);
         Route::post('/worship-tracks',                [\App\Http\Controllers\WorshipTrackAdminController::class, 'store']);
+        // Static segments registered before {worshipTrack} so they aren't captured as ids.
+        Route::get('/worship-tracks/export',          [\App\Http\Controllers\WorshipTrackAdminController::class, 'export']);
+        Route::post('/worship-tracks/import',         [\App\Http\Controllers\WorshipTrackAdminController::class, 'import']);
         Route::get('/worship-tracks/{worshipTrack}',  [\App\Http\Controllers\WorshipTrackAdminController::class, 'show']);
         Route::patch('/worship-tracks/{worshipTrack}',[\App\Http\Controllers\WorshipTrackAdminController::class, 'update']);
         Route::delete('/worship-tracks/{worshipTrack}',[\App\Http\Controllers\WorshipTrackAdminController::class, 'destroy']);
@@ -513,6 +516,10 @@ Route::middleware(['auth:sanctum', 'account.usable'])->prefix('v1/study')->group
     Route::post('/sessions/{session}/end', [StudyController::class, 'endSession']);
     Route::post('/sessions/{session}/email', [StudyController::class, 'emailSummary'])
         ->middleware('throttle:6,1');
+    // Optional Text-to-Speech for a discussion reply (user-toggled, off by default).
+    // Reuses the chapter-narration pipeline + per-language voice mapping.
+    Route::post('/narrate', [BibleController::class, 'narrateText'])
+        ->middleware('throttle:30,1');
 });
 
 // AI Core / Bible Study admin console. Entry gated by `staff`; each method enforces

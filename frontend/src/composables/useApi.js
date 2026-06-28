@@ -223,6 +223,9 @@ export const api = {
   studyEnd: (id) => request(`/v1/study/sessions/${id}/end`, { method: "POST" }),
   studyEmail: (id, email) =>
     request(`/v1/study/sessions/${id}/email`, { method: "POST", body: email ? { email } : {} }),
+  // Narrate a discussion reply (TTS). Returns { url }; synthesized once, then cached.
+  studyNarrate: (lang, text) =>
+    request("/v1/study/narrate", { method: "POST", body: { lang, text } }),
 
   // ── AI Worship Radio (worshipper) ────────────────────────────────────────
   musicMoods: () => request("/music/moods"),
@@ -239,6 +242,10 @@ export const api = {
     request(`/admin/worship-tracks/${id}`, { method: "PATCH", body: payload }),
   worshipTrackDelete: (id) =>
     request(`/admin/worship-tracks/${id}`, { method: "DELETE" }),
+  worshipTracksExport: (params = "") =>
+    request(`/admin/worship-tracks/export${params}`),
+  worshipTracksImport: (payload) =>
+    request("/admin/worship-tracks/import", { method: "POST", body: payload }),
   musicSettings: () => request("/admin/music-settings"),
   musicSettingsSave: (payload) =>
     request("/admin/music-settings", { method: "PATCH", body: payload }),

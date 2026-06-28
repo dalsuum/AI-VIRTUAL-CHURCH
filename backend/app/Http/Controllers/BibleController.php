@@ -301,6 +301,51 @@ class BibleController extends Controller
     }
 
     /**
+     * Narrate an AI Bible Study reply aloud. Reuses the exact provider/voice
+     * resolution of chapter narration (Setting::bibleNarrationMode + edgeVoice),
+     * so Bible Study narration follows the same per-language voice mapping. The
+     * worker caches by content, so a re-narrated reply is synthesized only once.
+     */
+    public function narrateText(Request $request)
+    {
+        $data = $request->validate([
+            'lang'   => ['nullable', 'in:' . implode(',', self::LANGS)],
+            'text'   => ['required', 'string', 'max:8000'],
+            'gender' => ['nullable', 'in:male,female'],
+        ]);
+
+        $lang   = $data['lang'] ?? 'en';
+        $gender = $data['gender'] ?? 'female';
+
+        $this->assertVersionEnabled($lang);
+
+        $mode = Setting::bibleNarrationMode($lang);
+        if (! in_array($mode, Setting::SERVER_NARRATION_MODES, true)) {
+            abort(409, 'Voice narration is not available for this language.');
+        }
+
+        $voice = match ($mode) {
+            'edge_tts' => $this->edgeVoice($lang, $gender),
+            'voicebox' => Setting::get('voicebox_engine', 'qwen'),
+            default    => '',
+        };
+
+        $resp = Http::timeout((int) config('services.tedim_llm.bible_audio_timeout', 600))
+            ->post("{$this->base()}/bible/narrate-text", [
+                'lang'            => $lang,
+                'text'            => $data['text'],
+                'mode'            => $mode,
+                'gender'          => $gender,
+                'voice'           => $voice,
+                'storage_backend' => (string) Setting::get('storage_backend', 'local'),
+            ]);
+
+        abort_unless($resp->successful(), 502, 'Narration service unavailable');
+
+        return $resp->json();
+    }
+
+    /**
      * Resolve the Microsoft Edge TTS voice for a language/gender. Burmese has
      * native my-MM neural voices; Tedim has no Zolai voice so it uses an English
      * phonetic read; English uses the admin-selected voice. Mirrors the service

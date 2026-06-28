@@ -31,6 +31,11 @@ _DEFAULT_MODEL = os.getenv("HISTORY_LLM_MODEL", os.getenv("BIBLE_STUDY_LLM_MODEL
 _LANG_NAME = {
     "en": "English", "my": "Burmese (Myanmar)", "td": "Tedim (Zolai)",
     "cnh": "Hakha Chin", "cfm": "Falam Chin", "lus": "Mizo",
+    # World interface locales (mirror backend config/languages.php) so the
+    # Pastor/title path responds in the user's chosen language.
+    "fr": "French", "de": "German", "ja": "Japanese", "zh-CN": "Chinese (Simplified)",
+    "hi": "Hindi", "ko": "Korean", "ar": "Arabic", "th": "Thai",
+    "es": "Spanish", "ta": "Tamil",
 }
 
 # Low-resource languages with a native local model (FastAPI on aivc-tedim-api, :8001).

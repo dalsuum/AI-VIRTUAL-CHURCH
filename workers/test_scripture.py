@@ -110,6 +110,20 @@ def test_accented_book_name_resolves_after_normalization():
     assert bible_api._norm("Genèse") in names
 
 
+def test_books_meta_passes_validator():
+    # The ontology is a verified artifact: the structural validator must be clean
+    # (canon completeness, stable unique ids, testament/category ids, no duplicate
+    # or cross-book-ambiguous aliases, referential integrity of related_books).
+    import json, os, importlib.util, bible_api
+    spec = importlib.util.spec_from_file_location(
+        "validate_books_meta",
+        os.path.join(os.path.dirname(bible_api.__file__), "tools", "validate_books_meta.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    data = json.load(open(os.path.join(os.path.dirname(bible_api.__file__), "data", "books_meta.json"), encoding="utf-8"))
+    assert mod.validate(data) == []
+
+
 def test_books_meta_file_is_versioned():
     import bible_api, json, os
     raw = json.load(open(os.path.join(os.path.dirname(bible_api.__file__), "data", "books_meta.json"), encoding="utf-8"))

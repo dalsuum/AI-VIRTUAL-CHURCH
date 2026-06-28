@@ -215,13 +215,19 @@ onMounted(async () => {
 async function restore(chatId) {
   try {
     const { session: s } = await api.historyShow(chatId);
-    const studyId = s.bibleMeta?.study_session_id;
+    // The API serializes the relation snake_cased (`bible_meta`); tolerate the
+    // camelCase form too in case the serialization convention ever changes.
+    const studyId = (s.bible_meta ?? s.bibleMeta)?.study_session_id;
     restored.value = true;
     if (studyId) {
       // Bridged multi-pastor discussion: rich transcript lives in study_sessions.
       const full = await api.studyShow(studyId);
       session.value = { id: full.id, topic: full.topic };
       form.question = full.topic || "";
+      // Adopt the session's language so per-bubble narration uses the right voice
+      // (otherwise it requests English TTS for a Burmese/Tedim transcript and fails).
+      if (full.language) form.language = full.language;
+      if (full.translation) form.translation = full.translation;
       bubbles.value = (full.messages || []).map((m) => ({
         turn: m.turn,
         persona_id: m.persona_id ?? null,
@@ -235,6 +241,7 @@ async function restore(chatId) {
       // Chat-spine study (AI-platform /v1/chat/study): turns are on the session graph.
       session.value = { id: s.id, topic: s.title };
       form.question = s.title || "";
+      if (s.language) form.language = s.language;
       recap.value = s.summary || "";   // the summary stored when this discussion ended
       bubbles.value = (s.messages || []).map((m, i) => ({
         turn: i,

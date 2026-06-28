@@ -73,6 +73,21 @@ def test_list_books_carries_english_aliases_for_non_english():
     assert "genesis" in aliases and "gen" in aliases
 
 
+def test_bible_discover_license_triage():
+    # The discovery helper's conservative verdict: public-domain by age, free CC
+    # grants pass, anything copyrighted or NC/ND is restricted, unclear → review.
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "bible_discover", os.path.join(os.path.dirname(__file__), "tools", "bible_discover.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    assert mod.verdict(1912, "") == "public-domain"
+    assert mod.verdict(2019, "Creative Commons CC BY-SA") == "free-license"
+    assert mod.verdict(1611, "CC BY-NC-ND") == "restricted"
+    assert mod.verdict(1978, "Copyright © 1978 Biblica") == "restricted"
+    assert mod.verdict(2012, "") == "review"  # modern, no metadata → human checks
+
+
 def test_unknown_translation_falls_back():
     vo = scripture.resolve_ref("John 3:16", "niv")  # not vendored in v1
     assert vo.translation_fallback is True

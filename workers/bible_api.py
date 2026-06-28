@@ -43,6 +43,7 @@ import functools
 import json
 import os
 import re
+import unicodedata
 
 _DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 DATA_FILE = os.getenv("BIBLE_DATA_FILE", os.path.join(_DATA_DIR, "bsb.json"))
@@ -114,8 +115,20 @@ _REF_RE = re.compile(
 
 
 def _norm(s: str) -> str:
-    """Lowercase, drop periods, collapse whitespace — for case/spacing-insensitive keys."""
-    return re.sub(r"\s+", " ", s.replace(".", "").strip().lower())
+    """Normalize a name/query for case-, accent- and spacing-insensitive matching.
+
+    Unicode-aware so non-English book names and queries compare reliably:
+      - NFKD decompose, then drop combining marks U+0300–U+036F only. That folds
+        Latin accents (Genèse → genese, Café → cafe) WITHOUT touching the
+        combining marks that carry meaning in Tamil/Devanagari/Thai or the
+        optional Arabic harakat / Hebrew niqqud (all outside that range).
+      - casefold() for robust, language-aware lowercasing.
+      - drop periods, collapse whitespace, NFC recompose.
+    """
+    s = unicodedata.normalize("NFKD", s)
+    s = "".join(c for c in s if not (0x300 <= ord(c) <= 0x36F))
+    s = unicodedata.normalize("NFC", s).casefold()
+    return re.sub(r"\s+", " ", s.replace(".", "").strip())
 
 
 @functools.lru_cache(maxsize=32)

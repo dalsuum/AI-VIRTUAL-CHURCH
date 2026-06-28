@@ -415,15 +415,20 @@ function scrollVerseIntoView(i) {
   if (node) node.scrollIntoView({ block: "center", behavior: "smooth" });
 }
 
+// Accent- and case-insensitive, Unicode-safe (mirrors bible_api._norm): fold
+// Latin diacritics (Genèse → genese) without harming Tamil/Arabic/etc marks.
+const normSearch = (s) =>
+  (s || "").normalize("NFKD").replace(new RegExp("[\\u0300-\\u036f]", "g"), "").toLowerCase().trim();
+
 const filteredBooks = computed(() => {
-  const q = bookSearch.value.trim().toLowerCase();
+  const q = normSearch(bookSearch.value);
   if (!q) return books.value;
   // Match the native heading or any English alias (name/shortname/abbr) so a
-  // book is findable by its English name on non-English Bibles too.
+  // book is findable by its English or localized name (accent-insensitive).
   return books.value.filter(
     (b) =>
-      b.name.toLowerCase().includes(q) ||
-      (b.aliases || []).some((a) => a.toLowerCase().includes(q)),
+      normSearch(b.name).includes(q) ||
+      (b.aliases || []).some((a) => normSearch(a).includes(q)),
   );
 });
 

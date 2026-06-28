@@ -88,6 +88,28 @@ def test_bible_discover_license_triage():
     assert mod.verdict(2012, "") == "review"  # modern, no metadata → human checks
 
 
+def test_norm_folds_latin_accents_but_preserves_other_scripts():
+    import bible_api
+    # Latin accents fold + casefold so accented queries match plain ASCII keys.
+    assert bible_api._norm("Genèse") == bible_api._norm("genese")
+    assert bible_api._norm("CAFÉ") == "cafe"
+    # Non-Latin combining marks (Tamil/Arabic) are NOT stripped — they carry
+    # meaning and live outside U+0300–U+036F.
+    tamil = "ஆதியாகமம்"
+    assert bible_api._norm(tamil) == tamil.casefold()
+    # Arabic harakat (vowel marks, U+064B–U+0652) survive normalization.
+    normalized = bible_api._norm("الْكِتَاب")
+    assert any(0x064B <= ord(c) <= 0x0652 for c in normalized)
+
+
+def test_accented_book_name_resolves_after_normalization():
+    import bible_api
+    # French/German book names with accents normalize for the reader's book index.
+    fr = bible_api.list_books("fr")
+    names = {bible_api._norm(b["name"]) for b in fr}
+    assert bible_api._norm("Genèse") in names
+
+
 def test_unknown_translation_falls_back():
     vo = scripture.resolve_ref("John 3:16", "niv")  # not vendored in v1
     assert vo.translation_fallback is True

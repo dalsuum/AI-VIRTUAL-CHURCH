@@ -69,6 +69,16 @@ _LANG_FILES = {
     "csy": os.getenv("BIBLE_DATA_FILE_CSY", os.path.join(_DATA_DIR, "sizang1932.json")),
     "mrh": os.getenv("BIBLE_DATA_FILE_MRH", os.path.join(_DATA_DIR, "mara2011.json")),
     "hlt": os.getenv("BIBLE_DATA_FILE_HLT", os.path.join(_DATA_DIR, "matu2009.json")),
+    # World-language Bibles from dalsuum/bible, same schema + canonical 1-66
+    # numbering. Only public-domain / freely-licensed editions are vendored:
+    #   'de' Luther 1912 (public domain), 'fr' Ostervald 1877 (public domain),
+    #   'ta' Indian Revised Version 2019 (Creative Commons BY-SA — Tamil).
+    # Copyrighted editions (Japanese, Chinese, Korean, Spanish, Hindi, Thai,
+    # Arabic Van Dyck vocalized) are NOT bundled; drop their json into data/ and
+    # set the matching env var (or add a line here) to enable them — see README.
+    "de": os.getenv("BIBLE_DATA_FILE_DE", os.path.join(_DATA_DIR, "luther1912.json")),
+    "fr": os.getenv("BIBLE_DATA_FILE_FR", os.path.join(_DATA_DIR, "ostervald1877.json")),
+    "ta": os.getenv("BIBLE_DATA_FILE_TA", os.path.join(_DATA_DIR, "tamil_irv2019.json")),
 }
 
 # Translations whose source file has correct, canonically-positioned verse
@@ -201,6 +211,8 @@ def book_title(reference: str, lang: str = "en") -> str:
 _LANGS = (
     "kjv", "en", "he", "my",
     "cfm", "cnh", "mrh", "hlt", "lus", "pck", "csy", "td",
+    # World-language Bibles (only those whose data file is actually vendored).
+    "de", "fr", "ta",
 )
 
 

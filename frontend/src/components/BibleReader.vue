@@ -25,6 +25,10 @@ const LANGS = [
   { code: "pck", label: "Paite", note: "Paite Bible (1971)" },
   { code: "csy", label: "Sizang", note: "Lai Siangtho (Sizang, 1932)" },
   { code: "td", label: "Tedim", note: "Lai Siangtho 1932" },
+  // World-language Bibles (public-domain / Creative Commons). A→Z by label.
+  { code: "de", label: "Deutsch", note: "Luther Bibel (1912)" },
+  { code: "fr", label: "Français", note: "Bible Ostervald (1877)" },
+  { code: "ta", label: "தமிழ்", note: "Indian Revised Version (Tamil, 2019)" },
 ];
 
 // Right-to-left scripts (Hebrew) need the reader heading and verse body laid out
@@ -37,6 +41,9 @@ const LATIN_LANGS = new Set([
   "en", "kjv",
   // The Chin/Zo Bibles are written in Latin script.
   "cfm", "cnh", "lus", "pck", "csy", "mrh", "hlt",
+  // German and French are Latin script too (Tamil is not — it keeps the large
+  // `mm` script class, like Myanmar/Hebrew).
+  "de", "fr",
 ]);
 
 const lang = ref("en");

@@ -51,6 +51,18 @@ def test_unparseable_ref_is_unresolved_not_fabricated():
     assert vo.canonical_id == ""
 
 
+def test_world_language_bibles_resolve():
+    # Public-domain / CC world-language Bibles vendored from dalsuum/bible.
+    # English references resolve against the canonical book index; native text
+    # is returned without fabrication or fallback.
+    for lang in ("de", "fr", "ta"):
+        vo = scripture.resolve_ref("John 3:16", lang)
+        assert vo.resolved is True, lang
+        assert vo.translation == lang and vo.translation_fallback is False, lang
+        assert vo.book_num == 43 and vo.chapter == 3 and vo.verse_start == 16, lang
+        assert vo.text.strip(), lang
+
+
 def test_unknown_translation_falls_back():
     vo = scripture.resolve_ref("John 3:16", "niv")  # not vendored in v1
     assert vo.translation_fallback is True

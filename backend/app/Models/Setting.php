@@ -34,6 +34,13 @@ class Setting extends Model
         'hlt' => 'mms_tts',
         // Hebrew Bible reader: Edge TTS has native he-IL neural voices.
         'he' => 'edge_tts',
+        // World-language Bibles default to text-only narration OFF: Edge TTS has
+        // native de-DE/fr-FR/ta-IN voices, but the narrator only uses them when
+        // EDGE_TTS_VOICE_DE/FR/TA is set (else it reads with an English voice).
+        // An admin can switch these to edge_tts once those voices are configured.
+        'de' => 'off',
+        'fr' => 'off',
+        'ta' => 'off',
     ];
 
     /** Edge TTS voice names the admin may pick from. */
@@ -253,6 +260,10 @@ class Setting extends Model
         'pck' => 'Paite',
         'csy' => 'Sizang',
         'td'  => 'Tedim',
+        // World-language Bibles (public-domain / Creative Commons).
+        'de'  => 'Deutsch',
+        'fr'  => 'Français',
+        'ta'  => 'தமிழ் (Tamil)',
     ];
 
     /**

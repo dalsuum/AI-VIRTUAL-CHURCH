@@ -1,17 +1,20 @@
 <script setup>
 // Global site footer — rendered once by AppLayout and shared across every route.
+import { useI18n } from "vue-i18n";
+
+const { t } = useI18n();
 </script>
 
 <template>
   <footer class="site-footer">
-    <span class="ai-disclaimer">AI can make mistakes. Please verify important information.</span>
+    <span class="ai-disclaimer">{{ t("footer.disclaimer") }}</span>
     <a
       href="https://www.paypal.com/donate/?hosted_button_id=WETP5RQ7ZGJ6U"
       target="_blank"
       rel="noopener noreferrer"
       class="donate-link"
     >
-      ☕ Buy me a coffee
+      ☕ {{ t("footer.donate") }}
     </a>
   </footer>
 </template>

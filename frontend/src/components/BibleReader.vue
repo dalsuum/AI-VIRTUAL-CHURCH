@@ -25,6 +25,10 @@ const LANGS = [
   { code: "pck", label: "Paite", note: "Paite Bible (1971)" },
   { code: "csy", label: "Sizang", note: "Lai Siangtho (Sizang, 1932)" },
   { code: "td", label: "Tedim", note: "Lai Siangtho 1932" },
+  // World-language Bibles (public-domain / Creative Commons). A→Z by label.
+  { code: "de", label: "Deutsch", note: "Luther Bibel (1912)" },
+  { code: "fr", label: "Français", note: "Bible Ostervald (1877)" },
+  { code: "ta", label: "தமிழ்", note: "Indian Revised Version (Tamil, 2019)" },
 ];
 
 // Right-to-left scripts (Hebrew) need the reader heading and verse body laid out
@@ -37,6 +41,9 @@ const LATIN_LANGS = new Set([
   "en", "kjv",
   // The Chin/Zo Bibles are written in Latin script.
   "cfm", "cnh", "lus", "pck", "csy", "mrh", "hlt",
+  // German and French are Latin script too (Tamil is not — it keeps the large
+  // `mm` script class, like Myanmar/Hebrew).
+  "de", "fr",
 ]);
 
 const lang = ref("en");
@@ -408,10 +415,21 @@ function scrollVerseIntoView(i) {
   if (node) node.scrollIntoView({ block: "center", behavior: "smooth" });
 }
 
+// Accent- and case-insensitive, Unicode-safe (mirrors bible_api._norm): fold
+// Latin diacritics (Genèse → genese) without harming Tamil/Arabic/etc marks.
+const normSearch = (s) =>
+  (s || "").normalize("NFKD").replace(new RegExp("[\\u0300-\\u036f]", "g"), "").toLowerCase().trim();
+
 const filteredBooks = computed(() => {
-  const q = bookSearch.value.trim().toLowerCase();
+  const q = normSearch(bookSearch.value);
   if (!q) return books.value;
-  return books.value.filter((b) => b.name.toLowerCase().includes(q));
+  // Match the native heading or any English alias (name/shortname/abbr) so a
+  // book is findable by its English or localized name (accent-insensitive).
+  return books.value.filter(
+    (b) =>
+      normSearch(b.name).includes(q) ||
+      (b.aliases || []).some((a) => normSearch(a).includes(q)),
+  );
 });
 
 const chapterList = computed(() =>

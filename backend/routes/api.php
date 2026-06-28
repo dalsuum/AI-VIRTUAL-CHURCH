@@ -24,6 +24,9 @@ use Illuminate\Support\Facades\Route;
 // Public app configuration (intake options) — read before a worshipper has a session.
 Route::get('/config', [ConfigController::class, 'show']);
 
+// Public interface-locale registry — feeds every language selector in the SPA.
+Route::get('/languages', [\App\Http\Controllers\LocaleController::class, 'index'])->middleware('throttle:120,1');
+
 // Public worship song library — feeds the front song panel (my/td).
 Route::get('/songs', [SongController::class, 'index']);
 

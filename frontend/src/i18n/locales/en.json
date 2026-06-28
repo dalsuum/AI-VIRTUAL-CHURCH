@@ -1,0 +1,65 @@
+{
+  "brand": "AI Virtual Church",
+  "nav": {
+    "bible": "Bible",
+    "bibleStudy": "Bible Study",
+    "pastor": "Pastor",
+    "worship": "Worship",
+    "lyrics": "Songs",
+    "vocabulary": "Vocabulary",
+    "journey": "Journey",
+    "stickers": "Stickers",
+    "admin": "Admin",
+    "account": "Account"
+  },
+  "auth": {
+    "login": "Login",
+    "register": "Register",
+    "logout": "Logout"
+  },
+  "footer": {
+    "disclaimer": "AI can make mistakes. Please verify important information.",
+    "donate": "Buy me a coffee"
+  },
+  "common": {
+    "language": "Language",
+    "selectLanguage": "Select language",
+    "you": "You",
+    "send": "Send"
+  },
+  "pastor": {
+    "title": "AI Pastor Chat",
+    "subtitle": "A caring, Scripture-grounded companion. Your conversation is saved to your journal.",
+    "autoDetect": "Auto Detect",
+    "changeLanguageHint": "Start a new chat to change language",
+    "empty": "Share what's on your heart. The pastor is listening. 🙏",
+    "role": "Pastor",
+    "placeholder": "Type your message…",
+    "loadError": "Could not load this conversation.",
+    "reachError": "Could not reach the pastor right now."
+  },
+  "worship": {
+    "title": "AI Worship Radio",
+    "subtitle": "Tell us how you feel — we'll keep the worship playing.",
+    "back": "Back",
+    "describePlaceholder": "…or describe it: “I feel anxious and tired”",
+    "finding": "Finding songs…",
+    "start": "Start Worship",
+    "nowPlaying": "Now playing",
+    "noEmbed": "No in-app player link for this track yet.",
+    "openExternally": "Open externally ↗",
+    "autoAdvancing": "Auto-advancing to the next song…",
+    "pause": "⏸ Pause",
+    "play": "▶ Play",
+    "next": "⏭ Next",
+    "stop": "⏹ Stop",
+    "moodTag": "Mood: {mood}",
+    "errors": {
+      "loadMoods": "Could not load moods.",
+      "pickMood": "Pick a mood or describe how you feel.",
+      "noMatch": "No songs matched yet — try another mood.",
+      "buildFailed": "Could not build a playlist. Please try again.",
+      "stopped": "Radio stopped — no more songs."
+    }
+  }
+}

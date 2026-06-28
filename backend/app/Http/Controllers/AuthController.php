@@ -11,6 +11,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 
 class AuthController extends Controller
@@ -200,7 +201,7 @@ class AuthController extends Controller
     public function updateProfile(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'fav_language'         => ['sometimes', 'nullable', 'string', 'max:12'],
+            'fav_language'         => ['sometimes', 'nullable', 'string', Rule::in(\App\Http\Controllers\LocaleController::codes())],
             'fav_bible_version'    => ['sometimes', 'nullable', 'string', 'max:12'],
             'fav_worship_language' => ['sometimes', 'nullable', 'string', 'max:12'],
             'fav_pastor'           => ['sometimes', 'nullable', 'string', 'max:80'],

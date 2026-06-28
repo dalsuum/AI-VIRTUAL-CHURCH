@@ -14,6 +14,8 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->statefulApi();
         $middleware->append(\App\Http\Middleware\SecurityHeaders::class);
+        // Resolve + persist the interface locale (drives validation/notifications/mail).
+        $middleware->append(\App\Http\Middleware\SetLocale::class);
         // The guest-quota cookie is a non-sensitive client-set UUID, read raw by
         // GuestUsageService; exempt it from cookie encryption so it isn't dropped.
         $middleware->encryptCookies(except: ['guest_id']);

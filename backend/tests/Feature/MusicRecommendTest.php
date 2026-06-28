@@ -4,11 +4,20 @@ namespace Tests\Feature;
 
 use App\Models\WorshipTrack;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Tests\TestCase;
 
 class MusicRecommendTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        // Live YouTube results are cached per (language, mood); flush so a mocked
+        // result pool from one test can't leak into the next.
+        Cache::flush();
+    }
 
     /** Seed a spread of tracks across languages so scoring has something to rank. */
     private function seedCatalog(): void
@@ -145,15 +154,21 @@ class MusicRecommendTest extends TestCase
         $this->assertEmpty(array_intersect($excluded, $returned));
     }
 
-    public function test_empty_catalog_language_falls_back_to_broad_youtube_query(): void
+    /** Mock the YouTube service to return $rows for queries matching $broadNeedle (else []). */
+    private function mockYoutube(callable $handler): void
     {
-        // Zolai catalogue is empty and the narrow native query returns nothing —
-        // discovery must broaden to a proven term, persist the hits, and serve
-        // them instead of reporting "no songs". Mock YouTube so no network is hit.
         $yt = \Mockery::mock(\App\Services\YoutubeSongSearchService::class);
         $yt->shouldReceive('isConfigured')->andReturn(true);
-        $yt->shouldReceive('search')->andReturnUsing(function (string $query) {
-            // Narrow mood-specific query finds nothing; the broad fallback does.
+        $yt->shouldReceive('search')->andReturnUsing($handler);
+        $this->app->instance(\App\Services\YoutubeSongSearchService::class, $yt);
+    }
+
+    public function test_empty_catalog_language_serves_live_youtube_without_persisting(): void
+    {
+        // Zolai catalogue is empty and the narrow native query returns nothing —
+        // the live fallback must broaden to a proven term and SERVE the hits, but
+        // never write them to the database (catalogue stays curated-only).
+        $this->mockYoutube(function (string $query) {
             if (! str_contains(mb_strtolower($query), 'zomi worship song')) {
                 return [];
             }
@@ -162,22 +177,20 @@ class MusicRecommendTest extends TestCase
                 'title' => 'Zomi Worship', 'channel' => 'Zomi Worship Team', 'thumbnail' => null,
             ]];
         });
-        $this->app->instance(\App\Services\YoutubeSongSearchService::class, $yt);
 
-        $playlist = $this->postJson('/api/music/recommend', ['language' => 'td', 'mood' => 'Peace'])->json('playlist');
+        $playlist = $this->postJson('/api/music/recommend', ['language' => 'td', 'mood' => 'relax'])->json('playlist');
 
-        $this->assertNotEmpty($playlist, 'broad fallback query backfilled the empty Zolai catalogue');
+        $this->assertNotEmpty($playlist, 'live fallback backfilled the empty Zolai catalogue');
         $this->assertSame(['td'], array_values(array_unique(array_column($playlist, 'language'))));
+        $this->assertSame(0, WorshipTrack::count(), 'live results are NOT persisted');
+        $this->assertLessThan(0, $playlist[0]['id'], 'live track carries a negative synthetic id');
     }
 
-    public function test_discovery_walks_ladder_until_it_has_a_full_playlist(): void
+    public function test_live_fallback_walks_ladder_until_it_has_a_full_playlist(): void
     {
-        // First query yields a single song; the broad fallback yields more. The
-        // ladder must keep going past the thin first hit and accumulate enough
-        // to fill a playlist instead of stopping at one song.
-        $yt = \Mockery::mock(\App\Services\YoutubeSongSearchService::class);
-        $yt->shouldReceive('isConfigured')->andReturn(true);
-        $yt->shouldReceive('search')->andReturnUsing(function (string $query) {
+        // First query yields one song; the broad fallback yields more. The ladder
+        // keeps going past the thin first hit to fill the playlist.
+        $this->mockYoutube(function (string $query) {
             $broad = str_contains(mb_strtolower($query), 'zomi worship song');
             $n = $broad ? 8 : 1;
             $tag = $broad ? 'b' : 'a';
@@ -186,11 +199,71 @@ class MusicRecommendTest extends TestCase
                 'title' => "Zomi Worship {$tag}{$i}", 'channel' => 'Zomi Worship Team', 'thumbnail' => null,
             ], range(1, $n));
         });
-        $this->app->instance(\App\Services\YoutubeSongSearchService::class, $yt);
 
-        $playlist = $this->postJson('/api/music/recommend', ['language' => 'td', 'mood' => 'Peace'])->json('playlist');
+        $playlist = $this->postJson('/api/music/recommend', ['language' => 'td', 'mood' => 'relax'])->json('playlist');
 
         $this->assertGreaterThanOrEqual(5, count($playlist), 'ladder accumulated past the thin first query');
+        $this->assertSame(0, WorshipTrack::count());
+    }
+
+    public function test_curated_catalogue_ranks_before_live_results(): void
+    {
+        // One curated Zolai track exists; live fills the rest. The curated song
+        // must come first, and the live ones (negative ids) after.
+        WorshipTrack::create([
+            'title' => 'Curated Zolai', 'language' => 'td', 'themes' => ['peace'], 'moods' => ['peace'],
+            'popularity' => 90, 'active' => true,
+        ]);
+        $this->mockYoutube(fn (string $q) => str_contains(mb_strtolower($q), 'zomi worship song')
+            ? array_map(fn ($i) => [
+                'video_id' => "live{$i}000000", 'url' => "https://www.youtube.com/watch?v=live{$i}0000000",
+                'title' => "Live Zolai {$i}", 'channel' => 'Zomi Worship Team', 'thumbnail' => null,
+            ], range(1, 8))
+            : []);
+
+        $playlist = $this->postJson('/api/music/recommend', ['language' => 'td', 'mood' => 'relax'])->json('playlist');
+
+        $this->assertSame('Curated Zolai', $playlist[0]['title'], 'curated song ranks first');
+        $this->assertGreaterThan(0, $playlist[0]['id'], 'curated track keeps its real DB id');
+        $this->assertLessThan(0, $playlist[1]['id'], 'live tracks follow with synthetic ids');
+        $this->assertSame(1, WorshipTrack::count(), 'only the curated row exists');
+    }
+
+    public function test_live_track_is_excluded_by_its_synthetic_id(): void
+    {
+        $url = 'https://www.youtube.com/watch?v=excludeme00';
+        $this->mockYoutube(fn (string $q) => str_contains(mb_strtolower($q), 'zomi worship song')
+            ? [['video_id' => 'excludeme00', 'url' => $url, 'title' => 'Live Zolai', 'channel' => 'Zomi Worship Team', 'thumbnail' => null]]
+            : []);
+
+        // crc32-derived negative id (mirrors MusicRecommendationService::liveId()).
+        $syntheticId = -((int) (sprintf('%u', crc32($url)) % 2000000000)) - 1;
+
+        $ids = array_column(
+            $this->postJson('/api/music/recommend', ['language' => 'td', 'mood' => 'relax', 'exclude' => [$syntheticId]])->json('playlist'),
+            'id',
+        );
+
+        $this->assertNotContains($syntheticId, $ids, 'a recently-played live track is not served again');
+    }
+
+    public function test_live_results_are_cached_not_refetched_within_ttl(): void
+    {
+        $calls = 0;
+        $this->mockYoutube(function (string $q) use (&$calls) {
+            $calls++;
+            return str_contains(mb_strtolower($q), 'zomi worship song')
+                ? [['video_id' => 'cachedvid00', 'url' => 'https://www.youtube.com/watch?v=cachedvid00',
+                    'title' => 'Cached Zolai', 'channel' => 'Zomi Worship Team', 'thumbnail' => null]]
+                : [];
+        });
+
+        $this->postJson('/api/music/recommend', ['language' => 'td', 'mood' => 'relax'])->assertOk();
+        $afterFirst = $calls;
+        $this->postJson('/api/music/recommend', ['language' => 'td', 'mood' => 'relax'])->assertOk();
+
+        $this->assertGreaterThan(0, $afterFirst, 'first request hits YouTube');
+        $this->assertSame($afterFirst, $calls, 'second request within TTL reuses the cached pool');
     }
 
     public function test_discovery_queries_are_language_aware(): void
@@ -227,19 +300,17 @@ class MusicRecommendTest extends TestCase
         $this->assertSame('Lungmuanna', $relax['labels']['td']);
     }
 
-    public function test_discovery_rejects_foreign_script_titles(): void
+    public function test_live_fallback_rejects_foreign_script_titles(): void
     {
-        // An English search returns a Hindi (Devanagari) upload; it must NOT be
-        // persisted as `en`. A clean English result from the same batch is kept.
-        $yt = \Mockery::mock(\App\Services\YoutubeSongSearchService::class);
-        $yt->shouldReceive('isConfigured')->andReturn(true);
-        $yt->shouldReceive('search')->andReturn([
+        // An English search returns a Hindi (Devanagari) upload alongside a clean
+        // English one. The Hindi result is dropped (never served as `en`); the
+        // English one plays. Nothing is persisted either way.
+        $this->mockYoutube(fn (string $q) => [
             ['video_id' => 'hindivideo0', 'url' => 'https://www.youtube.com/watch?v=hindivideo0',
              'title' => 'आराधना स्तुति गीत CHRISTIAN WORSHIP', 'channel' => 'Jesus Songs', 'thumbnail' => null],
             ['video_id' => 'englishvid0', 'url' => 'https://www.youtube.com/watch?v=englishvid0',
              'title' => 'Goodness of God Worship', 'channel' => 'Bethel', 'thumbnail' => null],
         ]);
-        $this->app->instance(\App\Services\YoutubeSongSearchService::class, $yt);
 
         $titles = array_column(
             $this->postJson('/api/music/recommend', ['language' => 'en', 'mood' => 'relax'])->json('playlist'),
@@ -248,38 +319,14 @@ class MusicRecommendTest extends TestCase
 
         $this->assertContains('Goodness of God Worship', $titles);
         $this->assertNotContains('आराधना स्तुति गीत CHRISTIAN WORSHIP', $titles, 'Hindi title not served as English');
-        $this->assertDatabaseMissing('worship_tracks', ['youtube_url' => 'https://www.youtube.com/watch?v=hindivideo0']);
+        $this->assertSame(0, WorshipTrack::count());
     }
 
-    public function test_serve_time_drops_existing_mislabelled_discovered_track(): void
+    public function test_live_fallback_keeps_burmese_script_for_my(): void
     {
-        // A Devanagari title was saved as `en` before the script gate existed
-        // (auto-discovered = metadata_only). It must self-heal: dropped at serve
-        // time without a migration. A curated en row is unaffected.
-        WorshipTrack::create([
-            'title' => 'आराधना स्तुति गीत', 'language' => 'en', 'moods' => ['peace'],
-            'youtube_url' => 'https://www.youtube.com/watch?v=oldhindivid', 'copyright_status' => 'metadata_only',
-            'popularity' => 20, 'active' => true,
-        ]);
-        WorshipTrack::create([
-            'title' => 'Amazing Grace', 'language' => 'en', 'moods' => ['peace'], 'popularity' => 50, 'active' => true,
-        ]);
-
-        $titles = array_column(
-            $this->postJson('/api/music/recommend', ['language' => 'en', 'mood' => 'relax'])->json('playlist'),
-            'title',
-        );
-
-        $this->assertContains('Amazing Grace', $titles);
-        $this->assertNotContains('आराधना स्तुति गीत', $titles);
-    }
-
-    public function test_burmese_script_is_kept_for_my_requests(): void
-    {
-        WorshipTrack::create([
-            'title' => 'အေးချမ်းခြင်း ဓမ္မသီချင်း', 'language' => 'my', 'moods' => ['peace'],
-            'youtube_url' => 'https://www.youtube.com/watch?v=burmesevid0', 'copyright_status' => 'metadata_only',
-            'popularity' => 20, 'active' => true,
+        $this->mockYoutube(fn (string $q) => [
+            ['video_id' => 'burmesevid0', 'url' => 'https://www.youtube.com/watch?v=burmesevid0',
+             'title' => 'အေးချမ်းခြင်း ဓမ္မသီချင်း', 'channel' => 'Myanmar Worship', 'thumbnail' => null],
         ]);
 
         $titles = array_column(

@@ -45,37 +45,34 @@ class MusicRecommendationService
      * Build a playlist for ($language, $mood), excluding recently played track
      * ids. Returns ['playlist' => WorshipTrack[], 'reason' => string,
      * 'themes' => string[]].
+     *
+     * Two sources, curated-first: (1) the admin-managed catalogue (persisted
+     * `worship_tracks`), scored + diversity-picked within the chosen language;
+     * (2) when that pool can't fill the playlist, LIVE YouTube results — searched
+     * on demand, short-TTL cached, and NEVER persisted (transient tracks with a
+     * stable negative synthetic id). The database is only ever what an admin
+     * curates; user searches no longer grow it.
      */
     public function recommend(string $language, string $mood, ?int $size = null, array $excludeIds = []): array
     {
         $size   = $this->clampSize($size);
         $themes = $this->moods->expand($mood);
 
-        // Keep the catalogue fresh: when the same-language pool the worshipper
-        // hasn't just heard can't fill a playlist, discover new embeddable songs
-        // from YouTube and persist them. This is what stops the radio looping the
-        // same handful of seeded tracks. Best-effort — never blocks a response.
-        $this->maybeDiscover($language, $mood, $themes, $size, $excludeIds);
-
+        // 1. Curated catalogue. Language is a HARD filter: a worshipper who chose
+        //    English only ever hears English worship — never another language
+        //    mixed in. The content filter re-runs at serve time so a channel
+        //    blocked after a row was added drops out on the next request.
         $candidates = WorshipTrack::query()
             ->where('active', true)
             ->when($excludeIds !== [], fn ($q) => $q->whereNotIn('id', $excludeIds))
             ->get()
-            // Re-apply the content filter at serve time: discovery only screens
-            // NEW search hits, so a channel/URL blocked after a track was already
-            // persisted would otherwise keep playing. This drops it on the next
-            // request — no purge needed. The same self-heal drops auto-discovered
-            // tracks whose title script doesn't match their language (e.g. a Hindi
-            // title saved as `en` before this gate existed) — curated catalogue
-            // rows are left untouched.
-            ->filter(fn (WorshipTrack $t) => $this->passesContentFilter($t)
-                && ($t->copyright_status !== 'metadata_only'
-                    || $this->titleLanguageScriptOk((string) $t->title, (string) $t->language)))
+            ->filter(fn (WorshipTrack $t) => $this->passesContentFilter($t))
             ->values();
 
         $maxPopularity = (int) $candidates->max('popularity') ?: 1;
 
-        $scored = $candidates
+        $sameLang = $candidates
+            ->filter(fn (WorshipTrack $t) => $t->language === $language)
             ->map(fn (WorshipTrack $t) => [
                 'track' => $t,
                 'score' => $this->score($t, $language, $mood, $themes, $maxPopularity),
@@ -83,18 +80,23 @@ class MusicRecommendationService
             ->sortByDesc('score')
             ->values();
 
-        // Language is a HARD filter: a worshipper who chose English must only
-        // ever hear English worship — never a Burmese/Zolai track mixed in,
-        // even once the same-language catalogue runs low. We therefore return
-        // ONLY same-language tracks (possibly fewer than $size); the client
-        // loops/recycles within the language when it exhausts the catalogue.
-        $sameLang = $scored->filter(fn ($r) => $r['track']->language === $language)->values();
+        $playlist     = $this->pickWithDiversity($sameLang, $size);
+        $curatedCount = count($playlist);
 
-        $playlist = $this->pickWithDiversity($sameLang, $size);
+        // 2. Live YouTube fallback — only to top up a short curated pool. Results
+        //    are transient (not saved); excludes both recently-played ids and any
+        //    url already queued from the catalogue.
+        if ($curatedCount < $size) {
+            $usedUrls = array_map(fn ($t) => (string) $t->youtube_url, $playlist);
+            $playlist = array_merge(
+                $playlist,
+                $this->liveTracks($language, $mood, $themes, $size - $curatedCount, $excludeIds, $usedUrls),
+            );
+        }
 
         return [
             'playlist' => $playlist,
-            'reason'   => $this->reason($mood, $language, $themes, count($playlist)),
+            'reason'   => $this->reason($mood, $language, $themes, count($playlist), $curatedCount),
             'themes'   => $themes,
         ];
     }
@@ -171,8 +173,8 @@ class MusicRecommendationService
         return $picked;
     }
 
-    /** Build the "I selected these because…" explanation. */
-    private function reason(string $mood, string $language, array $themes, int $count): string
+    /** Source-aware "I selected these because…" explanation. */
+    private function reason(string $mood, string $language, array $themes, int $count, int $curatedCount): string
     {
         $langName  = config("worship_moods.languages.{$language}.name", $language);
         // Show the worshipper's English mood label ("Relax") rather than the raw
@@ -182,120 +184,127 @@ class MusicRecommendationService
         $topThemes = array_slice(array_values(array_filter($themes, fn ($t) => $t !== $this->lower($mood))), 0, 3);
         $themeText = $topThemes !== [] ? implode(', ', $topThemes) : 'God\'s presence';
 
-        return sprintf(
-            'I selected these %d %s worship songs because you mentioned feeling %s — they focus on %s.',
-            $count,
-            $langName,
-            $moodLabel,
-            $themeText
-        );
+        if ($count === 0) {
+            return sprintf('I could not find any %s worship songs for "%s" right now — try another mood.', $langName, $moodLabel);
+        }
+        if ($curatedCount === 0) {
+            return sprintf('I searched YouTube for %s worship about %s and queued the %d best matches.', $langName, $themeText, $count);
+        }
+        if ($curatedCount >= $count) {
+            return sprintf('I selected these %d %s worship songs from our catalogue because you mentioned feeling %s — they focus on %s.', $count, $langName, $moodLabel, $themeText);
+        }
+
+        return sprintf('I queued %d %s worship songs for feeling %s — %d from our catalogue plus fresh YouTube finds about %s.', $count, $langName, $moodLabel, $curatedCount, $themeText);
     }
 
     /**
-     * Live YouTube search on a mood request: discovers fresh embeddable songs and
-     * persists them into the catalogue. Fires on the first search of a mood (per
-     * the cache TTL) and whenever the playable, un-played same-language pool can't
-     * fill a playlist. Requires discovery enabled and a configured key. Persisted
-     * tracks are deduped by youtube_url so repeat searches don't bloat the table.
+     * Live YouTube fallback: searches on demand and returns up to $need transient
+     * tracks — NEVER persisted. Each carries a stable negative synthetic id (from
+     * its url) so the no-repeat window and history work without a DB row. Skips
+     * urls already queued, recently-played ids, and titles whose script doesn't
+     * match the language. Requires discovery enabled + a configured key.
      */
-    private function maybeDiscover(string $language, string $mood, array $themes, int $size, array $excludeIds): void
+    private function liveTracks(string $language, string $mood, array $themes, int $need, array $excludeIds, array $usedUrls): array
     {
-        if (! $this->youtube->isConfigured()) {
-            return;
+        if ($need < 1 || ! $this->youtube->isConfigured()) {
+            return [];
         }
         if (! filter_var(Setting::get('music.youtube_discovery', true), FILTER_VALIDATE_BOOLEAN)) {
-            return;
+            return [];
         }
 
-        // Live search: hit YouTube whenever the worshipper searches a mood, so the
-        // radio surfaces fresh uploads — not just the seeded catalogue. To protect
-        // the daily API quota we cache a per-(language, mood) marker: the first
-        // search for a mood goes live; repeats within the TTL reuse what we just
-        // persisted. A thin/exhausted same-language pool always forces a live hit.
-        $playable = WorshipTrack::query()
-            ->where('active', true)
-            ->where('language', $language)
-            ->whereNotNull('youtube_url')
-            ->where('youtube_url', '!=', '')
-            ->when($excludeIds !== [], fn ($q) => $q->whereNotIn('id', $excludeIds))
-            ->count();
-
-        $ttl       = max(60, (int) Setting::get('music.youtube_discovery_ttl', 21600)); // 6h default
-        // Fold the content-filter epoch into the key so any block/allow edit
-        // invalidates every cached discovery marker and forces a fresh, filtered search.
-        $epoch     = (string) Setting::get('content_filter_epoch', '0');
-        $cacheKey  = 'music:yt-discover:' . $epoch . ':' . $language . ':' . md5($this->lower($mood));
-        $searchedRecently = \Illuminate\Support\Facades\Cache::has($cacheKey);
-
-        // Skip the network call only when we already searched this mood recently
-        // AND there is still enough un-played material to fill a playlist.
-        if ($searchedRecently && $playable >= $size) {
-            return;
+        $seen = array_map('strval', $usedUrls);
+        $out  = [];
+        foreach ($this->searchLive($language, $mood, $themes) as $r) {
+            $url = (string) ($r['url'] ?? '');
+            if ($url === '' || in_array($url, $seen, true)) {
+                continue;
+            }
+            if (! $this->titleLanguageScriptOk((string) ($r['title'] ?? ''), $language)) {
+                continue;
+            }
+            $id = $this->liveId($url);
+            if (in_array($id, $excludeIds, true)) {
+                continue;
+            }
+            $seen[]  = $url;
+            $out[]   = $this->liveModel($r, $language, $themes, $id);
+            if (count($out) >= $need) {
+                break;
+            }
         }
 
-        \Illuminate\Support\Facades\Cache::put($cacheKey, true, $ttl);
+        return $out;
+    }
 
-        // Try the mood-specific query first, then progressively broader proven
-        // terms, accumulating (deduped by url) until we have enough fresh songs
-        // to top the same-language pool up to a full playlist — not stopping at
-        // the first query with *any* hit. This is the "expand keywords and search
-        // again" fallback: without it, a sparse catalogue (e.g. Zolai) plus an
-        // over-specific native query yields zero results and the radio reports
-        // "no songs" despite music being findable; stopping at the first hit
-        // could leave a 2-song discovery batch when a broader query has more.
-        $results = [];
-        try {
-            foreach ($this->discoveryQueries($language, $mood, $themes) as $query) {
-                if ($query === '') {
-                    continue;
-                }
-                foreach ($this->youtube->search($query, 8) as $r) {
-                    if (! empty($r['url'])) {
-                        $results[$r['url']] = $r;   // url key de-dupes across queries
+    /**
+     * Run the specific→broad query ladder live and cache the raw result pool per
+     * (content-filter epoch, language, mood) for the configured TTL. This is a
+     * PERFORMANCE cache only — nothing is stored in the database; the same mood
+     * within the TTL reuses the pool instead of re-hitting the YouTube quota.
+     */
+    private function searchLive(string $language, string $mood, array $themes): array
+    {
+        $epoch    = (string) Setting::get('content_filter_epoch', '0');
+        $cacheKey = 'music:yt-live:' . $epoch . ':' . $language . ':' . md5($this->lower($mood));
+        $ttl      = max(60, (int) Setting::get('music.youtube_discovery_ttl', 21600)); // 6h default
+
+        return \Illuminate\Support\Facades\Cache::remember($cacheKey, $ttl, function () use ($language, $mood, $themes) {
+            $results = [];
+            try {
+                foreach ($this->discoveryQueries($language, $mood, $themes) as $query) {
+                    if ($query === '') {
+                        continue;
+                    }
+                    foreach ($this->youtube->search($query, 8) as $r) {
+                        if (! empty($r['url'])) {
+                            $results[$r['url']] = $r;   // url key de-dupes across queries
+                        }
+                    }
+                    // Gather a healthy pool (beyond one playlist) so the no-repeat
+                    // window has fresh songs to draw from across refills.
+                    if (count($results) >= 12) {
+                        break;
                     }
                 }
-                if (count($results) >= $size) {
-                    break;
-                }
-            }
-            $results = array_values($results);
-        } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::warning('Worship YouTube discovery failed', [
-                'error' => $e->getMessage(), 'language' => $language, 'mood' => $mood,
-            ]);
-            return;
-        }
-
-        foreach ($results as $r) {
-            if (empty($r['url'])) {
-                continue;
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('Worship YouTube live search failed', [
+                    'error' => $e->getMessage(), 'language' => $language, 'mood' => $mood,
+                ]);
+                return [];
             }
 
-            // Don't persist a result whose title is in a script that doesn't
-            // belong to the searched language: an English search can return a
-            // Hindi (Devanagari) or Chinese (CJK) upload, and stamping it `en`
-            // contaminates the catalogue. (Title is the reliable signal; channel
-            // branding is often Latin regardless of the song's language.)
-            if (! $this->titleLanguageScriptOk((string) $r['title'], $language)) {
-                continue;
-            }
+            return array_values($results);
+        });
+    }
 
-            WorshipTrack::updateOrCreate(
-                ['youtube_url' => $r['url']],
-                [
-                    'title'            => $r['title'] !== '' ? mb_substr($r['title'], 0, 255) : 'Worship Song',
-                    'artist'          => $r['channel'] !== '' ? mb_substr($r['channel'], 0, 255) : null,
-                    'language'        => $language,
-                    'genre'           => 'worship',
-                    'themes'          => array_slice($themes, 0, 8),
-                    'moods'           => [$this->lower($mood)],
-                    'cover_image'     => $r['thumbnail'] ?? null,
-                    'copyright_status' => 'metadata_only',
-                    'popularity'      => 20,   // below curated seeds, above nothing.
-                    'active'          => true,
-                ],
-            );
-        }
+    /**
+     * Stable NEGATIVE synthetic id for a live track, derived from its url. Always
+     * negative so it can never collide with a curated DB id (auto-increment,
+     * positive); deterministic so the same video keeps the same id across refills
+     * (no-repeat window) and history records.
+     */
+    private function liveId(string $url): int
+    {
+        return -((int) (sprintf('%u', crc32($url)) % 2000000000)) - 1;
+    }
+
+    /** Build an UNSAVED WorshipTrack for a live result (uniform shape for present()). */
+    private function liveModel(array $r, string $language, array $themes, int $id): WorshipTrack
+    {
+        $track = new WorshipTrack([
+            'title'       => ($r['title'] ?? '') !== '' ? mb_substr($r['title'], 0, 255) : 'Worship Song',
+            'artist'      => ($r['channel'] ?? '') !== '' ? mb_substr($r['channel'], 0, 255) : null,
+            'language'    => $language,
+            'genre'       => 'worship',
+            'themes'      => array_slice($themes, 0, 8),
+            'youtube_url' => $r['url'],
+            'cover_image' => $r['thumbnail'] ?? null,
+        ]);
+        $track->id       = $id;
+        $track->duration = null;
+
+        return $track;
     }
 
     /**
@@ -366,11 +375,11 @@ class MusicRecommendationService
     }
 
     /**
-     * Ordered specific→broad YouTube queries for discovery. The first is the
-     * mood-specific native query; the rest are the language's proven broad
-     * fallbacks. maybeDiscover() walks the list, accumulating results until it
-     * has a full playlist's worth, so a sparse catalogue still surfaces enough
-     * worship music instead of nothing (or a 2-song batch from a thin query).
+     * Ordered specific→broad YouTube queries for the live fallback. The first is
+     * the mood-specific native query; the rest are the language's proven broad
+     * fallbacks. searchLive() walks the list, accumulating results until it has a
+     * healthy pool, so a sparse catalogue still surfaces enough worship music
+     * instead of nothing (or a 2-song batch from a thin query).
      */
     private function discoveryQueries(string $language, string $mood, array $themes): array
     {

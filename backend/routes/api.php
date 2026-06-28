@@ -343,6 +343,9 @@ Route::middleware(['auth:sanctum', 'account.usable'])->group(function () {
         Route::get('/worship-tracks/youtube-search',  [\App\Http\Controllers\WorshipTrackAdminController::class, 'youtubeSearch']);
         Route::get('/worship-tracks',                 [\App\Http\Controllers\WorshipTrackAdminController::class, 'index']);
         Route::post('/worship-tracks',                [\App\Http\Controllers\WorshipTrackAdminController::class, 'store']);
+        // Static segments registered before {worshipTrack} so they aren't captured as ids.
+        Route::get('/worship-tracks/export',          [\App\Http\Controllers\WorshipTrackAdminController::class, 'export']);
+        Route::post('/worship-tracks/import',         [\App\Http\Controllers\WorshipTrackAdminController::class, 'import']);
         Route::get('/worship-tracks/{worshipTrack}',  [\App\Http\Controllers\WorshipTrackAdminController::class, 'show']);
         Route::patch('/worship-tracks/{worshipTrack}',[\App\Http\Controllers\WorshipTrackAdminController::class, 'update']);
         Route::delete('/worship-tracks/{worshipTrack}',[\App\Http\Controllers\WorshipTrackAdminController::class, 'destroy']);

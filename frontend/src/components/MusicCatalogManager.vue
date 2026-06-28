@@ -141,6 +141,46 @@ async function remove(t) {
   catch { error.value = "Delete failed."; }
 }
 
+const importInput = ref(null);
+
+// Download the catalog (respecting the language filter) as a portable JSON file.
+async function exportJson() {
+  error.value = ""; ok.value = "";
+  try {
+    const data = await api.worshipTracksExport(filterLang.value ? `?language=${filterLang.value}` : "");
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `worship-tracks${filterLang.value ? "-" + filterLang.value : ""}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch { error.value = "Export failed."; }
+}
+
+// Parse a chosen JSON file and bulk-import; the server validates + de-dupes.
+async function importJson(ev) {
+  const file = ev.target.files?.[0];
+  ev.target.value = ""; // allow re-importing the same file
+  if (!file) return;
+  error.value = ""; ok.value = "";
+  try {
+    const parsed = JSON.parse(await file.text());
+    const list = Array.isArray(parsed) ? parsed : parsed.tracks;
+    if (!Array.isArray(list) || !list.length) {
+      error.value = 'JSON must contain a non-empty "tracks" array.';
+      return;
+    }
+    const res = await api.worshipTracksImport({ tracks: list });
+    ok.value = `Imported ${res.imported}, skipped ${res.skipped} duplicate(s)` +
+      (res.errors?.length ? `, ${res.errors.length} row(s) rejected.` : ".");
+    if (res.errors?.length) error.value = res.errors.slice(0, 5).join(" • ");
+    await load();
+  } catch (e) {
+    error.value = e?.message || "Import failed — check the file is valid JSON.";
+  }
+}
+
 async function saveSettings() {
   error.value = ""; ok.value = "";
   try {
@@ -187,6 +227,9 @@ async function saveSettings() {
       <input v-model="search" placeholder="Search title/artist" @keyup.enter="load" />
       <button class="btn" @click="load">Search</button>
       <button class="btn primary" @click="startNew">+ Add track</button>
+      <button class="btn" @click="importInput?.click()">📥 Import JSON</button>
+      <button class="btn" @click="exportJson">📤 Export JSON</button>
+      <input ref="importInput" type="file" accept="application/json,.json" hidden @change="importJson" />
     </div>
 
     <!-- Editor -->

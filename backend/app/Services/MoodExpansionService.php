@@ -93,6 +93,35 @@ class MoodExpansionService
         return array_keys($this->moods());
     }
 
+    /**
+     * Resolve a mood string to a canonical mood id, or null if it matches none.
+     * Accepts an id ("relax"), a legacy stored key, or an exact trigger word
+     * ("peace" => "relax"). Used by the JSON importer so older catalogs whose
+     * moods predate the six-category collapse still import cleanly.
+     */
+    public function canonical(string $mood): ?string
+    {
+        $norm = $this->normalize($mood);
+        if ($norm === '') {
+            return null;
+        }
+
+        $moods = $this->moods();
+        if (isset($moods[$norm])) {
+            return $norm;
+        }
+
+        foreach ($moods as $id => $cfg) {
+            foreach ((array) ($cfg['triggers'] ?? []) as $trigger) {
+                if ($this->normalize((string) $trigger) === $norm) {
+                    return $id;
+                }
+            }
+        }
+
+        return null;
+    }
+
     /** Mood config table (config defaults; not affected by the concepts override). */
     private function moods(): array
     {

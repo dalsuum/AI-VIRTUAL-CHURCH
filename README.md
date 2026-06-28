@@ -862,6 +862,19 @@ task.
 
 ---
 
+## Internationalization infrastructure (Phase 1)
+
+Beyond the *content* languages above, the platform has an **interface i18n layer** so the UI, server messages and AI can scale to new languages by adding data, not architecture.
+
+- **Central registry — single source of truth:** [`backend/config/languages.php`](backend/config/languages.php) defines every interface locale (en, my, td, fr, de, ja, zh-CN, hi, ko, ar, th, es, ta) with `native_name`, `english_name`, `rtl`, `speech_locale`, `tts_locale`, `fallback`, `enabled`. Exposed to the SPA at **`GET /api/languages`** ([`LocaleController`](backend/app/Http/Controllers/LocaleController.php)); `LocaleController::codes()/resolve()` are reused by the middleware and validation so **no language list is hardcoded elsewhere** (the drift that previously 404'd new Bibles).
+- **Locale resolution:** [`SetLocale`](backend/app/Http/Middleware/SetLocale.php) middleware (global) resolves per request — `?lang`/`X-Locale` → authenticated `fav_language` → cookie → session → `Accept-Language` → fallback — validated against the registry, persisted to session+cookie. Drives server-generated text (validation/notifications/mail via `lang/en/*`, other locales fall back to en).
+- **User preference:** reuses the existing `users.fav_language` (no migration); now validated against the registry.
+- **Frontend (vue-i18n):** [`frontend/src/i18n/`](frontend/src/i18n/) loads the registry from `/api/languages` (no client-side language list), authored English strings in `locales/en.json`, others fall back. The header [`LanguageSwitcher`](frontend/src/components/layout/LanguageSwitcher.vue) is registry-driven; selecting a locale switches vue-i18n + `<html lang/dir>` + `localStorage`. **RTL** (Arabic) and **`:lang()` Noto font stacks** (ar/zh/ja/ko/th/hi/ta) live in `styles.css`; locale-aware dates/numbers via `$d()/$n()`. Phase 1 extracts header/footer/auth strings (representative set); remaining components are localized incrementally.
+- **AI:** prompts stay in the **worker** layer (no parallel `resources/ai/`). The existing "respond entirely in {language}" directive ([`prompt_engine.py`](workers/core/prompt_engine.py)) now covers every locale — backend `StudyDispatchService::languageName()` reads the registry's `english_name`, and the Pastor/history driver `_LANG_NAME` is extended — so Bible Study & Pastor reply in the chosen language automatically.
+- **Bible discovery:** [`workers/tools/bible_discover.py`](workers/tools/bible_discover.py) triages a dalsuum/bible checkout by license (public-domain / free-license / restricted / review) — being on GitHub doesn't grant redistribution rights, so vendoring stays a verified, deliberate step.
+
+**Status:** infrastructure complete and backward-compatible (English unchanged). Translation *content* for the 10 new locales (UI strings, theological vocabulary, etc.) is **Phase 2**. No migrations.
+
 ## Multilingual services (Myanmar & Tedim)
 
 Three languages are supported. Language is chosen on the intake form and **locked per session** (like `music_source`).

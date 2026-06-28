@@ -26,7 +26,7 @@ const blank = () => ({
   id: null, title: "", artist: "", language: "en", genre: "",
   themes: "", moods: "", scriptures: "", duration: "",
   youtube_url: "", spotify_url: "", apple_music_url: "", cover_image: "",
-  lyrics_available: false, copyright_status: "metadata_only", popularity: 0, active: true,
+  lyrics_available: false, copyright_status: "curated", popularity: 0, active: true,
 });
 const form = ref(blank());
 const editing = ref(false);
@@ -96,7 +96,7 @@ async function save() {
     apple_music_url: form.value.apple_music_url?.trim() || null,
     cover_image: form.value.cover_image?.trim() || null,
     lyrics_available: !!form.value.lyrics_available,
-    copyright_status: form.value.copyright_status?.trim() || "metadata_only",
+    copyright_status: form.value.copyright_status?.trim() || "curated",
     popularity: Number(form.value.popularity) || 0,
     active: !!form.value.active,
   };

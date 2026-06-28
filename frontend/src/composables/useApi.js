@@ -223,6 +223,9 @@ export const api = {
   studyEnd: (id) => request(`/v1/study/sessions/${id}/end`, { method: "POST" }),
   studyEmail: (id, email) =>
     request(`/v1/study/sessions/${id}/email`, { method: "POST", body: email ? { email } : {} }),
+  // Narrate a discussion reply (TTS). Returns { url }; synthesized once, then cached.
+  studyNarrate: (lang, text) =>
+    request("/v1/study/narrate", { method: "POST", body: { lang, text } }),
 
   // ── AI Worship Radio (worshipper) ────────────────────────────────────────
   musicMoods: () => request("/music/moods"),

@@ -41,6 +41,7 @@ Providers (set via Admin Console → Settings → Narration voice):
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import os
 import re
 
@@ -411,6 +412,26 @@ def narrate(
     key = f"narration/{session_token}/{segment}.{fmt}"
     storage.upload_bytes(key, audio, _content_type(fmt))
     # Consistent with avatar.render(): hand back a presigned, directly-playable URL.
+    return storage.presign(key, expires=6 * 3600)
+
+
+def narrate_text(
+    language: str,
+    text: str,
+    mode: str = "edge_tts",
+    voice: str = "",
+    gender: str = "female",
+) -> str:
+    """Narrate an arbitrary passage (e.g. a Bible Study reply) and return a playable
+    URL, caching by content. The same answer re-narrated just re-presigns the existing
+    object — synthesized only once per (language, mode, gender, exact text)."""
+    fmt = _fmt_for(mode, language)
+    digest = hashlib.sha1(f"{language}|{mode}|{gender}|{text}".encode()).hexdigest()
+    key = f"study-audio/{language}/{digest}-{mode}-{gender}.{fmt}"
+    if not storage.exists(key):
+        audio, fmt = synthesize(text, mode=mode, voice=voice, gender=gender, language=language)
+        key = f"study-audio/{language}/{digest}-{mode}-{gender}.{fmt}"
+        storage.upload_bytes(key, audio, _content_type(fmt))
     return storage.presign(key, expires=6 * 3600)
 
 

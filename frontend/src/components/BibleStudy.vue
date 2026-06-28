@@ -68,6 +68,41 @@ function focusScroll(e) {
 }
 const summary = ref(null);
 
+// Optional narration (TTS) of pastor replies — independent, off by default,
+// remembered per device. When on, each reply gets a 🔊 button that plays the
+// audio synthesized in the discussion language via the shared narration pipeline.
+const narrationOn = ref(localStorage.getItem("bibleStudyNarration") === "1");
+watch(narrationOn, (v) => localStorage.setItem("bibleStudyNarration", v ? "1" : "0"));
+const narratingTurn = ref(null);
+const audioUrls = new Map();   // turn → already-synthesized audio URL
+let audioEl = null;
+
+async function narrate(b) {
+  if (!b.text.trim()) return;
+  if (!audioEl) audioEl = new Audio();
+  // Clicking the playing bubble stops it.
+  if (narratingTurn.value === b.turn && !audioEl.paused) {
+    audioEl.pause();
+    narratingTurn.value = null;
+    return;
+  }
+  try {
+    let url = audioUrls.get(b.turn);
+    if (!url) {
+      const res = await api.studyNarrate(form.language, b.text);
+      url = res.url;
+      audioUrls.set(b.turn, url);
+    }
+    audioEl.src = url;   // setting src stops any previously-playing reply
+    narratingTurn.value = b.turn;
+    audioEl.onended = () => { if (narratingTurn.value === b.turn) narratingTurn.value = null; };
+    await audioEl.play();
+  } catch {
+    narratingTurn.value = null;
+    flash("Narration is not available right now.");
+  }
+}
+
 // Active ads for the box below the Bible Study setup form.
 const ads = ref([]);
 const hasStudyAd = computed(() =>
@@ -151,7 +186,7 @@ async function restore(chatId) {
   }
 }
 
-onBeforeUnmount(() => stream.close());
+onBeforeUnmount(() => { stream.close(); if (audioEl) audioEl.pause(); });
 
 // User bubbles use decreasing negative turn ids so they never collide with the
 // positive turn numbers the worker assigns to moderator/pastor turns.
@@ -448,13 +483,21 @@ function goHome() { window.location.hash = ""; }
           <span v-else>Connecting…</span>
           <button class="ghost end" @click="end">End Discussion</button>
         </template>
+        <label class="narration-toggle" :class="{ standalone: restored }">
+          <input type="checkbox" v-model="narrationOn" />
+          🔊 Narration
+        </label>
       </div>
 
       <p v-if="notice" class="notice">{{ notice }}</p>
 
       <div class="thread">
         <article v-for="b in bubbles" :key="b.turn" :class="['bubble', roleClass(b.role)]">
-          <div class="who">{{ b.name }}<span class="role">· {{ b.role }}</span></div>
+          <div class="who">{{ b.name }}<span class="role">· {{ b.role }}</span>
+            <button v-if="narrationOn && b.role !== 'user' && b.text.trim()" type="button"
+              class="narrate-btn" :title="narratingTurn === b.turn ? 'Stop' : 'Listen'"
+              @click="narrate(b)">{{ narratingTurn === b.turn ? '⏸' : '🔊' }}</button>
+          </div>
           <div class="body">{{ b.text }}<span v-if="!b.text" class="typing">…</span></div>
           <div v-if="b.refs.length" class="verses">
             <span v-for="r in b.refs" :key="r.ref" class="verse-card">📖 {{ r.ref }} <em>{{ r.translation }}</em></span>
@@ -579,6 +622,10 @@ function goHome() { window.location.hash = ""; }
 .status .end { margin-left: auto; }
 .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
 .dot.on { background: var(--success); } .dot.off { background: #f59e0b; }
+.narration-toggle { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.85em; cursor: pointer; user-select: none; }
+.narration-toggle.standalone { margin-left: auto; }
+.narrate-btn { background: none; border: 0; cursor: pointer; font-size: 0.95em; padding: 0 0.2rem; line-height: 1; opacity: 0.75; }
+.narrate-btn:hover { opacity: 1; }
 
 .notice { background: var(--primary-soft); color: var(--text); border: 1px solid var(--border); padding: 0.45rem 0.7rem; border-radius: var(--radius-sm); }
 

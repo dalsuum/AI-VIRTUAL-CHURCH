@@ -110,6 +110,13 @@ def test_accented_book_name_resolves_after_normalization():
     assert bible_api._norm("Genèse") in names
 
 
+def test_books_meta_file_is_versioned():
+    import bible_api, json, os
+    raw = json.load(open(os.path.join(os.path.dirname(bible_api.__file__), "data", "books_meta.json"), encoding="utf-8"))
+    assert raw["schema_version"] == 1
+    assert raw.get("generated_at")  # present so consumers can detect format
+
+
 def test_books_meta_is_complete_canonical_and_stable():
     import bible_api
     meta = bible_api.books_meta()

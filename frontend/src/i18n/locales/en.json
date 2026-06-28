@@ -37,5 +37,29 @@
     "placeholder": "Type your message…",
     "loadError": "Could not load this conversation.",
     "reachError": "Could not reach the pastor right now."
+  },
+  "worship": {
+    "title": "AI Worship Radio",
+    "subtitle": "Tell us how you feel — we'll keep the worship playing.",
+    "back": "Back",
+    "describePlaceholder": "…or describe it: “I feel anxious and tired”",
+    "finding": "Finding songs…",
+    "start": "Start Worship",
+    "nowPlaying": "Now playing",
+    "noEmbed": "No in-app player link for this track yet.",
+    "openExternally": "Open externally ↗",
+    "autoAdvancing": "Auto-advancing to the next song…",
+    "pause": "⏸ Pause",
+    "play": "▶ Play",
+    "next": "⏭ Next",
+    "stop": "⏹ Stop",
+    "moodTag": "Mood: {mood}",
+    "errors": {
+      "loadMoods": "Could not load moods.",
+      "pickMood": "Pick a mood or describe how you feel.",
+      "noMatch": "No songs matched yet — try another mood.",
+      "buildFailed": "Could not build a playlist. Please try again.",
+      "stopped": "Radio stopped — no more songs."
+    }
   }
 }

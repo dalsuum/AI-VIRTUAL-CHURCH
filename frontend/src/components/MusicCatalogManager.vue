@@ -247,7 +247,7 @@ async function saveSettings() {
       <div class="row checks">
         <label class="chk"><input type="checkbox" v-model="form.lyrics_available" /> Lyrics available</label>
         <label class="chk"><input type="checkbox" v-model="form.active" /> Active</label>
-        <label>Copyright <input v-model="form.copyright_status" maxlength="60" /></label>
+        <label>License / Copyright <input v-model="form.copyright_status" maxlength="60" placeholder="e.g. CCLI, Public Domain, YouTube Official" /></label>
       </div>
       <div class="actions">
         <button class="btn primary" type="submit">Save</button>

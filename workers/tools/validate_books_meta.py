@@ -26,7 +26,7 @@ _CATEGORIES = {
 _TESTAMENTS = {"old_testament", "new_testament"}
 _ATTRIBUTION = {"traditional", "stated", "anonymous", "disputed"}  # or null
 _DATE_BASIS = {"traditional", "estimated"}  # or null
-_ID_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+_ID_RE = re.compile(r"^[a-z0-9]+(?:[_-][a-z0-9]+)*$")  # hyphen or underscore slugs
 # The canonical field set every book must define (uniform schema). Scalar fields
 # may be null and list fields may be empty, but the keys must be present — empty
 # arrays are preferred over missing arrays.
@@ -42,7 +42,7 @@ _LIST_FIELDS = ["aliases", "keywords", "themes", "major_events", "key_people",
                 "key_places", "related_books", "messianic_references", "prophecy_links"]
 # Entity-reference lists must use canonical slugs (IDs), not display strings, and
 # be unique within a book — ready for future people/place ontologies.
-_SLUG_LIST_FIELDS = ["key_people", "key_places"]
+_SLUG_LIST_FIELDS = ["key_people", "key_places", "major_events"]
 
 
 def validate(data: dict) -> list[str]:

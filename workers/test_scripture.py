@@ -63,6 +63,16 @@ def test_world_language_bibles_resolve():
         assert vo.text.strip(), lang
 
 
+def test_list_books_carries_english_aliases_for_non_english():
+    # Non-English Bibles expose English name/abbr aliases so a book is findable
+    # by its English name as well as its native heading (Bible reader search).
+    import bible_api
+    ta = bible_api.list_books("ta")
+    assert ta[0]["name"] != "Genesis"  # native Tamil heading
+    aliases = [a.lower() for a in ta[0]["aliases"]]
+    assert "genesis" in aliases and "gen" in aliases
+
+
 def test_unknown_translation_falls_back():
     vo = scripture.resolve_ref("John 3:16", "niv")  # not vendored in v1
     assert vo.translation_fallback is True

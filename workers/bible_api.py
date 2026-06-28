@@ -233,8 +233,12 @@ def list_books(lang: str = "en") -> list[dict]:
     hide the rest of the canon.
     """
     books = _bible(lang).get("book", {})
+    # Canonical English names per book number — used to label name-unreliable
+    # translations (Matu) and, for every non-English translation, to attach
+    # English search `aliases` so readers can find a book by its English name or
+    # abbreviation ("Genesis"/"Gen"/"Ge") as well as its native heading.
     canon_names: dict[str, dict] = {}
-    if lang in _BOOK_NAMES_FROM_CANON:
+    if lang in _BOOK_NAMES_FROM_CANON or lang in _LANG_FILES:
         with open(BOOKS_EN_FILE, encoding="utf-8") as fh:
             canon_names = json.load(fh)
     out: list[dict] = []
@@ -250,9 +254,14 @@ def list_books(lang: str = "en") -> list[dict]:
             name = canon_names.get(num, {}).get("name", "") or f"Book {num}"
         else:
             name = book.get("info", {}).get("name", "") or f"Book {num}"
+        ci = canon_names.get(num, {})
+        aliases = list(dict.fromkeys(
+            a for a in [ci.get("name", ""), ci.get("shortname", ""),
+                        *ci.get("abbr", [])] if a))
         out.append({
             "num": int(num),
             "name": name,
+            "aliases": aliases,
             "chapters": len(book.get("chapter", {})),
             "available": True,
         })

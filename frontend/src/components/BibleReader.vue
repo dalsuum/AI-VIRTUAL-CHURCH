@@ -418,7 +418,13 @@ function scrollVerseIntoView(i) {
 const filteredBooks = computed(() => {
   const q = bookSearch.value.trim().toLowerCase();
   if (!q) return books.value;
-  return books.value.filter((b) => b.name.toLowerCase().includes(q));
+  // Match the native heading or any English alias (name/shortname/abbr) so a
+  // book is findable by its English name on non-English Bibles too.
+  return books.value.filter(
+    (b) =>
+      b.name.toLowerCase().includes(q) ||
+      (b.aliases || []).some((a) => a.toLowerCase().includes(q)),
+  );
 });
 
 const chapterList = computed(() =>

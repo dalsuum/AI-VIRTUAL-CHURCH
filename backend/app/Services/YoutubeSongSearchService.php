@@ -46,6 +46,13 @@ class YoutubeSongSearchService
             'part'            => 'snippet',
             'type'            => 'video',
             'videoEmbeddable' => 'true',
+            // Playable in third-party players — drops "watch on YouTube only"
+            // uploads that otherwise load in our embed and buffer forever.
+            'videoSyndicated' => 'true',
+            // 'long' (>20m) + 'medium' (4-20m) both exclude Shorts (<4m); we want
+            // actual songs/sets, not the hashtag Shorts that hang the embed. Most
+            // worship songs and all the lo-fi/worship sets run past 4 minutes.
+            'videoDuration'   => 'medium',
             'safeSearch'      => 'strict',
             'maxResults'      => min(25, max($max, 10)),
         ]);

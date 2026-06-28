@@ -39,8 +39,14 @@ const recentIds = [];           // rolling last-50 ids
 let player = null;              // YT.Player instance
 let ytReady = null;            // Promise resolving when the IFrame API is loaded
 let fallbackTimer = null;      // auto-advance timer for non-embeddable tracks
+let watchdog = null;           // skips a track that never starts playing
 
 function clearFallback() { if (fallbackTimer) { clearTimeout(fallbackTimer); fallbackTimer = null; } }
+function clearWatchdog() { if (watchdog) { clearTimeout(watchdog); watchdog = null; } }
+// Some YouTube videos (Shorts, embed/region-restricted) never fire onError —
+// they loop buffering→unstarted and never reach PLAYING, hanging the radio. If a
+// track hasn't actually started within the window, skip to the next one.
+function armWatchdog() { clearWatchdog(); watchdog = setTimeout(() => playNext(), 12000); }
 
 /** Mood chip text in the currently selected language (falls back to English). */
 function moodLabel(m) {
@@ -75,6 +81,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   clearFallback();
+  clearWatchdog();
   try { player && player.destroy(); } catch {}
 });
 
@@ -169,6 +176,7 @@ async function playNext() {
 
 async function playCurrent() {
   clearFallback();
+  clearWatchdog();
   const id = youtubeId(current.value?.youtube_url);
 
   // No embeddable video (e.g. a metadata-only track without a YouTube link):
@@ -196,10 +204,11 @@ async function playCurrent() {
         playsinline: 1, origin: window.location.origin,
       },
       events: {
-        onReady: () => { playing.value = true; },
+        onReady: () => { armWatchdog(); },
         onStateChange: (e) => {
           if (e.data === window.YT.PlayerState.ENDED) playNext();
-          if (e.data === window.YT.PlayerState.PLAYING) playing.value = true;
+          // Real playback started — cancel the no-start watchdog.
+          if (e.data === window.YT.PlayerState.PLAYING) { playing.value = true; clearWatchdog(); }
           if (e.data === window.YT.PlayerState.PAUSED) playing.value = false;
         },
         // Dead/unavailable/embedding-disabled video → don't get stuck, skip on.
@@ -208,7 +217,7 @@ async function playCurrent() {
     });
   } else {
     player.loadVideoById(id);
-    playing.value = true;
+    armWatchdog();
   }
 }
 
@@ -229,6 +238,7 @@ function togglePlay() {
 function skip() { clearFallback(); playNext(); }
 function stop() {
   clearFallback();
+  clearWatchdog();
   try { player && player.stopVideo(); } catch {}
   playing.value = false;
   noEmbed.value = false;

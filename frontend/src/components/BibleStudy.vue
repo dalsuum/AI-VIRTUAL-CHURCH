@@ -69,39 +69,104 @@ function focusScroll(e) {
 const summary = ref(null);
 
 // Optional narration (TTS) of pastor replies — independent, off by default,
-// remembered per device. When on, each reply gets a 🔊 button that plays the
-// audio synthesized in the discussion language via the shared narration pipeline.
+// remembered per device. When the box is checked, replies AUTO-PLAY in order
+// (one at a time); the per-bubble icon is a stop (⏸) / play (🔊) control.
 const narrationOn = ref(localStorage.getItem("bibleStudyNarration") === "1");
-watch(narrationOn, (v) => localStorage.setItem("bibleStudyNarration", v ? "1" : "0"));
-const narratingTurn = ref(null);
-const audioUrls = new Map();   // turn → already-synthesized audio URL
+const narratingTurn = ref(null);       // turn currently sounding (null = silent)
+const audioUrls = new Map();           // turn → already-synthesized audio URL
+const queue = [];                      // turns waiting to auto-play, in order
+const played = new Set();              // turns already auto-played (don't repeat)
 let audioEl = null;
+let draining = false;
+let resolveCurrent = null;             // resolves the in-flight playback promise
 
+function ensureAudio() {
+  if (audioEl) return;
+  audioEl = new Audio();
+  audioEl.onended = finishCurrent;
+  audioEl.onerror = finishCurrent;
+}
+function finishCurrent() {
+  narratingTurn.value = null;
+  const r = resolveCurrent; resolveCurrent = null;
+  if (r) r();
+}
+
+// Markdown (headings/bold/tables) reads terribly aloud — flatten it to plain prose.
+function speakable(text) {
+  return (text || "")
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/[#>*_`|]/g, " ")
+    .replace(/-{2,}/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function playBubble(b) {
+  return new Promise((resolve) => {
+    resolveCurrent = resolve;
+    ensureAudio();
+    (async () => {
+      try {
+        let url = audioUrls.get(b.turn);
+        if (!url) {
+          const res = await api.studyNarrate(form.language, speakable(b.text));
+          url = res.url;
+          audioUrls.set(b.turn, url);
+        }
+        audioEl.src = url;            // setting src stops any previous reply
+        narratingTurn.value = b.turn;
+        await audioEl.play();
+      } catch {
+        finishCurrent();
+      }
+    })();
+  });
+}
+
+function stopPlayback() {
+  queue.length = 0;
+  if (audioEl) audioEl.pause();
+  finishCurrent();
+}
+
+// Per-bubble icon: stop if it is the one sounding, otherwise play just it.
 async function narrate(b) {
   if (!b.text.trim()) return;
-  if (!audioEl) audioEl = new Audio();
-  // Clicking the playing bubble stops it.
-  if (narratingTurn.value === b.turn && !audioEl.paused) {
-    audioEl.pause();
-    narratingTurn.value = null;
-    return;
-  }
-  try {
-    let url = audioUrls.get(b.turn);
-    if (!url) {
-      const res = await api.studyNarrate(form.language, b.text);
-      url = res.url;
-      audioUrls.set(b.turn, url);
-    }
-    audioEl.src = url;   // setting src stops any previously-playing reply
-    narratingTurn.value = b.turn;
-    audioEl.onended = () => { if (narratingTurn.value === b.turn) narratingTurn.value = null; };
-    await audioEl.play();
-  } catch {
-    narratingTurn.value = null;
-    flash("Narration is not available right now.");
-  }
+  if (narratingTurn.value === b.turn) { stopPlayback(); return; }
+  stopPlayback();
+  played.add(b.turn);
+  try { await playBubble(b); }
+  catch { flash("Narration is not available right now."); }
 }
+
+// Auto-play: queue an assistant reply (skips the user's own bubbles).
+function enqueue(b) {
+  if (!narrationOn.value || b.role === "user" || !b.text.trim()) return;
+  if (played.has(b.turn) || queue.includes(b.turn)) return;
+  queue.push(b.turn);
+  drain();
+}
+async function drain() {
+  if (draining) return;
+  draining = true;
+  while (narrationOn.value && queue.length) {
+    const turn = queue.shift();
+    const b = bubbles.value.find((x) => x.turn === turn);
+    if (!b || !b.text.trim() || played.has(turn)) continue;
+    played.add(turn);
+    await playBubble(b);
+  }
+  draining = false;
+}
+
+// Checking the box starts auto-playing any replies already on screen; unchecking
+// stops immediately. Default behaviour once enabled is to play automatically.
+watch(narrationOn, (v) => {
+  localStorage.setItem("bibleStudyNarration", v ? "1" : "0");
+  if (!v) { stopPlayback(); return; }
+  bubbles.value.forEach(enqueue);
+});
 
 // Active ads for the box below the Bible Study setup form.
 const ads = ref([]);
@@ -230,6 +295,8 @@ function attachHandlers() {
     },
     "round.complete": () => {
       inputOpen.value = true;
+      // Replies are fully streamed now — auto-play them in order if narration is on.
+      bubbles.value.forEach(enqueue);
     },
     "state.changed": (e) => {
       if (e.state === "summarized") loadSummary();

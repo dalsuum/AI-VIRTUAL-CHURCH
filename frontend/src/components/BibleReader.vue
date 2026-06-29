@@ -4,9 +4,10 @@
 import { ref, computed, watch, onMounted, nextTick } from "vue";
 import { useI18n } from "vue-i18n";
 import { api } from "../composables/useApi.js";
+import { normalizeLanguage } from "../i18n";
 import AppIcon from "./AppIcon.vue";
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 
 // Tab order: KJV, English, Hebrew, Burmese first, then the Chin/Zo Bibles
 // alphabetically by label.
@@ -55,7 +56,47 @@ const LATIN_LANGS = new Set([
   "de", "es", "fr",
 ]);
 
+// `lang` is the active *Bible version* code (e.g. "zh-CN-ccb"), not the UI
+// locale. Which version is shown is driven by the one global language authority:
+// the UI locale → its content language → the available versions in that language
+// → the worshipper's remembered preference (or the first available).
 const lang = ref("en");
+
+// The content language a version belongs to, derived from its code so the
+// version list stays data-driven (no hardcoded locale→translation map). KJV is
+// the one edition whose code isn't a language tag — it's English.
+function versionLanguage(code) {
+  return code === "kjv" ? "en" : String(code).split("-")[0];
+}
+
+// Remembered preferred version per content language (e.g. zh → "zh-CN-ccb"), so
+// a worshipper's sub-choice among multiple editions persists across sessions.
+const VERSION_PREF_KEY = "bible_version_pref";
+function readVersionPrefs() {
+  try { return JSON.parse(localStorage.getItem(VERSION_PREF_KEY)) || {}; }
+  catch { return {}; }
+}
+
+// Pick the version to show for the current global language: the remembered
+// preference if it's still available, else the first available version in that
+// language. Returns null when no version exists for the language (keep current).
+function resolveVersionForLanguage() {
+  const appLang = normalizeLanguage(locale.value);
+  const inLang = visibleLangs.value.filter((l) => versionLanguage(l.code) === appLang);
+  if (!inLang.length) return null;
+  const pref = readVersionPrefs()[appLang];
+  return inLang.some((l) => l.code === pref) ? pref : inLang[0].code;
+}
+
+// User tapped a translation tab: switch to it and remember it as the preferred
+// edition for its content language.
+function selectVersion(code) {
+  const prefs = readVersionPrefs();
+  prefs[versionLanguage(code)] = code;
+  localStorage.setItem(VERSION_PREF_KEY, JSON.stringify(prefs));
+  lang.value = code;
+}
+
 const isRtl = computed(() => RTL_LANGS.has(lang.value));
 // Version/year label for the currently selected translation (shown beneath
 // the language tabs so readers know which edition they're reading).
@@ -553,13 +594,25 @@ watch(lang, async () => {
   }
 });
 
+// Follow the one global language authority: when the worshipper changes the app
+// language, open the matching Bible translation automatically (their remembered
+// edition, or the first available). Only acts when a version exists for that
+// language; otherwise the current translation stays put.
+watch(locale, () => {
+  const next = resolveVersionForLanguage();
+  if (next && next !== lang.value) lang.value = next; // triggers the lang watcher → loadBooks()
+});
+
 onMounted(() => {
   api.bibleConfig().then((c) => {
     config.value = c;
     applySelectDefault();
-    // If the admin has hidden the default translation, fall back to the first
-    // visible one before (re)loading its table of contents.
-    if (!visibleLangs.value.some((l) => l.code === lang.value) && visibleLangs.value.length) {
+    // Resolve the translation from the global language; fall back to the first
+    // visible version if the language has none or the default tab was hidden.
+    const resolved = resolveVersionForLanguage();
+    if (resolved && resolved !== lang.value) {
+      lang.value = resolved; // triggers the lang watcher → loadBooks()
+    } else if (!visibleLangs.value.some((l) => l.code === lang.value) && visibleLangs.value.length) {
       lang.value = visibleLangs.value[0].code; // triggers the lang watcher → loadBooks()
     } else {
       loadBooks();
@@ -584,7 +637,7 @@ onMounted(() => {
           :key="l.code"
           class="lang-btn"
           :class="{ active: lang === l.code }"
-          @click="lang = l.code"
+          @click="selectVersion(l.code)"
           :title="l.note"
         >
           {{ l.label }}

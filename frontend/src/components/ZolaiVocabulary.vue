@@ -1,6 +1,10 @@
 <script setup>
 import { ref, computed, onMounted } from "vue";
+import { useI18n } from "vue-i18n";
 import { api } from "../composables/useApi.js";
+import { normalizeLanguage } from "../i18n";
+
+const { locale } = useI18n();
 
 // Vocabulary is served from the DB (admin-editable) — see VocabularyManager.
 const vocab = ref([]);
@@ -26,7 +30,13 @@ const LANGUAGES = [
   { code: "english", label: "English" },
 ];
 
-const primaryLang = ref("zolai");
+// The primary (left-most) column defaults from the one global language authority
+// (en→english, my→burmese, td→zolai). The dropdown still lets the worshipper
+// compare the other Chin/Zo tongues, which are not UI locales of their own.
+const LANG_TO_COLUMN = { en: "english", my: "burmese", td: "zolai" };
+const primaryLang = ref(
+  LANG_TO_COLUMN[normalizeLanguage(locale.value)] || "zolai",
+);
 
 const primaryMeta = computed(
   () => LANGUAGES.find((l) => l.code === primaryLang.value) || LANGUAGES[0],

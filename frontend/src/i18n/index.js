@@ -4,9 +4,18 @@
 // backend-only change. Only English UI strings are authored in Phase 1; every
 // other locale falls back to English until its strings land.
 import { createI18n } from "vue-i18n";
-import en from "./locales/en.json";
 
 const STORAGE_KEY = "locale";
+
+// All locale string files (en authored; the rest scaffolded, filled later).
+// fallbackLocale below means any missing key falls back to English, so an empty
+// or partial locale file never breaks the UI.
+const messages = {};
+for (const [path, mod] of Object.entries(
+  import.meta.glob("./locales/*.json", { eager: true }),
+)) {
+  messages[path.match(/\/([\w-]+)\.json$/)[1]] = mod.default;
+}
 
 // Date/number presentation. vue-i18n keys formats by locale; we generate the
 // same option sets for every registry locale so Intl handles each natively
@@ -24,7 +33,7 @@ export const i18n = createI18n({
   legacy: false,
   locale: "en",
   fallbackLocale: "en",
-  messages: { en },
+  messages,
   // Seeded for en; expanded per discovered locale in applyRegistry().
   datetimeFormats: { en: DATETIME },
   numberFormats: { en: NUMBER },
@@ -73,4 +82,16 @@ export async function loadRegistry(apiBase = import.meta.env.VITE_API_URL || "ht
 
 export function getRegistry() {
   return registry;
+}
+
+/**
+ * The single canonical language resolver. Worshipper-facing features must derive
+ * their content language from THIS — never from the raw UI locale — so the UI
+ * locale (e.g. "zh-CN") and the backend content code (e.g. "zh") stay distinct
+ * concepts with one authority. Strips the region/script subtag to the base
+ * language; "en"/"my"/"td" pass through unchanged. Adding a regional locale
+ * later (pt-BR, zh-TW) needs no feature changes.
+ */
+export function normalizeLanguage(code = i18n.global.locale.value) {
+  return String(code || "en").split("-")[0].toLowerCase();
 }

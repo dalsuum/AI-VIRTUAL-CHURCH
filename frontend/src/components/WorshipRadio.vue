@@ -13,18 +13,25 @@
 import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { api } from "../composables/useApi";
+import { normalizeLanguage, getRegistry } from "../i18n";
+import AppIcon from "./AppIcon.vue";
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 
-const LANGUAGES = [
-  { code: "en", label: "English" },
-  { code: "my", label: "Burmese" },
-  { code: "td", label: "Zolai" },
-];
+// Worship language follows the one global language authority — no per-page
+// language state. The canonical resolver maps the UI locale to its content code.
+const language = computed(() => normalizeLanguage(locale.value));
+const MOOD_ICONS = {
+  energy: "mdi:flash",
+  feel_good: "mdi:emoticon-happy-outline",
+  focus: "mdi:target",
+  love: "mdi:heart",
+  relax: "mdi:leaf",
+  heartbreak: "mdi:heart-broken",
+};
 const RECENT_CAP = 50;     // no-repeat window
 const REFILL_AT = 2;       // tracks remaining before we fetch the next playlist
 
-const language = ref("en");
 const moods = ref([]);          // [{ key, label, emoji }]
 const selectedMood = ref("");
 const freeText = ref("");
@@ -32,6 +39,7 @@ const freeText = ref("");
 const queue = ref([]);          // upcoming WorshipTrack[]
 const current = ref(null);      // now playing
 const reason = ref("");
+const searchLabel = ref("");
 const themes = ref([]);
 const loading = ref(false);
 const error = ref("");
@@ -55,12 +63,21 @@ function armWatchdog() { clearWatchdog(); watchdog = setTimeout(() => playNext()
 function moodLabel(m) {
   return (m.labels && m.labels[language.value]) || m.label;
 }
+function moodIcon(m) {
+  return MOOD_ICONS[m.key] || null;
+}
 
 const activeMoodLabel = computed(() => {
   if (freeText.value.trim()) return freeText.value.trim();
   const m = moods.value.find((x) => x.key === selectedMood.value);
   return m ? moodLabel(m) : "";
 });
+
+// Display name for the active language comes from the backend registry (native
+// name), never a hardcoded label.
+const selectedLanguageLabel = computed(() => (
+  getRegistry()[locale.value]?.native_name || language.value
+));
 
 onMounted(async () => {
   try {
@@ -75,7 +92,7 @@ onMounted(async () => {
   const q = new URLSearchParams(window.location.hash.split("?")[1] || "");
   const mood = q.get("mood");
   if (mood) {
-    language.value = q.get("language") || language.value;
+    // Language is global now (not restored from the hash); only mood is reused.
     if (moods.value.some((m) => m.key === mood)) selectedMood.value = mood;
     else freeText.value = mood;
     start();
@@ -123,12 +140,14 @@ async function start() {
   if (!activeMoodLabel.value) { error.value = t("worship.errors.pickMood"); return; }
   error.value = "";
   loading.value = true;
+  const nextSearchLabel = t("worship.worshipQuery", { language: selectedLanguageLabel.value });
   recentIds.length = 0;
   queue.value = [];
   current.value = null;
   try {
     const res = await api.musicRecommend(payload());
     reason.value = res.reason || "";
+    searchLabel.value = nextSearchLabel;
     themes.value = res.themes || [];
     queue.value = res.playlist || [];
     if (!queue.value.length) { error.value = t("worship.errors.noMatch"); return; }
@@ -265,26 +284,23 @@ function streamLink(t) {
   <div class="worship">
     <header class="wr-head">
       <a class="wr-back" href="#">← {{ t("worship.back") }}</a>
-      <h1>🎶 {{ t("worship.title") }}</h1>
+      <span class="wr-icon" aria-hidden="true">
+        <AppIcon name="mdi:radio" size="30px" />
+      </span>
+      <h1>{{ t("worship.title") }}</h1>
       <p class="wr-sub">{{ t("worship.subtitle") }}</p>
     </header>
 
     <section class="wr-controls">
-      <div class="wr-langs">
-        <button
-          v-for="l in LANGUAGES" :key="l.code"
-          class="wr-lang" :class="{ active: language === l.code }"
-          @click="language = l.code"
-        >{{ l.label }}</button>
-      </div>
-
       <div class="wr-moods">
         <button
           v-for="m in moods" :key="m.key"
           class="wr-mood" :class="{ active: selectedMood === m.key && !freeText }"
           @click="pickMood(m.key)"
         >
-          <span class="wr-emoji">{{ m.emoji }}</span>{{ moodLabel(m) }}
+          <AppIcon v-if="moodIcon(m)" class="wr-emoji" :name="moodIcon(m)" size="20px" />
+          <span v-else class="wr-emoji">{{ m.emoji }}</span>
+          {{ moodLabel(m) }}
         </button>
       </div>
 
@@ -302,7 +318,63 @@ function streamLink(t) {
       <p v-if="error" class="wr-error">{{ error }}</p>
     </section>
 
-    <section v-if="reason" class="wr-reason">{{ reason }}</section>
+    <section v-if="reason && !error" class="wr-reason" :title="reason" aria-live="polite">
+      <strong class="wr-reason-title">
+        <AppIcon name="mdi:music-note" size="20px" />
+        {{ t("worship.foundTitle") }}
+      </strong>
+      <span class="wr-reason-label">{{ t("worship.searchingLabel") }}</span>
+      <span class="wr-reason-query">{{ searchLabel }}</span>
+      <span class="wr-reason-note">{{ t("worship.showingMatches") }}</span>
+    </section>
+
+    <section v-if="current || queue.length" class="wr-list">
+      <article v-if="current" class="wr-card now">
+        <img v-if="current.cover_image" :src="current.cover_image" alt="" class="wr-cover" />
+        <span v-else class="wr-cover wr-cover-fallback" aria-hidden="true">
+          <AppIcon name="mdi:music-note" size="34px" />
+        </span>
+        <div class="wr-meta">
+          <span class="wr-badge">{{ t("worship.nowPlaying") }}</span>
+          <strong>{{ current.title }}</strong>
+          <span class="wr-artist">{{ current.artist }} · {{ fmtDuration(current.duration) }}</span>
+          <span class="wr-genre">{{ t("worship.genreLabel") }}</span>
+        </div>
+        <button
+          type="button"
+          class="wr-card-action"
+          :aria-label="playing ? t('worship.pause') : t('worship.play')"
+          :title="playing ? t('worship.pause') : t('worship.play')"
+          @click="togglePlay"
+        >
+          <AppIcon :name="playing ? 'mdi:pause' : 'mdi:play'" size="24px" />
+        </button>
+      </article>
+
+      <h2 v-if="queue.length" class="wr-list-title">{{ t("worship.upNext") }}</h2>
+      <article v-for="track in queue" :key="track.id" class="wr-card">
+        <img v-if="track.cover_image" :src="track.cover_image" alt="" class="wr-cover" />
+        <span v-else class="wr-cover wr-cover-fallback" aria-hidden="true">
+          <AppIcon name="mdi:music-note" size="34px" />
+        </span>
+        <div class="wr-meta">
+          <strong>{{ track.title }}</strong>
+          <span class="wr-artist">{{ track.artist }} · {{ fmtDuration(track.duration) }}</span>
+          <span class="wr-genre">{{ t("worship.genreLabel") }}</span>
+        </div>
+        <a
+          v-if="streamLink(track)"
+          :href="streamLink(track)"
+          target="_blank"
+          rel="noopener"
+          class="wr-card-action"
+          :aria-label="t('worship.openTrack', { title: track.title })"
+          :title="t('worship.openTrack', { title: track.title })"
+        >
+          <AppIcon name="mdi:play" size="24px" />
+        </a>
+      </article>
+    </section>
 
     <section v-if="current" class="wr-stage">
       <div v-show="!noEmbed" class="wr-video"><div id="worship-yt"></div></div>
@@ -317,32 +389,26 @@ function streamLink(t) {
       </div>
     </section>
 
-    <section v-if="current || queue.length" class="wr-list">
-      <article v-if="current" class="wr-card now">
-        <img v-if="current.cover_image" :src="current.cover_image" alt="" class="wr-cover" />
-        <div class="wr-meta">
-          <span class="wr-badge">{{ t("worship.nowPlaying") }}</span>
-          <strong>{{ current.title }}</strong>
-          <span class="wr-artist">{{ current.artist }} · {{ fmtDuration(current.duration) }}</span>
-        </div>
-      </article>
-
-      <article v-for="t in queue" :key="t.id" class="wr-card">
-        <img v-if="t.cover_image" :src="t.cover_image" alt="" class="wr-cover" />
-        <div class="wr-meta">
-          <strong>{{ t.title }}</strong>
-          <span class="wr-artist">{{ t.artist }} · {{ fmtDuration(t.duration) }}</span>
-        </div>
-        <a v-if="streamLink(t)" :href="streamLink(t)" target="_blank" rel="noopener" class="wr-ext">↗</a>
-      </article>
-    </section>
-
     <footer v-if="current" class="wr-player">
       <span class="wr-current">{{ current.title }} — {{ current.artist }}</span>
       <div class="wr-buttons">
-        <button @click="togglePlay">{{ playing ? t("worship.pause") : t("worship.play") }}</button>
-        <button @click="skip">{{ t("worship.next") }}</button>
-        <button class="wr-stop" @click="stop">{{ t("worship.stop") }}</button>
+        <button
+          type="button"
+          :aria-label="playing ? t('worship.pause') : t('worship.play')"
+          :title="playing ? t('worship.pause') : t('worship.play')"
+          @click="togglePlay"
+        >
+          <AppIcon :name="playing ? 'mdi:pause' : 'mdi:play'" size="22px" />
+          <span class="wr-sr">{{ playing ? t("worship.pause") : t("worship.play") }}</span>
+        </button>
+        <button type="button" :aria-label="t('worship.next')" :title="t('worship.next')" @click="skip">
+          <AppIcon name="mdi:skip-next" size="22px" />
+          <span class="wr-sr">{{ t("worship.next") }}</span>
+        </button>
+        <button type="button" class="wr-stop" :aria-label="t('worship.stop')" :title="t('worship.stop')" @click="stop">
+          <AppIcon name="mdi:stop" size="22px" />
+          <span class="wr-sr">{{ t("worship.stop") }}</span>
+        </button>
       </div>
       <span class="wr-mood-tag" v-if="activeMoodLabel">{{ t("worship.moodTag", { mood: activeMoodLabel }) }}</span>
     </footer>
@@ -350,81 +416,467 @@ function streamLink(t) {
 </template>
 
 <style scoped>
-.worship { max-width: 880px; margin: 0 auto; padding: 1.5rem 1rem 7rem; color: var(--text); }
-.wr-head { text-align: center; margin-bottom: 1.25rem; }
-.wr-back { display: inline-block; margin-bottom: .5rem; color: var(--text-muted); text-decoration: none; }
-.wr-head h1 { margin: 0; font-size: 1.6rem; }
-.wr-sub { color: var(--text-muted); margin: .25rem 0 0; }
+.worship {
+  width: 100%;
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 1rem 0.875rem 1.5rem;
+  color: var(--text);
+}
+.wr-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.35rem;
+  margin-bottom: 1rem;
+}
+.wr-back {
+  display: inline-block;
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 0.88rem;
+}
+.wr-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 50px;
+  height: 50px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+.wr-head h1 {
+  margin: 0;
+  font-size: 1.75rem;
+  line-height: 1.1;
+  letter-spacing: 0;
+}
+.wr-sub {
+  color: var(--text-muted);
+  margin: 0;
+  line-height: 1.35;
+}
 
-.wr-langs { display: flex; gap: .5rem; justify-content: center; margin-bottom: 1rem; }
-.wr-lang { padding: .4rem .9rem; border: 1px solid var(--border); border-radius: var(--radius-sm);
-  background: var(--surface); color: var(--text); cursor: pointer; }
-.wr-lang.active { background: var(--primary-soft); border-color: var(--primary); color: var(--primary); font-weight: 600; }
+.wr-controls {
+  width: 100%;
+  max-width: 620px;
+  margin: 0 auto;
+}
+.wr-moods {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
+}
+.wr-mood {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.45rem;
+  min-width: 0;
+  min-height: 46px;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.92rem;
+  line-height: 1.2;
+}
+.wr-mood.active {
+  background: var(--primary-soft);
+  border-color: var(--primary);
+  color: var(--primary);
+  font-weight: 600;
+}
+.wr-emoji {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  color: currentColor;
+  font-size: 1.1rem;
+}
 
-.wr-moods { display: flex; flex-wrap: wrap; gap: .5rem; justify-content: center; margin-bottom: 1rem; }
-.wr-mood { display: inline-flex; align-items: center; gap: .35rem; padding: .45rem .8rem;
-  border: 1px solid var(--border); border-radius: 999px; background: var(--surface);
-  color: var(--text); cursor: pointer; font-size: .9rem; }
-.wr-mood.active { background: var(--primary-soft); border-color: var(--primary); color: var(--primary); font-weight: 600; }
-.wr-emoji { font-size: 1.1rem; }
+.wr-free {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  width: 100%;
+  margin: 0 auto;
+}
+.wr-free input {
+  width: 100%;
+  min-width: 0;
+  min-height: 48px;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+.wr-free input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+.wr-start {
+  width: 100%;
+  min-height: 48px;
+  padding: 0.7rem 1rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--primary);
+  color: var(--on-primary);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+.wr-start:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
 
-.wr-free { display: flex; gap: .5rem; max-width: 600px; margin: 0 auto; }
-.wr-free input { flex: 1; padding: .6rem .8rem; border: 1px solid var(--border);
-  border-radius: var(--radius-sm); background: var(--surface); color: var(--text); }
-.wr-start { padding: .6rem 1.2rem; border: none; border-radius: var(--radius-sm);
-  background: var(--primary); color: var(--on-primary); cursor: pointer; font-weight: 600; white-space: nowrap; }
-.wr-start:disabled { opacity: .6; cursor: default; }
+.wr-error {
+  color: var(--danger);
+  text-align: center;
+  margin: 0.75rem 0 0;
+  overflow-wrap: anywhere;
+}
 
-.wr-error { color: var(--danger); text-align: center; margin-top: .75rem; }
+.wr-reason {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.2rem 0.65rem;
+  background: var(--primary-soft);
+  border: 1px solid var(--primary);
+  border-radius: var(--radius-sm);
+  padding: 0.85rem 0.95rem;
+  margin: 1rem auto;
+  max-width: 620px;
+  color: var(--text);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.wr-reason-title {
+  grid-column: 1 / -1;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+.wr-reason-label {
+  color: var(--text-muted);
+  font-size: 0.86rem;
+}
+.wr-reason-query {
+  min-width: 0;
+  font-weight: 600;
+}
+.wr-reason-note {
+  grid-column: 1 / -1;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
 
-.wr-reason { background: var(--primary-soft); border: 1px solid var(--primary);
-  border-radius: var(--radius); padding: .8rem 1rem; margin: 1.25rem 0; color: var(--text); }
+.wr-stage {
+  margin: 1rem 0;
+}
+.wr-video {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  max-height: 34vh;
+  margin: 0 auto;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: #000;
+  box-shadow: var(--shadow-sm);
+}
+.wr-video > div,
+.wr-video :deep(iframe) {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.wr-noembed {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 1.5rem 1rem;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  text-align: center;
+}
+.wr-noembed strong {
+  font-size: 1.05rem;
+}
+.wr-noembed p {
+  color: var(--text-muted);
+  margin: 0.25rem 0;
+}
+.wr-noembed small {
+  color: var(--text-faint);
+}
+.wr-open {
+  color: var(--primary);
+  text-decoration: none;
+  font-weight: 600;
+}
 
-.wr-stage { margin: 1rem 0; }
-/* 16:9 player capped so it never dominates the viewport (esp. on phones where a
-   full-width 56.25% box pushes the song list off-screen). max-height letterboxes
-   the box instead of letting it grow with screen width. */
-.wr-video { position: relative; width: 100%; aspect-ratio: 16 / 9; max-height: 55vh;
-  margin: 0 auto; border-radius: var(--radius); overflow: hidden;
-  background: #000; box-shadow: var(--shadow-sm); }
-.wr-video > div, .wr-video :deep(iframe) { position: absolute; inset: 0; width: 100%; height: 100%; }
-.wr-noembed { display: flex; flex-direction: column; align-items: center; gap: .35rem;
-  padding: 2rem 1rem; border: 1px dashed var(--border-strong); border-radius: var(--radius);
-  background: var(--surface); text-align: center; }
-.wr-noembed strong { font-size: 1.1rem; }
-.wr-noembed p { color: var(--text-muted); margin: .25rem 0; }
-.wr-noembed small { color: var(--text-faint); }
-.wr-open { color: var(--primary); text-decoration: none; font-weight: 600; }
+.wr-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  margin-top: 1rem;
+}
+.wr-list-title {
+  margin: 0.35rem 0 0;
+  font-size: 0.92rem;
+  line-height: 1.2;
+  color: var(--text-muted);
+  letter-spacing: 0;
+}
+.wr-card {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  width: 100%;
+  min-width: 0;
+  padding: 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+.wr-card.now {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+.wr-cover {
+  width: 90px;
+  height: 90px;
+  flex: 0 0 90px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  background: var(--surface-3);
+}
+.wr-cover-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+}
+.wr-meta {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.18rem;
+}
+.wr-meta strong {
+  display: -webkit-box;
+  overflow: hidden;
+  white-space: normal;
+  line-height: 1.25;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.wr-artist,
+.wr-genre {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  line-height: 1.25;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+}
+.wr-genre {
+  color: var(--text-faint);
+}
+.wr-badge {
+  color: var(--primary);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1.15;
+  text-transform: uppercase;
+}
+.wr-card-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--primary);
+  cursor: pointer;
+  text-decoration: none;
+}
+.wr-card-action:hover {
+  border-color: var(--primary);
+}
 
-.wr-list { display: flex; flex-direction: column; gap: .5rem; margin-top: 1rem; }
-.wr-card { display: flex; align-items: center; gap: .75rem; padding: .6rem .8rem;
-  border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); }
-.wr-card.now { border-color: var(--primary); background: var(--primary-soft); }
-.wr-cover { width: 48px; height: 48px; object-fit: cover; border-radius: var(--radius-sm); }
-.wr-meta { display: flex; flex-direction: column; gap: .15rem; flex: 1; min-width: 0; }
-.wr-meta strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.wr-artist { color: var(--text-muted); font-size: .85rem; }
-.wr-badge { font-size: .7rem; text-transform: uppercase; letter-spacing: .04em; color: var(--primary); font-weight: 700; }
-.wr-ext { color: var(--text-muted); text-decoration: none; font-size: 1.1rem; }
+.wr-player {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  margin-top: 0.85rem;
+  padding: 0.7rem 0.85rem calc(0.7rem + env(safe-area-inset-bottom, 0px));
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
+}
+.wr-current {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.wr-buttons {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 0.45rem;
+}
+.wr-buttons button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+.wr-buttons button:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+.wr-stop {
+  color: var(--danger) !important;
+  border-color: var(--danger) !important;
+}
+.wr-mood-tag {
+  grid-column: 1 / -1;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+.wr-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
 
-.wr-player { position: fixed; left: 0; right: 0; bottom: 0; z-index: 41; display: flex; align-items: center;
-  justify-content: space-between; gap: 1rem; padding: .75rem 1rem; background: var(--surface);
-  border-top: 1px solid var(--border-strong); box-shadow: var(--shadow); }
-.wr-current { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-.wr-buttons { display: flex; gap: .5rem; }
-.wr-buttons button { padding: .45rem .8rem; border: 1px solid var(--border); border-radius: var(--radius-sm);
-  background: var(--surface); color: var(--text); cursor: pointer; }
-.wr-stop { color: var(--danger) !important; border-color: var(--danger) !important; }
-.wr-mood-tag { color: var(--text-muted); font-size: .85rem; white-space: nowrap; }
+@media (max-width: 420px) {
+  .worship {
+    padding-top: 0.75rem;
+  }
+  .wr-back {
+    display: none;
+  }
+  .wr-icon {
+    width: 44px;
+    height: 44px;
+  }
+  .wr-head h1 {
+    font-size: 1.55rem;
+  }
+  .wr-sub {
+    font-size: 0.95rem;
+  }
+  .wr-moods {
+    gap: 0.6rem;
+  }
+  .wr-mood {
+    min-height: 44px;
+    padding: 0.5rem 0.55rem;
+    font-size: 0.86rem;
+  }
+  .wr-cover {
+    width: 82px;
+    height: 82px;
+    flex-basis: 82px;
+  }
+  .wr-card {
+    gap: 0.7rem;
+    padding: 0.65rem;
+  }
+  .wr-card-action {
+    width: 40px;
+    height: 40px;
+    flex-basis: 40px;
+  }
+  .wr-mood-tag {
+    display: none;
+  }
+}
 
-@media (max-width: 640px) {
-  .wr-free { flex-direction: column; }
-  /* Keep the YouTube box compact on phones so the now-playing card and queue
-     stay visible without scrolling past a giant player. */
-  .wr-video { max-height: 34vh; }
-  /* Sit the player bar directly above the fixed BottomNav so its
-     Play/Pause/Next/Stop controls aren't hidden behind it on phones. */
-  .wr-player { flex-wrap: wrap; bottom: var(--bottom-nav-h); }
-  .wr-mood-tag { display: none; }
+@media (min-width: 641px) {
+  .worship {
+    padding: 1.5rem 1rem 6.5rem;
+  }
+  .wr-head {
+    margin-bottom: 1.25rem;
+  }
+  .wr-moods {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .wr-free {
+    flex-direction: row;
+  }
+  .wr-start {
+    width: auto;
+    white-space: nowrap;
+  }
+  .wr-video {
+    max-height: 55vh;
+    border-radius: var(--radius);
+  }
+  .wr-player {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 41;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    max-width: 100vw;
+    margin-top: 0;
+    padding: 0.75rem 1rem;
+    border-width: 1px 0 0;
+    border-radius: 0;
+    box-shadow: var(--shadow);
+  }
+  .wr-mood-tag {
+    grid-column: auto;
+    white-space: nowrap;
+  }
 }
 </style>

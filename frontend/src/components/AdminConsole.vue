@@ -4102,7 +4102,10 @@ onUnmounted(() => {
             <div class="inspect-pane" :class="{ open: inspectOpenPane === 'rrf' }">
               <button class="inspect-pane-header" @click="inspectTogglePane('rrf')">
                 <span>Reranked Chunks</span>
-                <span class="inspect-pane-meta">{{ inspectResult.reranked_chunks?.length ?? 0 }} after RRF+rerank</span>
+                <span class="inspect-pane-meta">
+                  {{ inspectResult.reranked_chunks?.length ?? 0 }} kept
+                  <template v-if="inspectResult.dropped_count > 0"> · {{ inspectResult.dropped_count }} removed by reranker</template>
+                </span>
                 <span class="inspect-chevron">{{ inspectOpenPane === 'rrf' ? '▲' : '▼' }}</span>
               </button>
               <div v-if="inspectOpenPane === 'rrf'" class="inspect-pane-body">
@@ -4115,7 +4118,17 @@ onUnmounted(() => {
                     <span class="badge">{{ c.method }}</span>
                     <span class="dim small">{{ c.text_length }} chars</span>
                   </div>
+                  <ul class="inspect-decisions">
+                    <li v-for="d in c.decisions" :key="d.text" :class="d.ok ? 'decision-ok' : 'decision-no'">
+                      <span class="decision-icon">{{ d.ok ? '✓' : '✗' }}</span> {{ d.text }}
+                    </li>
+                  </ul>
                   <p class="inspect-chunk-text">{{ c.text_preview }}<span v-if="c.text_length > 300" class="dim">…</span></p>
+                </div>
+                <div v-if="inspectResult.dropped_count > 0" class="inspect-dropped">
+                  <span class="decision-no">✗</span>
+                  {{ inspectResult.dropped_count }} candidate{{ inspectResult.dropped_count > 1 ? 's' : '' }}
+                  removed by reranker — below score/lexical cutoff or exceeded top-{{ inspectResult.reranked_chunks?.length ?? 0 }} limit.
                 </div>
               </div>
             </div>
@@ -4712,6 +4725,11 @@ onUnmounted(() => {
 .inspect-chunk:last-child { border-bottom: none; margin-bottom: 0; }
 .inspect-chunk-header { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin-bottom: 0.35rem; font-size: 0.82rem; }
 .inspect-chunk-text { font-size: 0.85rem; color: var(--text); margin: 0; white-space: pre-wrap; word-break: break-word; }
+.inspect-decisions { list-style: none; padding: 0; margin: 0.3rem 0 0.5rem; display: flex; flex-wrap: wrap; gap: 0.25rem 0.5rem; font-size: 0.8rem; }
+.decision-ok { color: var(--success, #22c55e); }
+.decision-no { color: var(--danger, #ef4444); }
+.decision-icon { font-weight: 700; }
+.inspect-dropped { margin-top: 0.5rem; font-size: 0.82rem; color: var(--text-muted); border-top: 1px dashed var(--border); padding-top: 0.5rem; }
 .inspect-snippet { margin-bottom: 0.8rem; padding-bottom: 0.8rem; border-bottom: 1px solid var(--border); }
 .inspect-snippet:last-child { border-bottom: none; margin-bottom: 0; }
 .inspect-snippet-header { display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.35rem; font-size: 0.82rem; }

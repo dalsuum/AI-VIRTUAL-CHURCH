@@ -13,16 +13,17 @@ class LocaleTest extends TestCase
 
         $res->assertOk()
             ->assertJsonPath('fallback', 'en')
-            ->assertJsonPath('languages.ar.rtl', true)
             ->assertJsonPath('languages.en.rtl', false)
-            ->assertJsonPath('languages.ta.tts_locale', 'ta-IN');
+            ->assertJsonPath('languages.ta.tts_locale', 'ta-IN')
+            ->assertJsonMissingPath('languages.ar')
+            ->assertJsonMissingPath('languages.he');
     }
 
     public function test_accept_language_header_sets_app_locale(): void
     {
         $this->withHeader('Accept-Language', 'ar,en;q=0.8')->getJson('/api/languages');
 
-        $this->assertSame('ar', App::getLocale());
+        $this->assertSame('en', App::getLocale());
     }
 
     public function test_explicit_lang_query_overrides_and_unknown_falls_back(): void

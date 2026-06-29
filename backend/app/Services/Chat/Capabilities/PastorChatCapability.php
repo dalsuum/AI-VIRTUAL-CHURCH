@@ -3,6 +3,7 @@
 namespace App\Services\Chat\Capabilities;
 
 use App\Services\Chat\Data\ChatContext;
+use Illuminate\Container\Container;
 
 /**
  * AI Pastor: a warm, pastoral one-to-one conversation. Does not retrieve KB context by
@@ -32,7 +33,11 @@ final class PastorChatCapability extends AbstractCapability
     private function languageName(string $code): string
     {
         $normalized = strtolower(strtok($code, '-'));
-        $registry = (array) config('languages.list', []);
+        $container = Container::getInstance();
+        $registry = $container->bound('config')
+            ? (array) $container->make('config')->get('languages.list', [])
+            : [];
+
         foreach ($registry as $locale => $meta) {
             if (strtolower(strtok((string) $locale, '-')) === $normalized) {
                 return (string) ($meta['english_name'] ?? $meta['native_name'] ?? $locale);
@@ -42,6 +47,17 @@ final class PastorChatCapability extends AbstractCapability
         return match ($normalized) {
             'my' => 'Burmese',
             'td' => 'Tedim (Zolai)',
+            'fr' => 'French',
+            'de' => 'German',
+            'es' => 'Spanish',
+            'ja' => 'Japanese',
+            'zh' => 'Chinese (Simplified)',
+            'ko' => 'Korean',
+            'hi' => 'Hindi',
+            'ta' => 'Tamil',
+            'th' => 'Thai',
+            'ar' => 'Arabic',
+            'he' => 'Hebrew',
             default => 'English',
         };
     }

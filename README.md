@@ -224,6 +224,14 @@ Learner languages are the interface registry minus `VocabEntry::NON_LEARNER_LANG
 vocabulary generation, because the current model returns English for Hebrew concepts. The
 `learn` endpoint rejects excluded locales (422) and the UI hides their chips.
 
+Per-user features (Phase C) are the **only** stored user state: `user_vocabulary` holds
+favorites and viewed history (`POST/DELETE /api/vocabulary/{id}/favorite`,
+`GET /api/me/vocabulary?kind=favorite|viewed`; views recorded on `learn` for registered
+users). AI **Explain** (`POST /api/vocabulary/{id}/explain?lang=`) is a teaching explanation
+generated under the same LANGUAGE LAW and **cached** on `vocab_entries.explanation` per
+(concept, language) — never stored per user. Bible-verse examples and pronunciation already
+ship inside the generated entry payload.
+
 Pastor Chat replies in the worshipper's selected interface language (`_pastor_system` in
 `workers/plugins/history/driver.py`). The reply-language instruction is authoritative — the
 model keeps replying in the chosen language even when the worshipper types in English, and only

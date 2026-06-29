@@ -42,7 +42,14 @@
     "example": "Example",
     "synonyms": "Synonyms",
     "verse": "Bible verse",
-    "addLanguage": "Add a language"
+    "addLanguage": "Add a language",
+    "views": "Vocabulary views",
+    "browse": "Browse",
+    "favorites": "Favorites",
+    "history": "Recent",
+    "favorite": "Save to favorites",
+    "explain": "Explain",
+    "empty": "Nothing here yet."
   },
   "common": {
     "language": "Language",

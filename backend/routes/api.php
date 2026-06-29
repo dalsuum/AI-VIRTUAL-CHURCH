@@ -225,6 +225,13 @@ Route::middleware(['auth:sanctum', 'account.usable'])->group(function () {
     Route::put('/me/reminders',                   [\App\Http\Controllers\ReminderController::class, 'update'])
         ->middleware('throttle:60,1');
 
+    // ── Learner vocabulary: per-user favorites/history + cached AI Explain ────────
+    Route::get('/me/vocabulary',                       [VocabularyController::class, 'mine']);
+    Route::post('/vocabulary/{vocabulary}/favorite',   [VocabularyController::class, 'favorite']);
+    Route::delete('/vocabulary/{vocabulary}/favorite', [VocabularyController::class, 'unfavorite']);
+    Route::post('/vocabulary/{vocabulary}/explain',    [VocabularyController::class, 'explain'])
+        ->middleware('throttle:30,1');
+
     // ── Unified Conversation & Spiritual History ──────────────────────────────
     // Every route is owner-scoped inside the controller (findOwned → 404 on miss).
     Route::get('/history',                 [\App\Http\Controllers\HistoryController::class, 'index']);

@@ -398,7 +398,7 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
       <!-- Route views — rendered full-width inside the global layout. -->
       <AdminConsole v-if="isAdminRoute" />
       <ZolaiVocabulary v-else-if="isVocabRoute" />
-      <VocabularyLearn v-else-if="isLearnRoute" />
+      <VocabularyLearn v-else-if="isLearnRoute" :authed="isAuthed" />
       <MyanmarLyrics v-else-if="isLyricsRoute" />
       <FathersDay v-else-if="isFathersDayRoute" />
       <LiveSticker v-else-if="isStickerRoute" />

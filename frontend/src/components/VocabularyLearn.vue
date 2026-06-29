@@ -9,12 +9,19 @@ import { getRegistry, normalizeLanguage, isRtlLocale } from "../i18n";
 // cached server-side. Designed for PARALLEL viewing — a concept fans out across
 // languages, so the detail panel can show several side by side without a redesign.
 const { t, locale } = useI18n();
+const props = defineProps({ authed: { type: Boolean, default: false } });
 
 const concepts = ref([]);
 const loading = ref(true);
 const loadError = ref("");
 const search = ref("");
 const activeCategory = ref("All");
+
+// Per-user state (only meaningful when authed). viewMode swaps the concept source.
+const viewMode = ref("browse");        // 'browse' | 'favorite' | 'viewed'
+const myItems = ref([]);               // rows for favorite/viewed views
+const favoriteIds = ref(new Set());    // concept ids the user has starred
+const explanation = ref(null);         // { status, text } for the open concept
 
 // Detail state. `selected` is a concept row; `entries` caches one generated entry
 // per language code we have loaded for it (the parallel set).
@@ -33,7 +40,58 @@ onMounted(async () => {
   } finally {
     loading.value = false;
   }
+  if (props.authed) {
+    try {
+      const fav = await api.myVocabulary("favorite");
+      favoriteIds.value = new Set((fav.items || []).map((i) => i.vocabulary_id));
+    } catch { /* favorites are optional chrome */ }
+  }
 });
+
+// Switch between browse / favorites / history. The latter two pull the per-user list
+// and resolve each row back to its full concept (so cards render identically).
+async function setView(mode) {
+  viewMode.value = mode;
+  selected.value = null;
+  if (mode === "browse") return;
+  try {
+    const res = await api.myVocabulary(mode);
+    const byId = new Map(concepts.value.map((c) => [c.id, c]));
+    myItems.value = (res.items || []).map((i) => i.vocabulary || byId.get(i.vocabulary_id)).filter(Boolean);
+  } catch {
+    myItems.value = [];
+  }
+}
+
+const shownConcepts = computed(() => (viewMode.value === "browse" ? filtered.value : myItems.value));
+
+async function toggleFavorite(concept) {
+  const id = concept.id;
+  const has = favoriteIds.value.has(id);
+  const next = new Set(favoriteIds.value);
+  has ? next.delete(id) : next.add(id);
+  favoriteIds.value = next;
+  try {
+    has ? await api.unfavoriteVocab(id) : await api.favoriteVocab(id);
+  } catch {
+    favoriteIds.value = new Set(favoriteIds.value); // best-effort; leave optimistic state
+  }
+}
+
+// Cached AI explanation for the open concept in the UI language. Polls while generating.
+async function requestExplain(attempt = 0) {
+  if (!selected.value) return;
+  const lang = NON_LEARNER.includes(uiLang.value) ? "en" : uiLang.value;
+  try {
+    const res = await api.explainVocab(selected.value.id, lang);
+    explanation.value = { status: res.status, text: res.explanation || "" };
+    if (res.status === "generating" && attempt < 8) {
+      setTimeout(() => requestExplain(attempt + 1), 3500);
+    }
+  } catch {
+    explanation.value = { status: "error", text: "" };
+  }
+}
 
 const categories = computed(() => {
   const cats = [...new Set(concepts.value.map((c) => c.category).filter(Boolean))];
@@ -81,6 +139,7 @@ function langName(code) {
 function openConcept(concept) {
   selected.value = concept;
   entries.value = {};
+  explanation.value = null;
   Object.values(pollTimers.value).forEach(clearTimeout);
   pollTimers.value = {};
   // Start with the worshipper's language, unless it is a reference-only locale (e.g.
@@ -121,10 +180,32 @@ function addLanguage(code) {
       <p class="learn-sub">{{ t("learn.subtitle") }}</p>
     </header>
 
+    <nav v-if="authed" class="view-tabs" :aria-label="t('learn.views')">
+      <button class="view-tab" :class="{ active: viewMode === 'browse' }" :aria-pressed="viewMode === 'browse'" @click="setView('browse')">{{ t("learn.browse") }}</button>
+      <button class="view-tab" :class="{ active: viewMode === 'favorite' }" :aria-pressed="viewMode === 'favorite'" @click="setView('favorite')">⭐ {{ t("learn.favorites") }}</button>
+      <button class="view-tab" :class="{ active: viewMode === 'viewed' }" :aria-pressed="viewMode === 'viewed'" @click="setView('viewed')">🕘 {{ t("learn.history") }}</button>
+    </nav>
+
     <!-- Detail (parallel multilingual view) -->
     <section v-if="selected" class="detail" :aria-label="t('learn.detailAria')">
       <button class="back-btn" @click="closeDetail">← {{ t("learn.back") }}</button>
-      <h2 class="concept-name">{{ selected.english }}</h2>
+      <div class="detail-head">
+        <h2 class="concept-name">{{ selected.english }}</h2>
+        <button
+          v-if="authed"
+          class="fav-btn"
+          :aria-pressed="favoriteIds.has(selected.id)"
+          :aria-label="t('learn.favorite')"
+          @click="toggleFavorite(selected)"
+        >{{ favoriteIds.has(selected.id) ? "⭐" : "☆" }}</button>
+      </div>
+
+      <div class="explain-row">
+        <button v-if="!explanation" class="explain-btn" @click="requestExplain()">🤖 {{ t("learn.explain") }}</button>
+        <p v-else-if="explanation.status === 'generating'" class="muted">{{ t("learn.generating") }}</p>
+        <p v-else-if="explanation.status === 'error'" class="muted">{{ t("learn.entryError") }}</p>
+        <p v-else class="explanation" :dir="isRtlLocale(uiLang) ? 'rtl' : 'ltr'">{{ explanation.text }}</p>
+      </div>
 
       <div class="parallel">
         <article
@@ -165,7 +246,7 @@ function addLanguage(code) {
 
     <!-- Home (concept browser) -->
     <template v-else>
-      <div class="controls">
+      <div v-if="viewMode === 'browse'" class="controls">
         <input
           v-model="search"
           class="search-input"
@@ -187,10 +268,12 @@ function addLanguage(code) {
 
       <p v-if="loading" class="empty">{{ t("learn.loading") }}</p>
       <p v-else-if="loadError" class="empty">{{ loadError }}</p>
-      <p v-else-if="filtered.length === 0" class="empty">{{ t("learn.noMatches") }}</p>
+      <p v-else-if="shownConcepts.length === 0" class="empty">
+        {{ viewMode === "browse" ? t("learn.noMatches") : t("learn.empty") }}
+      </p>
 
       <ul v-else class="concept-grid">
-        <li v-for="c in filtered" :key="c.id">
+        <li v-for="c in shownConcepts" :key="c.id">
           <button class="concept-card" @click="openConcept(c)">
             <span class="concept-en">{{ c.english }}</span>
             <span v-if="c.zolai" class="concept-zo">{{ c.zolai }}</span>
@@ -232,7 +315,15 @@ function addLanguage(code) {
 .concept-cat { font-size: .7rem; color: var(--primary, #4338ca); margin-top: .2rem; }
 .empty { text-align: center; color: var(--text-muted); padding: 2rem 0; }
 .back-btn { background: none; border: none; color: var(--primary, #4338ca); cursor: pointer; padding: .25rem 0; font-size: .95rem; }
-.concept-name { margin: .25rem 0 1rem; }
+.concept-name { margin: .25rem 0; }
+.view-tabs { display: flex; gap: .4rem; margin-bottom: 1rem; }
+.view-tab { border: 1px solid var(--border, #ccc); background: transparent; border-radius: 1rem; padding: .3rem .9rem; cursor: pointer; font-size: .85rem; }
+.view-tab.active { background: var(--primary, #4338ca); color: #fff; border-color: transparent; }
+.detail-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin: .25rem 0 .75rem; }
+.fav-btn { background: none; border: none; font-size: 1.5rem; cursor: pointer; line-height: 1; color: var(--primary, #4338ca); }
+.explain-row { margin-bottom: 1rem; }
+.explain-btn { border: 1px solid var(--primary, #4338ca); color: var(--primary, #4338ca); background: transparent; border-radius: .6rem; padding: .4rem .9rem; cursor: pointer; font-size: .9rem; }
+.explanation { white-space: pre-wrap; line-height: 1.6; background: var(--surface, #f7f7fb); border-radius: .6rem; padding: .8rem; }
 .parallel { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
 .lang-card { border: 1px solid var(--border, #ddd); border-radius: .7rem; padding: .9rem; background: var(--surface, #fff); }
 .lang-card-title { margin: 0 0 .5rem; font-size: 1rem; color: var(--primary, #4338ca); }

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\UserVocabulary;
 use App\Models\VocabEntry;
 use App\Models\Vocabulary;
 use App\Services\PermissionService;
@@ -56,6 +57,8 @@ class VocabularyController extends Controller
             'lang' => ['required', 'string', Rule::in(VocabEntry::learnerLanguages())],
         ])['lang'];
 
+        $this->recordViewed($request, $vocabulary);
+
         $entry = VocabEntry::firstOrCreate(
             ['vocabulary_id' => $vocabulary->id, 'language' => $lang],
         );
@@ -69,10 +72,90 @@ class VocabularyController extends Controller
             'vocabulary_id' => $vocabulary->id,
             'language'      => $lang,
             'concept'       => $vocabulary->english,
-            'zolai'         => $vocabulary->zolai,
         ]));
 
         return response()->json(['status' => 'generating', 'entry' => $entry], 202);
+    }
+
+    /**
+     * AI "Explain": a cached teaching explanation per (concept, language). Returns the
+     * cached text when present, else enqueues generation and replies 202. Auth-gated to
+     * bound generation cost (registered or guest session).
+     */
+    public function explain(Request $request, Vocabulary $vocabulary): JsonResponse
+    {
+        $lang = $request->validate([
+            'lang' => ['required', 'string', Rule::in(VocabEntry::learnerLanguages())],
+        ])['lang'];
+
+        $entry = VocabEntry::firstOrCreate(['vocabulary_id' => $vocabulary->id, 'language' => $lang]);
+
+        if ($entry->explanation !== null) {
+            return response()->json(['status' => 'ready', 'explanation' => $entry->explanation]);
+        }
+
+        Redis::rpush('ai:history', json_encode([
+            'mode'          => 'vocab_explain',
+            'vocabulary_id' => $vocabulary->id,
+            'language'      => $lang,
+            'concept'       => $vocabulary->english,
+        ]));
+
+        return response()->json(['status' => 'generating'], 202);
+    }
+
+    /** Save a concept to the worshipper's favorites (idempotent). */
+    public function favorite(Request $request, Vocabulary $vocabulary): JsonResponse
+    {
+        UserVocabulary::firstOrCreate([
+            'user_id'       => $request->user()->id,
+            'vocabulary_id' => $vocabulary->id,
+            'kind'          => UserVocabulary::KIND_FAVORITE,
+        ]);
+
+        return response()->json(['ok' => true]);
+    }
+
+    /** Remove a concept from favorites. */
+    public function unfavorite(Request $request, Vocabulary $vocabulary): JsonResponse
+    {
+        UserVocabulary::where([
+            'user_id'       => $request->user()->id,
+            'vocabulary_id' => $vocabulary->id,
+            'kind'          => UserVocabulary::KIND_FAVORITE,
+        ])->delete();
+
+        return response()->json(['ok' => true]);
+    }
+
+    /** List the worshipper's favorites or viewed history, newest first, with the concept. */
+    public function mine(Request $request): JsonResponse
+    {
+        $kind = $request->validate([
+            'kind' => ['required', Rule::in([UserVocabulary::KIND_FAVORITE, UserVocabulary::KIND_VIEWED])],
+        ])['kind'];
+
+        $rows = UserVocabulary::where('user_id', $request->user()->id)
+            ->where('kind', $kind)
+            ->with('vocabulary:id,english,zolai,category')
+            ->orderByDesc('updated_at')
+            ->limit(200)
+            ->get(['vocabulary_id', 'kind', 'updated_at']);
+
+        return response()->json(['items' => $rows]);
+    }
+
+    /** Record a 'viewed' history row (recency-bumped) for a registered worshipper. */
+    private function recordViewed(Request $request, Vocabulary $vocabulary): void
+    {
+        $user = $request->user();
+        if (! $user || $user->isGuestAccount()) {
+            return;
+        }
+        UserVocabulary::updateOrCreate(
+            ['user_id' => $user->id, 'vocabulary_id' => $vocabulary->id, 'kind' => UserVocabulary::KIND_VIEWED],
+            ['updated_at' => now()],
+        );
     }
 
     public function store(Request $request): JsonResponse

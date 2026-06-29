@@ -260,6 +260,32 @@ def _run_vocab_generate(job: dict, llm: OpenRouterLLM) -> None:
     })
 
 
+def _run_vocab_explain(job: dict, llm: OpenRouterLLM) -> None:
+    """A warm teaching explanation of a concept — meaning, usage, grammar, pronunciation,
+    example sentences — entirely in the learner's language. Cached per (concept, language)."""
+    lang = _LANG_NAME.get(job.get("language", "en"), "English")
+    concept = (job.get("concept") or "").strip()
+    system = (
+        "You are a friendly language teacher for a Christian learner. LANGUAGE LAW: write "
+        f"your ENTIRE explanation in {lang} ONLY, even if the concept is given in English. "
+        f"Explain the {lang} word for the concept: its meaning, how and when it is used, any "
+        "grammar notes, how to pronounce it, and 1-2 natural example sentences. Keep it warm, "
+        "concise (under ~180 words), and plain text (no JSON, no markdown headings)."
+    )
+    text, usage = llm.complete(
+        system=system,
+        messages=[{"role": "user", "content": f"Concept to explain in {lang}: {concept}"}],
+        temperature=0.5, max_tokens=900, role="vocab_explain",
+    )
+    _signed_post(_HISTORY_WEBHOOK, {
+        "mode": "vocab_explanation",
+        "vocabulary_id": job.get("vocabulary_id"),
+        "language": job.get("language"),
+        "explanation": (text or "").strip() or None,
+        "token_usage": int((usage or {}).get("total_tokens", 0) or 0),
+    })
+
+
 def _run_title_summary(job: dict, llm: OpenRouterLLM) -> None:
     vocab = job.get("tag_vocab") or []
     convo = "\n".join(
@@ -349,5 +375,7 @@ def run(job: dict) -> None:
         _run_journal(job, llm)
     elif mode == "vocab_generate":
         _run_vocab_generate(job, llm)
+    elif mode == "vocab_explain":
+        _run_vocab_explain(job, llm)
     else:
         print(f"[history] unknown mode {mode!r}, ignoring", flush=True)

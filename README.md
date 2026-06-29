@@ -177,6 +177,30 @@ checkpoints every 20 pages (resumable), and emits `dataset/{train,instruction,qa
 README for output schema and the licensing caveat. Crawled output is gitignored (regenerable
 and may be copyrighted).
 
+**Validating the corpus before ingest.** Run the corpus validator to check for corrupt files,
+duplicates, and coverage before ingesting into the RAG pipeline:
+
+```bash
+python workers/tools/validate_dataset.py
+# Checks: total sermons, per-source counts, SHA256 duplicates, missing title/author/date,
+# invalid JSON, UTF-8 errors, Bible ref parse rate, average length, top 10 books referenced.
+# Exits 0 on clean corpus, 1 on fatal issues (bad JSON, UTF-8, or duplicates).
+```
+
+**Ingesting the crawled corpus into the Knowledge RAG.** The corpus must be exported to the
+single-file `[{id,text,metadata}]` format the ingestion pipeline expects, then ingested:
+
+```bash
+# 1. Export raw/*.json → storage/app/knowledge/sermons_my.json
+python workers/tools/export_sermons_my.py
+
+# 2. Ingest into the 'sermon' Qdrant collection
+php artisan knowledge:ingest sermon storage/app/knowledge/sermons_my.json --chunker=text --lang=my
+```
+
+After ingest, sermon retrieval is automatically combined with Bible retrieval in Pastor Chat
+(the `RetrievalOrchestrator` fans out across all corpora including `sermon`).
+
 The directory form parses every `*.pdf` inside; a corrupt/unreadable file is **skipped with a
 warning**, never aborting the batch. Required infra env (backend `.env`):
 

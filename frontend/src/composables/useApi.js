@@ -449,6 +449,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ query, language: language || "en", corpora: corpora || null }),
     }),
+  adminKnowledgeLibrary: () => request("/admin/knowledge/library"),
+  adminKnowledgeLibraryToggle: (corpus) => request(`/admin/knowledge/library/${corpus}/toggle`, { method: "POST" }),
+  adminKnowledgeLibraryReindex: (corpus) => request(`/admin/knowledge/library/${corpus}/reindex`, { method: "POST" }),
+  adminKnowledgeLibraryDestroy: (corpus) => request(`/admin/knowledge/library/${corpus}`, { method: "DELETE" }),
   adminServices: () => request("/admin/services"),
   adminServiceResumeLink: (id) =>
     request(`/admin/services/${id}/resume-link`, { method: "POST" }),

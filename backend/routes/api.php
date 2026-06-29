@@ -407,6 +407,12 @@ Route::middleware(['auth:sanctum', 'account.usable'])->group(function () {
 
         // Knowledge Operations Platform — retrieval inspector.
         Route::post('/knowledge/inspect',              [\App\Http\Controllers\KnowledgeInspectorController::class, 'inspect']);
+
+        // Knowledge Operations Platform — library management.
+        Route::get('/knowledge/library',                        [\App\Http\Controllers\KnowledgeLibraryController::class, 'index']);
+        Route::post('/knowledge/library/{corpus}/toggle',       [\App\Http\Controllers\KnowledgeLibraryController::class, 'toggle']);
+        Route::post('/knowledge/library/{corpus}/reindex',      [\App\Http\Controllers\KnowledgeLibraryController::class, 'reindex']);
+        Route::delete('/knowledge/library/{corpus}',            [\App\Http\Controllers\KnowledgeLibraryController::class, 'destroy']);
         Route::patch('/users/{user}/presenter-gender', [AdminController::class, 'updatePresenterGender']);
         Route::post('/users/{user}/force-reset',       [AdminController::class, 'forcePasswordReset']);
         Route::delete('/users/{user}',                 [AdminController::class, 'deleteUser']);

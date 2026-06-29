@@ -397,6 +397,16 @@ Route::middleware(['auth:sanctum', 'account.usable'])->group(function () {
 
         // Knowledge Operations Platform — read-only health dashboard.
         Route::get('/knowledge/health',                [AdminController::class, 'knowledgeHealth']);
+
+        // Knowledge Operations Platform — file upload and job management.
+        Route::post('/knowledge/upload',               [\App\Http\Controllers\KnowledgeUploadController::class, 'upload']);
+        Route::get('/knowledge/jobs',                  [\App\Http\Controllers\KnowledgeUploadController::class, 'jobs']);
+        Route::post('/knowledge/jobs/{job}/cancel',    [\App\Http\Controllers\KnowledgeUploadController::class, 'cancel']);
+        Route::post('/knowledge/jobs/{job}/retry',     [\App\Http\Controllers\KnowledgeUploadController::class, 'retry']);
+        Route::delete('/knowledge/jobs/{job}',         [\App\Http\Controllers\KnowledgeUploadController::class, 'destroy']);
+
+        // Knowledge Operations Platform — retrieval inspector.
+        Route::post('/knowledge/inspect',              [\App\Http\Controllers\KnowledgeInspectorController::class, 'inspect']);
         Route::patch('/users/{user}/presenter-gender', [AdminController::class, 'updatePresenterGender']);
         Route::post('/users/{user}/force-reset',       [AdminController::class, 'forcePasswordReset']);
         Route::delete('/users/{user}',                 [AdminController::class, 'deleteUser']);

@@ -59,7 +59,7 @@ const TABS = [
   { name: "grammar-review", label: "Language Review",  can: () => can("language_review.view"), load: () => { grData.value = null; loadGrammarReview(); } },
   { name: "system",         label: "System",           can: () => can("system.view"),          load: () => { loadUpdateStatus(); scheduleUpdatePoll(); loadVoiceboxStatus(); scheduleVoiceboxPoll(); } },
   { name: "freeze",         label: "Freeze Monitor",   can: () => isAdminUser.value,           load: () => { loadFreeze(); scheduleFreezePoll(); } },
-  { name: "knowledge",      label: "Knowledge",         can: () => can("knowledge.view"),       load: loadKnowledgeStatus },
+  { name: "knowledge",      label: "Knowledge",         can: () => can("knowledge.view"),       load: () => { loadKnowledgeStatus(); loadKopJobs(); scheduleKopJobsPoll(); loadKnowledgeLibrary(); } },
 ];
 
 function firstAllowedTab() {
@@ -1234,6 +1234,111 @@ function corporaIndexedClass(s) {
   if (indexed < total) return 'warn';
   return 'ok';
 }
+
+// ─── Knowledge Operations Platform — upload ───────────────────────────────────
+const kopUploadFile      = ref(null);   // File object from the picker
+const kopUploadDragging  = ref(false);
+const kopUploadCorpus    = ref('');
+const kopUploadLanguage  = ref('en');
+const kopUploadSource    = ref('');
+const kopUploadChunker   = ref('text');
+const kopUploadBusy      = ref(false);
+const kopUploadError     = ref('');
+const kopUploadSuccess   = ref('');
+const kopJobs            = ref([]);
+const kopJobsLoading     = ref(false);
+let   kopJobsTimer       = null;
+
+const KOP_ALLOWED_EXTS = ['pdf', 'json', 'md', 'txt'];
+
+function kopFileExt(name) { return (name || '').split('.').pop().toLowerCase(); }
+
+function kopSelectFile(file) {
+  if (!file) return;
+  const ext = kopFileExt(file.name);
+  if (!KOP_ALLOWED_EXTS.includes(ext)) {
+    kopUploadError.value = `Unsupported file type ".${ext}". Allowed: ${KOP_ALLOWED_EXTS.join(', ')}.`;
+    kopUploadFile.value = null;
+    return;
+  }
+  kopUploadFile.value = file;
+  kopUploadError.value = '';
+  // Auto-fill source from filename when empty.
+  if (!kopUploadSource.value) kopUploadSource.value = file.name.replace(/\.[^.]+$/, '');
+}
+
+function kopOnFilePick(e) { kopSelectFile(e.target.files[0]); }
+function kopOnDrop(e) {
+  e.preventDefault(); kopUploadDragging.value = false;
+  kopSelectFile(e.dataTransfer?.files?.[0]);
+}
+
+async function kopSubmitUpload() {
+  if (!kopUploadFile.value || !kopUploadCorpus.value) return;
+  kopUploadBusy.value = true; kopUploadError.value = ''; kopUploadSuccess.value = '';
+  const fd = new FormData();
+  fd.append('file',       kopUploadFile.value);
+  fd.append('collection', kopUploadCorpus.value);
+  fd.append('language',   kopUploadLanguage.value);
+  fd.append('source',     kopUploadSource.value || kopUploadCorpus.value);
+  fd.append('chunker',    kopUploadChunker.value);
+  try {
+    const res = await api.adminKnowledgeUpload(fd);
+    kopUploadSuccess.value = `Job #${res.job.id} queued — ${res.job.original_filename} → ${res.job.collection}.`;
+    kopUploadFile.value = null; kopUploadSource.value = '';
+    await loadKopJobs();
+  } catch (e) {
+    if (e.status === 409) {
+      kopUploadError.value = e.data?.message || 'Duplicate file already indexed.';
+    } else {
+      kopUploadError.value = e.data?.message || 'Upload failed.';
+    }
+  } finally {
+    kopUploadBusy.value = false;
+  }
+}
+
+async function loadKopJobs() {
+  kopJobsLoading.value = true;
+  try { kopJobs.value = (await api.adminKnowledgeJobs()).jobs ?? []; }
+  catch { /* silent */ }
+  finally { kopJobsLoading.value = false; }
+}
+
+function scheduleKopJobsPoll() {
+  clearInterval(kopJobsTimer);
+  kopJobsTimer = setInterval(async () => {
+    // Only keep polling while there are active jobs.
+    if (kopJobs.value.some(j => ['pending', 'processing'].includes(j.status))) {
+      await loadKopJobs();
+    }
+  }, 4000);
+}
+
+async function kopCancelJob(id) {
+  try { const r = await api.adminKnowledgeCancelJob(id); updateKopJob(r.job); } catch { /* silent */ }
+}
+async function kopRetryJob(id) {
+  try { const r = await api.adminKnowledgeRetryJob(id); updateKopJob(r.job); } catch { /* silent */ }
+}
+async function kopDeleteJob(id) {
+  try { await api.adminKnowledgeDeleteJob(id); kopJobs.value = kopJobs.value.filter(j => j.id !== id); } catch { /* silent */ }
+}
+function updateKopJob(job) {
+  const idx = kopJobs.value.findIndex(j => j.id === job.id);
+  if (idx !== -1) kopJobs.value[idx] = job;
+  else kopJobs.value.unshift(job);
+}
+
+function kopJobStatusClass(status) {
+  return { pending: 'pending', processing: 'music-source', completed: 'ok', failed: 'danger', cancelled: '' }[status] ?? '';
+}
+function kopFileSizeLabel(bytes) {
+  if (!bytes) return '—';
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / 1048576).toFixed(1) + ' MB';
+}
 function fmtAge(h) {
   if (h == null) return "—";
   const m = Math.round(h * 60);
@@ -1244,6 +1349,44 @@ function shortTime(ts) {
 }
 function shortDateTime(ts) {
   try { const i = new Date(ts).toISOString(); return i.slice(5, 10) + " " + i.slice(11, 16); } catch { return ts; }
+}
+
+// ─── KOP Retrieval Inspector ───────────────────────────────────────────────────
+
+const inspectQuery    = ref('');
+const inspectLanguage = ref('en');
+const inspectBusy     = ref(false);
+const inspectError    = ref('');
+const inspectResult   = ref(null);
+const inspectOpenPane = ref('context');  // open accordion pane: 'embed'|'corpora'|'rrf'|'context'
+
+async function runInspect() {
+  if (!inspectQuery.value.trim()) return;
+  inspectBusy.value  = true;
+  inspectError.value = '';
+  inspectResult.value = null;
+  try {
+    inspectResult.value = await api.adminKnowledgeInspect(
+      inspectQuery.value.trim(),
+      inspectLanguage.value,
+      null,
+    );
+    inspectOpenPane.value = 'context';
+  } catch (e) {
+    inspectError.value = e.data?.message || e.message || 'Inspect failed.';
+  } finally {
+    inspectBusy.value = false;
+  }
+}
+
+function inspectTogglePane(id) {
+  inspectOpenPane.value = inspectOpenPane.value === id ? '' : id;
+}
+
+function inspectScoreClass(score) {
+  if (score >= 0.7) return 'ok';
+  if (score >= 0.4) return 'pending';
+  return 'danger';
 }
 
 // ─── Voicebox TTS Monitor ──────────────────────────────────────────────────────
@@ -3713,6 +3856,427 @@ onUnmounted(() => {
             <strong>Full stack verification:</strong>
             <code>cd backend &amp;&amp; php artisan knowledge:verify</code>
           </div>
+
+          <!-- ── Upload ────────────────────────────────────────────────── -->
+          <h3 class="kop-section-title">Upload Document</h3>
+          <div class="kop-upload-form">
+            <!-- Drop zone -->
+            <div
+              class="kop-dropzone"
+              :class="{ dragging: kopUploadDragging, 'has-file': kopUploadFile }"
+              @dragover.prevent="kopUploadDragging = true"
+              @dragleave="kopUploadDragging = false"
+              @drop="kopOnDrop"
+              @click="$refs.kopFileInput.click()"
+            >
+              <input ref="kopFileInput" type="file" :accept="'.' + KOP_ALLOWED_EXTS.join(',.')" style="display:none" @change="kopOnFilePick" />
+              <span v-if="kopUploadFile">
+                📄 {{ kopUploadFile.name }} ({{ kopFileSizeLabel(kopUploadFile.size) }})
+              </span>
+              <span v-else>
+                Drop PDF, JSON, Markdown, or TXT here, or click to choose
+              </span>
+            </div>
+
+            <!-- Form fields -->
+            <div class="kop-upload-fields">
+              <label class="kop-field">
+                <span>Corpus</span>
+                <select v-model="kopUploadCorpus" class="kop-select">
+                  <option value="" disabled>Select corpus…</option>
+                  <option v-for="c in (knowledgeStatus?.corpora ?? [])" :key="c" :value="c">{{ c }}</option>
+                </select>
+              </label>
+              <label class="kop-field">
+                <span>Language</span>
+                <select v-model="kopUploadLanguage" class="kop-select">
+                  <option value="en">English</option>
+                  <option value="my">Myanmar (မြန်မာ)</option>
+                  <option value="td">Tedim (Zolai)</option>
+                  <option value="zh">Chinese</option>
+                  <option value="ko">Korean</option>
+                  <option value="ja">Japanese</option>
+                  <option value="hi">Hindi</option>
+                  <option value="ar">Arabic</option>
+                  <option value="es">Spanish</option>
+                  <option value="th">Thai</option>
+                  <option value="fr">French</option>
+                  <option value="de">German</option>
+                  <option value="ta">Tamil</option>
+                </select>
+              </label>
+              <label class="kop-field">
+                <span>Source tag</span>
+                <input v-model="kopUploadSource" type="text" class="kop-input" placeholder="defaults to corpus name" />
+              </label>
+              <label class="kop-field">
+                <span>Chunker</span>
+                <select v-model="kopUploadChunker" class="kop-select">
+                  <option value="text">Text (overlap)</option>
+                  <option value="bible">Bible verse</option>
+                </select>
+              </label>
+            </div>
+
+            <p v-if="kopUploadError"   class="error kop-msg">{{ kopUploadError }}</p>
+            <p v-if="kopUploadSuccess" class="kop-msg ok-msg">{{ kopUploadSuccess }}</p>
+
+            <button
+              class="primary-btn"
+              :disabled="!kopUploadFile || !kopUploadCorpus || kopUploadBusy"
+              @click="kopSubmitUpload"
+            >{{ kopUploadBusy ? 'Uploading…' : 'Upload & Queue' }}</button>
+          </div>
+
+          <!-- ── Job queue ─────────────────────────────────────────────── -->
+          <h3 class="kop-section-title">Ingestion Jobs <span class="kop-since">(last 50)</span></h3>
+          <p v-if="!kopJobs.length && !kopJobsLoading" class="kop-na">No ingestion jobs yet.</p>
+          <table v-else class="grid kop-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>File</th>
+                <th>Corpus</th>
+                <th>Lang</th>
+                <th>Status</th>
+                <th class="num">Docs</th>
+                <th class="num">Chunks</th>
+                <th class="num">Avg size</th>
+                <th class="num">Duration</th>
+                <th>Queued</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="job in kopJobs" :key="job.id">
+                <td class="mono dim">{{ job.id }}</td>
+                <td>
+                  <span :title="job.original_filename">{{ job.original_filename.length > 28 ? job.original_filename.slice(0, 26) + '…' : job.original_filename }}</span>
+                  <span class="dim"> ({{ kopFileSizeLabel(job.file_size) }})</span>
+                </td>
+                <td class="mono">{{ job.collection }}</td>
+                <td>{{ job.metadata?.language ?? '—' }}</td>
+                <td><span class="badge" :class="kopJobStatusClass(job.status)">{{ job.status }}</span></td>
+                <td class="num">{{ job.document_count ?? '—' }}</td>
+                <td class="num">{{ job.chunk_count ?? '—' }}</td>
+                <td class="num">{{ job.metadata?.avg_chunk_size ? job.metadata.avg_chunk_size + ' ch' : '—' }}</td>
+                <td class="num">{{ job.duration_ms != null ? (job.duration_ms / 1000).toFixed(1) + 's' : '—' }}</td>
+                <td class="dim">{{ job.created_at ? shortDateTime(job.created_at) : '—' }}</td>
+                <td class="kop-job-actions">
+                  <button v-if="['pending','processing'].includes(job.status)" class="link danger" @click="kopCancelJob(job.id)">Cancel</button>
+                  <button v-if="job.status === 'failed'" class="link" @click="kopRetryJob(job.id)">Retry</button>
+                  <button v-if="['completed','failed','cancelled'].includes(job.status)" class="link danger" @click="kopDeleteJob(job.id)">Delete</button>
+                  <span v-if="job.status === 'processing'" class="dim">Running…</span>
+                </td>
+              </tr>
+              <tr v-if="job?.error_message" v-for="job in kopJobs.filter(j => j.error_message)" :key="'err-' + job.id">
+                <td colspan="9" class="kop-error-row">⚠ Job #{{ job.id }}: {{ job.error_message }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </template>
+
+        <!-- ── Retrieval Inspector ────────────────────────────────────────── -->
+        <h3 class="kop-section-title" style="margin-top:2rem">Retrieval Inspector</h3>
+        <p class="kop-hint">Run a query through the full RAG pipeline and see exactly how each stage transforms it.</p>
+
+        <div class="kop-inspect-bar">
+          <textarea
+            v-model="inspectQuery"
+            class="kop-inspect-input"
+            rows="2"
+            placeholder="Type a question to trace through the pipeline…"
+            :disabled="inspectBusy"
+            @keydown.enter.exact.prevent="runInspect"
+          ></textarea>
+          <div class="kop-inspect-controls">
+            <select v-model="inspectLanguage" class="kop-inspect-lang" :disabled="inspectBusy">
+              <option value="en">English</option>
+              <option value="td">Tedim</option>
+              <option value="my">Myanmar</option>
+              <option value="cn">Chin (Hakha)</option>
+              <option value="fl">Falam</option>
+              <option value="mz">Mizo</option>
+              <option value="pt">Paite</option>
+            </select>
+            <button class="kop-inspect-btn" :disabled="inspectBusy || !inspectQuery.trim()" @click="runInspect">
+              <span v-if="inspectBusy">Inspecting…</span>
+              <span v-else>Inspect</span>
+            </button>
+          </div>
+        </div>
+        <p v-if="inspectError" class="kop-upload-error">{{ inspectError }}</p>
+
+        <template v-if="inspectResult">
+          <!-- Stage flow pills -->
+          <div class="inspect-flow">
+            <span class="inspect-step">Query</span>
+            <span class="inspect-arrow">→</span>
+            <span class="inspect-step" :class="inspectResult.normalized_query !== inspectResult.raw_query ? 'ok' : ''">Normalize</span>
+            <span class="inspect-arrow">→</span>
+            <span class="inspect-step" :class="inspectResult.embedding?.error ? 'danger' : 'ok'">Embed</span>
+            <span class="inspect-arrow">→</span>
+            <span class="inspect-step" :class="inspectResult.failed ? 'danger' : (inspectResult.degraded ? 'pending' : 'ok')">Retrieve</span>
+            <span class="inspect-arrow">→</span>
+            <span class="inspect-step ok">RRF ({{ inspectResult.rrf_count }})</span>
+            <span class="inspect-arrow">→</span>
+            <span class="inspect-step" :class="inspectResult.reranked_chunks?.length ? 'ok' : 'danger'">Rerank ({{ inspectResult.reranked_chunks?.length ?? 0 }})</span>
+            <span class="inspect-arrow">→</span>
+            <span class="inspect-step" :class="inspectResult.context?.populated ? 'ok' : 'danger'">Context</span>
+          </div>
+
+          <!-- Normalized query -->
+          <div v-if="inspectResult.normalized_query !== inspectResult.raw_query" class="inspect-normalized">
+            <span class="inspect-label">Normalized:</span>
+            <code>{{ inspectResult.normalized_query }}</code>
+          </div>
+
+          <!-- Accordion panes -->
+          <div class="inspect-accordion">
+
+            <!-- Embedding -->
+            <div class="inspect-pane" :class="{ open: inspectOpenPane === 'embed' }">
+              <button class="inspect-pane-header" @click="inspectTogglePane('embed')">
+                <span>Embedding</span>
+                <span class="inspect-pane-meta">
+                  {{ inspectResult.embedding?.dims ?? 0 }} dims ·
+                  {{ inspectResult.embedding?.latency_ms ?? 0 }}ms ·
+                  {{ inspectResult.embedding?.model }}
+                  <span v-if="inspectResult.embedding?.error" class="badge danger">error</span>
+                </span>
+                <span class="inspect-chevron">{{ inspectOpenPane === 'embed' ? '▲' : '▼' }}</span>
+              </button>
+              <div v-if="inspectOpenPane === 'embed'" class="inspect-pane-body">
+                <p v-if="inspectResult.embedding?.error" class="kop-upload-error">{{ inspectResult.embedding.error }}</p>
+                <template v-else>
+                  <p class="inspect-dim-line">
+                    Magnitude: <strong>{{ inspectResult.embedding.magnitude }}</strong> · Preview (first 8 of {{ inspectResult.embedding.dims }} dims):
+                  </p>
+                  <code class="inspect-vector">[ {{ inspectResult.embedding.preview?.join(', ') }} … ]</code>
+                </template>
+              </div>
+            </div>
+
+            <!-- Per-corpus results -->
+            <div class="inspect-pane" :class="{ open: inspectOpenPane === 'corpora' }">
+              <button class="inspect-pane-header" @click="inspectTogglePane('corpora')">
+                <span>Per-Corpus Results</span>
+                <span class="inspect-pane-meta">{{ Object.keys(inspectResult.corpora ?? {}).length }} corpora searched</span>
+                <span class="inspect-chevron">{{ inspectOpenPane === 'corpora' ? '▲' : '▼' }}</span>
+              </button>
+              <div v-if="inspectOpenPane === 'corpora'" class="inspect-pane-body">
+                <table class="kop-table inspect-corpora-table">
+                  <thead>
+                    <tr>
+                      <th>Corpus</th>
+                      <th class="num">Vector hits</th>
+                      <th class="num">Keyword hits</th>
+                      <th class="num">Fused hits</th>
+                      <th class="num">Embed ms</th>
+                      <th class="num">Vector ms</th>
+                      <th class="num">Keyword ms</th>
+                      <th>Errors</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="(c, name) in inspectResult.corpora" :key="name">
+                      <td><code>{{ name }}</code></td>
+                      <td class="num">{{ c.vector_hits ?? '—' }}</td>
+                      <td class="num">{{ c.keyword_hits ?? '—' }}</td>
+                      <td class="num">{{ c.fused_hits ?? '—' }}</td>
+                      <td class="num">{{ c.embedding_latency_ms ?? '—' }}</td>
+                      <td class="num">{{ c.vector_latency_ms ?? '—' }}</td>
+                      <td class="num">{{ c.keyword_latency_ms ?? '—' }}</td>
+                      <td>
+                        <span v-if="c.vector_error" class="badge danger">vector</span>
+                        <span v-if="c.keyword_error" class="badge pending">keyword</span>
+                        <span v-if="!c.vector_error && !c.keyword_error" class="badge ok">ok</span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Reranked chunks -->
+            <div class="inspect-pane" :class="{ open: inspectOpenPane === 'rrf' }">
+              <button class="inspect-pane-header" @click="inspectTogglePane('rrf')">
+                <span>Reranked Chunks</span>
+                <span class="inspect-pane-meta">
+                  {{ inspectResult.reranked_chunks?.length ?? 0 }} kept
+                  <template v-if="inspectResult.dropped_count > 0"> · {{ inspectResult.dropped_count }} removed by reranker</template>
+                </span>
+                <span class="inspect-chevron">{{ inspectOpenPane === 'rrf' ? '▲' : '▼' }}</span>
+              </button>
+              <div v-if="inspectOpenPane === 'rrf'" class="inspect-pane-body">
+                <div v-if="!inspectResult.reranked_chunks?.length" class="inspect-empty">No chunks retrieved.</div>
+                <div v-for="(c, i) in inspectResult.reranked_chunks" :key="c.chunk_id" class="inspect-chunk">
+                  <div class="inspect-chunk-header">
+                    <span class="badge" :class="inspectScoreClass(c.score)">{{ c.score }}</span>
+                    <code>{{ c.corpus }}</code>
+                    <span class="dim">{{ c.reference || c.source }}</span>
+                    <span class="badge">{{ c.method }}</span>
+                    <span class="dim small">{{ c.text_length }} chars</span>
+                  </div>
+                  <ul class="inspect-decisions">
+                    <li v-for="d in c.decisions" :key="d.text" :class="d.ok ? 'decision-ok' : 'decision-no'">
+                      <span class="decision-icon">{{ d.ok ? '✓' : '✗' }}</span> {{ d.text }}
+                    </li>
+                  </ul>
+                  <p class="inspect-chunk-text">{{ c.text_preview }}<span v-if="c.text_length > 300" class="dim">…</span></p>
+                </div>
+                <div v-if="inspectResult.dropped_count > 0" class="inspect-dropped">
+                  <span class="decision-no">✗</span>
+                  {{ inspectResult.dropped_count }} candidate{{ inspectResult.dropped_count > 1 ? 's' : '' }}
+                  removed by reranker — below score/lexical cutoff or exceeded top-{{ inspectResult.reranked_chunks?.length ?? 0 }} limit.
+                </div>
+              </div>
+            </div>
+
+            <!-- Final context -->
+            <div class="inspect-pane" :class="{ open: inspectOpenPane === 'context' }">
+              <button class="inspect-pane-header" @click="inspectTogglePane('context')">
+                <span>Final Context</span>
+                <span class="inspect-pane-meta">
+                  confidence {{ inspectResult.context?.confidence ?? 0 }} ·
+                  {{ inspectResult.context?.char_count ?? 0 }} chars ·
+                  {{ inspectResult.context?.snippets?.length ?? 0 }} snippets
+                  <span v-if="!inspectResult.context?.populated" class="badge danger">no match</span>
+                  <span v-else-if="inspectResult.degraded" class="badge pending">degraded</span>
+                  <span v-else class="badge ok">ok</span>
+                </span>
+                <span class="inspect-chevron">{{ inspectOpenPane === 'context' ? '▲' : '▼' }}</span>
+              </button>
+              <div v-if="inspectOpenPane === 'context'" class="inspect-pane-body">
+                <div v-if="!inspectResult.context?.populated" class="inspect-empty">
+                  No context was built. The LLM will answer without knowledge grounding.
+                </div>
+                <div v-for="(s, i) in inspectResult.context?.snippets" :key="i" class="inspect-snippet">
+                  <div class="inspect-snippet-header">
+                    <span class="badge" :class="inspectScoreClass(s.score)">{{ s.score }}</span>
+                    <span class="dim">{{ s.source }}</span>
+                  </div>
+                  <p class="inspect-snippet-text">{{ s.text }}</p>
+                </div>
+              </div>
+            </div>
+
+          </div><!-- /accordion -->
+        </template>
+
+        <!-- ── Knowledge Library ─────────────────────────────────────────── -->
+        <h3 class="kop-section-title" style="margin-top:2.5rem">Knowledge Library</h3>
+        <p class="kop-hint">Manage corpora: enable/disable, re-index, or wipe vectors. Re-index dispatches a fresh ingestion job for each previously-uploaded document.</p>
+
+        <p v-if="klError" class="kop-upload-error">{{ klError }}</p>
+
+        <template v-if="klLoading && !klLibrary">
+          <p class="dim">Loading library…</p>
+        </template>
+        <template v-else-if="klLibrary">
+          <table class="kop-table kl-table">
+            <thead>
+              <tr>
+                <th>Corpus</th>
+                <th class="num">Priority</th>
+                <th>Status</th>
+                <th class="num">Vectors</th>
+                <th class="num">Storage</th>
+                <th class="num">Last ingest</th>
+                <th class="num">Last query</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <template v-for="c in klLibrary.corpora" :key="c.corpus">
+                <tr :class="{ 'kl-disabled': !c.enabled, 'kl-expanded': klExpandedCorpus === c.corpus }">
+                  <td>
+                    <button class="link kl-corpus-name" @click="klExpandedCorpus = klExpandedCorpus === c.corpus ? '' : c.corpus">
+                      <code>{{ c.corpus }}</code>
+                    </button>
+                  </td>
+                  <td class="num dim">{{ c.source_priority }}</td>
+                  <td>
+                    <span v-if="!c.qdrant?.exists" class="badge danger">no collection</span>
+                    <span v-else-if="(c.qdrant?.vectors_count ?? 0) === 0" class="badge pending">empty</span>
+                    <span v-else class="badge" :class="klQdrantClass(c.corpus)">{{ c.qdrant.vectors_count }} vecs</span>
+                    <span v-if="!c.enabled" class="badge" style="margin-left:0.25rem">disabled</span>
+                  </td>
+                  <td class="num">{{ c.qdrant?.vectors_count ?? '—' }}</td>
+                  <td class="num">{{ klFileSizeLabel(c.total_size) }}</td>
+                  <td class="num dim">{{ c.last_ingest?.at ? shortDateTime(c.last_ingest.at) : '—' }}</td>
+                  <td class="num dim">{{ c.last_retrieval?.at ? shortDateTime(c.last_retrieval.at) : '—' }}</td>
+                  <td class="kl-actions">
+                    <button
+                      class="link"
+                      :disabled="klActionBusy === c.corpus + ':toggle'"
+                      @click="klToggle(c.corpus)"
+                    >{{ c.enabled ? 'Disable' : 'Enable' }}</button>
+                    <button
+                      class="link"
+                      :disabled="klActionBusy === c.corpus + ':reindex'"
+                      @click="klReindex(c.corpus)"
+                    >Re-index</button>
+                    <template v-if="klConfirmWipe === c.corpus">
+                      <span class="dim small">Confirm wipe?</span>
+                      <button class="link danger" @click="klDestroyConfirmed(c.corpus)">Yes, wipe</button>
+                      <button class="link" @click="klConfirmWipe = ''">Cancel</button>
+                    </template>
+                    <button
+                      v-else
+                      class="link danger"
+                      :disabled="klActionBusy === c.corpus + ':destroy'"
+                      @click="klConfirmWipe = c.corpus"
+                    >Wipe</button>
+                  </td>
+                </tr>
+                <!-- Expanded detail row -->
+                <tr v-if="klExpandedCorpus === c.corpus" class="kl-detail-row">
+                  <td colspan="8">
+                    <div class="kl-detail">
+                      <div class="kl-detail-grid">
+                        <div class="kl-detail-cell">
+                          <span class="kl-detail-label">Vector driver</span>
+                          <code>{{ klLibrary.vector_driver }}</code>
+                        </div>
+                        <div class="kl-detail-cell">
+                          <span class="kl-detail-label">Embedding driver</span>
+                          <code>{{ c.last_ingest?.embedding_driver ?? klLibrary.embedding_driver }}</code>
+                        </div>
+                        <div class="kl-detail-cell">
+                          <span class="kl-detail-label">Vector dimensions</span>
+                          <code>{{ c.qdrant?.vector_size ?? '—' }}</code>
+                        </div>
+                        <div class="kl-detail-cell">
+                          <span class="kl-detail-label">Distance metric</span>
+                          <code>{{ c.qdrant?.distance ?? '—' }}</code>
+                        </div>
+                        <div class="kl-detail-cell">
+                          <span class="kl-detail-label">Total docs ingested</span>
+                          <strong>{{ c.total_docs || '—' }}</strong>
+                        </div>
+                        <div class="kl-detail-cell">
+                          <span class="kl-detail-label">Last ingest duration</span>
+                          <strong>{{ c.last_ingest?.duration_ms != null ? (c.last_ingest.duration_ms / 1000).toFixed(1) + 's' : '—' }}</strong>
+                        </div>
+                        <div class="kl-detail-cell">
+                          <span class="kl-detail-label">Last retrieval hits</span>
+                          <strong v-if="c.last_retrieval">
+                            {{ c.last_retrieval.vector_hits }} vec / {{ c.last_retrieval.keyword_hits }} kw
+                          </strong>
+                          <strong v-else>—</strong>
+                        </div>
+                        <div class="kl-detail-cell">
+                          <span class="kl-detail-label">Collection status</span>
+                          <span class="badge" :class="klQdrantClass(c.corpus)">{{ c.qdrant?.status ?? 'n/a' }}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
         </template>
       </section>
       <section v-else-if="tab === 'grammar-review'" class="gr-section">
@@ -4229,4 +4793,75 @@ onUnmounted(() => {
   .kop-cards { grid-template-columns: 1fr 1fr; }
   .kop-summary { flex-direction: column; }
 }
+/* Upload form */
+.kop-upload-form { display: flex; flex-direction: column; gap: 0.9rem; max-width: 640px; margin-bottom: 1.5rem; }
+.kop-dropzone { border: 2px dashed var(--border); border-radius: var(--radius); padding: 1.5rem 1rem; text-align: center; cursor: pointer; font-size: 0.9rem; color: var(--text-muted); transition: border-color 0.15s, background 0.15s; }
+.kop-dropzone:hover, .kop-dropzone.dragging { border-color: var(--primary); background: var(--primary-soft, rgba(99,102,241,.06)); }
+.kop-dropzone.has-file { border-color: var(--success); color: var(--text); }
+.kop-upload-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 0.65rem; }
+.kop-field { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.85rem; color: var(--text-muted); }
+.kop-select, .kop-input { padding: 0.55rem 0.7rem; border: 1px solid var(--border); border-radius: var(--radius-sm); font: inherit; background: var(--surface); color: var(--text); }
+.kop-select:focus, .kop-input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft, rgba(99,102,241,.15)); }
+.kop-msg { font-size: 0.88rem; margin: 0; }
+.ok-msg { color: var(--success); }
+.kop-job-actions { white-space: nowrap; }
+.kop-error-row { font-size: 0.82rem; color: var(--danger); padding: 0.3rem 0.65rem; }
+@media (max-width: 640px) {
+  .kop-upload-fields { grid-template-columns: 1fr; }
+}
+/* Retrieval Inspector */
+.kop-inspect-bar { display: flex; gap: 0.6rem; align-items: flex-end; margin-bottom: 0.8rem; }
+.kop-inspect-input { flex: 1; padding: 0.55rem 0.7rem; border: 1px solid var(--border); border-radius: var(--radius-sm); font: inherit; background: var(--surface); color: var(--text); resize: vertical; }
+.kop-inspect-input:focus { outline: none; border-color: var(--primary); }
+.kop-inspect-controls { display: flex; flex-direction: column; gap: 0.4rem; }
+.kop-inspect-lang { padding: 0.45rem 0.6rem; border: 1px solid var(--border); border-radius: var(--radius-sm); font: inherit; background: var(--surface); color: var(--text); }
+.kop-inspect-btn { padding: 0.55rem 1.2rem; background: var(--primary); color: #fff; border: none; border-radius: var(--radius-sm); cursor: pointer; font: inherit; font-weight: 600; white-space: nowrap; }
+.kop-inspect-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.inspect-flow { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem; margin-bottom: 0.75rem; font-size: 0.82rem; }
+.inspect-step { padding: 0.2rem 0.55rem; border-radius: 999px; background: var(--surface); border: 1px solid var(--border); font-weight: 500; }
+.inspect-step.ok { border-color: var(--success); color: var(--success); background: var(--success-soft, rgba(34,197,94,.08)); }
+.inspect-step.danger { border-color: var(--danger); color: var(--danger); background: var(--danger-soft, rgba(239,68,68,.08)); }
+.inspect-step.pending { border-color: var(--warning, #eab308); color: var(--warning, #eab308); }
+.inspect-arrow { color: var(--text-muted); font-size: 0.9rem; }
+.inspect-normalized { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0.45rem 0.7rem; font-size: 0.85rem; margin-bottom: 0.6rem; }
+.inspect-label { color: var(--text-muted); margin-right: 0.4rem; }
+.inspect-accordion { display: flex; flex-direction: column; gap: 0.5rem; }
+.inspect-pane { border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+.inspect-pane-header { width: 100%; display: flex; align-items: center; gap: 0.7rem; padding: 0.6rem 0.9rem; background: var(--surface); border: none; cursor: pointer; font: inherit; font-weight: 600; font-size: 0.88rem; text-align: left; }
+.inspect-pane-header:hover { background: var(--border); }
+.inspect-pane-meta { flex: 1; font-weight: 400; color: var(--text-muted); font-size: 0.82rem; }
+.inspect-chevron { color: var(--text-muted); font-size: 0.75rem; }
+.inspect-pane-body { padding: 0.75rem 0.9rem; border-top: 1px solid var(--border); background: var(--bg); }
+.inspect-empty { color: var(--text-muted); font-size: 0.88rem; }
+.inspect-dim-line { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.4rem; }
+.inspect-vector { display: block; font-family: monospace; font-size: 0.82rem; background: var(--surface); padding: 0.5rem 0.7rem; border-radius: var(--radius-sm); word-break: break-all; }
+.inspect-corpora-table { font-size: 0.82rem; }
+.inspect-chunk { margin-bottom: 0.8rem; padding-bottom: 0.8rem; border-bottom: 1px solid var(--border); }
+.inspect-chunk:last-child { border-bottom: none; margin-bottom: 0; }
+.inspect-chunk-header { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin-bottom: 0.35rem; font-size: 0.82rem; }
+.inspect-chunk-text { font-size: 0.85rem; color: var(--text); margin: 0; white-space: pre-wrap; word-break: break-word; }
+.inspect-decisions { list-style: none; padding: 0; margin: 0.3rem 0 0.5rem; display: flex; flex-wrap: wrap; gap: 0.25rem 0.5rem; font-size: 0.8rem; }
+.decision-ok { color: var(--success, #22c55e); }
+.decision-no { color: var(--danger, #ef4444); }
+.decision-icon { font-weight: 700; }
+.inspect-dropped { margin-top: 0.5rem; font-size: 0.82rem; color: var(--text-muted); border-top: 1px dashed var(--border); padding-top: 0.5rem; }
+/* Knowledge Library */
+.kl-table { width: 100%; }
+.kl-table td, .kl-table th { vertical-align: middle; }
+.kl-corpus-name { font-weight: 600; font-size: 0.88rem; padding: 0; }
+.kl-actions { white-space: nowrap; display: flex; gap: 0.4rem; align-items: center; }
+.kl-actions button:disabled { opacity: 0.45; cursor: not-allowed; }
+.kl-disabled td { opacity: 0.55; }
+.kl-expanded > td { background: var(--primary-soft, rgba(99,102,241,.04)); }
+.kl-detail-row > td { padding: 0; }
+.kl-detail { padding: 0.75rem 1rem; background: var(--bg); border-top: 1px solid var(--border); }
+.kl-detail-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.6rem 1rem; }
+.kl-detail-cell { display: flex; flex-direction: column; gap: 0.15rem; font-size: 0.82rem; }
+.kl-detail-label { color: var(--text-muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.03em; }
+@media (max-width: 960px) { .kl-detail-grid { grid-template-columns: repeat(2, 1fr); } }
+.inspect-snippet { margin-bottom: 0.8rem; padding-bottom: 0.8rem; border-bottom: 1px solid var(--border); }
+.inspect-snippet:last-child { border-bottom: none; margin-bottom: 0; }
+.inspect-snippet-header { display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.35rem; font-size: 0.82rem; }
+.inspect-snippet-text { font-size: 0.85rem; white-space: pre-wrap; word-break: break-word; margin: 0; }
+.small { font-size: 0.78rem; }
 </style>

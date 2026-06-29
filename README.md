@@ -213,6 +213,12 @@ examples, synonyms/antonyms/related, optional Bible verse) under the same author
 mode) caches it in `vocab_entries`. No new authored content and no per-language schema — the
 existing dictionary is the seed concept list. Deploy step: `php artisan migrate`.
 
+The learner UI lives at `#learn` (`VocabularyLearn.vue`): a searchable concept browser
+(exact→prefix→fuzzy ranking) and a Word Detail panel built for **parallel viewing** — a
+concept fans out across languages, so entries render side by side and more languages can be
+added on demand (`+ language` chips) without a redesign. All chrome is vue-i18n; the page is
+responsive and keyboard-accessible. Frontend deploy: `npm run build` in `frontend/`.
+
 Pastor Chat replies in the worshipper's selected interface language (`_pastor_system` in
 `workers/plugins/history/driver.py`). The reply-language instruction is authoritative — the
 model keeps replying in the chosen language even when the worshipper types in English, and only

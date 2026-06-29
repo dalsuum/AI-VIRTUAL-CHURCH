@@ -13,7 +13,7 @@
 import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { api } from "../composables/useApi";
-import { normalizeLanguage, getRegistry } from "../i18n";
+import { getRegistry, isRtlLocale, normalizeLanguage } from "../i18n";
 import AppIcon from "./AppIcon.vue";
 
 const { t, locale } = useI18n();
@@ -78,6 +78,7 @@ const activeMoodLabel = computed(() => {
 const selectedLanguageLabel = computed(() => (
   getRegistry()[locale.value]?.native_name || language.value
 ));
+const isRtl = computed(() => isRtlLocale(language.value));
 
 onMounted(async () => {
   try {
@@ -283,7 +284,7 @@ function streamLink(t) {
 <template>
   <div class="worship">
     <header class="wr-head">
-      <a class="wr-back" href="#">← {{ t("worship.back") }}</a>
+      <a class="wr-back" href="#">{{ isRtl ? "→" : "←" }} {{ t("worship.back") }}</a>
       <span class="wr-icon" aria-hidden="true">
         <AppIcon name="mdi:radio" size="30px" />
       </span>
@@ -336,8 +337,8 @@ function streamLink(t) {
         </span>
         <div class="wr-meta">
           <span class="wr-badge">{{ t("worship.nowPlaying") }}</span>
-          <strong>{{ current.title }}</strong>
-          <span class="wr-artist">{{ current.artist }} · {{ fmtDuration(current.duration) }}</span>
+          <strong class="bidi-text" dir="auto">{{ current.title }}</strong>
+          <span class="wr-artist bidi-text" dir="auto">{{ current.artist }} · {{ fmtDuration(current.duration) }}</span>
           <span class="wr-genre">{{ t("worship.genreLabel") }}</span>
         </div>
         <button
@@ -358,8 +359,8 @@ function streamLink(t) {
           <AppIcon name="mdi:music-note" size="34px" />
         </span>
         <div class="wr-meta">
-          <strong>{{ track.title }}</strong>
-          <span class="wr-artist">{{ track.artist }} · {{ fmtDuration(track.duration) }}</span>
+          <strong class="bidi-text" dir="auto">{{ track.title }}</strong>
+          <span class="wr-artist bidi-text" dir="auto">{{ track.artist }} · {{ fmtDuration(track.duration) }}</span>
           <span class="wr-genre">{{ t("worship.genreLabel") }}</span>
         </div>
         <a
@@ -379,8 +380,8 @@ function streamLink(t) {
     <section v-if="current" class="wr-stage">
       <div v-show="!noEmbed" class="wr-video"><div id="worship-yt"></div></div>
       <div v-if="noEmbed" class="wr-noembed">
-        <strong>{{ current.title }}</strong>
-        <span>{{ current.artist }}</span>
+        <strong class="bidi-text" dir="auto">{{ current.title }}</strong>
+        <span class="bidi-text" dir="auto">{{ current.artist }}</span>
         <p>{{ t("worship.noEmbed") }}</p>
         <a v-if="streamLink(current)" :href="streamLink(current)" target="_blank" rel="noopener" class="wr-open">
           {{ t("worship.openExternally") }}
@@ -390,7 +391,7 @@ function streamLink(t) {
     </section>
 
     <footer v-if="current" class="wr-player">
-      <span class="wr-current">{{ current.title }} — {{ current.artist }}</span>
+      <span class="wr-current bidi-text" dir="auto">{{ current.title }} — {{ current.artist }}</span>
       <div class="wr-buttons">
         <button
           type="button"
@@ -402,7 +403,7 @@ function streamLink(t) {
           <span class="wr-sr">{{ playing ? t("worship.pause") : t("worship.play") }}</span>
         </button>
         <button type="button" :aria-label="t('worship.next')" :title="t('worship.next')" @click="skip">
-          <AppIcon name="mdi:skip-next" size="22px" />
+          <AppIcon name="mdi:skip-next" class="rtl-flip" size="22px" />
           <span class="wr-sr">{{ t("worship.next") }}</span>
         </button>
         <button type="button" class="wr-stop" :aria-label="t('worship.stop')" :title="t('worship.stop')" @click="stop">
@@ -474,7 +475,7 @@ function streamLink(t) {
 .wr-mood {
   display: inline-flex;
   align-items: center;
-  justify-content: flex-start;
+	  justify-content: flex-start;
   gap: 0.45rem;
   min-width: 0;
   min-height: 46px;
@@ -862,8 +863,7 @@ function streamLink(t) {
   }
   .wr-player {
     position: fixed;
-    left: 0;
-    right: 0;
+    inset-inline: 0;
     bottom: 0;
     z-index: 41;
     grid-template-columns: minmax(0, 1fr) auto auto;

@@ -10,10 +10,11 @@ Providers (set via Admin Console → Settings → Narration voice):
     For English: EDGE_TTS_VOICE_FEMALE / EDGE_TTS_VOICE_MALE (default en-US-Aria/GuyNeural)
     For Myanmar: EDGE_TTS_VOICE_MY_FEMALE / EDGE_TTS_VOICE_MY_MALE (default my-MM-Nilar/ThihaNeural)
     For Tedim:  EDGE_TTS_VOICE_TD (default en-US-AriaNeural; no native Zolai Edge voice)
-    For French/German/Spanish/Japanese/Chinese/Korean/Hindi/Tamil/Thai: EDGE_TTS_VOICE_FR_FEMALE / _MALE,
+    For French/German/Spanish/Japanese/Chinese/Korean/Hindi/Tamil/Thai/Arabic/Hebrew: EDGE_TTS_VOICE_FR_FEMALE / _MALE,
       EDGE_TTS_VOICE_DE_*, EDGE_TTS_VOICE_ES_*, EDGE_TTS_VOICE_JA_*,
       EDGE_TTS_VOICE_ZH_CN_*, EDGE_TTS_VOICE_KO_*, EDGE_TTS_VOICE_HI_*,
-      EDGE_TTS_VOICE_TA_*, EDGE_TTS_VOICE_TH_* (native defaults)
+      EDGE_TTS_VOICE_TA_*, EDGE_TTS_VOICE_TH_*, EDGE_TTS_VOICE_AR_*,
+      EDGE_TTS_VOICE_HE_* (native defaults)
     EDGE_TTS_RATE — speaking rate adjustment, e.g. '-5%' to slow down (default '')
 
   'mms_tts' — Local Facebook MMS-TTS (free, offline). Best native quality for
@@ -68,6 +69,8 @@ _EDGE_TTS_NATIVE_VOICES = {
     "hi": {"female": "hi-IN-SwaraNeural", "male": "hi-IN-MadhurNeural"},
     "ta": {"female": "ta-IN-PallaviNeural", "male": "ta-IN-ValluvarNeural"},
     "th": {"female": "th-TH-PremwadeeNeural", "male": "th-TH-NiwatNeural"},
+    "ar": {"female": "ar-SA-ZariyahNeural", "male": "ar-SA-HamedNeural"},
+    "he": {"female": "he-IL-HilaNeural", "male": "he-IL-AvriNeural"},
 }
 
 

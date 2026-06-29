@@ -181,12 +181,12 @@ onBeforeUnmount(() => {
       <div ref="ytEl"></div>
     </div>
 
-    <p v-if="asset.title" class="title">{{ asset.title }}</p>
+    <p v-if="asset.title" class="title bidi-text" dir="auto">{{ asset.title }}</p>
 
     <!-- LRC line-synced lyrics: real per-line timings drive a whole-line
          highlight that scrolls into view as the hymn plays. Falls back to the
          plain verses block when the asset has no `timings`. -->
-    <div v-if="hasTimings" class="lyrics lrc">
+    <div v-if="hasTimings" class="lyrics lrc bidi-text" dir="auto">
       <p
         v-for="(line, li) in lyricLines"
         :key="li"
@@ -195,7 +195,7 @@ onBeforeUnmount(() => {
       >{{ line }}</p>
     </div>
     <!-- Public-domain hymn verses, shown to read/sing along (hymn sources). -->
-    <pre v-else-if="asset.lyrics" class="lyrics">{{ asset.lyrics }}</pre>
+    <pre v-else-if="asset.lyrics" class="lyrics bidi-text" dir="auto">{{ asset.lyrics }}</pre>
   </div>
 </template>
 
@@ -218,7 +218,7 @@ audio { width: 100%; }
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  text-align: left;
+  text-align: start;
 }
 /* LRC line-synced lyrics: dim inactive lines, lift the active one. */
 .lyrics.lrc p { margin: 0 0 0.4rem; transition: color 0.2s, opacity 0.2s; color: var(--text-muted); opacity: 0.55; }

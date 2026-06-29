@@ -87,13 +87,23 @@ return [
             'hint'     => 'เพลงนมัสการคริสเตียนภาษาไทย',
             'fallback' => ['เพลงคริสเตียนไทย', 'เพลงสรรเสริญพระเจ้า ภาษาไทย', 'Thai Christian worship song'],
         ],
+        'ar' => [
+            'name'     => 'Arabic',
+            'hint'     => 'ترانيم عبادة مسيحية عربية',
+            'fallback' => ['ترانيم مسيحية عربية', 'ترانيم عبادة عربية', 'Arabic Christian worship song'],
+        ],
+        'he' => [
+            'name'     => 'Hebrew',
+            'hint'     => 'שירי הלל נוצריים בעברית',
+            'fallback' => ['שירי הלל נוצריים בעברית', 'שירי פולחן נוצריים בעברית', 'Hebrew Christian worship song'],
+        ],
     ],
 
     'moods' => [
 
         'energy' => [
             'emoji'    => '⚡',
-            'labels'   => ['en' => 'Energy', 'my' => 'ခွန်အား', 'td' => 'Hatna', 'fr' => 'Énergie', 'de' => 'Energie', 'es' => 'Energía', 'ja' => '力', 'zh-CN' => '力量', 'ko' => '힘', 'hi' => 'बल', 'ta' => 'வல்லமை', 'th' => 'กำลัง'],
+            'labels'   => ['en' => 'Energy', 'my' => 'ခွန်အား', 'td' => 'Hatna', 'fr' => 'Énergie', 'de' => 'Energie', 'es' => 'Energía', 'ja' => '力', 'zh-CN' => '力量', 'ko' => '힘', 'hi' => 'बल', 'ta' => 'வல்லமை', 'th' => 'กำลัง', 'ar' => 'قوة', 'he' => 'כוח'],
             'concepts' => ['victory', 'praise', 'celebration', 'strength', 'revival', 'power'],
             'triggers' => [
                 'energy', 'energize', 'energized', 'encourage', 'encouragement', 'strength',
@@ -108,12 +118,14 @@ return [
                 'बल', 'शक्ति', 'हिम्मत', 'विजय', 'उत्साह',
                 'வல்லமை', 'பெலம்', 'ஊக்கம்', 'வெற்றி',
                 'กำลัง', 'หนุนใจ', 'ชัยชนะ', 'ฟื้นฟู',
+                'قوة', 'تشجيع', 'انتصار', 'نهضة',
+                'כוח', 'עידוד', 'ניצחון', 'התחדשות',
             ],
         ],
 
         'feel_good' => [
             'emoji'    => '😊',
-            'labels'   => ['en' => 'Feel Good', 'my' => 'ပျော်ရွှင်', 'td' => 'Lungdam', 'fr' => 'Joie', 'de' => 'Freude', 'es' => 'Alegría', 'ja' => '喜び', 'zh-CN' => '喜乐', 'ko' => '기쁨', 'hi' => 'आनंद', 'ta' => 'மகிழ்ச்சி', 'th' => 'ความยินดี'],
+            'labels'   => ['en' => 'Feel Good', 'my' => 'ပျော်ရွှင်', 'td' => 'Lungdam', 'fr' => 'Joie', 'de' => 'Freude', 'es' => 'Alegría', 'ja' => '喜び', 'zh-CN' => '喜乐', 'ko' => '기쁨', 'hi' => 'आनंद', 'ta' => 'மகிழ்ச்சி', 'th' => 'ความยินดี', 'ar' => 'فرح', 'he' => 'שמחה'],
             'concepts' => ['joy', 'gratitude', 'thanksgiving', 'blessing', 'happiness'],
             'triggers' => [
                 'happy', 'happiness', 'joy', 'joyful', 'glad', 'good', 'grateful', 'gratitude',
@@ -127,12 +139,14 @@ return [
                 'आनंद', 'खुशी', 'धन्यवाद', 'आशीष',
                 'மகிழ்ச்சி', 'நன்றி', 'ஆசீர்வாதம்',
                 'ความยินดี', 'ขอบคุณ', 'พระพร', 'สุขใจ',
+                'فرح', 'شكر', 'بركة', 'مبارك',
+                'שמחה', 'תודה', 'ברכה', 'מבורך',
             ],
         ],
 
         'focus' => [
             'emoji'    => '🎯',
-            'labels'   => ['en' => 'Focus', 'my' => 'အာရုံစူးစိုက်', 'td' => 'Ngaihsutna', 'fr' => 'Concentration', 'de' => 'Fokus', 'es' => 'Enfoque', 'ja' => '集中', 'zh-CN' => '专注', 'ko' => '집중', 'hi' => 'ध्यान', 'ta' => 'கவனம்', 'th' => 'สมาธิ'],
+            'labels'   => ['en' => 'Focus', 'my' => 'အာရုံစူးစိုက်', 'td' => 'Ngaihsutna', 'fr' => 'Concentration', 'de' => 'Fokus', 'es' => 'Enfoque', 'ja' => '集中', 'zh-CN' => '专注', 'ko' => '집중', 'hi' => 'ध्यान', 'ta' => 'கவனம்', 'th' => 'สมาธิ', 'ar' => 'تركيز', 'he' => 'מיקוד'],
             'concepts' => ['wisdom', 'guidance', 'devotion', 'study', 'meditation'],
             'triggers' => [
                 'focus', 'focused', 'concentrate', 'study', 'studying', 'wisdom', 'guidance',
@@ -147,12 +161,14 @@ return [
                 'ध्यान', 'बुद्धि', 'मार्गदर्शन', 'अध्ययन',
                 'கவனம்', 'ஞானம்', 'வழிநடத்தல்', 'தியானம்',
                 'สมาธิ', 'ปัญญา', 'การนำ', 'ใคร่ครวญ',
+                'تركيز', 'حكمة', 'إرشاد', 'تأمل',
+                'מיקוד', 'חכמה', 'הדרכה', 'לימוד', 'הגות',
             ],
         ],
 
         'love' => [
             'emoji'    => '❤️',
-            'labels'   => ['en' => 'Love', 'my' => 'ချစ်ခြင်းမေတ္တာ', 'td' => 'Itna', 'fr' => 'Amour', 'de' => 'Liebe', 'es' => 'Amor', 'ja' => '愛', 'zh-CN' => '爱', 'ko' => '사랑', 'hi' => 'प्रेम', 'ta' => 'அன்பு', 'th' => 'ความรัก'],
+            'labels'   => ['en' => 'Love', 'my' => 'ချစ်ခြင်းမေတ္တာ', 'td' => 'Itna', 'fr' => 'Amour', 'de' => 'Liebe', 'es' => 'Amor', 'ja' => '愛', 'zh-CN' => '爱', 'ko' => '사랑', 'hi' => 'प्रेम', 'ta' => 'அன்பு', 'th' => 'ความรัก', 'ar' => 'محبة', 'he' => 'אהבה'],
             'concepts' => ["god's love", 'grace', 'mercy', 'forgiveness', 'family', 'friendship'],
             'triggers' => [
                 'love', 'loved', 'loving', 'family', 'friend', 'friends', 'friendship', 'marriage',
@@ -167,12 +183,14 @@ return [
                 'प्रेम', 'परिवार', 'अनुग्रह', 'दया', 'क्षमा',
                 'அன்பு', 'குடும்பம்', 'கிருபை', 'இரக்கம்', 'மன்னிப்பு',
                 'ความรัก', 'ครอบครัว', 'พระคุณ', 'เมตตา', 'การให้อภัย',
+                'محبة', 'عائلة', 'نعمة', 'رحمة', 'غفران',
+                'אהבה', 'משפחה', 'חסד', 'רחמים', 'סליחה',
             ],
         ],
 
         'relax' => [
             'emoji'    => '🌿',
-            'labels'   => ['en' => 'Relax', 'my' => 'ငြိမ်သက်', 'td' => 'Lungmuanna', 'fr' => 'Paix', 'de' => 'Ruhe', 'es' => 'Paz', 'ja' => '平安', 'zh-CN' => '平安', 'ko' => '평안', 'hi' => 'शांति', 'ta' => 'சமாதானம்', 'th' => 'สันติสุข'],
+            'labels'   => ['en' => 'Relax', 'my' => 'ငြိမ်သက်', 'td' => 'Lungmuanna', 'fr' => 'Paix', 'de' => 'Ruhe', 'es' => 'Paz', 'ja' => '平安', 'zh-CN' => '平安', 'ko' => '평안', 'hi' => 'शांति', 'ta' => 'சமாதானம்', 'th' => 'สันติสุข', 'ar' => 'سلام', 'he' => 'שלום'],
             'concepts' => ['peace', 'comfort', 'trust', 'hope', 'healing', 'anxiety', 'fear', 'rest'],
             'triggers' => [
                 'relax', 'relaxed', 'peace', 'peaceful', 'calm', 'calmness', 'anxious', 'anxiety',
@@ -188,12 +206,14 @@ return [
                 'शांति', 'विश्राम', 'आशा', 'चंगाई', 'प्रार्थना',
                 'சமாதானம்', 'இளைப்பாறுதல்', 'நம்பிக்கை', 'சுகம்', 'ஜெபம்',
                 'สันติสุข', 'พักสงบ', 'ความหวัง', 'การรักษา', 'อธิษฐาน',
+                'سلام', 'راحة', 'رجاء', 'شفاء', 'صلاة', 'قلق', 'خوف',
+                'שלום', 'מנוחה', 'תקווה', 'ריפוי', 'תפילה', 'חרדה', 'פחד',
             ],
         ],
 
         'heartbreak' => [
             'emoji'    => '💔',
-            'labels'   => ['en' => 'Heartbreak', 'my' => 'နှလုံးကွဲ', 'td' => 'Lungtang kitan', 'fr' => 'Peine', 'de' => 'Herzschmerz', 'es' => 'Quebranto', 'ja' => '悲しみ', 'zh-CN' => '伤心', 'ko' => '상심', 'hi' => 'दुःख', 'ta' => 'துயரம்', 'th' => 'ความเสียใจ'],
+            'labels'   => ['en' => 'Heartbreak', 'my' => 'နှလုံးကွဲ', 'td' => 'Lungtang kitan', 'fr' => 'Peine', 'de' => 'Herzschmerz', 'es' => 'Quebranto', 'ja' => '悲しみ', 'zh-CN' => '伤心', 'ko' => '상심', 'hi' => 'दुःख', 'ta' => 'துயரம்', 'th' => 'ความเสียใจ', 'ar' => 'حزن', 'he' => 'כאב לב'],
             'concepts' => ['sadness', 'grief', 'loneliness', 'restoration', 'repentance', 'comfort', 'forgiveness'],
             'triggers' => [
                 'heartbreak', 'heartbroken', 'broken', 'breakup', 'sad', 'sadness', 'unhappy', 'grief',
@@ -209,6 +229,8 @@ return [
                 'दुःख', 'शोक', 'अकेलापन', 'टूटा', 'पश्चाताप',
                 'துயரம்', 'துக்கம்', 'தனிமை', 'மனமுடைவு', 'மனந்திரும்புதல்',
                 'ความเสียใจ', 'เศร้า', 'โดดเดี่ยว', 'บาดเจ็บ', 'กลับใจ',
+                'حزن', 'ألم', 'وحدة', 'توبة', 'جريح',
+                'כאב', 'עצב', 'בדידות', 'חרטה', 'פצוע',
             ],
         ],
 

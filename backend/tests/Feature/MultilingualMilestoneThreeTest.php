@@ -35,7 +35,7 @@ class MultilingualMilestoneThreeTest extends TestCase
         return $this->makeUser(['role' => User::ROLE_ADMIN, 'is_admin' => true]);
     }
 
-    public function test_interface_language_registry_exposes_milestone_three_service_locales_without_arabic(): void
+    public function test_interface_language_registry_exposes_milestone_three_service_locales(): void
     {
         $languages = $this->getJson('/api/languages')
             ->assertOk()
@@ -45,7 +45,8 @@ class MultilingualMilestoneThreeTest extends TestCase
             $this->assertArrayHasKey($code, $languages);
         }
 
-        $this->assertArrayNotHasKey('ar', $languages);
+        $this->assertArrayHasKey('ar', $languages);
+        $this->assertArrayHasKey('he', $languages);
     }
 
     public function test_church_service_intake_accepts_indic_and_thai_languages_and_unicode_custom_moods(): void

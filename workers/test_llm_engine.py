@@ -48,5 +48,17 @@ class TestLLMEngine(unittest.TestCase):
         
         self.assertEqual(llm_engine._strip_formatting(raw_text), expected_text)
 
+    def test_milestone_four_rtl_language_fallbacks_and_guards(self):
+        self.assertIn("Arabic", llm_engine._language_instruction("ar"))
+        self.assertIn("Hebrew", llm_engine._language_instruction("he"))
+
+        self.assertIn("سلام", llm_engine._fallback_welcome(None, "peace", "ar"))
+        self.assertIn("שלום", llm_engine._fallback_welcome(None, "peace", "he"))
+
+        self.assertTrue(llm_engine._lyrics_match_language(llm_engine._fallback_music_lyrics("peace", "ar"), "ar"))
+        self.assertTrue(llm_engine._lyrics_match_language(llm_engine._fallback_music_lyrics("peace", "he"), "he"))
+        self.assertFalse(llm_engine._lyrics_match_language("Peace and grace in Christ " * 8, "ar"))
+        self.assertFalse(llm_engine._lyrics_match_language("Peace and grace in Christ " * 8, "he"))
+
 if __name__ == "__main__":
     unittest.main()

@@ -84,6 +84,11 @@ export function getRegistry() {
   return registry;
 }
 
+export function isRtlLocale(code = i18n.global.locale.value) {
+  const normalized = normalizeLanguage(code);
+  return Boolean(registry[normalized]?.rtl);
+}
+
 /**
  * The single canonical language resolver. Worshipper-facing features must derive
  * their content language from THIS — never from the raw UI locale. Exact registry

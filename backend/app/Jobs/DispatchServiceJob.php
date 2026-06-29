@@ -312,6 +312,14 @@ class DispatchServiceJob implements ShouldQueue
             return preg_match_all('/[\x{0E00}-\x{0E7F}]/u', $text) >= 40;
         }
 
+        if ($language === 'ar') {
+            return preg_match_all('/[\x{0600}-\x{06FF}\x{0750}-\x{077F}\x{08A0}-\x{08FF}]/u', $text) >= 40;
+        }
+
+        if ($language === 'he') {
+            return preg_match_all('/[\x{0590}-\x{05FF}]/u', $text) >= 40;
+        }
+
         return true;
     }
 }

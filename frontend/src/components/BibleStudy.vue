@@ -7,7 +7,7 @@ import { onMounted, onBeforeUnmount, reactive, ref, computed, watch } from "vue"
 import { useI18n } from "vue-i18n";
 import { api } from "../composables/useApi";
 import { useStudyStream } from "../composables/useStudyStream";
-import { normalizeLanguage } from "../i18n";
+import { isRtlLocale, normalizeLanguage } from "../i18n";
 import AdCarousel from "./AdCarousel.vue";
 
 const { t, locale } = useI18n();
@@ -30,6 +30,8 @@ const TRANSLATIONS = {
   hi:  [["hi", "हिन्दी (IRV 2019)"], ["kjv", "KJV (English)"]],
   ta:  [["ta", "தமிழ் (IRV 2019)"], ["kjv", "KJV (English)"]],
   th:  [["th", "ไทย (Thai KJV)"], ["kjv", "KJV (English)"]],
+  ar:  [["ar", "العربية"], ["kjv", "KJV (English)"]],
+  he:  [["he", "עברית (WLC)"], ["kjv", "KJV (English)"]],
   cnh: [["cnh", "Hakha Chin"], ["kjv", "KJV (English)"]],
   cfm: [["cfm", "Falam Chin"], ["kjv", "KJV (English)"]],
   lus: [["lus", "Mizo"], ["kjv", "KJV (English)"]],
@@ -192,6 +194,7 @@ const agentMax = computed(() => config.value?.max_agent_count ?? 7);
 
 // Translation options for the selected language; first is the default.
 const translationOptions = computed(() => TRANSLATIONS[form.language] || TRANSLATIONS.en);
+const studyDir = computed(() => isRtlLocale(form.language) ? "rtl" : "auto");
 
 // Study language follows the one global language authority. There is no per-page
 // language picker; the study just clamps the global language to the set the study
@@ -544,7 +547,7 @@ function goHome() { window.location.hash = ""; }
         <span v-if="config?.tier === 'guest'">{{ t("study.registerMore") }}</span>
       </p>
       <label>{{ t("study.yourQuestion") }}
-        <textarea v-model="form.question" rows="3" :placeholder="t('study.questionPlaceholder')" @focus="focusScroll"></textarea>
+        <textarea v-model="form.question" rows="3" :placeholder="t('study.questionPlaceholder')" dir="auto" @focus="focusScroll"></textarea>
       </label>
       <button class="primary" :disabled="loading" @click="start">
         {{ loading ? t("study.starting") : t("study.begin") }}
@@ -589,9 +592,9 @@ function goHome() { window.location.hash = ""; }
               class="narrate-btn" :title="narratingTurn === b.turn ? t('study.stop') : t('study.listen')"
               @click="narrate(b)">{{ narratingTurn === b.turn ? '⏸' : '🔊' }}</button>
           </div>
-          <div class="body">{{ b.text }}<span v-if="!b.text" class="typing">…</span></div>
+          <div class="body bidi-text" :dir="studyDir">{{ b.text }}<span v-if="!b.text" class="typing">…</span></div>
           <div v-if="b.refs.length" class="verses">
-            <span v-for="r in b.refs" :key="r.ref" class="verse-card">📖 {{ r.ref }} <em>{{ r.translation }}</em></span>
+            <span v-for="r in b.refs" :key="r.ref" class="verse-card" dir="auto">📖 {{ r.ref }} <em>{{ r.translation }}</em></span>
           </div>
         </article>
       </div>
@@ -602,11 +605,12 @@ function goHome() { window.location.hash = ""; }
       </div>
 
       <div v-if="inputOpen" class="composer">
-        <textarea
-          ref="composerInput"
-          v-model="followUp"
-          :placeholder="t('study.followUpPlaceholder')"
-          rows="1"
+          <textarea
+            ref="composerInput"
+            v-model="followUp"
+            :placeholder="t('study.followUpPlaceholder')"
+            rows="1"
+            dir="auto"
           @keydown.enter.exact.prevent="send"
           @input="autoGrow"
           @focus="focusScroll"
@@ -617,9 +621,9 @@ function goHome() { window.location.hash = ""; }
 
     <!-- SUMMARY -->
     <section v-else-if="phase === 'summary'" class="summary card">
-      <div id="study-summary-print" class="print-area">
+      <div id="study-summary-print" class="print-area bidi-text" :dir="studyDir">
         <h2>{{ t("study.summaryTitle") }}</h2>
-        <p v-if="session?.topic || form.question" class="topic">{{ session?.topic || form.question }}</p>
+        <p v-if="session?.topic || form.question" class="topic" dir="auto">{{ session?.topic || form.question }}</p>
         <div v-if="summary.key_verses?.length" class="block">
           <h3>📖 {{ t("study.keyVerses") }}</h3>
           <ul><li v-for="(v, i) in summary.key_verses" :key="i">{{ v }}</li></ul>
@@ -710,11 +714,11 @@ function goHome() { window.location.hash = ""; }
 }
 
 .status { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.6rem; color: var(--text-muted); }
-.status .end { margin-left: auto; }
+	.status .end { margin-inline-start: auto; }
 .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
 .dot.on { background: var(--success); } .dot.off { background: #f59e0b; }
 .narration-toggle { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.85em; cursor: pointer; user-select: none; }
-.narration-toggle.standalone { margin-left: auto; }
+	.narration-toggle.standalone { margin-inline-start: auto; }
 .narrate-btn { background: none; border: 0; cursor: pointer; font-size: 0.95em; padding: 0 0.2rem; line-height: 1; opacity: 0.75; }
 .narrate-btn:hover { opacity: 1; }
 

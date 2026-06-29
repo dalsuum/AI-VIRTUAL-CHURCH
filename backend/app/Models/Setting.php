@@ -190,7 +190,7 @@ class Setting extends Model
     ];
 
     /** All supported service languages. */
-    public const LANGUAGES = ['en', 'my', 'td', 'fr', 'de', 'es', 'ja', 'zh-CN', 'ko', 'hi', 'ta', 'th'];
+    public const LANGUAGES = ['en', 'my', 'td', 'fr', 'de', 'es', 'ja', 'zh-CN', 'ko', 'hi', 'ta', 'th', 'ar', 'he'];
 
     public static function get(string $key, ?string $default = null): ?string
     {
@@ -524,6 +524,8 @@ class Setting extends Model
             'hi' => '0',
             'ta' => '0',
             'th' => '0',
+            'ar' => '0',
+            'he' => '0',
         ];
         return array_values(array_filter(
             self::LANGUAGES,

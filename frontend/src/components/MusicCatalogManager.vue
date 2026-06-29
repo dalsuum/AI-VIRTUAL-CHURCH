@@ -22,6 +22,8 @@ const LANGUAGES = [
   { code: "hi", label: "Hindi" },
   { code: "ta", label: "Tamil" },
   { code: "th", label: "Thai" },
+  { code: "ar", label: "Arabic" },
+  { code: "he", label: "Hebrew" },
 ];
 
 const tracks = ref([]);
@@ -144,6 +146,10 @@ function ytOpen() {
   yt.value.query = `${form.value.title} ${form.value.artist}`.trim();
 }
 
+function isRtlLanguage(code) {
+  return ["ar", "he"].includes(String(code || "").toLowerCase());
+}
+
 async function remove(t) {
   if (!confirm(`Delete “${t.title}”?`)) return;
   try { await api.worshipTrackDelete(t.id); await load(); }
@@ -244,8 +250,14 @@ async function saveSettings() {
     <!-- Editor -->
     <form v-if="editing" class="editor" @submit.prevent="save">
       <div class="row">
-        <label>Title* <input v-model="form.title" required maxlength="255" /></label>
-        <label>Artist <input v-model="form.artist" maxlength="255" /></label>
+        <label>Title*
+          <input v-model="form.title" required maxlength="255"
+            :dir="isRtlLanguage(form.language) ? 'rtl' : 'auto'" />
+        </label>
+        <label>Artist
+          <input v-model="form.artist" maxlength="255"
+            :dir="isRtlLanguage(form.language) ? 'rtl' : 'auto'" />
+        </label>
         <label>Language
           <select v-model="form.language">
             <option v-for="l in LANGUAGES" :key="l.code" :value="l.code">{{ l.label }}</option>
@@ -253,14 +265,14 @@ async function saveSettings() {
         </label>
       </div>
       <div class="row">
-        <label>Genre <input v-model="form.genre" maxlength="100" /></label>
+        <label>Genre <input v-model="form.genre" maxlength="100" dir="auto" /></label>
         <label>Duration (sec) <input type="number" min="0" v-model="form.duration" /></label>
         <label>Popularity <input type="number" min="0" v-model="form.popularity" /></label>
       </div>
       <div class="row">
-        <label>Themes <input v-model="form.themes" placeholder="peace, trust, hope" /></label>
-        <label>Moods <input v-model="form.moods" placeholder="anxiety, peace" /></label>
-        <label>Scriptures <input v-model="form.scriptures" placeholder="Isaiah 26:3" /></label>
+        <label>Themes <input v-model="form.themes" placeholder="peace, trust, hope" dir="auto" /></label>
+        <label>Moods <input v-model="form.moods" placeholder="anxiety, peace" dir="auto" /></label>
+        <label>Scriptures <input v-model="form.scriptures" placeholder="Isaiah 26:3" dir="auto" /></label>
       </div>
       <div class="row">
         <label>YouTube URL
@@ -312,10 +324,10 @@ async function saveSettings() {
       <thead><tr><th>Title</th><th>Artist</th><th>Lang</th><th>Moods</th><th>Pop.</th><th>Active</th><th></th></tr></thead>
       <tbody>
         <tr v-for="t in tracks" :key="t.id">
-          <td>{{ t.title }}</td>
-          <td>{{ t.artist || "—" }}</td>
+          <td class="bidi-text" :dir="isRtlLanguage(t.language) ? 'rtl' : 'auto'">{{ t.title }}</td>
+          <td class="bidi-text" :dir="isRtlLanguage(t.language) ? 'rtl' : 'auto'">{{ t.artist || "—" }}</td>
           <td>{{ t.language }}</td>
-          <td class="tags">{{ (t.moods || []).join(", ") || "—" }}</td>
+          <td class="tags bidi-text" dir="auto">{{ (t.moods || []).join(", ") || "—" }}</td>
           <td>{{ t.popularity }}</td>
           <td>{{ t.active ? "✓" : "—" }}</td>
           <td class="rowact">
@@ -374,7 +386,7 @@ input, select, textarea { padding: .45rem .6rem; border: 1px solid var(--border)
 .yt-meta small { color: var(--text-muted); }
 
 .grid { width: 100%; border-collapse: collapse; }
-.grid th, .grid td { text-align: left; padding: .5rem .6rem; border-bottom: 1px solid var(--border); font-size: .9rem; }
+.grid th, .grid td { text-align: start; padding: .5rem .6rem; border-bottom: 1px solid var(--border); font-size: .9rem; }
 .grid .tags { color: var(--text-muted); }
 .empty { text-align: center; color: var(--text-muted); }
 .rowact { white-space: nowrap; }

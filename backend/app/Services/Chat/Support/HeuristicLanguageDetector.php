@@ -30,6 +30,16 @@ final class HeuristicLanguageDetector implements LanguageDetector
             return 'my';
         }
 
+        if (preg_match('/[\x{0590}-\x{05FF}]/u', $text) === 1
+            && ($code = $this->supportedCodeFor('he', $supported)) !== null) {
+            return $code;
+        }
+
+        if (preg_match('/[\x{0600}-\x{06FF}\x{0750}-\x{077F}\x{08A0}-\x{08FF}]/u', $text) === 1
+            && ($code = $this->supportedCodeFor('ar', $supported)) !== null) {
+            return $code;
+        }
+
         if (preg_match('/[\x{0900}-\x{097F}]/u', $text) === 1
             && ($code = $this->supportedCodeFor('hi', $supported)) !== null) {
             return $code;

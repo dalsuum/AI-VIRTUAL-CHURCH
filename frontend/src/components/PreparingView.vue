@@ -132,7 +132,7 @@ onUnmounted(() => {
     <h1 class="title">{{ t("preparing.title") }}</h1>
 
     <transition name="fade">
-      <p v-if="welcome" class="welcome">{{ welcome }}</p>
+      <p v-if="welcome" class="welcome bidi-text" dir="auto">{{ welcome }}</p>
     </transition>
 
     <!-- Live progress checklist — replaces the fixed countdown number -->
@@ -162,8 +162,8 @@ onUnmounted(() => {
     <transition name="fade" mode="out-in">
       <div v-if="currentCard" :key="currentCardIndex" class="wait-card">
         <span class="card-label">{{ currentCard.type === "testimony" ? t("preparing.labelTestimony") : currentCard.type === "verse" ? t("preparing.labelScripture") : t("preparing.labelWhileWait") }}</span>
-        <p>{{ currentCard.text }}</p>
-        <small v-if="currentCard.source">{{ currentCard.source }}</small>
+        <p class="bidi-text" dir="auto">{{ currentCard.text }}</p>
+        <small v-if="currentCard.source" class="bidi-text" dir="auto">{{ currentCard.source }}</small>
       </div>
     </transition>
 
@@ -195,7 +195,7 @@ onUnmounted(() => {
   box-shadow: var(--shadow);
   animation: pulse 2.4s ease-in-out infinite;
 }
-.title  { font-size: 1.5rem; margin: 0; letter-spacing: -0.02em; }
+.title  { font-size: 1.5rem; margin: 0; letter-spacing: 0; }
 .welcome {
   max-width: 34rem;
   color: var(--text);
@@ -210,7 +210,7 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 0.55rem;
   margin: 0.25rem 0;
-  text-align: left;
+  text-align: start;
 }
 .step {
   display: flex;
@@ -240,13 +240,13 @@ onUnmounted(() => {
 .step.done .step-dot::after {
   content: "";
   position: absolute;
-  left: 2px;
+	  inset-inline-start: 2px;
   top: -1px;
   width: 5px;
   height: 8px;
   border: 2px solid var(--on-primary);
   border-top: none;
-  border-left: none;
+	  border-inline-start: none;
   transform: rotate(45deg);
 }
 /* Pulse ring on the currently-pending step */
@@ -267,7 +267,7 @@ onUnmounted(() => {
   background: var(--surface-2);
   border-radius: var(--radius-sm);
   padding: 0.95rem 1rem;
-  text-align: left;
+	  text-align: start;
   box-shadow: var(--shadow-sm);
 }
 .wait-card p     { margin: 0.35rem 0 0; color: var(--text); line-height: 1.6; font-size: 0.95rem; }

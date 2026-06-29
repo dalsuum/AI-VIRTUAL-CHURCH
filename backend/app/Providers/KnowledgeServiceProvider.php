@@ -63,7 +63,11 @@ final class KnowledgeServiceProvider extends ServiceProvider
                 ? new QdrantKeywordIndex($app->make(Http::class), $cfg['qdrant']['url'], $cfg['qdrant']['key'])
                 : new InMemoryKeywordIndex();
         });
-        $this->app->singleton(Reranker::class, HeuristicReranker::class);
+        $this->app->singleton(Reranker::class, fn () => new HeuristicReranker(
+            lexicalWeight: (float) config('knowledge.retrieval.lexical_weight', 0.5),
+            sourcePriority: (array) config('knowledge.source_priority', []),
+            priorityWeight: (float) config('knowledge.retrieval.priority_weight', 0.2),
+        ));
         $this->app->singleton(QueryNormalizer::class);
         $this->app->singleton(ResultMerger::class, fn () => new ResultMerger((int) config('knowledge.retrieval.rrf_k', 60)));
         $this->app->singleton(ContextBuilder::class, fn () => new ContextBuilder((int) config('knowledge.retrieval.max_context_chars', 4000)));

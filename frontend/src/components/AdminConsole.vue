@@ -59,7 +59,7 @@ const TABS = [
   { name: "grammar-review", label: "Language Review",  can: () => can("language_review.view"), load: () => { grData.value = null; loadGrammarReview(); } },
   { name: "system",         label: "System",           can: () => can("system.view"),          load: () => { loadUpdateStatus(); scheduleUpdatePoll(); loadVoiceboxStatus(); scheduleVoiceboxPoll(); } },
   { name: "freeze",         label: "Freeze Monitor",   can: () => isAdminUser.value,           load: () => { loadFreeze(); scheduleFreezePoll(); } },
-  { name: "knowledge",      label: "Knowledge",         can: () => can("knowledge.view"),       load: loadKnowledgeStatus },
+  { name: "knowledge",      label: "Knowledge",         can: () => can("knowledge.view"),       load: () => { loadKnowledgeStatus(); loadKopJobs(); scheduleKopJobsPoll(); } },
 ];
 
 function firstAllowedTab() {
@@ -1233,6 +1233,111 @@ function corporaIndexedClass(s) {
   if (indexed === 0) return 'fail';
   if (indexed < total) return 'warn';
   return 'ok';
+}
+
+// ─── Knowledge Operations Platform — upload ───────────────────────────────────
+const kopUploadFile      = ref(null);   // File object from the picker
+const kopUploadDragging  = ref(false);
+const kopUploadCorpus    = ref('');
+const kopUploadLanguage  = ref('en');
+const kopUploadSource    = ref('');
+const kopUploadChunker   = ref('text');
+const kopUploadBusy      = ref(false);
+const kopUploadError     = ref('');
+const kopUploadSuccess   = ref('');
+const kopJobs            = ref([]);
+const kopJobsLoading     = ref(false);
+let   kopJobsTimer       = null;
+
+const KOP_ALLOWED_EXTS = ['pdf', 'json', 'md', 'txt'];
+
+function kopFileExt(name) { return (name || '').split('.').pop().toLowerCase(); }
+
+function kopSelectFile(file) {
+  if (!file) return;
+  const ext = kopFileExt(file.name);
+  if (!KOP_ALLOWED_EXTS.includes(ext)) {
+    kopUploadError.value = `Unsupported file type ".${ext}". Allowed: ${KOP_ALLOWED_EXTS.join(', ')}.`;
+    kopUploadFile.value = null;
+    return;
+  }
+  kopUploadFile.value = file;
+  kopUploadError.value = '';
+  // Auto-fill source from filename when empty.
+  if (!kopUploadSource.value) kopUploadSource.value = file.name.replace(/\.[^.]+$/, '');
+}
+
+function kopOnFilePick(e) { kopSelectFile(e.target.files[0]); }
+function kopOnDrop(e) {
+  e.preventDefault(); kopUploadDragging.value = false;
+  kopSelectFile(e.dataTransfer?.files?.[0]);
+}
+
+async function kopSubmitUpload() {
+  if (!kopUploadFile.value || !kopUploadCorpus.value) return;
+  kopUploadBusy.value = true; kopUploadError.value = ''; kopUploadSuccess.value = '';
+  const fd = new FormData();
+  fd.append('file',       kopUploadFile.value);
+  fd.append('collection', kopUploadCorpus.value);
+  fd.append('language',   kopUploadLanguage.value);
+  fd.append('source',     kopUploadSource.value || kopUploadCorpus.value);
+  fd.append('chunker',    kopUploadChunker.value);
+  try {
+    const res = await api.adminKnowledgeUpload(fd);
+    kopUploadSuccess.value = `Job #${res.job.id} queued — ${res.job.original_filename} → ${res.job.collection}.`;
+    kopUploadFile.value = null; kopUploadSource.value = '';
+    await loadKopJobs();
+  } catch (e) {
+    if (e.status === 409) {
+      kopUploadError.value = e.data?.message || 'Duplicate file already indexed.';
+    } else {
+      kopUploadError.value = e.data?.message || 'Upload failed.';
+    }
+  } finally {
+    kopUploadBusy.value = false;
+  }
+}
+
+async function loadKopJobs() {
+  kopJobsLoading.value = true;
+  try { kopJobs.value = (await api.adminKnowledgeJobs()).jobs ?? []; }
+  catch { /* silent */ }
+  finally { kopJobsLoading.value = false; }
+}
+
+function scheduleKopJobsPoll() {
+  clearInterval(kopJobsTimer);
+  kopJobsTimer = setInterval(async () => {
+    // Only keep polling while there are active jobs.
+    if (kopJobs.value.some(j => ['pending', 'processing'].includes(j.status))) {
+      await loadKopJobs();
+    }
+  }, 4000);
+}
+
+async function kopCancelJob(id) {
+  try { const r = await api.adminKnowledgeCancelJob(id); updateKopJob(r.job); } catch { /* silent */ }
+}
+async function kopRetryJob(id) {
+  try { const r = await api.adminKnowledgeRetryJob(id); updateKopJob(r.job); } catch { /* silent */ }
+}
+async function kopDeleteJob(id) {
+  try { await api.adminKnowledgeDeleteJob(id); kopJobs.value = kopJobs.value.filter(j => j.id !== id); } catch { /* silent */ }
+}
+function updateKopJob(job) {
+  const idx = kopJobs.value.findIndex(j => j.id === job.id);
+  if (idx !== -1) kopJobs.value[idx] = job;
+  else kopJobs.value.unshift(job);
+}
+
+function kopJobStatusClass(status) {
+  return { pending: 'pending', processing: 'music-source', completed: 'ok', failed: 'danger', cancelled: '' }[status] ?? '';
+}
+function kopFileSizeLabel(bytes) {
+  if (!bytes) return '—';
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / 1048576).toFixed(1) + ' MB';
 }
 function fmtAge(h) {
   if (h == null) return "—";
@@ -3713,6 +3818,124 @@ onUnmounted(() => {
             <strong>Full stack verification:</strong>
             <code>cd backend &amp;&amp; php artisan knowledge:verify</code>
           </div>
+
+          <!-- ── Upload ────────────────────────────────────────────────── -->
+          <h3 class="kop-section-title">Upload Document</h3>
+          <div class="kop-upload-form">
+            <!-- Drop zone -->
+            <div
+              class="kop-dropzone"
+              :class="{ dragging: kopUploadDragging, 'has-file': kopUploadFile }"
+              @dragover.prevent="kopUploadDragging = true"
+              @dragleave="kopUploadDragging = false"
+              @drop="kopOnDrop"
+              @click="$refs.kopFileInput.click()"
+            >
+              <input ref="kopFileInput" type="file" :accept="'.' + KOP_ALLOWED_EXTS.join(',.')" style="display:none" @change="kopOnFilePick" />
+              <span v-if="kopUploadFile">
+                📄 {{ kopUploadFile.name }} ({{ kopFileSizeLabel(kopUploadFile.size) }})
+              </span>
+              <span v-else>
+                Drop PDF, JSON, Markdown, or TXT here, or click to choose
+              </span>
+            </div>
+
+            <!-- Form fields -->
+            <div class="kop-upload-fields">
+              <label class="kop-field">
+                <span>Corpus</span>
+                <select v-model="kopUploadCorpus" class="kop-select">
+                  <option value="" disabled>Select corpus…</option>
+                  <option v-for="c in (knowledgeStatus?.corpora ?? [])" :key="c" :value="c">{{ c }}</option>
+                </select>
+              </label>
+              <label class="kop-field">
+                <span>Language</span>
+                <select v-model="kopUploadLanguage" class="kop-select">
+                  <option value="en">English</option>
+                  <option value="my">Myanmar (မြန်မာ)</option>
+                  <option value="td">Tedim (Zolai)</option>
+                  <option value="zh">Chinese</option>
+                  <option value="ko">Korean</option>
+                  <option value="ja">Japanese</option>
+                  <option value="hi">Hindi</option>
+                  <option value="ar">Arabic</option>
+                  <option value="es">Spanish</option>
+                  <option value="th">Thai</option>
+                  <option value="fr">French</option>
+                  <option value="de">German</option>
+                  <option value="ta">Tamil</option>
+                </select>
+              </label>
+              <label class="kop-field">
+                <span>Source tag</span>
+                <input v-model="kopUploadSource" type="text" class="kop-input" placeholder="defaults to corpus name" />
+              </label>
+              <label class="kop-field">
+                <span>Chunker</span>
+                <select v-model="kopUploadChunker" class="kop-select">
+                  <option value="text">Text (overlap)</option>
+                  <option value="bible">Bible verse</option>
+                </select>
+              </label>
+            </div>
+
+            <p v-if="kopUploadError"   class="error kop-msg">{{ kopUploadError }}</p>
+            <p v-if="kopUploadSuccess" class="kop-msg ok-msg">{{ kopUploadSuccess }}</p>
+
+            <button
+              class="primary-btn"
+              :disabled="!kopUploadFile || !kopUploadCorpus || kopUploadBusy"
+              @click="kopSubmitUpload"
+            >{{ kopUploadBusy ? 'Uploading…' : 'Upload & Queue' }}</button>
+          </div>
+
+          <!-- ── Job queue ─────────────────────────────────────────────── -->
+          <h3 class="kop-section-title">Ingestion Jobs <span class="kop-since">(last 50)</span></h3>
+          <p v-if="!kopJobs.length && !kopJobsLoading" class="kop-na">No ingestion jobs yet.</p>
+          <table v-else class="grid kop-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>File</th>
+                <th>Corpus</th>
+                <th>Lang</th>
+                <th>Status</th>
+                <th class="num">Docs</th>
+                <th class="num">Chunks</th>
+                <th class="num">Avg size</th>
+                <th class="num">Duration</th>
+                <th>Queued</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="job in kopJobs" :key="job.id">
+                <td class="mono dim">{{ job.id }}</td>
+                <td>
+                  <span :title="job.original_filename">{{ job.original_filename.length > 28 ? job.original_filename.slice(0, 26) + '…' : job.original_filename }}</span>
+                  <span class="dim"> ({{ kopFileSizeLabel(job.file_size) }})</span>
+                </td>
+                <td class="mono">{{ job.collection }}</td>
+                <td>{{ job.metadata?.language ?? '—' }}</td>
+                <td><span class="badge" :class="kopJobStatusClass(job.status)">{{ job.status }}</span></td>
+                <td class="num">{{ job.document_count ?? '—' }}</td>
+                <td class="num">{{ job.chunk_count ?? '—' }}</td>
+                <td class="num">{{ job.metadata?.avg_chunk_size ? job.metadata.avg_chunk_size + ' ch' : '—' }}</td>
+                <td class="num">{{ job.duration_ms != null ? (job.duration_ms / 1000).toFixed(1) + 's' : '—' }}</td>
+                <td class="dim">{{ job.created_at ? shortDateTime(job.created_at) : '—' }}</td>
+                <td class="kop-job-actions">
+                  <button v-if="['pending','processing'].includes(job.status)" class="link danger" @click="kopCancelJob(job.id)">Cancel</button>
+                  <button v-if="job.status === 'failed'" class="link" @click="kopRetryJob(job.id)">Retry</button>
+                  <button v-if="['completed','failed','cancelled'].includes(job.status)" class="link danger" @click="kopDeleteJob(job.id)">Delete</button>
+                  <span v-if="job.status === 'processing'" class="dim">Running…</span>
+                </td>
+              </tr>
+              <tr v-if="job?.error_message" v-for="job in kopJobs.filter(j => j.error_message)" :key="'err-' + job.id">
+                <td colspan="9" class="kop-error-row">⚠ Job #{{ job.id }}: {{ job.error_message }}</td>
+              </tr>
+            </tbody>
+          </table>
         </template>
       </section>
       <section v-else-if="tab === 'grammar-review'" class="gr-section">
@@ -4228,5 +4451,21 @@ onUnmounted(() => {
 @media (max-width: 640px) {
   .kop-cards { grid-template-columns: 1fr 1fr; }
   .kop-summary { flex-direction: column; }
+}
+/* Upload form */
+.kop-upload-form { display: flex; flex-direction: column; gap: 0.9rem; max-width: 640px; margin-bottom: 1.5rem; }
+.kop-dropzone { border: 2px dashed var(--border); border-radius: var(--radius); padding: 1.5rem 1rem; text-align: center; cursor: pointer; font-size: 0.9rem; color: var(--text-muted); transition: border-color 0.15s, background 0.15s; }
+.kop-dropzone:hover, .kop-dropzone.dragging { border-color: var(--primary); background: var(--primary-soft, rgba(99,102,241,.06)); }
+.kop-dropzone.has-file { border-color: var(--success); color: var(--text); }
+.kop-upload-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 0.65rem; }
+.kop-field { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.85rem; color: var(--text-muted); }
+.kop-select, .kop-input { padding: 0.55rem 0.7rem; border: 1px solid var(--border); border-radius: var(--radius-sm); font: inherit; background: var(--surface); color: var(--text); }
+.kop-select:focus, .kop-input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft, rgba(99,102,241,.15)); }
+.kop-msg { font-size: 0.88rem; margin: 0; }
+.ok-msg { color: var(--success); }
+.kop-job-actions { white-space: nowrap; }
+.kop-error-row { font-size: 0.82rem; color: var(--danger); padding: 0.3rem 0.65rem; }
+@media (max-width: 640px) {
+  .kop-upload-fields { grid-template-columns: 1fr; }
 }
 </style>

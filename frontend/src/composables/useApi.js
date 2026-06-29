@@ -427,6 +427,23 @@ export const api = {
   adminDashboard: () => request("/admin/dashboard"),
   adminFreezeStatus: () => request("/admin/freeze/status"),
   adminKnowledgeHealth: () => request("/admin/knowledge/health"),
+  // Multipart upload — cannot use the JSON request() helper.
+  adminKnowledgeUpload: async (formData) => {
+    await ensureCsrf();
+    const res = await fetch(`${BASE_URL}/admin/knowledge/upload`, {
+      method: "POST",
+      credentials: "include",
+      headers: { Accept: "application/json", "X-XSRF-TOKEN": getCsrfToken() },
+      body: formData,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw Object.assign(new Error(data.message || "Upload failed"), { status: res.status, data });
+    return data;
+  },
+  adminKnowledgeJobs: () => request("/admin/knowledge/jobs"),
+  adminKnowledgeCancelJob: (id) => request(`/admin/knowledge/jobs/${id}/cancel`, { method: "POST" }),
+  adminKnowledgeRetryJob: (id) => request(`/admin/knowledge/jobs/${id}/retry`, { method: "POST" }),
+  adminKnowledgeDeleteJob: (id) => request(`/admin/knowledge/jobs/${id}`, { method: "DELETE" }),
   adminServices: () => request("/admin/services"),
   adminServiceResumeLink: (id) =>
     request(`/admin/services/${id}/resume-link`, { method: "POST" }),

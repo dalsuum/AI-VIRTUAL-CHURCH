@@ -465,7 +465,13 @@ def _build_tools(job: dict, plan: dict) -> tuple[list[dict], dict[str, callable]
 
         try:
             video = _find_sermon_video(mood=mood, query=effective_query, language=language, excluded_ids=past)
-            return h_post_youtube_sermon(video["video_id"], video["title"])
+            # Fallback policy: no native sermon -> serve an English one rather than
+            # dropping the segment (translation deferred; English query is generic).
+            if not video["found"] and language != "en":
+                video = _find_sermon_video(mood=mood, query="", language="en", excluded_ids=past)
+            if video["found"]:
+                return h_post_youtube_sermon(video["video_id"], video["title"])
+            return {"error": "no sermon video found in language or English"}
         except Exception as exc:
             return {"error": str(exc)}
 

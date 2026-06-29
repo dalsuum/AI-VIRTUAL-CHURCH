@@ -402,8 +402,18 @@ def generate_text_segments(job: dict, plan: dict) -> None:
             video = find_sermon_video(mood=mood, query=preaching_query,
                                       language=language,
                                       excluded_ids=past_video_ids)
-            _post_asset(token, "sermon", asset_type="youtube",
-                        provider_ref=video["video_id"], text_payload=video["title"])
+            # Fallback policy: when no native sermon passes, serve an English one
+            # rather than dropping the segment. Translation/subtitling is deferred;
+            # the English query drops the native preaching_query (it'd be off-language).
+            if not video["found"] and language != "en":
+                video = find_sermon_video(mood=mood, query="", language="en",
+                                          excluded_ids=past_video_ids)
+            if video["found"]:
+                _post_asset(token, "sermon", asset_type="youtube",
+                            provider_ref=video["video_id"], text_payload=video["title"])
+            else:
+                print(f"[sermon] no sermon video found for mood {mood!r} "
+                      f"in {language!r} or English", flush=True)
         except Exception as exc:  # noqa: BLE001 — degrade gracefully, never block
             print(f"[sermon] youtube lookup failed for mood {mood!r}: {exc}", flush=True)
 
@@ -603,6 +613,19 @@ def generate_music(job: dict, plan: dict) -> None:
                 )
                 if attempt < max_attempts:
                     time.sleep(2 if attempt == 1 else 6)
+
+        # Fallback policy: a YouTube worship slot with no native result tries
+        # English worship next — closest to the worshipper's YouTube intent —
+        # before dropping to a local hymn. The native music_query would be
+        # off-language for an English search, so it's dropped (translation deferred).
+        if result is None and job["music_source"] == "youtube" and job.get("language", "en") != "en":
+            try:
+                result = get_strategy("youtube", language="en").fetch(
+                    mood=job["mood"], prompt=music_prompt, query="",
+                )
+                print("[music] no native YouTube worship — falling back to English worship", flush=True)
+            except Exception as exc:  # noqa: BLE001 — fall through to local hymn
+                print(f"[music] English YouTube worship fallback failed: {exc}", flush=True)
 
         # Delivery guarantee: if the chosen source (Suno/YouTube/MusicGen/Local AI)
         # exhausted its retries, fall back to a local hymn before giving up. The

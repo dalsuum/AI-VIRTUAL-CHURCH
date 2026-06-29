@@ -696,7 +696,11 @@ def find_sermon_video(
     """Find a Christian preaching video for the worshipper's theme (synchronous).
 
     Called from sync Celery tasks — do NOT make this async.
-    Returns {"video_id": str, "title": str}; raises RuntimeError if nothing passes.
+
+    Pure discovery: returns {"found": True, "video_id": str, "title": str} on a
+    match, or {"found": False, "reason": "no_match"} when nothing in this language
+    passes the gates. It never decides fallback policy (English fallback, regional
+    ladders) — that is the orchestrator's job, which calls this once per language.
     """
     lang_conf = _LANG_CONFIG.get(language, _LANG_CONFIG["en"])
     excluded = set(excluded_ids or [])
@@ -835,6 +839,10 @@ def find_sermon_video(
             # across different users with the same mood.
             candidates.sort(key=lambda x: x[0], reverse=True)
             best_video = random.choice(candidates[:5])[1]
-            return {"video_id": best_video["id"]["videoId"], "title": best_video["snippet"]["title"]}
+            return {
+                "found": True,
+                "video_id": best_video["id"]["videoId"],
+                "title": best_video["snippet"]["title"],
+            }
 
-    raise RuntimeError(f"No suitable YouTube sermon found for mood {mood!r} in language {language!r}")
+    return {"found": False, "reason": "no_match"}

@@ -553,7 +553,7 @@ The agent receives a system prompt with the pre-chosen `scripture_ref` and a set
 | `generate_opening_prayer` | Generate prayer text |
 | `generate_sermon` | Generate sermon text (or skipped for YouTube mode) |
 | `generate_benediction` | Generate benediction text |
-| `find_sermon_video` | Find a YouTube sermon. MUST include keywords from the worshipper's prayer as the query; falls back to the plan's `preaching_query` if empty. |
+| `find_sermon_video` | Find a YouTube sermon. MUST include keywords from the worshipper's prayer as the query; falls back to the plan's `preaching_query` if empty. **Pure discovery** — returns `{"found": True, "video_id", "title"}` or `{"found": False, "reason": "no_match"}` (it does not raise on a miss, and does not decide fallback). **Fallback policy lives in the orchestrator** (both the pipeline and agent paths): when no native sermon passes, it retries once in English (generic query, translation deferred) before dropping the segment. The YouTube **worship** slot mirrors this — a no-native-result YouTube worship search falls back to English worship before the local-hymn delivery guarantee. |
 | `post_text_segment` | Deliver a segment to the frontend + dispatch TTS/avatar. **Built-in safety review** — content is classifier-checked inside this tool; the agent no longer calls a separate `review_content` step. |
 | `post_youtube_sermon` | Deliver a YouTube video as the sermon segment |
 | `finish_service` | Signal that the service is complete |

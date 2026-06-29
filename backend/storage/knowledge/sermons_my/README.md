@@ -50,10 +50,34 @@ dedupe, parsed sermons, and the pending queue). A checkpoint is written every
 raw/<id>.json        one cleaned record per sermon (full fields)
 metadata.csv         tabular index (id, title, author, date, url, refs, tags…)
 dataset/
-  train.jsonl        plain text records for continued pretraining
-  instruction.jsonl  {instruction, input=title, output=sermon}
-  qa.jsonl           auto-generated QA pairs (headings + Bible references)
+  train.jsonl          plain text records for continued pretraining
+  instruction.jsonl    {instruction, input=title, output=sermon}
+  qa.jsonl             auto-generated QA pairs (headings + Bible references)
+  summary.jsonl        {instruction:"Summarize this sermon", input, output}
+  outline.jsonl        {instruction:"Outline this sermon", input, output=[…]}
+  keywords.jsonl       {instruction:"List the key Burmese terms…", input, output=[…]}
+  verse_linking.jsonl  {id, url, references:[{id, number, chapter, verses, testament}]}
 ```
+
+## Enrichment (Phase 2 — deterministic)
+
+Every `raw/<id>.json` carries enrichment fields computed without any LLM call:
+
+- `denomination` — per-source publisher constant.
+- `book / chapter / verses / testament` — the primary passage, taken from the
+  first reference that resolves to the canonical Bible model.
+- `references[]` — every Bible reference (English *and* Burmese forms, e.g.
+  `John 3:16` / `ယောဟန် ၃:၁၆`) linked to the **canonical Bible IDs** in
+  `workers/data/books_meta.json`, so sermons join the same ontology as the Bible
+  reader. Unresolved book names are kept with `id: null` (never dropped).
+- `summary` — extractive (leading Burmese sentences).
+- `outline` — section-heading lines.
+- `keywords` — top Burmese terms by frequency.
+
+Semantic fields (`topics`, `people`, `places`, `doctrines`, `applications`,
+`prayer`) are present but empty — reserved for an optional later LLM pass; the
+schema is stable either way. Bible linking reuses the workers' canonical data via
+a relative path; if that tree is absent the references degrade to `id: null`.
 
 ### `train.jsonl` record
 

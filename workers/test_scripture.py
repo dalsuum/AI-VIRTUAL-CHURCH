@@ -196,6 +196,20 @@ def test_accented_book_name_resolves_after_normalization():
     assert bible_api._norm("Genèse") in names
 
 
+def test_books_meta_passes_validator():
+    # The ontology is a verified artifact: the structural validator must be clean
+    # (canon completeness, stable unique ids, testament/category ids, no duplicate
+    # or cross-book-ambiguous aliases, referential integrity of related_books).
+    import json, os, importlib.util, bible_api
+    spec = importlib.util.spec_from_file_location(
+        "validate_books_meta",
+        os.path.join(os.path.dirname(bible_api.__file__), "tools", "validate_books_meta.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    data = json.load(open(os.path.join(os.path.dirname(bible_api.__file__), "data", "books_meta.json"), encoding="utf-8"))
+    assert mod.validate(data) == []
+
+
 def test_books_meta_file_is_versioned():
     import bible_api, json, os
     raw = json.load(open(os.path.join(os.path.dirname(bible_api.__file__), "data", "books_meta.json"), encoding="utf-8"))
@@ -232,14 +246,17 @@ def test_books_meta_testament_and_category_ids():
     assert all("_" in c or c.islower() for c in (b["category"] for b in meta.values()))
 
 
-def test_books_meta_reserved_fields_present_and_empty():
+def test_books_meta_reserved_and_typed_fields():
     import bible_api
-    g = bible_api.book_meta("genesis")
-    assert g is not None
-    # Future-facing fields exist but are empty/null now (additive, no redesign later).
-    assert g["keywords"] == [] and g["themes"] == []
-    assert g["pronunciation"] is None
-    assert g["localized_name"] is None and g["localized_short_name"] is None
+    meta = bible_api.books_meta()
+    for b in meta.values():
+        # Localized display names are NOT stored in the language-neutral ontology
+        # (they come from locale resources); these stay null here.
+        assert b["localized_name"] is None and b["localized_short_name"] is None
+        # keywords/themes are lists (empty until their batch populates them).
+        assert isinstance(b["keywords"], list) and isinstance(b["themes"], list)
+        # pronunciation reserved: null now, may become a string later.
+        assert b["pronunciation"] is None or isinstance(b["pronunciation"], str)
     assert bible_api.book_meta("not-a-book") is None
 
 

@@ -10,6 +10,14 @@
       "testament": "old_testament",
       "category": "pentateuch",
       "english_name": "Genesis",
+      "author": "moses",
+      "attribution": "traditional",
+      "authorship_note": "Traditionally attributed to Moses.",
+      "date_written": "c. 1446-1406 BC",
+      "date_basis": "traditional",
+      "date_note": "Composition traditional; narrated events span creation to c. 1800 BC.",
+      "historical_period": "Primeval & Patriarchal",
+      "audience": "Israel",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -17,8 +25,61 @@
         "Gen",
         "Ge"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [
+        "creation",
+        "the_fall",
+        "the_flood",
+        "tower_of_babel",
+        "call_of_abraham",
+        "binding_of_isaac",
+        "joseph_in_egypt"
+      ],
+      "key_people": [
+        "adam",
+        "eve",
+        "noah",
+        "abraham",
+        "sarah",
+        "isaac",
+        "jacob",
+        "joseph"
+      ],
+      "key_places": [
+        "eden",
+        "ararat",
+        "babel",
+        "ur",
+        "canaan",
+        "egypt"
+      ],
+      "related_books": [
+        "exodus",
+        "romans",
+        "galatians",
+        "hebrews"
+      ],
+      "messianic_references": [
+        "Genesis 3:15",
+        "Genesis 22:18",
+        "Genesis 49:10"
+      ],
+      "prophecy_links": [
+        "revelation"
+      ],
+      "keywords": [
+        "beginning",
+        "creation",
+        "covenant",
+        "abraham",
+        "blessing"
+      ],
+      "themes": [
+        "creation",
+        "covenant",
+        "promise",
+        "providence",
+        "sin"
+      ],
       "pronunciation": null
     },
     "exodus": {
@@ -28,6 +89,14 @@
       "testament": "old_testament",
       "category": "pentateuch",
       "english_name": "Exodus",
+      "author": "moses",
+      "attribution": "traditional",
+      "authorship_note": "Traditionally attributed to Moses.",
+      "date_written": "c. 1446-1406 BC",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Exodus & Wilderness",
+      "audience": "Israel",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -36,8 +105,53 @@
         "Ex",
         "Exod"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [
+        "burning_bush",
+        "the_ten_plagues",
+        "passover",
+        "crossing_the_red_sea",
+        "giving_of_the_law_at_sinai",
+        "the_golden_calf",
+        "building_the_tabernacle"
+      ],
+      "key_people": [
+        "moses",
+        "aaron",
+        "pharaoh",
+        "miriam",
+        "jethro"
+      ],
+      "key_places": [
+        "egypt",
+        "red-sea",
+        "mount-sinai",
+        "wilderness-of-sin"
+      ],
+      "related_books": [
+        "genesis",
+        "leviticus",
+        "numbers",
+        "deuteronomy",
+        "hebrews"
+      ],
+      "messianic_references": [
+        "Exodus 12:1-13"
+      ],
+      "prophecy_links": [],
+      "keywords": [
+        "exodus",
+        "passover",
+        "law",
+        "tabernacle",
+        "deliverance"
+      ],
+      "themes": [
+        "redemption",
+        "deliverance",
+        "law",
+        "covenant",
+        "worship"
+      ],
       "pronunciation": null
     },
     "leviticus": {
@@ -47,6 +161,14 @@
       "testament": "old_testament",
       "category": "pentateuch",
       "english_name": "Leviticus",
+      "author": "moses",
+      "attribution": "traditional",
+      "authorship_note": "Traditionally attributed to Moses.",
+      "date_written": "c. 1446-1406 BC",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Wilderness (Sinai)",
+      "audience": "Israel (priests and people)",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -54,8 +176,45 @@
         "Lev",
         "Le"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [
+        "sacrificial_system_instituted",
+        "ordination_of_aaron",
+        "day_of_atonement",
+        "holiness_code"
+      ],
+      "key_people": [
+        "moses",
+        "aaron",
+        "nadab",
+        "abihu"
+      ],
+      "key_places": [
+        "mount-sinai",
+        "tabernacle"
+      ],
+      "related_books": [
+        "exodus",
+        "numbers",
+        "hebrews"
+      ],
+      "messianic_references": [
+        "Leviticus 16",
+        "Leviticus 17:11"
+      ],
+      "prophecy_links": [],
+      "keywords": [
+        "holiness",
+        "sacrifice",
+        "atonement",
+        "clean",
+        "priest"
+      ],
+      "themes": [
+        "holiness",
+        "atonement",
+        "sacrifice",
+        "priesthood"
+      ],
       "pronunciation": null
     },
     "numbers": {
@@ -65,6 +224,14 @@
       "testament": "old_testament",
       "category": "pentateuch",
       "english_name": "Numbers",
+      "author": "moses",
+      "attribution": "traditional",
+      "authorship_note": "Traditionally attributed to Moses.",
+      "date_written": "c. 1446-1406 BC",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Wilderness wanderings",
+      "audience": "Israel",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -72,8 +239,50 @@
         "Num",
         "Nu"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [
+        "census_of_israel",
+        "spies_sent_into_canaan",
+        "rebellion_and_forty_years_wandering",
+        "bronze_serpent",
+        "balaam_s_oracles"
+      ],
+      "key_people": [
+        "moses",
+        "aaron",
+        "joshua",
+        "caleb",
+        "balaam",
+        "korah"
+      ],
+      "key_places": [
+        "sinai",
+        "kadesh",
+        "wilderness-of-paran",
+        "plains-of-moab"
+      ],
+      "related_books": [
+        "exodus",
+        "deuteronomy",
+        "joshua"
+      ],
+      "messianic_references": [
+        "Numbers 21:8-9",
+        "Numbers 24:17"
+      ],
+      "prophecy_links": [],
+      "keywords": [
+        "census",
+        "wilderness",
+        "wandering",
+        "rebellion",
+        "journey"
+      ],
+      "themes": [
+        "wilderness",
+        "faithfulness",
+        "rebellion",
+        "guidance"
+      ],
       "pronunciation": null
     },
     "deuteronomy": {
@@ -83,6 +292,14 @@
       "testament": "old_testament",
       "category": "pentateuch",
       "english_name": "Deuteronomy",
+      "author": "moses",
+      "attribution": "traditional",
+      "authorship_note": "Traditionally attributed to Moses; the account of his death (ch. 34) is editorial.",
+      "date_written": "c. 1406 BC",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Plains of Moab (before entering Canaan)",
+      "audience": "Israel (new generation)",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -92,8 +309,44 @@
         "Deut",
         "Dt"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [
+        "moses_farewell_addresses",
+        "restatement_of_the_law",
+        "covenant_renewal",
+        "blessings_and_curses",
+        "death_of_moses"
+      ],
+      "key_people": [
+        "moses",
+        "joshua"
+      ],
+      "key_places": [
+        "plains-of-moab",
+        "mount-nebo",
+        "jordan-river"
+      ],
+      "related_books": [
+        "numbers",
+        "joshua",
+        "matthew"
+      ],
+      "messianic_references": [
+        "Deuteronomy 18:15"
+      ],
+      "prophecy_links": [],
+      "keywords": [
+        "law",
+        "covenant",
+        "obedience",
+        "remember",
+        "blessing"
+      ],
+      "themes": [
+        "covenant",
+        "obedience",
+        "love of god",
+        "remembrance"
+      ],
       "pronunciation": null
     },
     "joshua": {
@@ -103,6 +356,14 @@
       "testament": "old_testament",
       "category": "history",
       "english_name": "Joshua",
+      "author": "joshua",
+      "attribution": "traditional",
+      "authorship_note": null,
+      "date_written": "c. 1400-1375 BC",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Conquest of Canaan",
+      "audience": "Israel",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -111,8 +372,42 @@
         "Js",
         "Josh"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [
+        "crossing_the_jordan",
+        "fall_of_jericho",
+        "conquest_of_canaan",
+        "division_of_the_land",
+        "covenant_at_shechem"
+      ],
+      "key_people": [
+        "joshua",
+        "rahab",
+        "caleb"
+      ],
+      "key_places": [
+        "jordan-river",
+        "jericho",
+        "canaan",
+        "shechem"
+      ],
+      "related_books": [
+        "deuteronomy",
+        "judges"
+      ],
+      "messianic_references": [],
+      "prophecy_links": [],
+      "keywords": [
+        "conquest",
+        "jericho",
+        "land",
+        "inheritance"
+      ],
+      "themes": [
+        "conquest",
+        "faithfulness",
+        "promised_land",
+        "covenant"
+      ],
       "pronunciation": null
     },
     "judges": {
@@ -122,6 +417,14 @@
       "testament": "old_testament",
       "category": "history",
       "english_name": "Judges",
+      "author": "samuel",
+      "attribution": "traditional",
+      "authorship_note": null,
+      "date_written": "c. 1045-1000 BC",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Period of the Judges",
+      "audience": "Israel",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -132,8 +435,38 @@
         "Jdgs",
         "Judg"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [
+        "cycles_of_apostasy",
+        "deborah_and_barak",
+        "gideon",
+        "samson"
+      ],
+      "key_people": [
+        "deborah",
+        "gideon",
+        "samson",
+        "barak"
+      ],
+      "key_places": [
+        "canaan"
+      ],
+      "related_books": [
+        "joshua",
+        "ruth",
+        "1-samuel"
+      ],
+      "messianic_references": [],
+      "prophecy_links": [],
+      "keywords": [
+        "judges",
+        "cycles",
+        "deliverer"
+      ],
+      "themes": [
+        "apostasy",
+        "deliverance",
+        "leadership"
+      ],
       "pronunciation": null
     },
     "ruth": {
@@ -143,6 +476,14 @@
       "testament": "old_testament",
       "category": "history",
       "english_name": "Ruth",
+      "author": "samuel",
+      "attribution": "anonymous",
+      "authorship_note": null,
+      "date_written": "c. 1000 BC",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Period of the Judges",
+      "audience": "Israel",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -150,8 +491,39 @@
         "Rut",
         "Ru"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [
+        "ruth_gleans",
+        "kinsman_redeemer",
+        "line_of_david"
+      ],
+      "key_people": [
+        "ruth",
+        "naomi",
+        "boaz"
+      ],
+      "key_places": [
+        "moab",
+        "bethlehem"
+      ],
+      "related_books": [
+        "judges",
+        "1-samuel",
+        "matthew"
+      ],
+      "messianic_references": [
+        "Ruth 4:17"
+      ],
+      "prophecy_links": [],
+      "keywords": [
+        "redeemer",
+        "loyalty",
+        "harvest"
+      ],
+      "themes": [
+        "redemption",
+        "loyalty",
+        "providence"
+      ],
       "pronunciation": null
     },
     "1-samuel": {
@@ -161,6 +533,14 @@
       "testament": "old_testament",
       "category": "history",
       "english_name": "1 Samuel",
+      "author": "samuel",
+      "attribution": "anonymous",
+      "authorship_note": null,
+      "date_written": "c. 930 BC",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "United Monarchy (rise)",
+      "audience": "Israel",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -172,11 +552,42 @@
         "1 Sa",
         "I Samuel",
         "I Sam",
-        "I Sa",
-        "IS"
+        "I Sa"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [
+        "samuel_anoints_saul",
+        "david_and_goliath",
+        "david_anointed"
+      ],
+      "key_people": [
+        "samuel",
+        "saul",
+        "david",
+        "jonathan",
+        "goliath"
+      ],
+      "key_places": [
+        "shiloh",
+        "bethlehem",
+        "gibeah"
+      ],
+      "related_books": [
+        "judges",
+        "2-samuel"
+      ],
+      "messianic_references": [],
+      "prophecy_links": [],
+      "keywords": [
+        "king",
+        "anointing",
+        "david",
+        "saul"
+      ],
+      "themes": [
+        "kingship",
+        "obedience",
+        "providence"
+      ],
       "pronunciation": null
     },
     "2-samuel": {
@@ -186,6 +597,14 @@
       "testament": "old_testament",
       "category": "history",
       "english_name": "2 Samuel",
+      "author": "nathan",
+      "attribution": "anonymous",
+      "authorship_note": null,
+      "date_written": "c. 930 BC",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "United Monarchy (David)",
+      "audience": "Israel",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -200,8 +619,41 @@
         "II Sa",
         "IIS"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [
+        "david_becomes_king",
+        "davidic_covenant",
+        "david_and_bathsheba"
+      ],
+      "key_people": [
+        "david",
+        "nathan",
+        "bathsheba",
+        "absalom"
+      ],
+      "key_places": [
+        "jerusalem",
+        "hebron"
+      ],
+      "related_books": [
+        "1-samuel",
+        "1-kings",
+        "psalm"
+      ],
+      "messianic_references": [
+        "2 Samuel 7:12-16"
+      ],
+      "prophecy_links": [],
+      "keywords": [
+        "davidic_covenant",
+        "throne",
+        "jerusalem"
+      ],
+      "themes": [
+        "covenant",
+        "kingship",
+        "sin",
+        "repentance"
+      ],
       "pronunciation": null
     },
     "1-kings": {
@@ -211,6 +663,14 @@
       "testament": "old_testament",
       "category": "history",
       "english_name": "1 Kings",
+      "author": "jeremiah",
+      "attribution": "anonymous",
+      "authorship_note": null,
+      "date_written": "c. 560-538 BC",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "United & Divided Monarchy",
+      "audience": "Israel & Judah",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -226,8 +686,42 @@
         "I Ki",
         "1Kgs"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [
+        "solomon_builds_the_temple",
+        "kingdom_divides",
+        "elijah_and_the_prophets"
+      ],
+      "key_people": [
+        "solomon",
+        "elijah",
+        "ahab",
+        "jeroboam",
+        "rehoboam"
+      ],
+      "key_places": [
+        "jerusalem",
+        "temple",
+        "samaria"
+      ],
+      "related_books": [
+        "2-samuel",
+        "2-kings",
+        "2-chronicles"
+      ],
+      "messianic_references": [],
+      "prophecy_links": [],
+      "keywords": [
+        "temple",
+        "solomon",
+        "division",
+        "elijah"
+      ],
+      "themes": [
+        "kingship",
+        "temple",
+        "idolatry",
+        "prophecy"
+      ],
       "pronunciation": null
     },
     "2-kings": {
@@ -237,6 +731,14 @@
       "testament": "old_testament",
       "category": "history",
       "english_name": "2 Kings",
+      "author": "jeremiah",
+      "attribution": "anonymous",
+      "authorship_note": null,
+      "date_written": "c. 560-538 BC",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Divided Monarchy to Exile",
+      "audience": "Israel & Judah",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -252,8 +754,41 @@
         "II Ki",
         "2Kgs"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [
+        "elisha_ministry",
+        "fall_of_samaria",
+        "fall_of_jerusalem",
+        "babylonian_exile"
+      ],
+      "key_people": [
+        "elisha",
+        "hezekiah",
+        "josiah",
+        "nebuchadnezzar"
+      ],
+      "key_places": [
+        "samaria",
+        "jerusalem",
+        "babylon"
+      ],
+      "related_books": [
+        "1-kings",
+        "2-chronicles",
+        "jeremiah"
+      ],
+      "messianic_references": [],
+      "prophecy_links": [],
+      "keywords": [
+        "exile",
+        "fall",
+        "prophets",
+        "judgment"
+      ],
+      "themes": [
+        "judgment",
+        "exile",
+        "covenant_faithfulness"
+      ],
       "pronunciation": null
     },
     "1-chronicles": {
@@ -263,6 +798,14 @@
       "testament": "old_testament",
       "category": "history",
       "english_name": "1 Chronicles",
+      "author": "ezra",
+      "attribution": "traditional",
+      "authorship_note": null,
+      "date_written": "c. 430 BC",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Monarchy (priestly retrospective)",
+      "audience": "Post-exilic Judah",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -277,8 +820,34 @@
         "I Chr",
         "I Ch"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [
+        "genealogies",
+        "davids_reign",
+        "preparations_for_the_temple"
+      ],
+      "key_people": [
+        "david",
+        "solomon"
+      ],
+      "key_places": [
+        "jerusalem"
+      ],
+      "related_books": [
+        "2-samuel",
+        "2-chronicles"
+      ],
+      "messianic_references": [],
+      "prophecy_links": [],
+      "keywords": [
+        "genealogy",
+        "david",
+        "worship"
+      ],
+      "themes": [
+        "worship",
+        "davidic_line",
+        "temple"
+      ],
       "pronunciation": null
     },
     "2-chronicles": {
@@ -288,6 +857,14 @@
       "testament": "old_testament",
       "category": "history",
       "english_name": "2 Chronicles",
+      "author": "ezra",
+      "attribution": "traditional",
+      "authorship_note": null,
+      "date_written": "c. 430 BC",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Monarchy (priestly retrospective)",
+      "audience": "Post-exilic Judah",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -302,8 +879,39 @@
         "II Chr",
         "II Ch"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [
+        "solomons_temple",
+        "reigns_of_judah",
+        "exile_and_decree_of_cyrus"
+      ],
+      "key_people": [
+        "solomon",
+        "hezekiah",
+        "josiah",
+        "cyrus"
+      ],
+      "key_places": [
+        "jerusalem",
+        "temple",
+        "babylon"
+      ],
+      "related_books": [
+        "1-chronicles",
+        "ezra",
+        "2-kings"
+      ],
+      "messianic_references": [],
+      "prophecy_links": [],
+      "keywords": [
+        "temple",
+        "reform",
+        "restoration"
+      ],
+      "themes": [
+        "temple",
+        "reform",
+        "restoration"
+      ],
       "pronunciation": null
     },
     "ezra": {
@@ -313,6 +921,14 @@
       "testament": "old_testament",
       "category": "history",
       "english_name": "Ezra",
+      "author": "ezra",
+      "attribution": "traditional",
+      "authorship_note": null,
+      "date_written": "c. 440 BC",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Return from Exile",
+      "audience": "Post-exilic Judah",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -320,8 +936,38 @@
         "Ezr",
         "Ez"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [
+        "return_from_exile",
+        "rebuilding_the_temple",
+        "ezras_reforms"
+      ],
+      "key_people": [
+        "ezra",
+        "cyrus",
+        "zerubbabel"
+      ],
+      "key_places": [
+        "babylon",
+        "jerusalem",
+        "temple"
+      ],
+      "related_books": [
+        "2-chronicles",
+        "nehemiah",
+        "haggai"
+      ],
+      "messianic_references": [],
+      "prophecy_links": [],
+      "keywords": [
+        "return",
+        "rebuild",
+        "temple"
+      ],
+      "themes": [
+        "restoration",
+        "worship",
+        "covenant_renewal"
+      ],
       "pronunciation": null
     },
     "nehemiah": {
@@ -331,6 +977,14 @@
       "testament": "old_testament",
       "category": "history",
       "english_name": "Nehemiah",
+      "author": "nehemiah",
+      "attribution": "traditional",
+      "authorship_note": null,
+      "date_written": "c. 430 BC",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Return from Exile",
+      "audience": "Post-exilic Judah",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -338,8 +992,35 @@
         "Neh",
         "Ne"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [
+        "rebuilding_the_walls",
+        "opposition",
+        "covenant_renewal"
+      ],
+      "key_people": [
+        "nehemiah",
+        "ezra"
+      ],
+      "key_places": [
+        "jerusalem",
+        "susa"
+      ],
+      "related_books": [
+        "ezra",
+        "malachi"
+      ],
+      "messianic_references": [],
+      "prophecy_links": [],
+      "keywords": [
+        "walls",
+        "rebuild",
+        "reform"
+      ],
+      "themes": [
+        "restoration",
+        "leadership",
+        "prayer"
+      ],
       "pronunciation": null
     },
     "esther": {
@@ -349,6 +1030,14 @@
       "testament": "old_testament",
       "category": "history",
       "english_name": "Esther",
+      "author": null,
+      "attribution": "anonymous",
+      "authorship_note": null,
+      "date_written": "c. 460 BC",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Persian Period",
+      "audience": "Jews in exile",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -357,8 +1046,38 @@
         "Es",
         "Esth"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [
+        "esther_becomes_queen",
+        "hamans_plot",
+        "deliverance_of_the_jews",
+        "feast_of_purim"
+      ],
+      "key_people": [
+        "esther",
+        "mordecai",
+        "haman",
+        "xerxes"
+      ],
+      "key_places": [
+        "susa",
+        "persia"
+      ],
+      "related_books": [
+        "ezra",
+        "nehemiah"
+      ],
+      "messianic_references": [],
+      "prophecy_links": [],
+      "keywords": [
+        "purim",
+        "deliverance",
+        "queen"
+      ],
+      "themes": [
+        "providence",
+        "deliverance",
+        "courage"
+      ],
       "pronunciation": null
     },
     "job": {
@@ -368,14 +1087,48 @@
       "testament": "old_testament",
       "category": "wisdom",
       "english_name": "Job",
+      "author": null,
+      "attribution": "anonymous",
+      "authorship_note": null,
+      "date_written": "unknown (patriarchal setting)",
+      "date_basis": "estimated",
+      "date_note": null,
+      "historical_period": "Patriarchal (uncertain)",
+      "audience": "Israel",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
         "Job",
         "Jb"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [
+        "jobs_suffering",
+        "the_dialogues",
+        "god_answers_job",
+        "jobs_restoration"
+      ],
+      "key_people": [
+        "job"
+      ],
+      "key_places": [
+        "uz"
+      ],
+      "related_books": [
+        "psalm",
+        "ecclesiastes"
+      ],
+      "messianic_references": [],
+      "prophecy_links": [],
+      "keywords": [
+        "suffering",
+        "sovereignty",
+        "testing"
+      ],
+      "themes": [
+        "suffering",
+        "sovereignty",
+        "faith"
+      ],
       "pronunciation": null
     },
     "psalm": {
@@ -385,6 +1138,14 @@
       "testament": "old_testament",
       "category": "wisdom",
       "english_name": "Psalm",
+      "author": "david",
+      "attribution": "traditional",
+      "authorship_note": "A collection by multiple authors; many psalms attributed to David.",
+      "date_written": "c. 1400-450 BC",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Monarchy and after",
+      "audience": "Israel (worship)",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -392,8 +1153,38 @@
         "Psa",
         "Ps"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [],
+      "key_people": [
+        "david",
+        "asaph",
+        "korah"
+      ],
+      "key_places": [
+        "jerusalem",
+        "zion"
+      ],
+      "related_books": [
+        "2-samuel",
+        "1-chronicles"
+      ],
+      "messianic_references": [
+        "Psalm 2:7",
+        "Psalm 22:1",
+        "Psalm 110:1"
+      ],
+      "prophecy_links": [],
+      "keywords": [
+        "praise",
+        "prayer",
+        "worship",
+        "lament"
+      ],
+      "themes": [
+        "worship",
+        "lament",
+        "praise",
+        "trust"
+      ],
       "pronunciation": null
     },
     "proverbs": {
@@ -403,6 +1194,14 @@
       "testament": "old_testament",
       "category": "wisdom",
       "english_name": "Proverbs",
+      "author": "solomon",
+      "attribution": "traditional",
+      "authorship_note": null,
+      "date_written": "c. 950-700 BC",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Monarchy",
+      "audience": "Israel",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -411,8 +1210,27 @@
         "Pr",
         "Prov"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [],
+      "key_people": [
+        "solomon"
+      ],
+      "key_places": [],
+      "related_books": [
+        "ecclesiastes",
+        "job"
+      ],
+      "messianic_references": [],
+      "prophecy_links": [],
+      "keywords": [
+        "wisdom",
+        "proverb",
+        "instruction"
+      ],
+      "themes": [
+        "wisdom",
+        "prudence",
+        "fear_of_the_lord"
+      ],
       "pronunciation": null
     },
     "ecclesiastes": {
@@ -422,6 +1240,14 @@
       "testament": "old_testament",
       "category": "wisdom",
       "english_name": "Ecclesiastes",
+      "author": "solomon",
+      "attribution": "traditional",
+      "authorship_note": null,
+      "date_written": "c. 940 BC",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Monarchy",
+      "audience": "Israel",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -430,8 +1256,27 @@
         "Ec",
         "Eccl"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [],
+      "key_people": [
+        "solomon"
+      ],
+      "key_places": [],
+      "related_books": [
+        "proverbs",
+        "job"
+      ],
+      "messianic_references": [],
+      "prophecy_links": [],
+      "keywords": [
+        "meaning",
+        "vanity",
+        "life"
+      ],
+      "themes": [
+        "meaning",
+        "vanity",
+        "wisdom"
+      ],
       "pronunciation": null
     },
     "song-of-solomon": {
@@ -441,6 +1286,14 @@
       "testament": "old_testament",
       "category": "wisdom",
       "english_name": "Song of Solomon",
+      "author": "solomon",
+      "attribution": "traditional",
+      "authorship_note": null,
+      "date_written": "c. 950 BC",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Monarchy",
+      "audience": "Israel",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -449,13 +1302,30 @@
         "Song of Songs",
         "So",
         "Sos",
-        "SOS",
         "SongOfSongs",
         "SongofSolomon",
         "Song"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [],
+      "key_people": [
+        "solomon"
+      ],
+      "key_places": [],
+      "related_books": [
+        "proverbs"
+      ],
+      "messianic_references": [],
+      "prophecy_links": [],
+      "keywords": [
+        "love",
+        "beloved",
+        "marriage"
+      ],
+      "themes": [
+        "love",
+        "covenant",
+        "beauty"
+      ],
       "pronunciation": null
     },
     "isaiah": {
@@ -465,6 +1335,14 @@
       "testament": "old_testament",
       "category": "major_prophets",
       "english_name": "Isaiah",
+      "author": "isaiah",
+      "attribution": "stated",
+      "authorship_note": null,
+      "date_written": "c. 700-680 BC",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Divided Monarchy (Judah)",
+      "audience": "Judah",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -472,8 +1350,44 @@
         "Isa",
         "Is"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [
+        "call_of_isaiah",
+        "prophecies_of_judgment",
+        "prophecies_of_the_messiah",
+        "comfort_of_israel"
+      ],
+      "key_people": [
+        "isaiah",
+        "hezekiah",
+        "ahaz"
+      ],
+      "key_places": [
+        "jerusalem",
+        "judah"
+      ],
+      "related_books": [
+        "2-kings",
+        "matthew",
+        "romans"
+      ],
+      "messianic_references": [
+        "Isaiah 7:14",
+        "Isaiah 9:6",
+        "Isaiah 53:1-12"
+      ],
+      "prophecy_links": [],
+      "keywords": [
+        "holy",
+        "servant",
+        "salvation",
+        "comfort"
+      ],
+      "themes": [
+        "holiness",
+        "judgment",
+        "salvation",
+        "messiah"
+      ],
       "pronunciation": null
     },
     "jeremiah": {
@@ -483,6 +1397,14 @@
       "testament": "old_testament",
       "category": "major_prophets",
       "english_name": "Jeremiah",
+      "author": "jeremiah",
+      "attribution": "stated",
+      "authorship_note": null,
+      "date_written": "c. 627-580 BC",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Fall of Judah",
+      "audience": "Judah",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -490,8 +1412,42 @@
         "Jer",
         "Je"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [
+        "call_of_jeremiah",
+        "warnings_to_judah",
+        "fall_of_jerusalem",
+        "new_covenant_promise"
+      ],
+      "key_people": [
+        "jeremiah",
+        "baruch",
+        "zedekiah"
+      ],
+      "key_places": [
+        "jerusalem",
+        "babylon",
+        "egypt"
+      ],
+      "related_books": [
+        "2-kings",
+        "lamentations",
+        "hebrews"
+      ],
+      "messianic_references": [
+        "Jeremiah 23:5-6",
+        "Jeremiah 31:31-34"
+      ],
+      "prophecy_links": [],
+      "keywords": [
+        "new_covenant",
+        "judgment",
+        "weeping"
+      ],
+      "themes": [
+        "judgment",
+        "repentance",
+        "new_covenant"
+      ],
       "pronunciation": null
     },
     "lamentations": {
@@ -501,6 +1457,14 @@
       "testament": "old_testament",
       "category": "major_prophets",
       "english_name": "Lamentations",
+      "author": "jeremiah",
+      "attribution": "traditional",
+      "authorship_note": null,
+      "date_written": "c. 586 BC",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Fall of Jerusalem",
+      "audience": "Judah",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -509,8 +1473,31 @@
         "La",
         "Lament"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [
+        "mourning_over_jerusalem"
+      ],
+      "key_people": [
+        "jeremiah"
+      ],
+      "key_places": [
+        "jerusalem"
+      ],
+      "related_books": [
+        "jeremiah",
+        "2-kings"
+      ],
+      "messianic_references": [],
+      "prophecy_links": [],
+      "keywords": [
+        "lament",
+        "mourning",
+        "grief"
+      ],
+      "themes": [
+        "grief",
+        "judgment",
+        "hope"
+      ],
       "pronunciation": null
     },
     "ezekiel": {
@@ -520,6 +1507,14 @@
       "testament": "old_testament",
       "category": "major_prophets",
       "english_name": "Ezekiel",
+      "author": "ezekiel",
+      "attribution": "stated",
+      "authorship_note": null,
+      "date_written": "c. 593-571 BC",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Babylonian Exile",
+      "audience": "Exiles in Babylon",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -529,8 +1524,35 @@
         "Ezek",
         "Eze"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [
+        "ezekiels_visions",
+        "valley_of_dry_bones",
+        "vision_of_the_new_temple"
+      ],
+      "key_people": [
+        "ezekiel"
+      ],
+      "key_places": [
+        "babylon",
+        "jerusalem"
+      ],
+      "related_books": [
+        "jeremiah",
+        "daniel",
+        "revelation"
+      ],
+      "messianic_references": [],
+      "prophecy_links": [],
+      "keywords": [
+        "visions",
+        "glory",
+        "restoration"
+      ],
+      "themes": [
+        "glory",
+        "judgment",
+        "restoration"
+      ],
       "pronunciation": null
     },
     "daniel": {
@@ -540,6 +1562,14 @@
       "testament": "old_testament",
       "category": "major_prophets",
       "english_name": "Daniel",
+      "author": "daniel",
+      "attribution": "stated",
+      "authorship_note": null,
+      "date_written": "c. 530 BC",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Babylonian Exile",
+      "audience": "Exiles",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -549,8 +1579,39 @@
         "Dl",
         "Dnl"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [
+        "daniel_in_babylon",
+        "the_fiery_furnace",
+        "den_of_lions",
+        "apocalyptic_visions"
+      ],
+      "key_people": [
+        "daniel",
+        "nebuchadnezzar",
+        "darius"
+      ],
+      "key_places": [
+        "babylon"
+      ],
+      "related_books": [
+        "ezekiel",
+        "revelation"
+      ],
+      "messianic_references": [
+        "Daniel 7:13-14",
+        "Daniel 9:24-27"
+      ],
+      "prophecy_links": [],
+      "keywords": [
+        "visions",
+        "kingdom",
+        "faithfulness"
+      ],
+      "themes": [
+        "sovereignty",
+        "faithfulness",
+        "prophecy"
+      ],
       "pronunciation": null
     },
     "hosea": {
@@ -560,6 +1621,14 @@
       "testament": "old_testament",
       "category": "minor_prophets",
       "english_name": "Hosea",
+      "author": "hosea",
+      "attribution": "stated",
+      "authorship_note": null,
+      "date_written": "c. 750-722 BC",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Divided Monarchy (Israel)",
+      "audience": "Israel",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -567,8 +1636,32 @@
         "Hos",
         "Ho"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [
+        "hoseas_marriage"
+      ],
+      "key_people": [
+        "hosea",
+        "gomer"
+      ],
+      "key_places": [
+        "israel"
+      ],
+      "related_books": [
+        "amos",
+        "romans"
+      ],
+      "messianic_references": [],
+      "prophecy_links": [],
+      "keywords": [
+        "love",
+        "unfaithfulness",
+        "mercy"
+      ],
+      "themes": [
+        "covenant_love",
+        "unfaithfulness",
+        "mercy"
+      ],
       "pronunciation": null
     },
     "joel": {
@@ -578,6 +1671,14 @@
       "testament": "old_testament",
       "category": "minor_prophets",
       "english_name": "Joel",
+      "author": "joel",
+      "attribution": "stated",
+      "authorship_note": null,
+      "date_written": "c. 835-800 BC",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Judah",
+      "audience": "Judah",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -586,8 +1687,34 @@
         "Jl",
         "Joe"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [
+        "locust_plague",
+        "day_of_the_lord",
+        "outpouring_of_the_spirit"
+      ],
+      "key_people": [
+        "joel"
+      ],
+      "key_places": [
+        "judah"
+      ],
+      "related_books": [
+        "acts"
+      ],
+      "messianic_references": [
+        "Joel 2:28-32"
+      ],
+      "prophecy_links": [],
+      "keywords": [
+        "locusts",
+        "spirit",
+        "day_of_the_lord"
+      ],
+      "themes": [
+        "day_of_the_lord",
+        "repentance",
+        "restoration"
+      ],
       "pronunciation": null
     },
     "amos": {
@@ -597,6 +1724,14 @@
       "testament": "old_testament",
       "category": "minor_prophets",
       "english_name": "Amos",
+      "author": "amos",
+      "attribution": "stated",
+      "authorship_note": null,
+      "date_written": "c. 760-750 BC",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Divided Monarchy (Israel)",
+      "audience": "Israel",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -604,8 +1739,31 @@
         "Amo",
         "Am"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [
+        "oracles_against_the_nations"
+      ],
+      "key_people": [
+        "amos"
+      ],
+      "key_places": [
+        "bethel",
+        "israel"
+      ],
+      "related_books": [
+        "hosea"
+      ],
+      "messianic_references": [],
+      "prophecy_links": [],
+      "keywords": [
+        "justice",
+        "judgment",
+        "righteousness"
+      ],
+      "themes": [
+        "justice",
+        "judgment",
+        "righteousness"
+      ],
       "pronunciation": null
     },
     "obadiah": {
@@ -615,6 +1773,14 @@
       "testament": "old_testament",
       "category": "minor_prophets",
       "english_name": "Obadiah",
+      "author": "obadiah",
+      "attribution": "stated",
+      "authorship_note": null,
+      "date_written": "c. 586 BC",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "After fall of Jerusalem",
+      "audience": "Edom/Judah",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -625,8 +1791,30 @@
         "Odbh",
         "Obad"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [
+        "judgment_on_edom"
+      ],
+      "key_people": [
+        "obadiah"
+      ],
+      "key_places": [
+        "edom"
+      ],
+      "related_books": [
+        "jeremiah"
+      ],
+      "messianic_references": [],
+      "prophecy_links": [],
+      "keywords": [
+        "edom",
+        "pride",
+        "judgment"
+      ],
+      "themes": [
+        "judgment",
+        "pride",
+        "restoration"
+      ],
       "pronunciation": null
     },
     "jonah": {
@@ -636,6 +1824,14 @@
       "testament": "old_testament",
       "category": "minor_prophets",
       "english_name": "Jonah",
+      "author": "jonah",
+      "attribution": "traditional",
+      "authorship_note": null,
+      "date_written": "c. 760 BC",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Divided Monarchy",
+      "audience": "Israel",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -644,8 +1840,37 @@
         "Jh",
         "Jnh"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [
+        "jonah_flees",
+        "the_great_fish",
+        "nineveh_repents"
+      ],
+      "key_people": [
+        "jonah"
+      ],
+      "key_places": [
+        "nineveh",
+        "tarshish",
+        "joppa"
+      ],
+      "related_books": [
+        "nahum",
+        "matthew"
+      ],
+      "messianic_references": [
+        "Jonah 1:17"
+      ],
+      "prophecy_links": [],
+      "keywords": [
+        "nineveh",
+        "fish",
+        "mercy"
+      ],
+      "themes": [
+        "mercy",
+        "repentance",
+        "mission"
+      ],
       "pronunciation": null
     },
     "micah": {
@@ -655,6 +1880,14 @@
       "testament": "old_testament",
       "category": "minor_prophets",
       "english_name": "Micah",
+      "author": "micah",
+      "attribution": "stated",
+      "authorship_note": null,
+      "date_written": "c. 735-700 BC",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Divided Monarchy",
+      "audience": "Israel & Judah",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -662,8 +1895,35 @@
         "Mic",
         "Mi"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [
+        "oracles_of_judgment_and_hope"
+      ],
+      "key_people": [
+        "micah"
+      ],
+      "key_places": [
+        "jerusalem",
+        "samaria",
+        "bethlehem"
+      ],
+      "related_books": [
+        "isaiah",
+        "matthew"
+      ],
+      "messianic_references": [
+        "Micah 5:2"
+      ],
+      "prophecy_links": [],
+      "keywords": [
+        "justice",
+        "bethlehem",
+        "mercy"
+      ],
+      "themes": [
+        "justice",
+        "judgment",
+        "messiah"
+      ],
       "pronunciation": null
     },
     "nahum": {
@@ -673,6 +1933,14 @@
       "testament": "old_testament",
       "category": "minor_prophets",
       "english_name": "Nahum",
+      "author": "nahum",
+      "attribution": "stated",
+      "authorship_note": null,
+      "date_written": "c. 660-630 BC",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Assyrian period",
+      "audience": "Judah/Nineveh",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -681,8 +1949,28 @@
         "Na",
         "Nah"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [
+        "judgment_on_nineveh"
+      ],
+      "key_people": [
+        "nahum"
+      ],
+      "key_places": [
+        "nineveh"
+      ],
+      "related_books": [
+        "jonah"
+      ],
+      "messianic_references": [],
+      "prophecy_links": [],
+      "keywords": [
+        "nineveh",
+        "judgment"
+      ],
+      "themes": [
+        "judgment",
+        "justice"
+      ],
       "pronunciation": null
     },
     "habakkuk": {
@@ -692,6 +1980,14 @@
       "testament": "old_testament",
       "category": "minor_prophets",
       "english_name": "Habakkuk",
+      "author": "habakkuk",
+      "attribution": "stated",
+      "authorship_note": null,
+      "date_written": "c. 610-605 BC",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Before Babylonian invasion",
+      "audience": "Judah",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -701,8 +1997,34 @@
         "Hk",
         "Habk"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [
+        "habakkuks_dialogue_with_god"
+      ],
+      "key_people": [
+        "habakkuk"
+      ],
+      "key_places": [
+        "judah"
+      ],
+      "related_books": [
+        "romans",
+        "galatians",
+        "hebrews"
+      ],
+      "messianic_references": [
+        "Habakkuk 2:4"
+      ],
+      "prophecy_links": [],
+      "keywords": [
+        "faith",
+        "why",
+        "justice"
+      ],
+      "themes": [
+        "faith",
+        "justice",
+        "sovereignty"
+      ],
       "pronunciation": null
     },
     "zephaniah": {
@@ -712,6 +2034,14 @@
       "testament": "old_testament",
       "category": "minor_prophets",
       "english_name": "Zephaniah",
+      "author": "zephaniah",
+      "attribution": "stated",
+      "authorship_note": null,
+      "date_written": "c. 640-621 BC",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Reign of Josiah",
+      "audience": "Judah",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -721,8 +2051,32 @@
         "Zeph",
         "Ze"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [
+        "the_day_of_the_lord"
+      ],
+      "key_people": [
+        "zephaniah",
+        "josiah"
+      ],
+      "key_places": [
+        "judah",
+        "jerusalem"
+      ],
+      "related_books": [
+        "joel"
+      ],
+      "messianic_references": [],
+      "prophecy_links": [],
+      "keywords": [
+        "day_of_the_lord",
+        "judgment",
+        "remnant"
+      ],
+      "themes": [
+        "day_of_the_lord",
+        "judgment",
+        "remnant"
+      ],
       "pronunciation": null
     },
     "haggai": {
@@ -732,6 +2086,14 @@
       "testament": "old_testament",
       "category": "minor_prophets",
       "english_name": "Haggai",
+      "author": "haggai",
+      "attribution": "stated",
+      "authorship_note": null,
+      "date_written": "c. 520 BC",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Return from Exile",
+      "audience": "Post-exilic Judah",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -741,8 +2103,34 @@
         "Ha",
         "Hagg"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [
+        "call_to_rebuild_the_temple"
+      ],
+      "key_people": [
+        "haggai",
+        "zerubbabel",
+        "joshua-the-priest"
+      ],
+      "key_places": [
+        "jerusalem",
+        "temple"
+      ],
+      "related_books": [
+        "ezra",
+        "zechariah"
+      ],
+      "messianic_references": [],
+      "prophecy_links": [],
+      "keywords": [
+        "temple",
+        "rebuild",
+        "priorities"
+      ],
+      "themes": [
+        "priorities",
+        "worship",
+        "restoration"
+      ],
       "pronunciation": null
     },
     "zechariah": {
@@ -752,6 +2140,14 @@
       "testament": "old_testament",
       "category": "minor_prophets",
       "english_name": "Zechariah",
+      "author": "zechariah",
+      "attribution": "stated",
+      "authorship_note": null,
+      "date_written": "c. 520-480 BC",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Return from Exile",
+      "audience": "Post-exilic Judah",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -760,8 +2156,36 @@
         "Zc",
         "Zech"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [
+        "visions_of_zechariah",
+        "prophecies_of_the_messiah"
+      ],
+      "key_people": [
+        "zechariah",
+        "zerubbabel"
+      ],
+      "key_places": [
+        "jerusalem"
+      ],
+      "related_books": [
+        "haggai",
+        "matthew"
+      ],
+      "messianic_references": [
+        "Zechariah 9:9",
+        "Zechariah 12:10"
+      ],
+      "prophecy_links": [],
+      "keywords": [
+        "visions",
+        "branch",
+        "king"
+      ],
+      "themes": [
+        "restoration",
+        "messiah",
+        "hope"
+      ],
       "pronunciation": null
     },
     "malachi": {
@@ -771,6 +2195,14 @@
       "testament": "old_testament",
       "category": "minor_prophets",
       "english_name": "Malachi",
+      "author": "malachi",
+      "attribution": "stated",
+      "authorship_note": null,
+      "date_written": "c. 430 BC",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Post-exilic",
+      "audience": "Post-exilic Judah",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -779,8 +2211,34 @@
         "Ml",
         "Mlc"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [
+        "call_to_faithfulness"
+      ],
+      "key_people": [
+        "malachi"
+      ],
+      "key_places": [
+        "jerusalem"
+      ],
+      "related_books": [
+        "nehemiah",
+        "matthew"
+      ],
+      "messianic_references": [
+        "Malachi 3:1",
+        "Malachi 4:5-6"
+      ],
+      "prophecy_links": [],
+      "keywords": [
+        "tithes",
+        "messenger",
+        "covenant"
+      ],
+      "themes": [
+        "covenant",
+        "faithfulness",
+        "the_coming_messenger"
+      ],
       "pronunciation": null
     },
     "matthew": {
@@ -790,6 +2248,14 @@
       "testament": "new_testament",
       "category": "gospels",
       "english_name": "Matthew",
+      "author": "matthew",
+      "attribution": "traditional",
+      "authorship_note": null,
+      "date_written": "c. AD 50-70",
+      "date_basis": "estimated",
+      "date_note": null,
+      "historical_period": "1st century (Roman Judea)",
+      "audience": "Jewish Christians",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -798,8 +2264,45 @@
         "Mt",
         "Matt"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [
+        "birth_of_jesus",
+        "sermon_on_the_mount",
+        "crucifixion",
+        "resurrection",
+        "great_commission"
+      ],
+      "key_people": [
+        "jesus",
+        "john-the-baptist",
+        "peter",
+        "herod"
+      ],
+      "key_places": [
+        "bethlehem",
+        "galilee",
+        "jerusalem"
+      ],
+      "related_books": [
+        "mark",
+        "luke",
+        "john",
+        "isaiah"
+      ],
+      "messianic_references": [
+        "Matthew 1:22-23",
+        "Matthew 2:5-6"
+      ],
+      "prophecy_links": [],
+      "keywords": [
+        "kingdom",
+        "messiah",
+        "fulfillment"
+      ],
+      "themes": [
+        "kingdom_of_heaven",
+        "fulfillment",
+        "discipleship"
+      ],
       "pronunciation": null
     },
     "mark": {
@@ -809,6 +2312,14 @@
       "testament": "new_testament",
       "category": "gospels",
       "english_name": "Mark",
+      "author": "mark",
+      "attribution": "traditional",
+      "authorship_note": null,
+      "date_written": "c. AD 50-65",
+      "date_basis": "estimated",
+      "date_note": null,
+      "historical_period": "1st century",
+      "audience": "Roman Christians",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -817,8 +2328,37 @@
         "Mk",
         "Mar"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [
+        "ministry_of_jesus",
+        "crucifixion",
+        "resurrection"
+      ],
+      "key_people": [
+        "jesus",
+        "peter",
+        "john-the-baptist"
+      ],
+      "key_places": [
+        "galilee",
+        "jerusalem"
+      ],
+      "related_books": [
+        "matthew",
+        "luke",
+        "john"
+      ],
+      "messianic_references": [],
+      "prophecy_links": [],
+      "keywords": [
+        "servant",
+        "immediately",
+        "gospel"
+      ],
+      "themes": [
+        "servanthood",
+        "action",
+        "discipleship"
+      ],
       "pronunciation": null
     },
     "luke": {
@@ -828,6 +2368,14 @@
       "testament": "new_testament",
       "category": "gospels",
       "english_name": "Luke",
+      "author": "luke",
+      "attribution": "traditional",
+      "authorship_note": null,
+      "date_written": "c. AD 60-62",
+      "date_basis": "estimated",
+      "date_note": null,
+      "historical_period": "1st century",
+      "audience": "Gentile Christians (Theophilus)",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -836,8 +2384,40 @@
         "Lk",
         "Lu"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [
+        "birth_of_jesus",
+        "ministry_of_jesus",
+        "crucifixion",
+        "resurrection"
+      ],
+      "key_people": [
+        "jesus",
+        "mary",
+        "john-the-baptist",
+        "theophilus"
+      ],
+      "key_places": [
+        "bethlehem",
+        "nazareth",
+        "jerusalem"
+      ],
+      "related_books": [
+        "acts",
+        "matthew",
+        "mark"
+      ],
+      "messianic_references": [],
+      "prophecy_links": [],
+      "keywords": [
+        "savior",
+        "compassion",
+        "son_of_man"
+      ],
+      "themes": [
+        "compassion",
+        "salvation_for_all",
+        "prayer"
+      ],
       "pronunciation": null
     },
     "john": {
@@ -847,6 +2427,14 @@
       "testament": "new_testament",
       "category": "gospels",
       "english_name": "John",
+      "author": "john",
+      "attribution": "traditional",
+      "authorship_note": null,
+      "date_written": "c. AD 85-95",
+      "date_basis": "estimated",
+      "date_note": null,
+      "historical_period": "1st century",
+      "audience": "All believers",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -856,8 +2444,43 @@
         "Joh",
         "Jo"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [
+        "the_word_made_flesh",
+        "seven_signs",
+        "crucifixion",
+        "resurrection"
+      ],
+      "key_people": [
+        "jesus",
+        "john-the-baptist",
+        "lazarus",
+        "peter"
+      ],
+      "key_places": [
+        "galilee",
+        "jerusalem",
+        "bethany"
+      ],
+      "related_books": [
+        "1-john",
+        "revelation"
+      ],
+      "messianic_references": [
+        "John 1:1-14"
+      ],
+      "prophecy_links": [],
+      "keywords": [
+        "believe",
+        "life",
+        "light",
+        "word"
+      ],
+      "themes": [
+        "belief",
+        "eternal_life",
+        "light",
+        "love"
+      ],
       "pronunciation": null
     },
     "acts": {
@@ -867,6 +2490,14 @@
       "testament": "new_testament",
       "category": "acts",
       "english_name": "Acts",
+      "author": "luke",
+      "attribution": "traditional",
+      "authorship_note": null,
+      "date_written": "c. AD 62-64",
+      "date_basis": "estimated",
+      "date_note": null,
+      "historical_period": "Early church",
+      "audience": "Gentile Christians (Theophilus)",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -874,8 +2505,41 @@
         "Act",
         "Ac"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [
+        "ascension",
+        "pentecost",
+        "conversion_of_paul",
+        "missionary_journeys",
+        "jerusalem_council"
+      ],
+      "key_people": [
+        "peter",
+        "paul",
+        "stephen",
+        "barnabas"
+      ],
+      "key_places": [
+        "jerusalem",
+        "antioch",
+        "rome"
+      ],
+      "related_books": [
+        "luke",
+        "romans"
+      ],
+      "messianic_references": [],
+      "prophecy_links": [],
+      "keywords": [
+        "spirit",
+        "church",
+        "mission",
+        "witness"
+      ],
+      "themes": [
+        "holy_spirit",
+        "mission",
+        "church_growth"
+      ],
       "pronunciation": null
     },
     "romans": {
@@ -885,6 +2549,14 @@
       "testament": "new_testament",
       "category": "pauline_epistles",
       "english_name": "Romans",
+      "author": "paul",
+      "attribution": "stated",
+      "authorship_note": null,
+      "date_written": "c. AD 57",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Early church",
+      "audience": "Christians in Rome",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -894,8 +2566,33 @@
         "Rmn",
         "Rmns"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [],
+      "key_people": [
+        "paul"
+      ],
+      "key_places": [
+        "rome",
+        "corinth"
+      ],
+      "related_books": [
+        "galatians",
+        "genesis",
+        "habakkuk"
+      ],
+      "messianic_references": [],
+      "prophecy_links": [],
+      "keywords": [
+        "justification",
+        "faith",
+        "grace",
+        "righteousness"
+      ],
+      "themes": [
+        "justification",
+        "faith",
+        "grace",
+        "righteousness"
+      ],
       "pronunciation": null
     },
     "1-corinthians": {
@@ -905,6 +2602,14 @@
       "testament": "new_testament",
       "category": "pauline_epistles",
       "english_name": "1 Corinthians",
+      "author": "paul",
+      "attribution": "stated",
+      "authorship_note": null,
+      "date_written": "c. AD 55",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Early church",
+      "audience": "Church in Corinth",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -919,8 +2624,31 @@
         "I Cor",
         "I Co"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [],
+      "key_people": [
+        "paul"
+      ],
+      "key_places": [
+        "corinth",
+        "ephesus"
+      ],
+      "related_books": [
+        "2-corinthians"
+      ],
+      "messianic_references": [],
+      "prophecy_links": [],
+      "keywords": [
+        "love",
+        "unity",
+        "gifts",
+        "resurrection"
+      ],
+      "themes": [
+        "unity",
+        "love",
+        "resurrection",
+        "spiritual_gifts"
+      ],
       "pronunciation": null
     },
     "2-corinthians": {
@@ -930,6 +2658,14 @@
       "testament": "new_testament",
       "category": "pauline_epistles",
       "english_name": "2 Corinthians",
+      "author": "paul",
+      "attribution": "stated",
+      "authorship_note": null,
+      "date_written": "c. AD 56",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Early church",
+      "audience": "Church in Corinth",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -944,8 +2680,30 @@
         "II Cor",
         "II Co"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [],
+      "key_people": [
+        "paul"
+      ],
+      "key_places": [
+        "corinth",
+        "macedonia"
+      ],
+      "related_books": [
+        "1-corinthians"
+      ],
+      "messianic_references": [],
+      "prophecy_links": [],
+      "keywords": [
+        "comfort",
+        "reconciliation",
+        "ministry"
+      ],
+      "themes": [
+        "comfort",
+        "reconciliation",
+        "ministry",
+        "generosity"
+      ],
       "pronunciation": null
     },
     "galatians": {
@@ -955,6 +2713,14 @@
       "testament": "new_testament",
       "category": "pauline_epistles",
       "english_name": "Galatians",
+      "author": "paul",
+      "attribution": "stated",
+      "authorship_note": null,
+      "date_written": "c. AD 49",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Early church",
+      "audience": "Churches in Galatia",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -963,8 +2729,31 @@
         "Ga",
         "Gltns"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [],
+      "key_people": [
+        "paul"
+      ],
+      "key_places": [
+        "galatia"
+      ],
+      "related_books": [
+        "romans",
+        "acts"
+      ],
+      "messianic_references": [],
+      "prophecy_links": [],
+      "keywords": [
+        "freedom",
+        "grace",
+        "faith",
+        "law"
+      ],
+      "themes": [
+        "grace",
+        "freedom",
+        "faith",
+        "law"
+      ],
       "pronunciation": null
     },
     "ephesians": {
@@ -974,6 +2763,14 @@
       "testament": "new_testament",
       "category": "pauline_epistles",
       "english_name": "Ephesians",
+      "author": "paul",
+      "attribution": "stated",
+      "authorship_note": null,
+      "date_written": "c. AD 60-62",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Paul's imprisonment",
+      "audience": "Church in Ephesus",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -982,8 +2779,30 @@
         "Ep",
         "Ephn"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [],
+      "key_people": [
+        "paul"
+      ],
+      "key_places": [
+        "ephesus"
+      ],
+      "related_books": [
+        "colossians"
+      ],
+      "messianic_references": [],
+      "prophecy_links": [],
+      "keywords": [
+        "church",
+        "grace",
+        "unity",
+        "armor"
+      ],
+      "themes": [
+        "unity",
+        "grace",
+        "the_church",
+        "spiritual_warfare"
+      ],
       "pronunciation": null
     },
     "philippians": {
@@ -993,6 +2812,14 @@
       "testament": "new_testament",
       "category": "pauline_epistles",
       "english_name": "Philippians",
+      "author": "paul",
+      "attribution": "stated",
+      "authorship_note": null,
+      "date_written": "c. AD 61",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Paul's imprisonment",
+      "audience": "Church in Philippi",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -1002,8 +2829,30 @@
         "Phi",
         "Phil"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [],
+      "key_people": [
+        "paul",
+        "timothy"
+      ],
+      "key_places": [
+        "philippi",
+        "rome"
+      ],
+      "related_books": [
+        "acts"
+      ],
+      "messianic_references": [],
+      "prophecy_links": [],
+      "keywords": [
+        "joy",
+        "humility",
+        "contentment"
+      ],
+      "themes": [
+        "joy",
+        "humility",
+        "contentment"
+      ],
       "pronunciation": null
     },
     "colossians": {
@@ -1013,6 +2862,14 @@
       "testament": "new_testament",
       "category": "pauline_epistles",
       "english_name": "Colossians",
+      "author": "paul",
+      "attribution": "stated",
+      "authorship_note": null,
+      "date_written": "c. AD 60-62",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Paul's imprisonment",
+      "audience": "Church in Colossae",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -1023,8 +2880,29 @@
         "Cln",
         "Clns"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [],
+      "key_people": [
+        "paul"
+      ],
+      "key_places": [
+        "colossae"
+      ],
+      "related_books": [
+        "ephesians",
+        "philemon"
+      ],
+      "messianic_references": [],
+      "prophecy_links": [],
+      "keywords": [
+        "christ",
+        "supremacy",
+        "fullness"
+      ],
+      "themes": [
+        "supremacy_of_christ",
+        "fullness",
+        "new_life"
+      ],
       "pronunciation": null
     },
     "1-thessalonians": {
@@ -1034,6 +2912,14 @@
       "testament": "new_testament",
       "category": "pauline_epistles",
       "english_name": "1 Thessalonians",
+      "author": "paul",
+      "attribution": "stated",
+      "authorship_note": null,
+      "date_written": "c. AD 51",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Early church",
+      "audience": "Church in Thessalonica",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -1053,8 +2939,30 @@
         "I The",
         "I Th"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [],
+      "key_people": [
+        "paul",
+        "silas",
+        "timothy"
+      ],
+      "key_places": [
+        "thessalonica"
+      ],
+      "related_books": [
+        "2-thessalonians"
+      ],
+      "messianic_references": [],
+      "prophecy_links": [],
+      "keywords": [
+        "coming",
+        "hope",
+        "encouragement"
+      ],
+      "themes": [
+        "second_coming",
+        "hope",
+        "holiness"
+      ],
       "pronunciation": null
     },
     "2-thessalonians": {
@@ -1064,6 +2972,14 @@
       "testament": "new_testament",
       "category": "pauline_epistles",
       "english_name": "2 Thessalonians",
+      "author": "paul",
+      "attribution": "stated",
+      "authorship_note": null,
+      "date_written": "c. AD 51-52",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Early church",
+      "audience": "Church in Thessalonica",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -1083,8 +2999,28 @@
         "II The",
         "II Th"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [],
+      "key_people": [
+        "paul"
+      ],
+      "key_places": [
+        "thessalonica"
+      ],
+      "related_books": [
+        "1-thessalonians"
+      ],
+      "messianic_references": [],
+      "prophecy_links": [],
+      "keywords": [
+        "coming",
+        "perseverance",
+        "day_of_the_lord"
+      ],
+      "themes": [
+        "second_coming",
+        "perseverance",
+        "work"
+      ],
       "pronunciation": null
     },
     "1-timothy": {
@@ -1094,6 +3030,14 @@
       "testament": "new_testament",
       "category": "pauline_epistles",
       "english_name": "1 Timothy",
+      "author": "paul",
+      "attribution": "stated",
+      "authorship_note": null,
+      "date_written": "c. AD 62-64",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Early church",
+      "audience": "Timothy (Ephesus)",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -1108,8 +3052,30 @@
         "I Tim",
         "I Ti"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [],
+      "key_people": [
+        "paul",
+        "timothy"
+      ],
+      "key_places": [
+        "ephesus"
+      ],
+      "related_books": [
+        "2-timothy",
+        "titus"
+      ],
+      "messianic_references": [],
+      "prophecy_links": [],
+      "keywords": [
+        "leadership",
+        "doctrine",
+        "godliness"
+      ],
+      "themes": [
+        "church_leadership",
+        "sound_doctrine",
+        "godliness"
+      ],
       "pronunciation": null
     },
     "2-timothy": {
@@ -1119,6 +3085,14 @@
       "testament": "new_testament",
       "category": "pauline_epistles",
       "english_name": "2 Timothy",
+      "author": "paul",
+      "attribution": "stated",
+      "authorship_note": null,
+      "date_written": "c. AD 64-67",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Paul's final imprisonment",
+      "audience": "Timothy",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -1133,8 +3107,30 @@
         "II Tim",
         "II Ti"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [],
+      "key_people": [
+        "paul",
+        "timothy"
+      ],
+      "key_places": [
+        "rome"
+      ],
+      "related_books": [
+        "1-timothy",
+        "titus"
+      ],
+      "messianic_references": [],
+      "prophecy_links": [],
+      "keywords": [
+        "endure",
+        "scripture",
+        "fight"
+      ],
+      "themes": [
+        "perseverance",
+        "scripture",
+        "faithfulness"
+      ],
       "pronunciation": null
     },
     "titus": {
@@ -1144,6 +3140,14 @@
       "testament": "new_testament",
       "category": "pauline_epistles",
       "english_name": "Titus",
+      "author": "paul",
+      "attribution": "stated",
+      "authorship_note": null,
+      "date_written": "c. AD 63",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Early church",
+      "audience": "Titus (Crete)",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -1153,8 +3157,29 @@
         "Tt",
         "Ts"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [],
+      "key_people": [
+        "paul",
+        "titus"
+      ],
+      "key_places": [
+        "crete"
+      ],
+      "related_books": [
+        "1-timothy"
+      ],
+      "messianic_references": [],
+      "prophecy_links": [],
+      "keywords": [
+        "good_works",
+        "doctrine",
+        "elders"
+      ],
+      "themes": [
+        "good_works",
+        "sound_doctrine",
+        "leadership"
+      ],
       "pronunciation": null
     },
     "philemon": {
@@ -1164,6 +3189,14 @@
       "testament": "new_testament",
       "category": "pauline_epistles",
       "english_name": "Philemon",
+      "author": "paul",
+      "attribution": "stated",
+      "authorship_note": null,
+      "date_written": "c. AD 60-62",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Paul's imprisonment",
+      "audience": "Philemon",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -1174,8 +3207,30 @@
         "Philm",
         "Phlm"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [],
+      "key_people": [
+        "paul",
+        "philemon",
+        "onesimus"
+      ],
+      "key_places": [
+        "colossae"
+      ],
+      "related_books": [
+        "colossians"
+      ],
+      "messianic_references": [],
+      "prophecy_links": [],
+      "keywords": [
+        "forgiveness",
+        "reconciliation",
+        "slave"
+      ],
+      "themes": [
+        "forgiveness",
+        "reconciliation",
+        "brotherhood"
+      ],
       "pronunciation": null
     },
     "hebrews": {
@@ -1185,6 +3240,14 @@
       "testament": "new_testament",
       "category": "general_epistles",
       "english_name": "Hebrews",
+      "author": null,
+      "attribution": "anonymous",
+      "authorship_note": "Authorship unknown; not stated in the text.",
+      "date_written": "c. AD 60-70",
+      "date_basis": "estimated",
+      "date_note": null,
+      "historical_period": "Early church",
+      "audience": "Jewish Christians",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -1193,8 +3256,32 @@
         "He",
         "Hw"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [],
+      "key_people": [
+        "jesus",
+        "melchizedek"
+      ],
+      "key_places": [],
+      "related_books": [
+        "leviticus",
+        "psalm"
+      ],
+      "messianic_references": [
+        "Hebrews 1:1-3"
+      ],
+      "prophecy_links": [],
+      "keywords": [
+        "priest",
+        "faith",
+        "covenant",
+        "better"
+      ],
+      "themes": [
+        "superiority_of_christ",
+        "faith",
+        "new_covenant",
+        "priesthood"
+      ],
       "pronunciation": null
     },
     "james": {
@@ -1204,6 +3291,14 @@
       "testament": "new_testament",
       "category": "general_epistles",
       "english_name": "James",
+      "author": "james",
+      "attribution": "stated",
+      "authorship_note": null,
+      "date_written": "c. AD 45-50",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Early church",
+      "audience": "Jewish Christians (dispersion)",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -1213,8 +3308,27 @@
         "Jam",
         "Ja"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [],
+      "key_people": [
+        "james"
+      ],
+      "key_places": [],
+      "related_books": [
+        "proverbs"
+      ],
+      "messianic_references": [],
+      "prophecy_links": [],
+      "keywords": [
+        "works",
+        "wisdom",
+        "tongue",
+        "trials"
+      ],
+      "themes": [
+        "faith_and_works",
+        "wisdom",
+        "the_tongue"
+      ],
       "pronunciation": null
     },
     "1-peter": {
@@ -1224,6 +3338,14 @@
       "testament": "new_testament",
       "category": "general_epistles",
       "english_name": "1 Peter",
+      "author": "peter",
+      "attribution": "stated",
+      "authorship_note": null,
+      "date_written": "c. AD 62-64",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Early church",
+      "audience": "Persecuted Christians (Asia Minor)",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -1237,8 +3359,26 @@
         "I Pet",
         "I Pe"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [],
+      "key_people": [
+        "peter"
+      ],
+      "key_places": [],
+      "related_books": [
+        "2-peter"
+      ],
+      "messianic_references": [],
+      "prophecy_links": [],
+      "keywords": [
+        "suffering",
+        "hope",
+        "living_stone"
+      ],
+      "themes": [
+        "suffering",
+        "hope",
+        "holiness"
+      ],
       "pronunciation": null
     },
     "2-peter": {
@@ -1248,6 +3388,14 @@
       "testament": "new_testament",
       "category": "general_epistles",
       "english_name": "2 Peter",
+      "author": "peter",
+      "attribution": "stated",
+      "authorship_note": null,
+      "date_written": "c. AD 64-68",
+      "date_basis": "traditional",
+      "date_note": null,
+      "historical_period": "Early church",
+      "audience": "Christians",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -1261,8 +3409,27 @@
         "II Pet",
         "II Pe"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [],
+      "key_people": [
+        "peter"
+      ],
+      "key_places": [],
+      "related_books": [
+        "1-peter",
+        "jude"
+      ],
+      "messianic_references": [],
+      "prophecy_links": [],
+      "keywords": [
+        "knowledge",
+        "false_teachers",
+        "coming"
+      ],
+      "themes": [
+        "growth",
+        "false_teachers",
+        "the_day_of_the_lord"
+      ],
       "pronunciation": null
     },
     "1-john": {
@@ -1272,6 +3439,14 @@
       "testament": "new_testament",
       "category": "general_epistles",
       "english_name": "1 John",
+      "author": "john",
+      "attribution": "traditional",
+      "authorship_note": null,
+      "date_written": "c. AD 85-95",
+      "date_basis": "estimated",
+      "date_note": null,
+      "historical_period": "Early church",
+      "audience": "Christians",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -1286,8 +3461,28 @@
         "I Jn",
         "1John"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [],
+      "key_people": [
+        "john"
+      ],
+      "key_places": [],
+      "related_books": [
+        "john"
+      ],
+      "messianic_references": [],
+      "prophecy_links": [],
+      "keywords": [
+        "love",
+        "light",
+        "assurance",
+        "abide"
+      ],
+      "themes": [
+        "love",
+        "fellowship",
+        "assurance",
+        "truth"
+      ],
       "pronunciation": null
     },
     "2-john": {
@@ -1297,6 +3492,14 @@
       "testament": "new_testament",
       "category": "general_epistles",
       "english_name": "2 John",
+      "author": "john",
+      "attribution": "traditional",
+      "authorship_note": null,
+      "date_written": "c. AD 85-95",
+      "date_basis": "estimated",
+      "date_note": null,
+      "historical_period": "Early church",
+      "audience": "The elect lady (a church)",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -1311,8 +3514,26 @@
         "II Jn",
         "2John"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [],
+      "key_people": [
+        "john"
+      ],
+      "key_places": [],
+      "related_books": [
+        "1-john"
+      ],
+      "messianic_references": [],
+      "prophecy_links": [],
+      "keywords": [
+        "truth",
+        "love",
+        "walk"
+      ],
+      "themes": [
+        "truth",
+        "love",
+        "hospitality"
+      ],
       "pronunciation": null
     },
     "3-john": {
@@ -1322,6 +3543,14 @@
       "testament": "new_testament",
       "category": "general_epistles",
       "english_name": "3 John",
+      "author": "john",
+      "attribution": "traditional",
+      "authorship_note": null,
+      "date_written": "c. AD 85-95",
+      "date_basis": "estimated",
+      "date_note": null,
+      "historical_period": "Early church",
+      "audience": "Gaius",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -1336,8 +3565,28 @@
         "III Jn",
         "3John"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [],
+      "key_people": [
+        "john",
+        "gaius",
+        "diotrephes"
+      ],
+      "key_places": [],
+      "related_books": [
+        "2-john"
+      ],
+      "messianic_references": [],
+      "prophecy_links": [],
+      "keywords": [
+        "hospitality",
+        "truth",
+        "support"
+      ],
+      "themes": [
+        "hospitality",
+        "truth",
+        "faithfulness"
+      ],
       "pronunciation": null
     },
     "jude": {
@@ -1347,6 +3596,14 @@
       "testament": "new_testament",
       "category": "general_epistles",
       "english_name": "Jude",
+      "author": "jude",
+      "attribution": "stated",
+      "authorship_note": null,
+      "date_written": "c. AD 65-80",
+      "date_basis": "estimated",
+      "date_note": null,
+      "historical_period": "Early church",
+      "audience": "Christians",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -1354,8 +3611,26 @@
         "Jud",
         "Jd"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [],
+      "key_people": [
+        "jude"
+      ],
+      "key_places": [],
+      "related_books": [
+        "2-peter"
+      ],
+      "messianic_references": [],
+      "prophecy_links": [],
+      "keywords": [
+        "contend",
+        "faith",
+        "false_teachers"
+      ],
+      "themes": [
+        "contending_for_the_faith",
+        "false_teachers",
+        "perseverance"
+      ],
       "pronunciation": null
     },
     "revelation": {
@@ -1365,6 +3640,14 @@
       "testament": "new_testament",
       "category": "apocalyptic",
       "english_name": "Revelation",
+      "author": "john",
+      "attribution": "traditional",
+      "authorship_note": null,
+      "date_written": "c. AD 95",
+      "date_basis": "estimated",
+      "date_note": null,
+      "historical_period": "Late 1st century (Roman persecution)",
+      "audience": "Seven churches of Asia",
       "localized_name": null,
       "localized_short_name": null,
       "aliases": [
@@ -1373,8 +3656,43 @@
         "Re",
         "Rvltn"
       ],
-      "keywords": [],
-      "themes": [],
+      "major_events": [
+        "visions_of_john",
+        "the_seven_seals",
+        "fall_of_babylon",
+        "return_of_christ",
+        "new_heaven_and_new_earth"
+      ],
+      "key_people": [
+        "john",
+        "jesus"
+      ],
+      "key_places": [
+        "patmos",
+        "new-jerusalem"
+      ],
+      "related_books": [
+        "daniel",
+        "ezekiel",
+        "genesis"
+      ],
+      "messianic_references": [
+        "Revelation 1:7",
+        "Revelation 22:16"
+      ],
+      "prophecy_links": [],
+      "keywords": [
+        "revelation",
+        "kingdom",
+        "throne",
+        "new_creation"
+      ],
+      "themes": [
+        "sovereignty",
+        "judgment",
+        "hope",
+        "new_creation"
+      ],
       "pronunciation": null
     }
   }

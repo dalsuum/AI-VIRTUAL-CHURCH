@@ -394,6 +394,9 @@ Route::middleware(['auth:sanctum', 'account.usable'])->group(function () {
 
         // Read-only freeze-harness monitor for the admin console.
         Route::get('/freeze/status',                   [AdminController::class, 'freezeStatus']);
+
+        // Knowledge Operations Platform — read-only health dashboard.
+        Route::get('/knowledge/health',                [AdminController::class, 'knowledgeHealth']);
         Route::patch('/users/{user}/presenter-gender', [AdminController::class, 'updatePresenterGender']);
         Route::post('/users/{user}/force-reset',       [AdminController::class, 'forcePasswordReset']);
         Route::delete('/users/{user}',                 [AdminController::class, 'deleteUser']);

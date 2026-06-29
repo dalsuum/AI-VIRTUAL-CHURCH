@@ -59,6 +59,7 @@ const TABS = [
   { name: "grammar-review", label: "Language Review",  can: () => can("language_review.view"), load: () => { grData.value = null; loadGrammarReview(); } },
   { name: "system",         label: "System",           can: () => can("system.view"),          load: () => { loadUpdateStatus(); scheduleUpdatePoll(); loadVoiceboxStatus(); scheduleVoiceboxPoll(); } },
   { name: "freeze",         label: "Freeze Monitor",   can: () => isAdminUser.value,           load: () => { loadFreeze(); scheduleFreezePoll(); } },
+  { name: "knowledge",      label: "Knowledge",         can: () => can("knowledge.view"),       load: loadKnowledgeStatus },
 ];
 
 function firstAllowedTab() {
@@ -1199,6 +1200,14 @@ async function loadFreeze() {
 function scheduleFreezePoll() {
   clearInterval(freezeTimer);
   freezeTimer = setInterval(loadFreeze, 10000);  // live refresh every 10s
+}
+
+// ─── Knowledge Operations Platform — dashboard ────────────────────────────────
+const knowledgeStatus = ref(null);   // /admin/knowledge/health payload
+const knowledgeError  = ref("");
+async function loadKnowledgeStatus() {
+  try { knowledgeStatus.value = await api.adminKnowledgeHealth(); knowledgeError.value = ""; }
+  catch (e) { knowledgeError.value = e?.data?.message || "Could not load knowledge status."; }
 }
 function fmtAge(h) {
   if (h == null) return "—";
@@ -3467,7 +3476,115 @@ onUnmounted(() => {
         <p v-else-if="!freezeError" class="fz-loading">Loading freeze status…</p>
       </section>
 
-      <!-- Language Grammar Review -->
+      <!-- Knowledge Operations Platform — Dashboard -->
+      <section v-else-if="tab === 'knowledge'" class="kop-dashboard">
+        <div class="kop-header">
+          <h2>Knowledge Dashboard</h2>
+          <p class="kop-desc">Read-only view of the RAG engine: worker health, Qdrant collections, and corpus status.</p>
+          <button class="chip" @click="loadKnowledgeStatus">Refresh</button>
+        </div>
+
+        <p v-if="knowledgeError" class="error">{{ knowledgeError }}</p>
+        <p v-else-if="!knowledgeStatus" class="kop-loading">Loading knowledge status…</p>
+
+        <template v-else>
+          <!-- Environment summary -->
+          <div class="kop-cards">
+            <div class="kop-card" :class="knowledgeStatus.enabled ? 'ok' : 'warn'">
+              <div class="kop-card-label">RAG Enabled</div>
+              <div class="kop-card-value">{{ knowledgeStatus.enabled ? 'Yes' : 'No (KNOWLEDGE_ENABLED=false)' }}</div>
+            </div>
+            <div class="kop-card">
+              <div class="kop-card-label">Embedding Driver</div>
+              <div class="kop-card-value">{{ knowledgeStatus.embedding_driver }}</div>
+            </div>
+            <div class="kop-card">
+              <div class="kop-card-label">Vector Driver</div>
+              <div class="kop-card-value">{{ knowledgeStatus.vector_driver }}</div>
+            </div>
+            <div class="kop-card">
+              <div class="kop-card-label">Embedding Dimensions</div>
+              <div class="kop-card-value">{{ knowledgeStatus.embedding_dims }}</div>
+            </div>
+          </div>
+
+          <!-- Worker health -->
+          <h3 class="kop-section-title">Embedding Worker</h3>
+          <div v-if="knowledgeStatus.embedding_driver !== 'worker'" class="kop-na">
+            Not using worker driver — embedding is handled locally.
+          </div>
+          <div v-else-if="knowledgeStatus.worker?.error" class="kop-card warn">
+            <div class="kop-card-label">Worker</div>
+            <div class="kop-card-value danger">Unreachable — {{ knowledgeStatus.worker.error }}</div>
+          </div>
+          <div v-else class="kop-cards">
+            <div class="kop-card" :class="knowledgeStatus.worker_ok ? 'ok' : 'warn'">
+              <div class="kop-card-label">Status</div>
+              <div class="kop-card-value">{{ knowledgeStatus.worker_ok ? 'Healthy' : 'Degraded' }}</div>
+            </div>
+            <div class="kop-card">
+              <div class="kop-card-label">Model</div>
+              <div class="kop-card-value">{{ knowledgeStatus.worker?.model ?? '—' }}</div>
+            </div>
+            <div class="kop-card">
+              <div class="kop-card-label">Model Loaded</div>
+              <div class="kop-card-value">{{ knowledgeStatus.worker?.loaded ? 'Yes' : 'No (first request will trigger load)' }}</div>
+            </div>
+            <div class="kop-card">
+              <div class="kop-card-label">Expected Dimensions</div>
+              <div class="kop-card-value">{{ knowledgeStatus.worker?.expected_dim ?? '—' }}</div>
+            </div>
+          </div>
+
+          <!-- Corpus collections -->
+          <h3 class="kop-section-title">Corpus Collections</h3>
+          <div v-if="knowledgeStatus.vector_driver !== 'qdrant'" class="kop-na">
+            Not using Qdrant — collections live in memory and reset between requests.
+          </div>
+          <table v-else class="grid kop-table">
+            <thead>
+              <tr>
+                <th>Corpus</th>
+                <th>Status</th>
+                <th class="num">Vectors</th>
+                <th class="num">Points</th>
+                <th class="num">Dimensions</th>
+                <th>Distance</th>
+                <th class="num">Priority</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="corpus in knowledgeStatus.corpora" :key="corpus">
+                <td class="mono">{{ corpus }}</td>
+                <template v-if="knowledgeStatus.collections[corpus]?.exists">
+                  <td>
+                    <span class="badge" :class="knowledgeStatus.collections[corpus].status === 'green' ? 'ok' : 'pending'">
+                      {{ knowledgeStatus.collections[corpus].status }}
+                    </span>
+                  </td>
+                  <td class="num">{{ (knowledgeStatus.collections[corpus].vectors_count ?? 0).toLocaleString() }}</td>
+                  <td class="num">{{ (knowledgeStatus.collections[corpus].points_count ?? 0).toLocaleString() }}</td>
+                  <td class="num">{{ knowledgeStatus.collections[corpus].vector_size ?? '—' }}</td>
+                  <td>{{ knowledgeStatus.collections[corpus].distance ?? '—' }}</td>
+                </template>
+                <template v-else-if="knowledgeStatus.collections[corpus]">
+                  <td colspan="5"><span class="badge pending">Not created</span>{{ knowledgeStatus.collections[corpus].error ? ' — ' + knowledgeStatus.collections[corpus].error : '' }}</td>
+                </template>
+                <template v-else>
+                  <td colspan="5" class="dim">Qdrant not configured</td>
+                </template>
+                <td class="num">{{ knowledgeStatus.source_priority[corpus] ?? '—' }}</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <!-- Verify hint -->
+          <div class="kop-hint">
+            <strong>To run a full verification:</strong>
+            <code>cd backend &amp;&amp; php artisan knowledge:verify</code>
+          </div>
+        </template>
+      </section>
       <section v-else-if="tab === 'grammar-review'" class="gr-section">
         <div class="gr-header">
           <h2 class="gr-title">Language Grammar Review</h2>
@@ -3941,5 +4058,31 @@ onUnmounted(() => {
 @media (max-width: 900px) {
   .fz-top, .fz-tables { grid-template-columns: 1fr; }
   .fz-cards { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ── Knowledge Operations Platform Dashboard ─────────────────────────────── */
+.kop-dashboard { padding: 1.25rem 0; }
+.kop-header { display: flex; align-items: baseline; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
+.kop-header h2 { margin: 0; font-size: 1.15rem; }
+.kop-desc { margin: 0; color: var(--text-muted); font-size: 0.88rem; flex: 1 1 100%; }
+.kop-section-title { font-size: 0.95rem; font-weight: 600; margin: 1.5rem 0 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.kop-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.75rem; margin-bottom: 1rem; }
+.kop-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.85rem 1rem; }
+.kop-card.ok { border-color: var(--success); }
+.kop-card.warn { border-color: var(--warning, #f59e0b); }
+.kop-card-label { font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.3rem; text-transform: uppercase; letter-spacing: 0.03em; }
+.kop-card-value { font-size: 0.95rem; font-weight: 600; word-break: break-all; }
+.kop-card-value.danger { color: var(--danger); }
+.kop-table { width: 100%; margin-bottom: 1.25rem; }
+.kop-table th, .kop-table td { padding: 0.5rem 0.65rem; }
+.kop-table th.num, .kop-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.kop-na { color: var(--text-muted); font-size: 0.88rem; margin-bottom: 1rem; padding: 0.75rem; background: var(--surface); border-radius: var(--radius); border: 1px solid var(--border); }
+.kop-loading { color: var(--text-muted); }
+.kop-hint { margin-top: 1.5rem; padding: 0.85rem 1rem; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); font-size: 0.88rem; }
+.kop-hint code { display: block; margin-top: 0.4rem; font-family: monospace; background: var(--bg); padding: 0.4rem 0.6rem; border-radius: var(--radius-sm); }
+.mono { font-family: monospace; font-size: 0.9rem; }
+.dim { color: var(--text-muted); font-size: 0.88rem; }
+@media (max-width: 640px) {
+  .kop-cards { grid-template-columns: 1fr 1fr; }
 }
 </style>

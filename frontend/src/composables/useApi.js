@@ -426,6 +426,7 @@ export const api = {
   // Admin console (requires an is_admin account).
   adminDashboard: () => request("/admin/dashboard"),
   adminFreezeStatus: () => request("/admin/freeze/status"),
+  adminKnowledgeHealth: () => request("/admin/knowledge/health"),
   adminServices: () => request("/admin/services"),
   adminServiceResumeLink: (id) =>
     request(`/admin/services/${id}/resume-link`, { method: "POST" }),

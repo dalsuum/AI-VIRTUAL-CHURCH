@@ -6,6 +6,7 @@ use App\Services\Chat\Contracts\KnowledgeRetriever;
 use App\Services\Chat\Data\KnowledgeContext;
 use App\Services\Knowledge\Retrieval\ContextBuilder;
 use App\Services\Knowledge\Retrieval\RetrievalOrchestrator;
+use Illuminate\Support\Facades\Cache;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -58,6 +59,19 @@ final class HybridKnowledgeRetriever implements KnowledgeRetriever
 
             $this->tracer->annotate($diagnostics);
             $this->log->info('knowledge.retrieval', $diagnostics);
+
+            // Persist a snapshot for the admin dashboard. TTL 24 h; never blocks chat.
+            try {
+                Cache::put('knowledge.last_retrieval', [
+                    'latency_ms'  => $latencyMs,
+                    'corpora'     => $diagnostics['retrieval.corpora'] ?? [],
+                    'rrf_count'   => $diagnostics['retrieval.rrf_count'] ?? 0,
+                    'out_count'   => count($outcome->chunks),
+                    'degraded'    => $outcome->degraded,
+                    'failed'      => $outcome->failed,
+                    'recorded_at' => now()->toIso8601String(),
+                ], 86400);
+            } catch (\Throwable) { /* cache failure must never break retrieval */ }
 
             if ($outcome->degraded || $outcome->failed) {
                 $this->log->warning('knowledge.retrieval_degraded', $outcome->diagnostics + ['failed' => $outcome->failed]);

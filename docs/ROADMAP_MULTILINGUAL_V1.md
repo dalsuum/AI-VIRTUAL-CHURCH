@@ -9,7 +9,8 @@ made for release-blocking issues.
 
 Current checkpoint:
 
-- `6394abbd` — `feat: multilingual milestone 1-3 (fr,de,es,ja,zh-CN,ko,hi,ta,th)`
+- `6efaed50` — `feat(multilingual): milestone 6 language intelligence`
+  (Milestones 1–6 complete; Milestone 7 is the release-candidate verification pass.)
 
 ## Roadmap
 
@@ -18,10 +19,10 @@ Current checkpoint:
 | 1 | French, German, Spanish | Complete | Included in `6394abbd` |
 | 2 | Japanese, Chinese Simplified, Korean | Complete | Included in `6394abbd` |
 | 3 | Hindi, Tamil, Thai | Complete | Included in `6394abbd` |
-| 4 | Arabic, Hebrew, RTL | Pending | Commit after review |
-| 5 | System QA and regression | Pending | Commit after review |
-| 6 | Language intelligence and vocabulary | Pending | Commit after review |
-| 7 | Production readiness and release candidate | Pending | Commit after review |
+| 4 | Arabic, Hebrew, RTL | Complete | Committed `c2c6c635` |
+| 5 | System QA and regression | Complete | Committed `0f18ab5b` |
+| 6 | Language intelligence and vocabulary | Complete | Committed `6efaed50` |
+| 7 | Production readiness and release candidate | Complete | This commit; see [`PRODUCTION_READINESS_V1.md`](PRODUCTION_READINESS_V1.md) |
 
 Do not add new milestones before v1.0 unless a release-blocking production issue
 requires it.
@@ -149,8 +150,8 @@ until that report is reviewed and approved.
 | `hi` | Hindi | Yes | Yes | Yes | LTR | Complete |
 | `ta` | Tamil | Yes | Yes | Yes | LTR | Complete |
 | `th` | Thai | Yes | Yes | Yes | LTR | Complete |
-| `ar` | Arabic | Pending | Yes | Pending | RTL | Milestone 4 |
-| `he` | Hebrew | Pending | Yes | Pending | RTL | Milestone 4 |
+| `ar` | Arabic | Yes | Yes | Yes | RTL | Complete |
+| `he` | Hebrew | Yes | Yes | Yes | RTL | Complete |
 
 Falam, Hakha, and Lushai remain Bible/Bible Study languages for v1.0. Promoting
 them to full Church Service locales is future work.
@@ -273,12 +274,13 @@ Only then is the multilingual implementation considered complete.
 ## Known Limitations
 
 - Falam, Hakha, and Lushai are Bible/Bible Study languages only in v1.0.
-- Arabic and Hebrew full UI/service support is pending Milestone 4.
-- Native-speaker review is still required for final translation quality.
-- Some AI-generated wording may require Milestone 6 vocabulary and terminology
-  tuning before release candidate approval.
-- Milestone 7 must verify that RAG, Bible retrieval, workers, authentication,
-  billing, and existing LTR layouts remain unaffected.
+- Arabic and Hebrew full UI/service support shipped in Milestone 4 (RTL complete).
+- Native-speaker review is still required for final translation quality; several
+  UI locale files (notably `hi`, `ta`, `th`) are intentionally partial and fall
+  back to English until reviewed strings land.
+- Milestone 7 confirmed via the automated suites that RAG, Bible retrieval,
+  workers, authentication, billing, and existing LTR layouts remain unaffected;
+  see [`PRODUCTION_READINESS_V1.md`](PRODUCTION_READINESS_V1.md).
 
 ## Future Roadmap
 

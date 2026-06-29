@@ -107,6 +107,7 @@ function isActive(item) {
   background: color-mix(in srgb, var(--bg) 80%, transparent);
   backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--border);
+  min-width: 0;
 }
 .hamburger {
   display: inline-flex; align-items: center; justify-content: center;
@@ -115,8 +116,8 @@ function isActive(item) {
   color: var(--text); font-size: 1.05rem; line-height: 1; cursor: pointer;
 }
 .hamburger:hover { color: var(--primary); border-color: var(--primary); }
-.topbar-right { display: flex; align-items: center; gap: 0.75rem; }
-.topbar-nav { display: flex; align-items: center; gap: 0.25rem; }
+.topbar-right { display: flex; align-items: center; gap: 0.75rem; min-width: 0; }
+.topbar-nav { display: flex; align-items: center; gap: 0.25rem; min-width: 0; }
 .nav-link {
   display: inline-flex; align-items: center; gap: 0.25rem;
   padding: 0.35rem 0.65rem;
@@ -135,25 +136,51 @@ function isActive(item) {
   .nav-page { display: none; }
   .nav-label-full { display: none; }
   .nav-label-short { display: inline; }
-  /* Page links now live in the bottom nav, so the freed width lets the
-     brand wordmark stay beside the hamburger + logo. */
-  .topbar { gap: 0.5rem; padding: 0.7rem 0.85rem; }
-  /* Keep the nav from squeezing the theme toggle off-screen: let it scroll. */
-  .topbar-right { gap: 0.5rem; min-width: 0; }
-  .topbar-nav { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
-  .topbar-nav::-webkit-scrollbar { display: none; }
-  .nav-link { flex: 0 0 auto; }
-  /* The theme toggle must always stay visible. */
-  .theme-toggle, .topbar-right > :last-child { flex: 0 0 auto; }
+  .topbar {
+    flex-wrap: wrap;
+    gap: 0.45rem 0.55rem;
+    padding: 0.6rem 0.75rem;
+  }
+  .topbar .brand {
+    flex: 1 1 calc(100% - 44px);
+    min-width: 0;
+    margin-right: 0;
+  }
+  .topbar-right {
+    flex: 1 0 100%;
+    width: 100%;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+  .topbar-nav {
+    order: 2;
+    flex: 0 1 auto;
+    justify-content: flex-end;
+    overflow: visible;
+  }
+  .topbar-right :deep(.lang-switch) {
+    order: 1;
+    min-width: 0;
+  }
+  .topbar-right :deep(.theme-toggle),
+  .topbar-right > :last-child {
+    order: 3;
+    flex: 0 0 auto;
+  }
+  .nav-link {
+    flex: 0 1 auto;
+    min-height: 36px;
+    padding: 0.35rem 0.55rem;
+  }
 }
 /* Keep logo + wordmark hugging the left (next to the hamburger); the auto
    margin pushes the auth controls + theme toggle to the far right instead of
    space-between spreading the brand into the centre. */
-.brand { display: inline-flex; align-items: center; gap: 0.55rem; margin-right: auto; text-decoration: none; color: var(--text); font-weight: 600; }
+.brand { display: inline-flex; align-items: center; gap: 0.55rem; min-width: 0; margin-right: auto; text-decoration: none; color: var(--text); font-weight: 600; }
 .brand-mark {
   display: inline-flex; align-items: center; justify-content: center;
   width: 30px; height: 30px; border-radius: 9px;
   background: var(--primary); color: var(--on-primary); font-size: 1rem;
 }
-.brand-name { font-size: 0.98rem; letter-spacing: -0.01em; }
+.brand-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.98rem; letter-spacing: 0; }
 </style>

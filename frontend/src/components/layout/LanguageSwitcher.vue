@@ -27,7 +27,13 @@ function onChange(e) {
 </template>
 
 <style scoped>
+.lang-switch {
+  display: inline-flex;
+  min-width: 0;
+}
 .lang-switch select {
+  max-width: 180px;
+  min-width: 0;
   background: none;
   color: var(--text-muted);
   border: 1px solid var(--border);
@@ -40,5 +46,15 @@ function onChange(e) {
 .sr-only {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+@media (max-width: 640px) {
+  .lang-switch {
+    flex: 1 1 auto;
+  }
+  .lang-switch select {
+    width: 100%;
+    max-width: 48vw;
+    min-height: 36px;
+  }
 }
 </style>

@@ -469,6 +469,8 @@ def _build_tools(job: dict, plan: dict) -> tuple[list[dict], dict[str, callable]
             # dropping the segment (translation deferred; English query is generic).
             if not video["found"] and language != "en":
                 video = _find_sermon_video(mood=mood, query="", language="en", excluded_ids=past)
+                if video["found"]:
+                    print(f"[agent] no native {language!r} sermon — using English fallback", flush=True)
             if video["found"]:
                 return h_post_youtube_sermon(video["video_id"], video["title"])
             return {"error": "no sermon video found in language or English"}

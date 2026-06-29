@@ -408,6 +408,8 @@ def generate_text_segments(job: dict, plan: dict) -> None:
             if not video["found"] and language != "en":
                 video = find_sermon_video(mood=mood, query="", language="en",
                                           excluded_ids=past_video_ids)
+                if video["found"]:
+                    print(f"[sermon] no native {language!r} sermon — using English fallback", flush=True)
             if video["found"]:
                 _post_asset(token, "sermon", asset_type="youtube",
                             provider_ref=video["video_id"], text_payload=video["title"])

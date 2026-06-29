@@ -306,9 +306,14 @@ class WebhookController extends Controller
         $this->verifySignature($request);
 
         $data = $request->validate([
-            'mode'             => ['required', 'in:pastor_reply,title_summary,journal'],
+            'mode'             => ['required', 'in:pastor_reply,title_summary,journal,vocab_entry'],
             'session_id'       => ['nullable', 'string'],
             'journal_entry_id' => ['nullable', 'integer'],
+            'vocabulary_id'    => ['nullable', 'integer'],
+            'language'         => ['nullable', 'string', 'max:12'],
+            'word'             => ['nullable', 'string', 'max:255'],
+            'difficulty'       => ['nullable', 'in:beginner,intermediate,advanced'],
+            'payload'          => ['nullable', 'array'],
             'reply'            => ['nullable', 'string'],
             'title'            => ['nullable', 'string', 'max:200'],
             'summary'          => ['nullable', 'string'],
@@ -329,6 +334,11 @@ class WebhookController extends Controller
         // Journal fills an entry by its own id, not a chat session.
         if ($data['mode'] === 'journal') {
             return $this->fillJournalEntry($data);
+        }
+
+        // Vocab fills a cached learner entry by (vocabulary_id, language).
+        if ($data['mode'] === 'vocab_entry') {
+            return $this->fillVocabEntry($data);
         }
 
         $session = \App\Models\ChatSession::find($data['session_id']);
@@ -390,6 +400,30 @@ class WebhookController extends Controller
                 'content'         => $data['summary'],
             ]);
         }
+
+        return response()->json(['ok' => true]);
+    }
+
+    /** Persist a worker-generated learner vocabulary entry into the cache. */
+    private function fillVocabEntry(array $data): JsonResponse
+    {
+        $entry = \App\Models\VocabEntry::where('vocabulary_id', $data['vocabulary_id'] ?? 0)
+            ->where('language', $data['language'] ?? '')
+            ->first();
+        if (! $entry) {
+            return response()->json(['ok' => false], 404);
+        }
+
+        // Null payload = generation failed; leave the row pending so a later request retries.
+        if (empty($data['payload'])) {
+            return response()->json(['ok' => false], 422);
+        }
+
+        $entry->update([
+            'word'       => $data['word'] ?? null,
+            'difficulty' => $data['difficulty'] ?? null,
+            'payload'    => $data['payload'],
+        ]);
 
         return response()->json(['ok' => true]);
     }

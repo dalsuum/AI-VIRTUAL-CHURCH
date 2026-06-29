@@ -201,6 +201,18 @@ php artisan knowledge:ingest sermon storage/app/knowledge/sermons_my.json --chun
 After ingest, sermon retrieval is automatically combined with Bible retrieval in Pastor Chat
 (the `RetrievalOrchestrator` fans out across all corpora including `sermon`).
 
+### Learner vocabulary (multilingual, AI-generated)
+
+Separate from the curated Zolai/Chin reference dictionary (`vocabularies` table — left
+untouched), the **learner** view renders any curated concept into any of the 14 supported
+languages on demand. `GET /api/vocabulary/{id}/learn?lang=ja` serves the cached entry, or
+returns `202 generating` and enqueues a `vocab_generate` job. The history worker
+(`_run_vocab_generate`) produces a structured entry (pronunciation, meaning, definition,
+examples, synonyms/antonyms/related, optional Bible verse) under the same authoritative
+**LANGUAGE LAW** as Pastor Chat, and the signed `/internal/history-callback` (`vocab_entry`
+mode) caches it in `vocab_entries`. No new authored content and no per-language schema — the
+existing dictionary is the seed concept list. Deploy step: `php artisan migrate`.
+
 Pastor Chat replies in the worshipper's selected interface language (`_pastor_system` in
 `workers/plugins/history/driver.py`). The reply-language instruction is authoritative — the
 model keeps replying in the chosen language even when the worshipper types in English, and only

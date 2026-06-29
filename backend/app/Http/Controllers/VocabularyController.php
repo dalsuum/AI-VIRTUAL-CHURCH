@@ -2,10 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Setting;
+use App\Models\VocabEntry;
 use App\Models\Vocabulary;
 use App\Services\PermissionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Redis;
+use Illuminate\Validation\Rule;
 
 /**
  * CRUD for the Zolai ↔ Burmese ↔ English vocabulary reference. The public list
@@ -39,6 +43,37 @@ class VocabularyController extends Controller
         $words = $q->get(array_merge(['id'], Vocabulary::LANGUAGE_COLUMNS, ['category']));
 
         return response()->json(['vocabulary' => $words]);
+    }
+
+    /**
+     * Learner view: the AI-generated entry for one curated concept in one language.
+     * Returns the cached entry when ready; otherwise enqueues generation (reusing the
+     * existing `vocabulary` seed as the concept) and replies 202 while it is produced.
+     * Public, like {@see index} — this is published reference content.
+     */
+    public function learn(Request $request, Vocabulary $vocabulary): JsonResponse
+    {
+        $lang = $request->validate([
+            'lang' => ['required', 'string', Rule::in(Setting::LANGUAGES)],
+        ])['lang'];
+
+        $entry = VocabEntry::firstOrCreate(
+            ['vocabulary_id' => $vocabulary->id, 'language' => $lang],
+        );
+
+        if ($entry->payload !== null) {
+            return response()->json(['status' => 'ready', 'entry' => $entry]);
+        }
+
+        Redis::rpush('ai:history', json_encode([
+            'mode'          => 'vocab_generate',
+            'vocabulary_id' => $vocabulary->id,
+            'language'      => $lang,
+            'concept'       => $vocabulary->english,
+            'zolai'         => $vocabulary->zolai,
+        ]));
+
+        return response()->json(['status' => 'generating', 'entry' => $entry], 202);
     }
 
     public function store(Request $request): JsonResponse

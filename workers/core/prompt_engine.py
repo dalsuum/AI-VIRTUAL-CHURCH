@@ -103,7 +103,12 @@ def compose(
 
     system = "\n".join([
         CORE_INVARIANTS,
-        f"LANGUAGE: Respond entirely in {language_name}.",
+        f"LANGUAGE: Respond entirely in {language_name}. Write the way a native "
+        f"{language_name} speaker actually prays and speaks in church — natural "
+        "idiom and sentence structure, not a word-for-word translation of English. "
+        "Use the established native Christian and liturgical vocabulary of that "
+        "language and its customary honorifics and register. Keep doctrine neutral "
+        "and non-denominational.",
         "",
         "ROLE INSTRUCTIONS:",
         (role_template_body or "").strip(),

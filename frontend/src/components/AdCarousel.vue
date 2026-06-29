@@ -1,6 +1,9 @@
 <script setup>
 import { ref, computed, watch, onBeforeUnmount } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { api } from '../composables/useApi.js';
+
+const { t } = useI18n();
 
 const props = defineProps({
   ads:          { type: Array,  default: () => [] }, // all active ads for this service
@@ -151,9 +154,9 @@ onBeforeUnmount(() => clearTimeout(timer));
 
     <!-- Ad label + skip -->
     <div class="ad-footer">
-      <span class="ad-label">Ad</span>
+      <span class="ad-label">{{ t("ads.label") }}</span>
       <span class="ad-title-text">{{ ad.title }}</span>
-      <button class="skip-btn" @click="dismiss">Skip ›</button>
+      <button class="skip-btn" @click="dismiss">{{ t("ads.skip") }}</button>
     </div>
   </div>
 </template>

@@ -6,10 +6,13 @@
 -->
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from "vue";
+import { useI18n } from "vue-i18n";
 import Cropper from "cropperjs";
 import "cropperjs/dist/cropper.css";
 import AdCarousel from "./AdCarousel.vue";
 import { api } from "../composables/useApi";
+
+const { t } = useI18n();
 
 const loading   = ref(true);
 const config    = ref(null);          // { enabled, title, subtitle, default_effect, effects, max_photos }
@@ -25,7 +28,7 @@ const dragActive = ref(false);
 const ads        = ref([]);      // active ads for the box below the block
 const targetProgress = ref(0);   // last % reported by the server
 const shownProgress  = ref(0);   // eased value actually displayed
-const stageLabel     = ref("Starting…");
+const stageLabel     = ref(t("fathersDay.starting"));
 const finished       = ref(false);
 
 let pollTimer = null;
@@ -53,18 +56,18 @@ async function shareAuto() {
   shareNote.value = "";
   const s = autoSong.value;
   if (!s) return;
-  const text = config.value?.auto?.share_invite || "Listen and be blessed. aivirtual.church";
+  const text = config.value?.auto?.share_invite || t("fathersDay.shareInvite");
   const url = s.watch_url;
   try {
     if (navigator.share) {
       await navigator.share({ title: s.title, text, url });
     } else {
       await navigator.clipboard.writeText(`${text} ${url}`);
-      shareNote.value = "Link copied — paste it to share.";
+      shareNote.value = t("fathersDay.linkCopiedPaste");
     }
   } catch (e) {
     if (e?.name !== "AbortError") {
-      try { await navigator.clipboard.writeText(`${text} ${url}`); shareNote.value = "Link copied — paste it to share."; }
+      try { await navigator.clipboard.writeText(`${text} ${url}`); shareNote.value = t("fathersDay.linkCopiedPaste"); }
       catch { shareNote.value = `${text} ${url}`; }
     }
   }
@@ -172,7 +175,7 @@ function enqueueFiles(fileList) {
   const incoming = Array.from(fileList)
     .filter((f) => /^image\/(jpe?g|png|webp)$/.test(f.type))
     .filter((f) => {
-      if (f.size > 8 * 1024 * 1024) { errorMsg.value = `${f.name} is larger than 8 MB.`; return false; }
+      if (f.size > 8 * 1024 * 1024) { errorMsg.value = t("fathersDay.tooLarge", { name: f.name }); return false; }
       return true;
     })
     .slice(0, Math.max(0, room));
@@ -244,7 +247,7 @@ async function generate() {
   targetProgress.value = 0;
   shownProgress.value = 0;
   finished.value = false;
-  stageLabel.value = "Starting…";
+  stageLabel.value = t("fathersDay.starting");
   startEasing();
   try {
     const opts = (songMode.value === "clip" && clipLen.value >= 1)
@@ -257,7 +260,7 @@ async function generate() {
   } catch (e) {
     phase.value = "error";
     easeTimer && clearInterval(easeTimer);
-    errorMsg.value = e.message || "Something went wrong. Please try again.";
+    errorMsg.value = e.message || t("fathersDay.errGeneric");
   }
 }
 
@@ -312,7 +315,7 @@ async function saveVideo() {
 
 async function copyLink() {
   shareNote.value = "";
-  try { await navigator.clipboard.writeText(shareUrl.value); shareNote.value = "Link copied!"; }
+  try { await navigator.clipboard.writeText(shareUrl.value); shareNote.value = t("fathersDay.linkCopied"); }
   catch { shareNote.value = shareUrl.value; }
 }
 
@@ -355,14 +358,14 @@ function reset() {
 
 <template>
   <div class="fd-page">
-    <a class="fd-back" href="#">← Back to worship</a>
+    <a class="fd-back" href="#">{{ t("fathersDay.backToWorship") }}</a>
 
-    <div v-if="loading" class="fd-card fd-center"><p>Loading…</p></div>
+    <div v-if="loading" class="fd-card fd-center"><p>{{ t("common.loading") }}</p></div>
 
     <div v-else-if="!config.enabled && !isAuto" class="fd-card fd-center">
       <div class="fd-hero-mark">🎬</div>
-      <h1>Not available right now</h1>
-      <p class="fd-muted">This special-day video maker isn't open at the moment. Please check back later.</p>
+      <h1>{{ t("fathersDay.notAvailableTitle") }}</h1>
+      <p class="fd-muted">{{ t("fathersDay.notAvailableBody") }}</p>
     </div>
 
     <!-- Auto YouTube mode: play today's special-day song + share only -->
@@ -374,7 +377,7 @@ function reset() {
       </header>
 
       <div v-if="autoSongs.length > 1" class="fd-songs">
-        <p class="fd-label">🎵 Choose a song</p>
+        <p class="fd-label">{{ t("fathersDay.chooseSong") }}</p>
         <div class="fd-song-row">
           <button
             v-for="(s, i) in autoSongs"
@@ -397,9 +400,9 @@ function reset() {
           ></iframe>
         </div>
         <p class="fd-yt-title">{{ autoSong.title }}</p>
-        <button class="fd-btn primary big" @click="shareAuto">📤 Share this song</button>
+        <button class="fd-btn primary big" @click="shareAuto">{{ t("fathersDay.shareSong") }}</button>
         <p v-if="shareNote" class="fd-muted small">{{ shareNote }}</p>
-        <p class="fd-muted small fd-foot">Worship with us at aivirtual.church 🙏</p>
+        <p class="fd-muted small fd-foot">{{ t("fathersDay.footWorship") }}</p>
       </div>
     </div>
 
@@ -412,7 +415,7 @@ function reset() {
 
       <!-- Choose a song -->
       <div v-if="songs.length" class="fd-songs">
-        <p class="fd-label">🎵 Choose a song</p>
+        <p class="fd-label">{{ t("fathersDay.chooseSong") }}</p>
         <div class="fd-song-row">
           <button
             v-for="s in songs"
@@ -426,23 +429,23 @@ function reset() {
 
       <!-- Length: full song or pick a part -->
       <div v-if="songId" class="fd-songs">
-        <p class="fd-label">⏱ Song length</p>
+        <p class="fd-label">{{ t("fathersDay.songLength") }}</p>
         <div class="fd-song-row">
-          <button class="fd-chip" :class="{ active: songMode === 'full' }" @click="songMode = 'full'">Full song</button>
-          <button class="fd-chip" :class="{ active: songMode === 'clip' }" @click="songMode = 'clip'">Pick a part</button>
+          <button class="fd-chip" :class="{ active: songMode === 'full' }" @click="songMode = 'full'">{{ t("fathersDay.fullSong") }}</button>
+          <button class="fd-chip" :class="{ active: songMode === 'clip' }" @click="songMode = 'clip'">{{ t("fathersDay.pickPart") }}</button>
         </div>
 
         <div v-if="songMode === 'clip'" class="fd-clip">
-          <p v-if="clipLoading" class="fd-muted small">Loading song…</p>
+          <p v-if="clipLoading" class="fd-muted small">{{ t("fathersDay.loadingSong") }}</p>
           <audio v-show="clipUrl" ref="clipAudio" :src="clipUrl" controls style="width:100%"></audio>
           <div class="fd-clip-row">
-            <button class="fd-btn ghost sm" @click="setClipStart">⏮ Set start</button>
+            <button class="fd-btn ghost sm" @click="setClipStart">{{ t("fathersDay.setStart") }}</button>
             <span class="fd-clip-t">{{ clipStartVal }}s</span>
-            <button class="fd-btn ghost sm" @click="setClipEnd">Set end ⏭</button>
+            <button class="fd-btn ghost sm" @click="setClipEnd">{{ t("fathersDay.setEnd") }}</button>
             <span class="fd-clip-t">{{ clipEndVal }}s</span>
-            <button class="fd-btn ghost sm" @click="previewClip">▶ Preview</button>
+            <button class="fd-btn ghost sm" @click="previewClip">{{ t("fathersDay.preview") }}</button>
           </div>
-          <p class="fd-muted small">Clip length: {{ clipLen.toFixed(1) }}s — play, then mark where your part starts and ends.</p>
+          <p class="fd-muted small">{{ t("fathersDay.clipLen", { len: clipLen.toFixed(1) }) }}</p>
         </div>
       </div>
 
@@ -458,21 +461,21 @@ function reset() {
         <input ref="fileInput" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden @change="onFileInput" />
         <div class="fd-drop-inner">
           <span class="fd-drop-icon">📷</span>
-          <p><strong>Tap to add photos</strong> of your father</p>
-          <p class="fd-muted small">JPG / PNG / WEBP · up to {{ maxPhotos }} photos · 8 MB each</p>
+          <p><strong>{{ t("fathersDay.tapToAdd") }}</strong> {{ t("fathersDay.ofFather") }}</p>
+          <p class="fd-muted small">{{ t("fathersDay.photoLimits", { max: maxPhotos }) }}</p>
         </div>
       </div>
 
       <div v-if="previews.length" class="fd-thumbs">
         <div v-for="(src, i) in previews" :key="i" class="fd-thumb">
           <img :src="src" alt="" />
-          <button class="fd-thumb-x" @click="removePhoto(i)" aria-label="Remove">×</button>
+          <button class="fd-thumb-x" @click="removePhoto(i)" :aria-label="t('fathersDay.remove')">×</button>
         </div>
       </div>
 
       <!-- Effect -->
       <div v-if="photos.length > 1" class="fd-effects">
-        <p class="fd-label">Effect</p>
+        <p class="fd-label">{{ t("fathersDay.effect") }}</p>
         <div class="fd-effect-row">
           <button
             v-for="opt in config.effects"
@@ -489,16 +492,16 @@ function reset() {
       <!-- Crop-to-vertical editor -->
       <div v-if="cropSrc" class="fd-crop-modal">
         <div class="fd-crop-box">
-          <h3>Crop to fit</h3>
-          <p class="fd-muted small">Drag and pinch/scroll to frame your father. The video is vertical, so this keeps the part you want.</p>
+          <h3>{{ t("fathersDay.cropTitle") }}</h3>
+          <p class="fd-muted small">{{ t("fathersDay.cropHint") }}</p>
           <div class="fd-crop-area">
             <img ref="cropImg" :src="cropSrc" alt="" />
           </div>
-          <p class="fd-muted small" style="text-align:center">{{ cropQueue.length }} photo{{ cropQueue.length === 1 ? '' : 's' }} left to crop</p>
+          <p class="fd-muted small" style="text-align:center">{{ t("fathersDay.photosLeft", { n: cropQueue.length }) }}</p>
           <div class="fd-crop-actions">
-            <button class="fd-btn primary" @click="confirmCrop">✓ Use this</button>
-            <button class="fd-btn ghost" @click="skipCrop">Skip</button>
-            <button class="fd-btn ghost" @click="cancelCropAll">Cancel all</button>
+            <button class="fd-btn primary" @click="confirmCrop">{{ t("fathersDay.useThis") }}</button>
+            <button class="fd-btn ghost" @click="skipCrop">{{ t("fathersDay.skip") }}</button>
+            <button class="fd-btn ghost" @click="cancelCropAll">{{ t("fathersDay.cancelAll") }}</button>
           </div>
         </div>
       </div>
@@ -511,34 +514,34 @@ function reset() {
       </div>
 
       <div v-else-if="phase === 'done'" class="fd-done">
-        <p class="fd-done-msg">🎉 Your video is ready!</p>
-        <button class="fd-btn primary big" @click="saveVideo">⬇ Save video</button>
+        <p class="fd-done-msg">{{ t("fathersDay.videoReady") }}</p>
+        <button class="fd-btn primary big" @click="saveVideo">{{ t("fathersDay.saveVideo") }}</button>
         <p class="fd-muted small">
-          Saved to your gallery. To post it as ONE video on Facebook: Create post → Photo/Video (not Stories/Reels) → pick this video → Post.
+          {{ t("fathersDay.savedHint") }}
         </p>
 
         <details class="fd-linkshare">
-          <summary>Or share a link</summary>
-          <p class="fd-muted small">A link shows a preview card that opens the video on tap (not a native upload). The link works for 30 days, then expires — for a permanent post, Save the video and upload it.</p>
+          <summary>{{ t("fathersDay.orLink") }}</summary>
+          <p class="fd-muted small">{{ t("fathersDay.linkNote") }}</p>
           <div class="fd-social">
             <button class="fd-soc" title="Facebook" @click="socialShare('facebook')">f</button>
             <button class="fd-soc" title="X" @click="socialShare('x')">𝕏</button>
             <button class="fd-soc" title="WhatsApp" @click="socialShare('whatsapp')">✆</button>
             <button class="fd-soc" title="Telegram" @click="socialShare('telegram')">✈</button>
             <button class="fd-soc" title="Viber" @click="socialShare('viber')">V</button>
-            <button class="fd-soc wide" @click="copyLink">🔗 Copy link</button>
+            <button class="fd-soc wide" @click="copyLink">{{ t("fathersDay.copyLink") }}</button>
           </div>
         </details>
 
         <p v-if="shareNote" class="fd-muted small">{{ shareNote }}</p>
-        <button class="fd-btn ghost" @click="reset">Make another</button>
+        <button class="fd-btn ghost" @click="reset">{{ t("fathersDay.makeAnother") }}</button>
       </div>
 
       <button v-else class="fd-btn primary big" :disabled="!canGenerate" @click="generate">
-        Create video 🎬
+        {{ t("fathersDay.createVideo") }}
       </button>
 
-      <p class="fd-muted small fd-foot">Your photos are used only to make this video and are removed after.</p>
+      <p class="fd-muted small fd-foot">{{ t("fathersDay.footPrivacy") }}</p>
     </div>
 
     <!-- Ads box — below the block. Shows only when an ad is tagged 'Special Day pages'. -->

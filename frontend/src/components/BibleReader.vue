@@ -682,7 +682,7 @@ onMounted(() => {
       <div class="reader-top">
       <div class="reader-handle">
         <button class="link-btn" @click="backToBooks" :aria-label="t('bible.allBooks')" :title="t('bible.allBooks')">
-          <AppIcon name="mdi:arrow-left" size="18px" /><span class="btn-label"> All books</span>
+          <AppIcon name="mdi:arrow-left" size="18px" /><span class="btn-label"> {{ t('bible.allBooks') }}</span>
         </button>
         <h2 class="reader-heading" :dir="isRtl ? 'rtl' : 'ltr'">{{ chapter?.name || selectedBook.name }} {{ chapterNum }}</h2>
         <button

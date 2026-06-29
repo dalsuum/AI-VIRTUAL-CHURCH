@@ -2,53 +2,55 @@
   <div class="reset-wrap">
     <!-- Forgot password: enter email -->
     <div v-if="step === 'forgot'">
-      <h2 class="reset-title">Forgot Password</h2>
-      <p class="reset-sub">Enter your email and we'll send a reset link.</p>
+      <h2 class="reset-title">{{ t("authReset.forgotTitle") }}</h2>
+      <p class="reset-sub">{{ t("authReset.forgotSub") }}</p>
       <form @submit.prevent="submitForgot" class="reset-form">
-        <input v-model="email" type="email" placeholder="Your email address" class="reset-input" autocomplete="email" required />
+        <input v-model="email" type="email" :placeholder="t('authReset.emailPh')" class="reset-input" autocomplete="email" required />
         <button type="submit" class="reset-btn" :disabled="submitting">
-          {{ submitting ? 'Sending…' : 'Send Reset Link' }}
+          {{ submitting ? t('authReset.sending') : t('authReset.sendLink') }}
         </button>
       </form>
       <p v-if="msg" class="reset-msg" :class="msgClass">{{ msg }}</p>
-      <button class="reset-link" @click="emit('back')">← Back to sign in</button>
+      <button class="reset-link" @click="emit('back')">{{ t("authReset.backToSignin") }}</button>
     </div>
 
     <!-- Use token to set new password -->
     <div v-else-if="step === 'reset'">
-      <h2 class="reset-title">Set New Password</h2>
-      <p class="reset-sub">Enter your reset token and choose a new password.</p>
+      <h2 class="reset-title">{{ t("authReset.newPwTitle") }}</h2>
+      <p class="reset-sub">{{ t("authReset.newPwSub") }}</p>
       <form @submit.prevent="submitReset" class="reset-form col">
         <input
           v-model="token"
           type="text"
-          placeholder="Reset token (from email or admin)"
+          :placeholder="t('authReset.tokenPh')"
           class="reset-input"
           autocomplete="off"
         />
-        <input v-model="newPw"     type="password" placeholder="New password (8+ chars)" class="reset-input" autocomplete="new-password" />
-        <input v-model="confirmPw" type="password" placeholder="Confirm new password"    class="reset-input" autocomplete="new-password" />
+        <input v-model="newPw"     type="password" :placeholder="t('authReset.newPwPh')" class="reset-input" autocomplete="new-password" />
+        <input v-model="confirmPw" type="password" :placeholder="t('authReset.confirmPwPh')"    class="reset-input" autocomplete="new-password" />
         <button type="submit" class="reset-btn" :disabled="submitting">
-          {{ submitting ? 'Saving…' : 'Set Password' }}
+          {{ submitting ? t('authReset.saving') : t('authReset.setPassword') }}
         </button>
       </form>
       <p v-if="msg" class="reset-msg" :class="msgClass">{{ msg }}</p>
-      <button class="reset-link" @click="emit('back')">← Back to sign in</button>
+      <button class="reset-link" @click="emit('back')">{{ t("authReset.backToSignin") }}</button>
     </div>
 
     <!-- Done -->
     <div v-else>
-      <h2 class="reset-title">Password Updated</h2>
-      <p class="reset-sub">You can now sign in with your new password.</p>
-      <button class="reset-btn" @click="emit('back')">Sign in</button>
+      <h2 class="reset-title">{{ t("authReset.doneTitle") }}</h2>
+      <p class="reset-sub">{{ t("authReset.doneSub") }}</p>
+      <button class="reset-btn" @click="emit('back')">{{ t("authReset.signin") }}</button>
     </div>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from "vue";
+import { useI18n } from "vue-i18n";
 import { api } from "../composables/useApi";
 
+const { t } = useI18n();
 const props = defineProps({
   // Token can be pre-filled from the URL hash: #reset?token=XXX
   initialToken: { type: String, default: "" },
@@ -79,10 +81,10 @@ async function submitForgot() {
   submitting.value = true;
   try {
     const res = await api.forgotPassword(email.value.trim());
-    msg.value = res.message || "Check your inbox for the reset link.";
+    msg.value = res.message || t("authReset.checkInbox");
     msgClass.value = "ok";
   } catch (e) {
-    msg.value = e.data?.message || "Request failed. Try again.";
+    msg.value = e.data?.message || t("authReset.requestFailed");
     msgClass.value = "err";
   } finally {
     submitting.value = false;
@@ -92,13 +94,13 @@ async function submitForgot() {
 async function submitReset() {
   msg.value = "";
   if (newPw.value !== confirmPw.value) {
-    msg.value = "Passwords do not match."; msgClass.value = "err"; return;
+    msg.value = t("authReset.mismatch"); msgClass.value = "err"; return;
   }
   if (newPw.value.length < 8) {
-    msg.value = "Password must be at least 8 characters."; msgClass.value = "err"; return;
+    msg.value = t("authReset.tooShort"); msgClass.value = "err"; return;
   }
   if (!token.value.trim()) {
-    msg.value = "Please enter your reset token."; msgClass.value = "err"; return;
+    msg.value = t("authReset.needToken"); msgClass.value = "err"; return;
   }
   submitting.value = true;
   try {
@@ -107,7 +109,7 @@ async function submitReset() {
     // Clean the token from the URL so a refresh doesn't re-open the form.
     window.history.replaceState({}, "", window.location.pathname);
   } catch (e) {
-    msg.value = e.data?.message || "Reset failed. The link may have expired.";
+    msg.value = e.data?.message || t("authReset.resetFailed");
     msgClass.value = "err";
   } finally {
     submitting.value = false;

@@ -7,10 +7,13 @@
 -->
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from "vue";
+import { useI18n } from "vue-i18n";
 import Cropper from "cropperjs";
 import "cropperjs/dist/cropper.css";
 import { api } from "../composables/useApi";
 import AdCarousel from "./AdCarousel.vue";
+
+const { t } = useI18n();
 
 const ads = ref([]);   // active ads for the box below the sticker block
 const hasStickerAd = computed(() =>
@@ -47,8 +50,8 @@ const hasSongs    = computed(() => songs.value.length > 0);
 const hasLyrics   = computed(() => hasSongs.value || suggestions.value.length > 0);
 const maxChars    = computed(() => config.value?.max_chars ?? 120);
 const enabled     = computed(() => config.value?.enabled !== false);
-const pageTitle   = computed(() => config.value?.title || "Live Sticker Maker");
-const pageSubtitle = computed(() => config.value?.subtitle || "Upload a photo — we'll turn it into a fun art sticker.");
+const pageTitle   = computed(() => config.value?.title || t("stickers.title"));
+const pageSubtitle = computed(() => config.value?.subtitle || t("stickers.subtitle"));
 
 const chosenText = computed(() =>
   source.value === "lyrics" ? lyricLine.value : manualText.value
@@ -102,7 +105,7 @@ async function onPhoto(e) {
     };
     reader.readAsDataURL(file);
   } catch (err) {
-    errorMsg.value = err.message || "Could not read that image.";
+    errorMsg.value = err.message || t("stickers.errReadImage");
   } finally {
     busy.value = false;
   }
@@ -144,11 +147,11 @@ async function createStickers() {
     jobId.value = res.job_id;
     phase.value = "rendering";
     progress.value = 0;
-    stage.value = "Queued";
+    stage.value = t("stickers.queued");
     destroyCropper();
     poll();
   } catch (err) {
-    errorMsg.value = err.message || "Could not start the sticker maker.";
+    errorMsg.value = err.message || t("stickers.errStart");
     phase.value = "error";
   } finally {
     busy.value = false;
@@ -168,7 +171,7 @@ function poll() {
         phase.value = "done";
       } else if (s.status === "error") {
         clearInterval(pollTimer);
-        errorMsg.value = s.message || "Something went wrong.";
+        errorMsg.value = s.message || t("stickers.errGeneric");
         phase.value = "error";
       }
     } catch { /* keep polling */ }
@@ -191,7 +194,7 @@ async function copyLink() {
   shareNote.value = "";
   try {
     await navigator.clipboard.writeText(shareUrl.value);
-    shareNote.value = "Link copied!";
+    shareNote.value = t("stickers.linkCopied");
   } catch {
     shareNote.value = shareUrl.value;
   }
@@ -238,11 +241,11 @@ async function shareSticker(url, idx) {
     } else {
       // Desktop / unsupported: download the image so they can attach it.
       saveBlob(file);
-      shareNote.value = "Saved the image — attach it in your app to share.";
+      shareNote.value = t("stickers.savedShare");
     }
   } catch (e) {
     if (e?.name !== "AbortError") {
-      shareNote.value = "Couldn't open the share menu — the image was downloaded instead.";
+      shareNote.value = t("stickers.shareMenuFailed");
       try { saveBlob(await fetchStickerFile(url, idx)); } catch { /* give up */ }
     }
   } finally {
@@ -275,7 +278,7 @@ function reset() {
 <template>
   <div class="sticker-page">
     <header class="sk-top">
-      <a class="sk-back" href="#">← Back</a>
+      <a class="sk-back" href="#">← {{ t("buttons.back") }}</a>
       <h1>🎨 {{ pageTitle }}</h1>
       <p class="sk-sub">{{ pageSubtitle }}</p>
     </header>
@@ -285,7 +288,7 @@ function reset() {
 
       <!-- Feature disabled by admin. -->
       <section v-if="!enabled" class="sk-render">
-        <p>This feature isn't available right now. Please check back soon.</p>
+        <p>{{ t("stickers.disabled") }}</p>
       </section>
 
       <!-- Step 0: the red square Create button -->
@@ -294,24 +297,24 @@ function reset() {
           <input type="file" accept="image/jpeg,image/png,image/webp" @change="onPhoto" :disabled="busy" hidden />
           <span v-if="!busy" class="sk-redbox-inner">
             <span class="sk-plus">＋</span>
-            <span class="sk-redbox-label">Create Live Sticker</span>
+            <span class="sk-redbox-label">{{ t("stickers.create") }}</span>
           </span>
-          <span v-else class="sk-redbox-inner">Reading photo…</span>
+          <span v-else class="sk-redbox-inner">{{ t("stickers.readingPhoto") }}</span>
         </label>
-        <p class="sk-hint">Any photo works — vertical or horizontal. JPG / PNG / WebP.</p>
+        <p class="sk-hint">{{ t("stickers.photoHint") }}</p>
       </section>
 
       <!-- Step 1: crop + choose text -->
       <section v-else-if="phase === 'cropping'" class="sk-crop">
-        <p class="sk-step">1 · Adjust the square (we centred it on the face)</p>
+        <p class="sk-step">{{ t("stickers.step1") }}</p>
         <div class="sk-crop-box">
           <img ref="cropImg" :src="cropSrc" alt="crop" />
         </div>
 
-        <p class="sk-step">2 · Sticker words</p>
+        <p class="sk-step">{{ t("stickers.step2") }}</p>
         <div class="sk-source">
-          <button v-if="hasLyrics" :class="{ on: source === 'lyrics' }" @click="source = 'lyrics'">Song lyrics</button>
-          <button :class="{ on: source === 'manual' }" @click="source = 'manual'">Type my own</button>
+          <button v-if="hasLyrics" :class="{ on: source === 'lyrics' }" @click="source = 'lyrics'">{{ t("stickers.songLyrics") }}</button>
+          <button :class="{ on: source === 'manual' }" @click="source = 'manual'">{{ t("stickers.typeOwn") }}</button>
         </div>
 
         <template v-if="source === 'lyrics'">
@@ -325,14 +328,14 @@ function reset() {
         </template>
         <div v-else>
           <input v-model="manualText" :maxlength="maxChars" class="sk-input"
-                 placeholder="e.g. Best Dad Ever" />
-          <p class="sk-tiny">We'll auto-correct spelling for English text.</p>
+                 :placeholder="t('stickers.manualPlaceholder')" />
+          <p class="sk-tiny">{{ t("stickers.autoCorrect") }}</p>
         </div>
 
         <div class="sk-actions">
-          <button class="sk-ghost" @click="reset">Cancel</button>
+          <button class="sk-ghost" @click="reset">{{ t("stickers.cancel") }}</button>
           <button class="sk-go" :disabled="busy" @click="createStickers">
-            {{ busy ? "Starting…" : "Make my sticker ✨" }}
+            {{ busy ? t("stickers.starting") : t("stickers.make") }}
           </button>
         </div>
       </section>
@@ -340,50 +343,46 @@ function reset() {
       <!-- Step 2: rendering -->
       <section v-else-if="phase === 'rendering'" class="sk-render">
         <div class="sk-spinner"></div>
-        <p>{{ stage || "Working…" }}</p>
+        <p>{{ stage || t("stickers.working") }}</p>
         <div class="sk-bar"><div class="sk-bar-fill" :style="{ width: progress + '%' }"></div></div>
       </section>
 
       <!-- Step 3: results -->
       <section v-else-if="phase === 'done'" class="sk-done">
-        <p class="sk-step">Your sticker is ready 🎉</p>
+        <p class="sk-step">{{ t("stickers.ready") }}</p>
         <div class="sk-grid">
           <div v-for="(url, i) in stickers" :key="i" class="sk-result">
             <div class="sk-cell"><img :src="url" :alt="`sticker ${i + 1}`" /></div>
             <div class="sk-share">
-              <button class="sk-go" :disabled="sharing" @click="shareSticker(url, i)">📤 Share</button>
-              <button class="sk-ghost" @click="downloadSticker(url, i)">⬇ Save</button>
+              <button class="sk-go" :disabled="sharing" @click="shareSticker(url, i)">{{ t("stickers.share") }}</button>
+              <button class="sk-ghost" @click="downloadSticker(url, i)">{{ t("stickers.save") }}</button>
             </div>
           </div>
         </div>
-        <p class="sk-tiny sk-center">
-          <strong>Share</strong> or <strong>Save</strong> posts the actual image to your phone
-          and apps (WhatsApp, Instagram, Messenger, Viber, X…) — it becomes <em>yours to keep,
-          forever</em>, just like any photo you upload. It stays even if this site goes away.
-        </p>
+        <p class="sk-tiny sk-center">{{ t("stickers.keepNote") }}</p>
 
         <!-- Link share (server-hosted preview) — secondary, less permanent. -->
         <details class="sk-linkshare">
-          <summary>Or share just a link</summary>
-          <p class="sk-tiny">A link shows a preview from our site. The link works for 1 year, then expires. To keep your sticker permanently, use <strong>Share</strong> or <strong>Save</strong> above.</p>
+          <summary>{{ t("stickers.orLink") }}</summary>
+          <p class="sk-tiny">{{ t("stickers.linkNote") }}</p>
           <div class="sk-social">
             <button class="sk-chip" title="Facebook"  @click="socialShare('facebook')">f</button>
             <button class="sk-chip" title="X"         @click="socialShare('x')">𝕏</button>
             <button class="sk-chip" title="WhatsApp"  @click="socialShare('whatsapp')">✆</button>
             <button class="sk-chip" title="Telegram"  @click="socialShare('telegram')">✈</button>
             <button class="sk-chip" title="Viber"     @click="socialShare('viber')">V</button>
-            <button class="sk-chip wide" @click="copyLink">🔗 Copy link</button>
+            <button class="sk-chip wide" @click="copyLink">{{ t("stickers.copyLink") }}</button>
           </div>
         </details>
 
         <p v-if="shareNote" class="sk-tiny sk-center">{{ shareNote }}</p>
         <div class="sk-actions">
-          <button class="sk-ghost" @click="reset">Make another 🎨</button>
+          <button class="sk-ghost" @click="reset">{{ t("stickers.makeAnother") }}</button>
         </div>
       </section>
 
       <section v-else-if="phase === 'error'" class="sk-done">
-        <div class="sk-actions"><button class="sk-go" @click="reset">Try again</button></div>
+        <div class="sk-actions"><button class="sk-go" @click="reset">{{ t("stickers.tryAgain") }}</button></div>
       </section>
 
       <!-- Ads box — below the sticker block. Shows only when an ad is tagged 'Sticker page'. -->

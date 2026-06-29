@@ -384,9 +384,20 @@ reload:
 - **Narration voice** — follows automatically because it is resolved per-language on the
   backend (`Setting::narrationMode($language)`); when the language changes, the voice changes.
 
-Locale string files live in [frontend/src/i18n/locales/](frontend/src/i18n/locales/) — `en.json`
-is authored, `my`/`td` carry the migrated Church-Service translations, and the remaining locales
-are scaffolded and fall back to English per key until translated (Phase 3). **Admin tools**
+**Localization foundation (Phase 3).** `en.json` is the **canonical source** — every
+worshipper-facing string is sourced through `vue-i18n` (`t()`), grouped into logical namespaces
+(`common`, `buttons`, `nav`, `pastor`, `intake`, `study`, `worship`, `bible`, `vocabulary`,
+`player`, `preparing`, `offering`, `testimony`, `authPanel`, `authReset`, `history`, `journey`,
+`songs`, `fathersDay`, `stickers`, `theme`, `ads`). No worshipper-facing component carries
+literal UI text (only developer comments, brand names like Facebook/WhatsApp, and admin-only
+screens remain plain). **English, Burmese (`my`) and Tedim (`td`)** are fully translated for the
+core worship surfaces; the two seasonal features (Father's Day, Live Stickers) and a few
+account/utility surfaces are English-only for now and fall back to English. The remaining ten
+locales (`ja`, `zh-CN`, `hi`, `ko`, `ar`, `th`, `es`, `fr`, `de`, `ta`) are scaffolded and
+inherit English per key until reviewed by native speakers — never machine-translated. Missing
+keys fall back to English (`fallbackLocale: "en"`), so the UI never breaks. *(The newly authored
+`my`/`td` strings beyond the original Church-Service set are best-effort and warrant a native
+review pass.)* **Admin tools**
 (AdminConsole, VoiceStudio, AdsManager, MusicCatalogManager, AdminLyricsManager) keep their own
 per-language selectors — those configure backend per-language settings, not the worshipper's UI.
 The architectural invariant: **never introduce another language state** — every worshipper-facing

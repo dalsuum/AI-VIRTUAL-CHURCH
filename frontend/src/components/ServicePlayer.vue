@@ -5,11 +5,14 @@
 // their audio/video finishes; a manual Previous/Next is always available so the
 // worshipper stays in control of the pace.
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import MusicPlayer from "./MusicPlayer.vue";
 import TestimonyWall from "./TestimonyWall.vue";
 import OfferingForm from "./OfferingForm.vue";
 import AdCarousel from "./AdCarousel.vue";
 import { api } from "../composables/useApi.js";
+
+const { t } = useI18n();
 
 const props = defineProps({
   service: { type: Object, required: true },
@@ -25,15 +28,16 @@ const mood = computed(() => props.service?.mood || "");
 const musicFallbackNotice = computed(() => {
   const asset = props.service?.music_asset;
   if (!asset || asset.asset_type !== "text") return "";
-  return asset.title || "Worship music is unavailable right now. We will continue with scripture and prayer.";
+  return asset.title || t("player.musicUnavailable");
 });
 
-// Spoken segments, in the order they're read during the service.
+// Spoken segments, in the order they're read during the service. Labels resolve
+// through i18n at render time via `labelKey`.
 const SEGMENTS = [
-  { key: "opening_prayer", label: "Opening Prayer" },
-  { key: "scripture", label: "Scripture" },
-  { key: "sermon", label: "Message" },
-  { key: "benediction", label: "Benediction" },
+  { key: "opening_prayer", labelKey: "player.openingPrayer" },
+  { key: "scripture", labelKey: "player.scripture" },
+  { key: "sermon", labelKey: "player.message" },
+  { key: "benediction", labelKey: "player.benediction" },
 ];
 
 // Build the ordered list of stages from whatever the service produced. Worship leads
@@ -42,7 +46,7 @@ const stages = computed(() => {
   const s = props.service;
   const list = [];
   if (s?.music_asset && ["audio", "youtube"].includes(s.music_asset.asset_type)) {
-    list.push({ kind: "worship", key: "worship", label: "Worship" });
+    list.push({ kind: "worship", key: "worship", labelKey: "player.worship" });
   }
 
   for (const seg of SEGMENTS) {
@@ -65,7 +69,7 @@ const stages = computed(() => {
       list.push({
         kind: "segment",
         key: seg.key,
-        label: seg.label,
+        labelKey: seg.labelKey,
         text: text || "",
         embed,
         videoParts,                          // array of part URLs, or null
@@ -73,10 +77,10 @@ const stages = computed(() => {
         audio,
       });
     } else if (s?.status !== "complete") {
-      list.push({ kind: "loading", key: seg.key, label: seg.label });
+      list.push({ kind: "loading", key: seg.key, labelKey: seg.labelKey });
     }
   }
-  list.push({ kind: "closing", key: "closing", label: "Testimony & Offering" });
+  list.push({ kind: "closing", key: "closing", labelKey: "player.beforeYouGo" });
   return list;
 });
 
@@ -312,11 +316,11 @@ function describeMediaError(el) {
   const code = el?.error?.code;
   return (
     {
-      1: "Playback was aborted.",
-      2: "Network error while fetching the audio.",
-      3: "The audio file could not be decoded.",
-      4: "Audio source not supported or unreachable.",
-    }[code] || "Audio failed to play."
+      1: t("player.errAborted"),
+      2: t("player.errNetwork"),
+      3: t("player.errDecode"),
+      4: t("player.errSource"),
+    }[code] || t("player.errGeneric")
   );
 }
 
@@ -354,8 +358,8 @@ async function playCurrentMedia(seekTo = 0) {
     // NotAllowedError = the browser is gating autoplay behind a user gesture.
     mediaNote.value =
       err?.name === "NotAllowedError"
-        ? "Tap ▶ on the bar to start the audio."
-        : `Couldn't start audio: ${err?.name || err}`;
+        ? t("player.tapToStartAudio")
+        : `${t("player.errGeneric")} (${err?.name || err})`;
   }
 }
 
@@ -486,14 +490,14 @@ watch(stages, (list) => {
       <div class="stage" :key="current.key">
         <!-- Worship -->
         <template v-if="current.kind === 'worship'">
-          <h2 class="stage-title">Worship</h2>
+          <h2 class="stage-title">{{ t("player.worship") }}</h2>
           <MusicPlayer :asset="service.music_asset" @ended="onMediaEnded" />
-          <p class="stage-hint">Let the music settle your heart. We'll continue when it ends.</p>
+          <p class="stage-hint">{{ t("player.worshipHint") }}</p>
         </template>
 
         <!-- Spoken segment -->
         <template v-else-if="current.kind === 'segment'">
-          <h2 class="stage-title">{{ current.label }}</h2>
+          <h2 class="stage-title">{{ t(current.labelKey) }}</h2>
 
           <!-- A YouTube-sourced segment (the preaching message in YouTube mode):
                embed the clip and auto-advance when it ends, same as worship. -->
@@ -536,7 +540,7 @@ watch(stages, (list) => {
               type="button"
               @click="toggleNarration"
             >
-              {{ narrating ? "⏸ Stop reading" : "🔊 Read aloud" }}
+              {{ narrating ? t("player.stopReading") : t("player.readAloud") }}
             </button>
             <div class="stage-text">
               <p v-for="(para, pi) in paragraphs" :key="pi">
@@ -550,17 +554,17 @@ watch(stages, (list) => {
 
         <!-- Loading stage (for incomplete segments when streaming service) -->
         <template v-else-if="current.kind === 'loading'">
-          <h2 class="stage-title">{{ current.label }}</h2>
+          <h2 class="stage-title">{{ t(current.labelKey) }}</h2>
           <div class="loading-state" style="text-align: center; padding: 2rem 0; color: var(--text-muted);">
             <div class="spinner" aria-hidden="true" style="margin: 0 auto 1rem; width: 32px; height: 32px; border: 3px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin 1s linear infinite;"></div>
-            <p>Composing message...</p>
+            <p>{{ t("player.composingMessage") }}</p>
           </div>
         </template>
 
         <!-- Closing: testimony + offering -->
         <template v-else>
-          <h2 class="stage-title">Before you go</h2>
-          <p class="stage-hint">Share what God has done, and give as you feel led.</p>
+          <h2 class="stage-title">{{ t("player.beforeYouGo") }}</h2>
+          <p class="stage-hint">{{ t("player.beforeYouGoHint") }}</p>
           <TestimonyWall />
           <OfferingForm />
         </template>
@@ -578,12 +582,12 @@ watch(stages, (list) => {
       />
 
       <nav class="controls">
-        <button class="nav prev" :disabled="atStart" @click="prev">‹ Previous</button>
+        <button class="nav prev" :disabled="atStart" @click="prev">{{ t("player.previous") }}</button>
         <span class="pos">{{ index + 1 }} / {{ stages.length }}</span>
         <!-- On the last stage the forward action ends the service rather than dead-ending
              on a disabled button. -->
-        <button v-if="!atEnd" class="nav next" @click="next">Next ›</button>
-        <button v-else class="nav end" @click="requestExit">End service</button>
+        <button v-if="!atEnd" class="nav next" @click="next">{{ t("player.next") }}</button>
+        <button v-else class="nav end" @click="requestExit">{{ t("player.endService") }}</button>
       </nav>
     </template>
 

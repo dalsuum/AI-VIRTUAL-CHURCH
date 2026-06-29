@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Setting;
 use App\Models\VocabEntry;
 use App\Models\Vocabulary;
 use App\Services\PermissionService;
@@ -54,7 +53,7 @@ class VocabularyController extends Controller
     public function learn(Request $request, Vocabulary $vocabulary): JsonResponse
     {
         $lang = $request->validate([
-            'lang' => ['required', 'string', Rule::in(Setting::LANGUAGES)],
+            'lang' => ['required', 'string', Rule::in(VocabEntry::learnerLanguages())],
         ])['lang'];
 
         $entry = VocabEntry::firstOrCreate(

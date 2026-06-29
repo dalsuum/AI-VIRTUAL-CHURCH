@@ -48,6 +48,13 @@ class VocabLearnTest extends TestCase
         $this->getJson("/api/vocabulary/{$word->id}/learn?lang=xx")->assertStatus(422);
     }
 
+    public function test_hebrew_is_not_a_learner_target(): void
+    {
+        // Hebrew is a Bible/reference locale only — not offered for AI generation.
+        $word = $this->seedWord();
+        $this->getJson("/api/vocabulary/{$word->id}/learn?lang=he")->assertStatus(422);
+    }
+
     public function test_webhook_fills_cache_and_next_request_serves_it_without_enqueue(): void
     {
         config(['services.worker.secret' => str_repeat('k', 48)]);

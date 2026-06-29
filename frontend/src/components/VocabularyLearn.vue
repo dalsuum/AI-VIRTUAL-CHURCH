@@ -64,10 +64,14 @@ const filtered = computed(() => {
     .map(([, c]) => c);
 });
 
-// Other languages offered for parallel viewing (registry minus already-loaded).
+// Hebrew is a Bible/reference locale only, not a learner target (the backend rejects
+// it); mirror that boundary so it never appears as a chip. See VocabEntry::NON_LEARNER_LANGUAGES.
+const NON_LEARNER = ["he"];
+
+// Other languages offered for parallel viewing (registry minus already-loaded/excluded).
 const otherLangs = computed(() => {
   const reg = getRegistry();
-  return Object.keys(reg).filter((code) => !(code in entries.value));
+  return Object.keys(reg).filter((code) => !(code in entries.value) && !NON_LEARNER.includes(code));
 });
 
 function langName(code) {
@@ -79,7 +83,9 @@ function openConcept(concept) {
   entries.value = {};
   Object.values(pollTimers.value).forEach(clearTimeout);
   pollTimers.value = {};
-  loadLanguage(uiLang.value);   // start with the worshipper's language
+  // Start with the worshipper's language, unless it is a reference-only locale (e.g.
+  // Hebrew) that has no learner generation — then fall back to English.
+  loadLanguage(NON_LEARNER.includes(uiLang.value) ? "en" : uiLang.value);
 }
 
 function closeDetail() {

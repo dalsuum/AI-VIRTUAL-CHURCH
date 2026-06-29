@@ -404,6 +404,9 @@ Route::middleware(['auth:sanctum', 'account.usable'])->group(function () {
         Route::post('/knowledge/jobs/{job}/cancel',    [\App\Http\Controllers\KnowledgeUploadController::class, 'cancel']);
         Route::post('/knowledge/jobs/{job}/retry',     [\App\Http\Controllers\KnowledgeUploadController::class, 'retry']);
         Route::delete('/knowledge/jobs/{job}',         [\App\Http\Controllers\KnowledgeUploadController::class, 'destroy']);
+
+        // Knowledge Operations Platform — retrieval inspector.
+        Route::post('/knowledge/inspect',              [\App\Http\Controllers\KnowledgeInspectorController::class, 'inspect']);
         Route::patch('/users/{user}/presenter-gender', [AdminController::class, 'updatePresenterGender']);
         Route::post('/users/{user}/force-reset',       [AdminController::class, 'forcePasswordReset']);
         Route::delete('/users/{user}',                 [AdminController::class, 'deleteUser']);

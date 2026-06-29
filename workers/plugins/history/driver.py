@@ -221,8 +221,9 @@ def _run_vocab_generate(job: dict, llm: OpenRouterLLM) -> None:
         "'John 3:16'). Return STRICT JSON with keys: \"word\", \"pronunciation\", "
         '"part_of_speech", "meaning", "definition", "example", "synonyms" (array), '
         '"antonyms" (array), "related" (array), "bible_verse" (object {ref, text} or '
-        'null), "difficulty" ("beginner"|"intermediate"|"advanced"). JSON only, no '
-        "prose outside it."
+        'null), "difficulty". The "difficulty" value is the ONE EXCEPTION to the '
+        'language law: it MUST be exactly one of the English tokens "beginner", '
+        '"intermediate" or "advanced". JSON only, no prose outside it.'
     )
     # The concept (in English) is the sole seed; we deliberately do NOT pass the Zolai
     # gloss — feeding a Chin word biases the model into echoing it for languages it is
@@ -231,7 +232,9 @@ def _run_vocab_generate(job: dict, llm: OpenRouterLLM) -> None:
     text, usage = llm.complete(
         system=system,
         messages=[{"role": "user", "content": prompt}],
-        temperature=0.4, max_tokens=700, role="vocab",
+        # Token-dense scripts (Burmese, Thai, …) need headroom or the JSON truncates
+        # mid-field and fails to parse — 700 was too low (observed for my).
+        temperature=0.4, max_tokens=1200, role="vocab",
     )
 
     payload, word, difficulty = None, None, None

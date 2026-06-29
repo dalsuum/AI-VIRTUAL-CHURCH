@@ -185,7 +185,7 @@ class SpecialSunday extends Model
      */
     public function localizedPayload(string $language, CarbonImmutable $sunday): array
     {
-        $lang = in_array($language, ['en', 'my', 'td'], true) ? $language : 'en';
+        $lang = array_key_exists($language, $this->titles ?? []) ? $language : 'en';
 
         return [
             'key'         => $this->key,

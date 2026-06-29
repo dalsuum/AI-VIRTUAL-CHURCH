@@ -29,7 +29,7 @@ class MusicController extends Controller
         $moods = array_map(fn ($key) => [
             'key'    => $key,
             'label'  => $this->moods->labels($key)['en'],
-            'labels' => $this->moods->labels($key),   // {en, my, td} for the language switcher
+            'labels' => $this->moods->labels($key),   // translated labels for the language switcher
             'emoji'  => $this->moods->emoji($key),
         ], $this->moods->moodKeys());
 

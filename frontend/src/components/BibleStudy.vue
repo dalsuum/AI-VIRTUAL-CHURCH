@@ -21,6 +21,9 @@ const TRANSLATIONS = {
   en:  [["kjv", "KJV"], ["en", "English (BSB)"]],
   my:  [["my", "Burmese (Judson 1835)"], ["kjv", "KJV (English)"]],
   td:  [["td", "Tedim (Lai Siangtho 1932)"], ["kjv", "KJV (English)"]],
+  fr:  [["fr", "Français (Ostervald 1877)"], ["kjv", "KJV (English)"]],
+  de:  [["de", "Deutsch (Luther 1912)"], ["kjv", "KJV (English)"]],
+  es:  [["es", "Español (Reina-Valera 1909)"], ["kjv", "KJV (English)"]],
   cnh: [["cnh", "Hakha Chin"], ["kjv", "KJV (English)"]],
   cfm: [["cfm", "Falam Chin"], ["kjv", "KJV (English)"]],
   lus: [["lus", "Mizo"], ["kjv", "KJV (English)"]],
@@ -244,7 +247,7 @@ async function restore(chatId) {
       bubbles.value = (full.messages || []).map((m) => ({
         turn: m.turn,
         persona_id: m.persona_id ?? null,
-        name: m.role === "user" ? "You" : (m.role === "moderator" || m.role === "synthesis" ? "Moderator" : "Pastor"),
+        name: m.role === "user" ? t("common.you") : (m.role === "moderator" || m.role === "synthesis" ? t("study.moderator") : t("pastor.role")),
         role: m.role,
         text: m.content || "",
         refs: (m.scripture_refs || []).map((r) => ({ ref: r, translation: full.translation || "" })),
@@ -259,7 +262,7 @@ async function restore(chatId) {
       bubbles.value = (s.messages || []).map((m, i) => ({
         turn: i,
         persona_id: null,
-        name: m.sender === "user" ? "You" : "Pastor",
+        name: m.sender === "user" ? t("common.you") : t("pastor.role"),
         role: m.sender === "user" ? "user" : "pastor",
         text: m.content || "",
         refs: [],
@@ -278,7 +281,7 @@ onBeforeUnmount(() => { stream.close(); if (audioEl) audioEl.pause(); });
 let userTurnSeq = 0;
 function pushUserBubble(text) {
   bubbles.value.push({
-    turn: --userTurnSeq, persona_id: null, name: "You",
+    turn: --userTurnSeq, persona_id: null, name: t("common.you"),
     role: "user", text, refs: [],
   });
 }
@@ -289,7 +292,7 @@ function bubbleFor(env) {
     b = {
       turn: env.turn,
       persona_id: env.persona_id ?? null,
-      name: env.display_name || "Moderator",
+      name: env.display_name || t("study.moderator"),
       role: env.role || "pastor",
       text: "",
       refs: [],
@@ -400,18 +403,18 @@ function roleClass(role) {
 function summaryText() {
   const s = summary.value || {};
   const L = [];
-  L.push("AI Bible Study — Summary");
-  if (session.value?.topic || form.question) L.push(`Topic: ${session.value?.topic || form.question}`);
+  L.push(`${t("study.title")} - ${t("study.summary")}`);
+  if (session.value?.topic || form.question) L.push(`${t("study.topic")}: ${session.value?.topic || form.question}`);
   const sect = (title, items) => {
     const arr = (items || []).filter(Boolean);
     if (arr.length) { L.push("", title); arr.forEach((i) => L.push("- " + i)); }
   };
-  sect("Key Verses", s.key_verses);
-  sect("Main Lessons", s.lessons);
-  if (s.prayer) { L.push("", "Prayer", s.prayer); }
-  sect("Action Points", s.action_points);
-  sect("Reflection Questions", s.reflection_questions);
-  sect("Study Plan", s.study_plan);
+  sect(t("study.keyVerses"), s.key_verses);
+  sect(t("study.mainLessons"), s.lessons);
+  if (s.prayer) { L.push("", t("study.prayer"), s.prayer); }
+  sect(t("study.actionPoints"), s.action_points);
+  sect(t("study.reflection"), s.reflection_questions);
+  sect(t("study.studyPlan"), s.study_plan);
   return L.join("\n");
 }
 
@@ -426,7 +429,7 @@ async function copySummary() {
 async function shareSummary() {
   const text = summaryText();
   if (navigator.share) {
-    try { await navigator.share({ title: "AI Bible Study", text }); return; } catch { /* cancelled */ }
+    try { await navigator.share({ title: t("study.title"), text }); return; } catch { /* cancelled */ }
   }
   try { await navigator.clipboard.writeText(text); flash(t("study.msg.shareCopied")); }
   catch { flash(t("study.msg.shareUnsupported")); }

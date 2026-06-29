@@ -1,7 +1,7 @@
 <script setup>
 /**
  * AI Worship Radio — worshippers state a mood and the app continuously plays
- * mood-matched worship songs (English / Burmese / Zolai) until they press Stop.
+ * mood-matched worship songs in the selected content language until they press Stop.
  *
  * Selection is server-side (POST /music/recommend); this component only drives
  * the queue + player. Continuous autoplay keeps a rolling window of the last 50

@@ -340,9 +340,37 @@ class MusicRecommendTest extends TestCase
     public function test_invalid_language_is_rejected(): void
     {
         $this->postJson('/api/music/recommend', [
-            'language' => 'fr',
+            'language' => 'xx',
             'mood'     => 'Anxiety',
         ])->assertStatus(422);
+    }
+
+    public function test_milestone_one_language_labels_are_exposed(): void
+    {
+        $relax = collect($this->getJson('/api/music/moods')->assertOk()->json('moods'))
+            ->firstWhere('key', 'relax');
+
+        $this->assertSame('Paix', $relax['labels']['fr']);
+        $this->assertSame('Ruhe', $relax['labels']['de']);
+        $this->assertSame('Paz', $relax['labels']['es']);
+    }
+
+    public function test_french_discovery_queries_use_native_terms(): void
+    {
+        $seen = [];
+        $yt = \Mockery::mock(\App\Services\YoutubeSongSearchService::class);
+        $yt->shouldReceive('isConfigured')->andReturn(true);
+        $yt->shouldReceive('search')->andReturnUsing(function (string $q) use (&$seen) {
+            $seen[] = $q;
+            return [];
+        });
+        $this->app->instance(\App\Services\YoutubeSongSearchService::class, $yt);
+
+        $this->postJson('/api/music/recommend', ['language' => 'fr', 'mood' => 'relax'])->assertOk();
+
+        $this->assertStringContainsString('Paix', $seen[0]);
+        $joined = implode(' | ', $seen);
+        $this->assertStringContainsString('louange chrétienne française', $joined);
     }
 
     public function test_moods_endpoint_lists_options(): void

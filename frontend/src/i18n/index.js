@@ -1,13 +1,13 @@
 // Frontend i18n. The set of locales and their metadata (native name, rtl,
 // formatting locale) comes from the backend registry (config/languages.php via
 // GET /api/languages) — the single source of truth — so adding a language is a
-// backend-only change. Only English UI strings are authored in Phase 1; every
-// other locale falls back to English until its strings land.
+// backend-only change. Milestone locale files can be partial; any
+// missing key falls back to English until its reviewed strings land.
 import { createI18n } from "vue-i18n";
 
 const STORAGE_KEY = "locale";
 
-// All locale string files (en authored; the rest scaffolded, filled later).
+// All locale string files. Milestone locales may be partial.
 // fallbackLocale below means any missing key falls back to English, so an empty
 // or partial locale file never breaks the UI.
 const messages = {};

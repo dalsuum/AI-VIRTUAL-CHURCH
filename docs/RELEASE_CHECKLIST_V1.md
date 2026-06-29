@@ -20,7 +20,7 @@ Scope is frozen for v1.0. Do not use this checklist to add features.
 ## Milestone Completion
 
 - [ ] Milestone 4: Arabic, Hebrew, and RTL completed and committed.
-- [ ] Milestone 5: system QA and regression completed and committed.
+- [x] Milestone 5: system QA and regression completed and committed. See [`MILESTONE_5_QA.md`](MILESTONE_5_QA.md).
 - [ ] Milestone 6: language intelligence and vocabulary completed and committed.
 - [ ] Milestone 7: production readiness completed and committed.
 - [ ] Production readiness report reviewed and approved.
@@ -28,9 +28,9 @@ Scope is frozen for v1.0. Do not use this checklist to add features.
 ## Automated Checks
 
 - [ ] CI is green on the release branch.
-- [ ] Backend tests pass.
-- [ ] Frontend build passes.
-- [ ] Worker tests pass.
+- [x] Backend tests pass. (285 passed, 1 skipped — Milestone 5)
+- [x] Frontend build passes. (Milestone 5)
+- [x] Worker tests pass. (70 passed — Milestone 5)
 - [ ] Security checks pass.
 - [ ] Pylint passes.
 - [ ] Dependency audits pass.

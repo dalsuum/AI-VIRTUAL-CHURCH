@@ -360,6 +360,9 @@ export const api = {
 
   // Zolai ↔ Burmese ↔ English vocabulary reference (public read for #vocabulary).
   getVocabulary: () => request("/vocabulary"),
+  // Learner view: AI-generated entry for one concept in one language. Body carries
+  // {status: 'ready'|'generating', entry}; poll while 'generating'.
+  learnVocab: (id, lang) => request(`/vocabulary/${id}/learn?lang=${encodeURIComponent(lang)}`),
   // Admin CRUD (vocabulary.manage).
   adminCreateVocabulary: (payload) =>
     request("/admin/vocabulary", { method: "POST", body: payload }),

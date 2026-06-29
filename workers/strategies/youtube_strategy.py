@@ -228,6 +228,133 @@ _LANG_CONFIG: dict[str, dict] = {
             "We Worship Zomi", "FEMC Worship", "ZACC Worship", "Khai Pi", "Cin Bawi",
         ],
     },
+
+    # ── config-driven native-first languages (see _NATIVE_QUERY_LANGS) ──────────
+    # Each entry drives both the YouTube queries (query_anchor + *_query_terms) and
+    # the result gates (*_title_require_any / *_title_reject_any). Non-Latin titles
+    # are additionally screened by script (_native_language_ok). Add a language by
+    # adding an entry here and to _NATIVE_QUERY_LANGS — no other code change.
+    "fr": {
+        "query_anchor": "chrétien",
+        "relevance_language": "fr", "region_code": "FR",
+        "sermon_query_terms": ["prédication", "sermon", "enseignement biblique"],
+        "sermon_title_require_any": ["prédication", "sermon", "message", "pasteur", "parole de dieu", "enseignement"],
+        "sermon_title_reject_any": ["chorale", "concert", "chanson", "louange", "musique", "clip", "choir", "song", "music"],
+        "worship_query_terms": ["chant de louange chrétien", "adoration chrétienne", "louange"],
+        "music_title_require_any": ["louange", "adoration", "chrétien", "chrétienne", "gospel", "worship"],
+        "music_title_reject_any": ["reaction", "interview", "podcast", "film", "bande annonce"],
+        "channel_reject_any": ["movie clips", "gaming", "news", "actualités", "politique"],
+    },
+    "de": {
+        "query_anchor": "christlich",
+        "relevance_language": "de", "region_code": "DE",
+        "sermon_query_terms": ["predigt", "botschaft", "bibelstunde"],
+        "sermon_title_require_any": ["predigt", "botschaft", "pastor", "wort gottes", "andacht", "auslegung"],
+        "sermon_title_reject_any": ["chor", "konzert", "lied", "lobpreis", "musik", "choir", "song", "music"],
+        "worship_query_terms": ["christliches lobpreislied", "anbetung", "lobpreis"],
+        "music_title_require_any": ["lobpreis", "anbetung", "christlich", "christliche", "gospel", "worship"],
+        "music_title_reject_any": ["reaction", "interview", "podcast", "film", "trailer"],
+        "channel_reject_any": ["movie clips", "gaming", "nachrichten", "news", "politik"],
+    },
+    "es": {
+        "query_anchor": "cristiano",
+        "relevance_language": "es", "region_code": "ES",
+        "sermon_query_terms": ["predicación", "sermón", "enseñanza bíblica"],
+        "sermon_title_require_any": ["predicación", "predica", "sermón", "mensaje", "pastor", "palabra de dios", "enseñanza"],
+        "sermon_title_reject_any": ["coro", "concierto", "canción", "alabanza", "música", "choir", "song", "music"],
+        "worship_query_terms": ["canción cristiana de adoración", "alabanza cristiana", "adoración"],
+        "music_title_require_any": ["alabanza", "adoración", "cristiano", "cristiana", "gospel", "worship"],
+        "music_title_reject_any": ["reaction", "interview", "podcast", "película", "tráiler"],
+        "channel_reject_any": ["movie clips", "gaming", "noticias", "news", "política"],
+    },
+    "ja": {
+        "query_anchor": "キリスト教",
+        "relevance_language": "ja", "region_code": "JP",
+        "sermon_query_terms": ["説教", "礼拝メッセージ", "聖書"],
+        "sermon_title_require_any": ["説教", "メッセージ", "牧師", "礼拝", "御言葉"],
+        "sermon_title_reject_any": ["賛美歌", "聖歌隊", "コンサート", "音楽", "concert", "choir", "music"],
+        "worship_query_terms": ["賛美歌", "ワーシップ", "礼拝賛美"],
+        "music_title_require_any": ["賛美", "礼拝", "ワーシップ", "ゴスペル", "キリスト", "worship"],
+        "music_title_reject_any": ["reaction", "interview", "podcast", "映画", "予告"],
+        "channel_reject_any": ["movie", "gaming", "news", "ニュース"],
+    },
+    "zh-CN": {
+        "query_anchor": "基督教",
+        "relevance_language": "zh", "region_code": "CN",
+        "sermon_query_terms": ["讲道", "证道", "主日信息"],
+        "sermon_title_require_any": ["讲道", "证道", "信息", "牧师", "主日"],
+        "sermon_title_reject_any": ["诗歌", "诗班", "音乐会", "敬拜赞美", "音乐", "concert", "choir", "music"],
+        "worship_query_terms": ["敬拜赞美诗歌", "基督教敬拜", "赞美诗歌"],
+        "music_title_require_any": ["敬拜", "赞美", "诗歌", "基督", "worship"],
+        "music_title_reject_any": ["reaction", "interview", "podcast", "电影", "预告"],
+        "channel_reject_any": ["movie", "gaming", "news", "新闻"],
+    },
+    "ko": {
+        "query_anchor": "기독교",
+        "relevance_language": "ko", "region_code": "KR",
+        "sermon_query_terms": ["설교", "주일설교", "말씀"],
+        "sermon_title_require_any": ["설교", "말씀", "목사", "주일", "예배 메시지"],
+        "sermon_title_reject_any": ["찬양", "성가대", "콘서트", "음악", "워십", "concert", "choir", "music"],
+        "worship_query_terms": ["기독교 예배 찬양", "한국어 찬양", "워십"],
+        "music_title_require_any": ["찬양", "예배", "워십", "ccm", "기독교", "worship"],
+        "music_title_reject_any": ["reaction", "interview", "podcast", "영화", "예고"],
+        "channel_reject_any": ["movie", "gaming", "news", "뉴스"],
+    },
+    "hi": {
+        "query_anchor": "मसीही",
+        "relevance_language": "hi", "region_code": "IN",
+        "sermon_query_terms": ["उपदेश", "प्रवचन", "वचन"],
+        "sermon_title_require_any": ["उपदेश", "प्रवचन", "संदेश", "वचन", "पास्टर"],
+        "sermon_title_reject_any": ["भजन", "गीत", "संगीत", "गायन", "concert", "choir", "music", "song"],
+        "worship_query_terms": ["मसीही आराधना गीत", "स्तुति", "आराधना"],
+        "music_title_require_any": ["आराधना", "स्तुति", "मसीही", "भजन", "worship"],
+        "music_title_reject_any": ["reaction", "interview", "podcast", "movie", "trailer"],
+        "channel_reject_any": ["telugu", "tamil", "kannada", "malayalam", "movie", "film", "news"],
+    },
+    "ta": {
+        "query_anchor": "கிறிஸ்தவ",
+        "relevance_language": "ta", "region_code": "IN",
+        "sermon_query_terms": ["பிரசங்கம்", "செய்தி", "வசனம்"],
+        "sermon_title_require_any": ["பிரசங்கம்", "செய்தி", "வசனம்", "போதகர்"],
+        "sermon_title_reject_any": ["பாடல்", "கீர்த்தனை", "இசை", "பாடகர்", "concert", "choir", "music", "song"],
+        "worship_query_terms": ["தமிழ் கிறிஸ்தவ ஆராதனை பாடல்", "ஆராதனை", "துதி"],
+        "music_title_require_any": ["ஆராதனை", "துதி", "கிறிஸ்தவ", "worship"],
+        "music_title_reject_any": ["reaction", "interview", "podcast", "movie", "trailer"],
+        "channel_reject_any": ["telugu", "kannada", "malayalam", "hindi", "movie", "film", "news"],
+    },
+    "th": {
+        "query_anchor": "คริสเตียน",
+        "relevance_language": "th", "region_code": "TH",
+        "sermon_query_terms": ["คำเทศนา", "เทศนา", "พระวจนะ"],
+        "sermon_title_require_any": ["คำเทศนา", "เทศนา", "ข้อความ", "ศิษยาภิบาล", "พระวจนะ"],
+        "sermon_title_reject_any": ["เพลง", "นมัสการ", "ดนตรี", "คอนเสิร์ต", "concert", "choir", "music", "song"],
+        "worship_query_terms": ["เพลงนมัสการคริสเตียน", "สรรเสริญ", "นมัสการ"],
+        "music_title_require_any": ["นมัสการ", "สรรเสริญ", "คริสเตียน", "worship"],
+        "music_title_reject_any": ["reaction", "interview", "podcast", "หนัง", "ตัวอย่าง"],
+        "channel_reject_any": ["movie", "gaming", "news", "ข่าว"],
+    },
+    "ar": {
+        "query_anchor": "مسيحي",
+        "relevance_language": "ar", "region_code": "EG",
+        "sermon_query_terms": ["عظة", "وعظ", "كلمة الله"],
+        "sermon_title_require_any": ["عظة", "وعظ", "رسالة", "كلمة الله", "راعي"],
+        "sermon_title_reject_any": ["ترنيمة", "ترانيم", "جوقة", "حفل", "موسيقى", "concert", "choir", "music", "song"],
+        "worship_query_terms": ["ترانيم عبادة مسيحية", "تسبيح", "عبادة"],
+        "music_title_require_any": ["تسبيح", "عبادة", "ترنيمة", "ترانيم", "مسيحي", "worship"],
+        "music_title_reject_any": ["reaction", "interview", "podcast", "فيلم", "إعلان"],
+        "channel_reject_any": ["movie", "gaming", "news", "أخبار"],
+    },
+    "he": {
+        "query_anchor": "נוצרי",
+        "relevance_language": "he", "region_code": "IL",
+        "sermon_query_terms": ["דרשה", "מסר", "דבר אלוהים"],
+        "sermon_title_require_any": ["דרשה", "מסר", "דבר אלוהים", "כומר", "מסר רוחני"],
+        "sermon_title_reject_any": ["מזמור", "מקהלה", "קונצרט", "מוזיקה", "concert", "choir", "music", "song"],
+        "worship_query_terms": ["שירי הלל נוצריים", "שבח", "פולחן"],
+        "music_title_require_any": ["הלל", "שבח", "פולחן", "משיחי", "נוצרי", "worship"],
+        "music_title_reject_any": ["reaction", "interview", "podcast", "סרט", "טריילר"],
+        "channel_reject_any": ["movie", "gaming", "news", "חדשות"],
+    },
 }
 
 
@@ -304,6 +431,74 @@ def _has_myanmar(text: str) -> bool:
     return re.search(r"[\u1000-\u109F]", text or "") is not None
 
 
+# Languages handled by the config-driven native branch below (en/my/td keep their
+# bespoke, well-tested logic). Adding one here + an entry in _LANG_CONFIG is all a
+# new native-first language needs.
+_NATIVE_QUERY_LANGS = frozenset({
+    "fr", "de", "es", "ja", "zh-CN", "ko", "hi", "ta", "th", "ar", "he",
+})
+
+# Unicode ranges that signal a particular major script. Mirrors the proven table
+# in MusicRecommendationService::titleLanguageScriptOk() (worship radio) so the
+# service pipeline and the radio agree on what "wrong language" looks like.
+_SCRIPTS: dict[str, str] = {
+    "myanmar":    "\u1000-\u109F",
+    "devanagari": "\u0900-\u097F",
+    "bengali":    "\u0980-\u09FF",
+    "tamil":      "\u0B80-\u0BFF",
+    "telugu":     "\u0C00-\u0C7F",
+    "thai":       "\u0E00-\u0E7F",
+    "arabic":     "\u0600-\u06FF",
+    "hebrew":     "\u0590-\u05FF",
+    "cyrillic":   "\u0400-\u04FF",
+    "kana":       "\u3040-\u30FF",
+    "han":        "\u3400-\u9FFF",
+    "hangul":     "\uAC00-\uD7AF",
+}
+
+# Scripts each language legitimately uses besides Latin. A language not listed is
+# Latin-script (en/fr/de/es/td): Latin is allowed everywhere, so it is screened by
+# rejecting foreign scripts only \u2014 native query terms + relevanceLanguage do the
+# rest of the language separation.
+_LANG_SCRIPTS: dict[str, list[str]] = {
+    "my": ["myanmar"],
+    "ja": ["kana", "han"],
+    "zh-CN": ["han"],
+    "ko": ["hangul", "han"],
+    "hi": ["devanagari"],
+    "ta": ["tamil"],
+    "th": ["thai"],
+    "ar": ["arabic"],
+    "he": ["hebrew"],
+}
+
+
+def _has_native_script(text: str, language: str) -> bool:
+    """True if a non-Latin language's own script appears in text (Latin langs: always)."""
+    allowed = _LANG_SCRIPTS.get(language, [])
+    if not allowed:
+        return True
+    ranges = "".join(_SCRIPTS[name] for name in allowed)
+    return re.search("[" + ranges + "]", text or "") is not None
+
+
+def _script_ok(text: str, language: str) -> bool:
+    """Reject text carrying a major script the language does not use (Latin allowed)."""
+    allowed = _LANG_SCRIPTS.get(language, [])
+    for name, ranges in _SCRIPTS.items():
+        if name in allowed:
+            continue
+        if re.search("[" + ranges + "]", text or ""):
+            return False
+    return True
+
+
+def _native_language_ok(text: str, language: str) -> bool:
+    """Combined gate for the config-driven languages: the title must carry the
+    language's own script (non-Latin langs) and must NOT carry a foreign script."""
+    return _has_native_script(text, language) and _script_ok(text, language)
+
+
 # Words that unambiguously identify a video as Zomi/Tedim content.
 # We check these against the lowercased title before applying the generic
 # sermon-indicator gate, mirroring the Myanmar-script check for Burmese.
@@ -367,20 +562,29 @@ class YouTubeStrategy(MusicStrategy):
         anchor = lang_conf.get("query_anchor", "christian")
         preferred_artists = lang_conf.get("preferred_artists", [])
 
-        queries = [
-            query,
-            f"{query} worship" if query else "",
-            f"{anchor} worship song {query}" if query else "",
-            f"{anchor} worship song {mood}",
-        ]
-        # Add a randomly chosen artist-anchored query for mood-matched variety.
-        # Inserted at the front so it's tried first; a second artist goes at the end
-        # as a final fallback, ensuring different users get different songs.
-        if preferred_artists:
-            artist_a = random.choice(preferred_artists)
-            artist_b = random.choice(preferred_artists)
-            queries.insert(0, f"{artist_a} {mood.lower()} worship")
-            queries.append(f"{artist_b} worship song")
+        if self.language in _NATIVE_QUERY_LANGS:
+            # Search in the worshipper's language using native worship vocabulary
+            # so a Korean/Japanese/… service surfaces in-language worship first.
+            worship_terms = lang_conf.get("worship_query_terms", ["worship song"])
+            queries = [f"{anchor} {term}" for term in worship_terms]
+            queries.append(f"{anchor} {worship_terms[0]} {mood}")
+            if query:
+                queries.insert(0, query)
+        else:
+            queries = [
+                query,
+                f"{query} worship" if query else "",
+                f"{anchor} worship song {query}" if query else "",
+                f"{anchor} worship song {mood}",
+            ]
+            # Add a randomly chosen artist-anchored query for mood-matched variety.
+            # Inserted at the front so it's tried first; a second artist goes at the end
+            # as a final fallback, ensuring different users get different songs.
+            if preferred_artists:
+                artist_a = random.choice(preferred_artists)
+                artist_b = random.choice(preferred_artists)
+                queries.insert(0, f"{artist_a} {mood.lower()} worship")
+                queries.append(f"{artist_b} worship song")
 
         queries = list(dict.fromkeys(q for q in queries if q))
 
@@ -392,6 +596,14 @@ class YouTubeStrategy(MusicStrategy):
         mood_keywords: list[str] = lang_conf.get("music_mood_keywords", {}).get(mood, [])
         query_terms = set(re.findall(r'\w+', query.lower())) if query else set()
 
+        # Bias YouTube toward the worshipper's language for the config-driven
+        # languages; the script gate + require terms still decide acceptance.
+        music_search_params: dict = {}
+        if lang_conf.get("relevance_language"):
+            music_search_params["relevanceLanguage"] = lang_conf["relevance_language"]
+            if lang_conf.get("region_code"):
+                music_search_params["regionCode"] = lang_conf["region_code"]
+
         best_video = None
         candidates = []
 
@@ -399,7 +611,7 @@ class YouTubeStrategy(MusicStrategy):
             if not q:
                 continue
             try:
-                results = _search_youtube(q, videoCategoryId="10")  # 10 = Music
+                results = _search_youtube(q, videoCategoryId="10", **music_search_params)  # 10 = Music
             except Exception as exc:
                 print(f"[youtube-music] search failed for {q!r}: {exc}", flush=True)
                 continue
@@ -417,6 +629,11 @@ class YouTubeStrategy(MusicStrategy):
 
                 # Tedim mode music must have a Zomi/Tedim identity word in the title or channel.
                 if self.language == "td" and not (_has_tedim_identity(title, is_music=True) or _has_tedim_identity(channel, is_music=True)):
+                    continue
+
+                # Config-driven languages: native script required (non-Latin),
+                # foreign scripts rejected — keeps a Korean slot Korean, etc.
+                if self.language in _NATIVE_QUERY_LANGS and not _native_language_ok(title, self.language):
                     continue
 
                 # Gate 1: must contain at least one Christian/worship term.
@@ -509,6 +726,16 @@ def find_sermon_video(
             f"{anchor} sermon {mood}",
             f"{anchor} sermon",
         ]
+    elif language in _NATIVE_QUERY_LANGS:
+        # Build the whole query ladder from the language's native preaching
+        # vocabulary so a Korean/Japanese/… service searches in its own language
+        # first — never English. The LLM-provided `query` (often English) goes
+        # last; the native-script result gate below drops anything off-language.
+        sermon_terms = lang_conf.get("sermon_query_terms", ["sermon"])
+        queries = [f"{anchor} {term}" for term in sermon_terms]
+        queries.append(f"{anchor} {sermon_terms[0]} {mood}")
+        if query:
+            queries.append(query)
     else:
         queries = [
             query,
@@ -528,6 +755,12 @@ def find_sermon_video(
     search_params = {}
     if language == "my":
         search_params = {"relevanceLanguage": "my", "regionCode": "MM"}
+    elif lang_conf.get("relevance_language"):
+        # Bias YouTube toward the worshipper's language; the result gates still
+        # decide what is accepted.
+        search_params = {"relevanceLanguage": lang_conf["relevance_language"]}
+        if lang_conf.get("region_code"):
+            search_params["regionCode"] = lang_conf["region_code"]
 
     mood_keywords: list[str] = lang_conf.get("music_mood_keywords", {}).get(mood, [])
     query_terms = set(re.findall(r'\w+', query.lower())) if query else set()
@@ -565,6 +798,11 @@ def find_sermon_video(
             # title — this blocks English sermons that happen to match the
             # generic "sermon"/"preaching"/"message" require terms.
             if language == "td" and not _has_tedim_identity(title):
+                continue
+
+            # Config-driven languages: a non-Latin language's title must carry
+            # its own script, and no title may carry a foreign major script.
+            if language in _NATIVE_QUERY_LANGS and not _native_language_ok(title, language):
                 continue
 
             # Gate 1: title must contain a preaching indicator (whole-word match).

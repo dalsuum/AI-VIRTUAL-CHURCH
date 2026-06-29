@@ -128,7 +128,7 @@
     "nameLabel": "Nom",
     "namePh": "Votre nom",
     "emailLabel": "E-mail",
-    "emailPh": "vous@exemple.com",
+    "emailPh": "vous{'@'}exemple.com",
     "passwordLabel": "Mot de passe",
     "regSuccessTitle": "Inscription réussie",
     "regSuccessBody": "Veuillez consulter votre e-mail et activer votre compte avant de vous connecter. Le lien d'activation expire dans 24 heures.",

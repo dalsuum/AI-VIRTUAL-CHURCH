@@ -36,6 +36,8 @@ Route::post('/music/recommend', [MusicController::class, 'recommend'])->middlewa
 
 // Public Zolai ↔ Burmese ↔ English vocabulary reference (#vocabulary page).
 Route::get('/vocabulary', [VocabularyController::class, 'index']);
+// Learner view: AI-generated multilingual entry for one concept (cached; 202 while generating).
+Route::get('/vocabulary/{vocabulary}/learn', [VocabularyController::class, 'learn']);
 
 // Online Bible reader — public, read-only Bible translations served by the worker.
 Route::get('/bible/config', [BibleController::class, 'config'])->middleware('throttle:120,1');

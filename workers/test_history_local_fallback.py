@@ -73,3 +73,43 @@ def test_tedim_markers_short_circuit_detection_without_llm():
 
     assert driver._detect_language("Biakinn pai hoih hia?", _Boom()) == "td"
     assert driver._detect_language("Pasian in hong it hi", _Boom()) == "td"
+
+
+def test_pastor_system_language_is_authoritative_for_world_locales():
+    # A newly added world locale (e.g. Japanese) must produce an authoritative reply-
+    # language instruction so the model does not mirror an English-typed message.
+    sys_prompt = driver._pastor_system("ja", [])
+    assert "Japanese" in sys_prompt
+    assert "LANGUAGE LAW" in sys_prompt
+    # The instruction must forbid mirroring the worshipper's input language while
+    # still allowing an explicit request to switch.
+    assert "never switch" in sys_prompt.lower()
+    assert "explicit" in sys_prompt.lower()
+
+
+def test_vocab_generate_posts_entry_in_selected_language(monkeypatch):
+    # The vocab generator must (a) carry the authoritative LANGUAGE LAW for the selected
+    # language and (b) POST a structured entry keyed back to the seed concept.
+    seen = {}
+
+    class _LLM:
+        def complete(self, *, system, messages, **k):
+            seen["system"] = system
+            return ('{"word":"恵み","pronunciation":"megumi","part_of_speech":"noun",'
+                    '"meaning":"神の恵み","definition":"神からの一方的な好意","example":"恵みに感謝します。",'
+                    '"synonyms":[],"antonyms":[],"related":[],"bible_verse":null,'
+                    '"difficulty":"beginner"}'), {"total_tokens": 12}
+
+    posts = []
+    monkeypatch.setattr(driver, "_signed_post", lambda url, body: posts.append(body))
+    driver._run_vocab_generate(
+        {"vocabulary_id": 7, "language": "ja", "concept": "grace", "zolai": "hehpihna"},
+        _LLM(),
+    )
+
+    assert "Japanese ONLY" in seen["system"]
+    body = posts[0]
+    assert body["mode"] == "vocab_entry"
+    assert body["vocabulary_id"] == 7 and body["language"] == "ja"
+    assert body["word"] == "恵み" and body["difficulty"] == "beginner"
+    assert body["payload"]["meaning"] == "神の恵み"

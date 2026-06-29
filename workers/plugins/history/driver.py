@@ -106,11 +106,16 @@ def _pastor_system(language: str, memory: list) -> str:
         "Scripture (citing book chapter:verse), and never give medical, legal, or "
         "financial advice. Keep replies concise and caring. "
         # Understanding is never restricted to one language: comprehend the
-        # worshipper whatever language they write in. Reply by default in the
-        # worshipper's selected interface language, but if they explicitly ask you
-        # to reply in another language, honour that for the rest of the conversation.
-        f"By default reply in {lang}, but understand any language the worshipper "
-        "writes in, and switch your reply language if they explicitly ask you to."
+        # worshipper whatever language they write in. The reply language is the
+        # worshipper's selected language and is authoritative — do NOT mirror the
+        # language their message happens to be written in. Only an explicit request
+        # ("please answer in X") changes it, for the rest of the conversation.
+        f"LANGUAGE LAW: Write EVERY sentence of your reply in {lang} ONLY, even when "
+        "the worshipper writes to you in English or any other language. Understand "
+        "whatever language they write in, but never switch your reply language just "
+        f"because their message is in another language — keep replying in {lang}. The "
+        "ONLY exception is when the worshipper explicitly asks you to answer in a "
+        "different language; honour that request for the rest of the conversation."
     )
     if memory:
         recalls = "; ".join(
@@ -195,6 +200,58 @@ def _run_pastor_reply(job: dict, llm: OpenRouterLLM) -> None:
         "reply": reply.strip(),
         "token_usage": token_usage,
         "detected_language": detected,
+    })
+
+
+def _run_vocab_generate(job: dict, llm: OpenRouterLLM) -> None:
+    """Render an existing dictionary concept into a full learner entry in one language.
+
+    The seed concept comes from the curated `vocabularies` row (English + Zolai gloss);
+    the model produces the per-language payload and we cache it server-side. Same
+    authoritative LANGUAGE LAW as Pastor Chat so the entry never drifts into English.
+    """
+    lang = _LANG_NAME.get(job.get("language", "en"), "English")
+    concept = (job.get("concept") or "").strip()
+    zolai = (job.get("zolai") or "").strip()
+    system = (
+        "You are a bilingual lexicographer building a language-learning dictionary "
+        f"entry. LANGUAGE LAW: write EVERY field's value in {lang} ONLY (the 'word' "
+        f"field is the headword in {lang}). Do not use English anywhere except inside "
+        "the optional bible_verse 'ref' (e.g. 'John 3:16'). Return STRICT JSON with "
+        'keys: "word", "pronunciation", "part_of_speech", "meaning", "definition", '
+        '"example", "synonyms" (array), "antonyms" (array), "related" (array), '
+        '"bible_verse" (object {ref, text} or null), "difficulty" '
+        '("beginner"|"intermediate"|"advanced"). JSON only, no prose outside it.'
+    )
+    prompt = f"Concept (English): {concept}"
+    if zolai:
+        prompt += f"\nZolai/Tedim gloss: {zolai}"
+    text, usage = llm.complete(
+        system=system,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.4, max_tokens=700, role="vocab",
+    )
+
+    payload, word, difficulty = None, None, None
+    try:
+        start, end = text.find("{"), text.rfind("}")
+        parsed = json.loads(text[start:end + 1]) if start >= 0 and end > start else {}
+        word = (parsed.get("word") or "").strip() or None
+        difficulty = parsed.get("difficulty") if parsed.get("difficulty") in (
+            "beginner", "intermediate", "advanced") else None
+        if word:
+            payload = parsed
+    except (ValueError, TypeError) as exc:
+        print(f"[history] vocab_generate parse failed: {exc}", flush=True)
+
+    _signed_post(_HISTORY_WEBHOOK, {
+        "mode": "vocab_entry",
+        "vocabulary_id": job.get("vocabulary_id"),
+        "language": job.get("language"),
+        "word": word,
+        "difficulty": difficulty,
+        "payload": payload,
+        "token_usage": int((usage or {}).get("total_tokens", 0) or 0),
     })
 
 
@@ -285,5 +342,7 @@ def run(job: dict) -> None:
         _run_title_summary(job, llm)
     elif mode == "journal":
         _run_journal(job, llm)
+    elif mode == "vocab_generate":
+        _run_vocab_generate(job, llm)
     else:
         print(f"[history] unknown mode {mode!r}, ignoring", flush=True)

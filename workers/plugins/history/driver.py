@@ -212,20 +212,22 @@ def _run_vocab_generate(job: dict, llm: OpenRouterLLM) -> None:
     """
     lang = _LANG_NAME.get(job.get("language", "en"), "English")
     concept = (job.get("concept") or "").strip()
-    zolai = (job.get("zolai") or "").strip()
     system = (
         "You are a bilingual lexicographer building a language-learning dictionary "
-        f"entry. LANGUAGE LAW: write EVERY field's value in {lang} ONLY (the 'word' "
-        f"field is the headword in {lang}). Do not use English anywhere except inside "
-        "the optional bible_verse 'ref' (e.g. 'John 3:16'). Return STRICT JSON with "
-        'keys: "word", "pronunciation", "part_of_speech", "meaning", "definition", '
-        '"example", "synonyms" (array), "antonyms" (array), "related" (array), '
-        '"bible_verse" (object {ref, text} or null), "difficulty" '
-        '("beginner"|"intermediate"|"advanced"). JSON only, no prose outside it.'
+        f"entry. LANGUAGE LAW: first TRANSLATE the concept into {lang}, then write "
+        f"EVERY field's value in {lang} ONLY. The 'word' field MUST be the {lang} "
+        f"word for the concept — never English and never any other language. Do not "
+        "use English anywhere except inside the optional bible_verse 'ref' (e.g. "
+        "'John 3:16'). Return STRICT JSON with keys: \"word\", \"pronunciation\", "
+        '"part_of_speech", "meaning", "definition", "example", "synonyms" (array), '
+        '"antonyms" (array), "related" (array), "bible_verse" (object {ref, text} or '
+        'null), "difficulty" ("beginner"|"intermediate"|"advanced"). JSON only, no '
+        "prose outside it."
     )
-    prompt = f"Concept (English): {concept}"
-    if zolai:
-        prompt += f"\nZolai/Tedim gloss: {zolai}"
+    # The concept (in English) is the sole seed; we deliberately do NOT pass the Zolai
+    # gloss — feeding a Chin word biases the model into echoing it for languages it is
+    # less fluent in, instead of translating the concept (observed for he/ta/hi/th).
+    prompt = f"Concept to render into {lang}: {concept}"
     text, usage = llm.complete(
         system=system,
         messages=[{"role": "user", "content": prompt}],

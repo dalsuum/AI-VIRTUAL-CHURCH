@@ -444,6 +444,11 @@ export const api = {
   adminKnowledgeCancelJob: (id) => request(`/admin/knowledge/jobs/${id}/cancel`, { method: "POST" }),
   adminKnowledgeRetryJob: (id) => request(`/admin/knowledge/jobs/${id}/retry`, { method: "POST" }),
   adminKnowledgeDeleteJob: (id) => request(`/admin/knowledge/jobs/${id}`, { method: "DELETE" }),
+  adminKnowledgeInspect: (query, language, corpora) =>
+    request("/admin/knowledge/inspect", {
+      method: "POST",
+      body: JSON.stringify({ query, language: language || "en", corpora: corpora || null }),
+    }),
   adminServices: () => request("/admin/services"),
   adminServiceResumeLink: (id) =>
     request(`/admin/services/${id}/resume-link`, { method: "POST" }),

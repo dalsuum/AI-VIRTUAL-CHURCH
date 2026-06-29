@@ -1389,6 +1389,82 @@ function inspectScoreClass(score) {
   return 'danger';
 }
 
+// ─── Knowledge Library ─────────────────────────────────────────────────────────
+
+const klLibrary       = ref(null);   // { corpora: [], embedding_driver, vector_driver }
+const klLoading       = ref(false);
+const klError         = ref('');
+const klActionBusy    = ref('');     // '{corpus}:{action}' while an action is in-flight
+const klConfirmWipe   = ref('');     // corpus waiting for wipe confirmation
+const klExpandedCorpus = ref('');    // corpus with expanded detail row
+
+async function loadKnowledgeLibrary() {
+  klLoading.value = true;
+  klError.value   = '';
+  try { klLibrary.value = await api.adminKnowledgeLibrary(); }
+  catch (e) { klError.value = e.data?.message || 'Failed to load library.'; }
+  finally { klLoading.value = false; }
+}
+
+async function klToggle(corpus) {
+  klActionBusy.value = corpus + ':toggle';
+  try {
+    const r = await api.adminKnowledgeLibraryToggle(corpus);
+    const entry = klLibrary.value?.corpora?.find(c => c.corpus === corpus);
+    if (entry) entry.enabled = r.enabled;
+  } catch (e) {
+    klError.value = e.data?.message || 'Toggle failed.';
+  } finally {
+    klActionBusy.value = '';
+  }
+}
+
+async function klReindex(corpus) {
+  klActionBusy.value = corpus + ':reindex';
+  try {
+    const r = await api.adminKnowledgeLibraryReindex(corpus);
+    klError.value = '';
+    // Reload to show new pending jobs count
+    await loadKnowledgeLibrary();
+    alert(r.message); // simple feedback; stays within existing UI patterns
+  } catch (e) {
+    klError.value = e.data?.message || 'Re-index failed.';
+  } finally {
+    klActionBusy.value = '';
+  }
+}
+
+async function klDestroyConfirmed(corpus) {
+  klConfirmWipe.value = '';
+  klActionBusy.value  = corpus + ':destroy';
+  try {
+    const r = await api.adminKnowledgeLibraryDestroy(corpus);
+    await loadKnowledgeLibrary();
+    alert(r.message);
+  } catch (e) {
+    klError.value = e.data?.message || 'Wipe failed.';
+  } finally {
+    klActionBusy.value = '';
+  }
+}
+
+function klFileSizeLabel(bytes) {
+  if (!bytes) return '—';
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+  if (bytes < 1073741824) return (bytes / 1048576).toFixed(1) + ' MB';
+  return (bytes / 1073741824).toFixed(1) + ' GB';
+}
+
+function klQdrantClass(corpus) {
+  const c = klLibrary.value?.corpora?.find(x => x.corpus === corpus);
+  if (!c?.qdrant?.exists) return 'danger';
+  if (c.qdrant.status === 'green' || c.qdrant.status === 'ok') return 'ok';
+  if (c.qdrant.status === 'yellow') return 'pending';
+  if ((c.qdrant.vectors_count ?? 0) > 0) return 'ok';
+  return '';
+}
+
 // ─── Voicebox TTS Monitor ──────────────────────────────────────────────────────
 
 const vbHealth   = ref(null);   // { status, model_loaded, gpu_type, vram_used_mb, ... }

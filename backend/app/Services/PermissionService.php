@@ -48,6 +48,7 @@ class PermissionService
         'study.manage',
         // Knowledge Operations Platform.
         'knowledge.view',
+        'knowledge.manage',
     ];
 
     /** Only these roles appear in the permissions matrix. Admin is always full access. */

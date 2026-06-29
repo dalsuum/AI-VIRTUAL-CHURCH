@@ -20,36 +20,25 @@ class UpdateSettingsRequest extends FormRequest
 
     public function rules(): array
     {
-        return [
+        $rules = [
             // Per-language narration voice. English supports all providers; Myanmar and
             // Tedim support edge_tts (Microsoft cloud, free) or mms_tts (local MMS, free).
             'narration_mode_en'  => ['sometimes', 'string', 'in:' . implode(',', Setting::NARRATION_MODES)],
             'narration_mode_my'  => ['sometimes', 'string', 'in:edge_tts,mms_tts,off'],
             'narration_mode_td'  => ['sometimes', 'string', 'in:edge_tts,mms_tts,off'],
-            // Online Bible reader "Listen" voice — same provider set as the live
-            // service, per language. Unset inherits the service narration voice.
-            // English & KJV (English text) support every provider; Myanmar & Tedim
-            // add the native local MMS-TTS voice; Hebrew uses its he-IL Edge voice;
-            // the Chin/Zo Bibles have no native voice so they read phonetically via
-            // the English Edge voice (edge_tts) or stay silent (off).
-            'bible_narration_mode_en'  => ['sometimes', 'string', 'in:' . implode(',', Setting::NARRATION_MODES)],
-            'bible_narration_mode_kjv' => ['sometimes', 'string', 'in:' . implode(',', Setting::NARRATION_MODES)],
-            'bible_narration_mode_my'  => ['sometimes', 'string', 'in:edge_tts,mms_tts,off'],
-            'bible_narration_mode_td'  => ['sometimes', 'string', 'in:edge_tts,mms_tts,off'],
-            'bible_narration_mode_he'  => ['sometimes', 'string', 'in:edge_tts,off'],
-            // Falam, Hakha & Matu have native Meta MMS-TTS voices (mms-tts-cfm / -cnh / -hlt).
-            'bible_narration_mode_cfm' => ['sometimes', 'string', 'in:edge_tts,mms_tts,off'],
-            'bible_narration_mode_cnh' => ['sometimes', 'string', 'in:edge_tts,mms_tts,off'],
-            'bible_narration_mode_mrh' => ['sometimes', 'string', 'in:edge_tts,off'],
-            'bible_narration_mode_hlt' => ['sometimes', 'string', 'in:edge_tts,mms_tts,off'],
-            'bible_narration_mode_lus' => ['sometimes', 'string', 'in:edge_tts,off'],
-            'bible_narration_mode_pck' => ['sometimes', 'string', 'in:edge_tts,off'],
-            'bible_narration_mode_csy' => ['sometimes', 'string', 'in:edge_tts,off'],
-            // World-language Bibles: Edge TTS has native de-DE/fr-FR/ta-IN voices
-            // (enable once EDGE_TTS_VOICE_DE/FR/TA is configured); default off.
-            'bible_narration_mode_de'  => ['sometimes', 'string', 'in:edge_tts,off'],
-            'bible_narration_mode_fr'  => ['sometimes', 'string', 'in:edge_tts,off'],
-            'bible_narration_mode_ta'  => ['sometimes', 'string', 'in:edge_tts,off'],
+        ];
+
+        // Online Bible reader "Listen" voices are generated from the Bible version
+        // registry, so a new translation gets validation as soon as it is registered.
+        foreach (array_keys(Setting::BIBLE_VERSIONS) as $code) {
+            $rules['bible_narration_mode_' . $code] = [
+                'sometimes',
+                'string',
+                'in:' . implode(',', Setting::bibleNarrationModeOptions($code)),
+            ];
+        }
+
+        return $rules + [
             // Highlight verses in the Bible reader as narration plays.
             'bible_text_highlight_enabled' => ['sometimes', 'boolean'],
             // Background music behind Bible narration: off | static mp3 | AI-generated.

@@ -10,19 +10,16 @@ use Illuminate\Support\Facades\Storage;
 
 /**
  * Online Bible reader — public, read-only proxy to the local FastAPI worker
- * (workers/bible_router.py), which serves the vendored public-domain
- * translations (en BSB, kjv King James Version, my Judson 1835, td Tedim 1932,
- * he Hebrew WLC — Old Testament only, right-to-left — plus the Chin/Zo language
- * Bibles from the Bible Society of Myanmar: cfm Falam, cnh Hakha, lus Mizo,
- * pck Paite, csy Sizang, mrh Mara, hlt Matu) it already keeps in memory. Laravel adds a long-lived cache layer so the SPA's
- * book list and chapter fetches are instant and never re-hit the worker for the
- * same page.
+ * (workers/bible_router.py), which serves the vendored public-domain / freely
+ * licensed translations it already keeps in memory. Laravel adds a long-lived
+ * cache layer so the SPA's book list and chapter fetches are instant and never
+ * re-hit the worker for the same page.
  */
 class BibleController extends Controller
 {
     /**
      * Reader translation codes. Single source of truth is Setting::BIBLE_VERSIONS
-     * so adding a Bible there (e.g. de/fr/ta) is enough — no separate list to keep
+     * so adding a Bible there (e.g. de/fr/hi/ja/ta) is enough — no separate list to keep
      * in sync here (a drift that previously 404'd new translations' chapters).
      */
     private static function langs(): array
@@ -350,18 +347,12 @@ class BibleController extends Controller
     }
 
     /**
-     * Resolve the Microsoft Edge TTS voice for a language/gender. Burmese has
-     * native my-MM neural voices; Tedim has no Zolai voice so it uses an English
-     * phonetic read; English uses the admin-selected voice. Mirrors the service
-     * pipeline (workers/agent_orchestrator.py::_narrate_voice).
+     * Resolve the Microsoft Edge TTS voice for a Bible translation/gender.
+     * Native voices live in Setting::BIBLE_EDGE_TTS_VOICES; unmapped Latin-script
+     * Bibles fall back to the admin-selected English Edge voice for phonetic reads.
      */
     private function edgeVoice(string $lang, string $gender): string
     {
-        return match ($lang) {
-            'my'    => $gender === 'male' ? 'my-MM-ThihaNeural' : 'my-MM-NilarNeural',
-            'td'    => $gender === 'male' ? 'en-US-GuyNeural' : 'en-US-AriaNeural',
-            'he'    => $gender === 'male' ? 'he-IL-AvriNeural' : 'he-IL-HilaNeural',
-            default => Setting::get('edge_tts_voice', 'en-US-AriaNeural'),
-        };
+        return Setting::bibleEdgeTtsVoice($lang, $gender);
     }
 }

@@ -1,6 +1,7 @@
-"""Resolve a scripture reference to full text from a local public-domain Bible.
+"""Resolve a scripture reference to full text from local Bible translations.
 
-Two languages are served, both from bundled public-domain data (no key, no network):
+Translations are bundled public-domain or freely redistributable data (no key,
+no network):
 
   'en'  — Berean Standard Bible (BSB), the existing behavior. Data file from
          dalsuum/bible's `3034.json`, vendored as data/bsb.json (BIBLE_DATA_FILE).
@@ -24,6 +25,18 @@ Two languages are served, both from bundled public-domain data (no key, no netwo
   'csy' Sizang (sizang1932.json),
   'mrh' Mara (mara2011.json), 'hlt' Matu (matu2009.json).
 
+  World-language Bibles:
+  'ar' Arabic Van Dyck, 'de' Luther 1912, 'es' Reina Valera 1909,
+       'fr' Ostervald 1877, 'ja' Colloquial Japanese 1955,
+       'ko' Korean Revised Version, 'zh-CN' Chinese Union Simplified
+       (public domain);
+  'hi' Hindi IRV 2019, 'ta' Tamil IRV 2019 (Creative Commons BY-SA 4.0);
+  'th' Thai KJV 2003 (Creative Commons BY-NC-ND 4.0).
+
+  Copyrighted drop-in slots (not bundled; provide licensed same-schema JSON):
+  'ja-jcb' Japanese Contemporary Bible / リビングバイブル (JCB),
+  'zh-CN-ccb' Chinese Contemporary Bible / 当代译本 (CCB).
+
 The LLM always emits ENGLISH references ("John 3:16") regardless of service
 language — references are part of the worker contract, not the worshipper-facing
 text. The non-English files' book names are in their own language (ရှင်ယောဟန် /
@@ -31,10 +44,10 @@ Johan), so they can't index an English reference by themselves. Every file uses
 canonical 1-66 numbering (Genesis=1 … Revelation=66), so for those languages we
 parse the reference against a vendored canonical English book index
 (data/books_en.json, from dalsuum/bible's category.json) and look the verses up
-in the translation file by that number. Adding another dalsuum/bible translation
-is one line in _LANG_FILES.
+in the translation file by that number. Adding another compatible translation is
+one _LANG_FILES entry once the dataset source/license is verified.
 
-Schema shared by every dalsuum/bible file: book -> chapter -> verse -> {"text": ...}.
+Shared schema: book -> chapter -> verse -> {"text": ...}.
 """
 
 from __future__ import annotations
@@ -70,16 +83,24 @@ _LANG_FILES = {
     "csy": os.getenv("BIBLE_DATA_FILE_CSY", os.path.join(_DATA_DIR, "sizang1932.json")),
     "mrh": os.getenv("BIBLE_DATA_FILE_MRH", os.path.join(_DATA_DIR, "mara2011.json")),
     "hlt": os.getenv("BIBLE_DATA_FILE_HLT", os.path.join(_DATA_DIR, "matu2009.json")),
-    # World-language Bibles from dalsuum/bible, same schema + canonical 1-66
-    # numbering. Only public-domain / freely-licensed editions are vendored:
-    #   'de' Luther 1912 (public domain), 'fr' Ostervald 1877 (public domain),
-    #   'ta' Indian Revised Version 2019 (Creative Commons BY-SA — Tamil).
-    # Copyrighted editions (Japanese, Chinese, Korean, Spanish, Hindi, Thai,
-    # Arabic Van Dyck vocalized) are NOT bundled; drop their json into data/ and
-    # set the matching env var (or add a line here) to enable them — see README.
+    # World-language Bibles, same schema + canonical 1-66 numbering. Only
+    # translations with verified redistribution terms are vendored; see
+    # docs/BIBLE_TRANSLATION_SOURCES.md for source/license details.
+    "ar": os.getenv("BIBLE_DATA_FILE_AR", os.path.join(_DATA_DIR, "arabic_vandyke.json")),
     "de": os.getenv("BIBLE_DATA_FILE_DE", os.path.join(_DATA_DIR, "luther1912.json")),
+    "es": os.getenv("BIBLE_DATA_FILE_ES", os.path.join(_DATA_DIR, "spanish_rv1909.json")),
     "fr": os.getenv("BIBLE_DATA_FILE_FR", os.path.join(_DATA_DIR, "ostervald1877.json")),
+    "hi": os.getenv("BIBLE_DATA_FILE_HI", os.path.join(_DATA_DIR, "hindi_irv2019.json")),
+    "ja": os.getenv("BIBLE_DATA_FILE_JA", os.path.join(_DATA_DIR, "japanese_colloquial1955.json")),
+    "ko": os.getenv("BIBLE_DATA_FILE_KO", os.path.join(_DATA_DIR, "korean_krv.json")),
     "ta": os.getenv("BIBLE_DATA_FILE_TA", os.path.join(_DATA_DIR, "tamil_irv2019.json")),
+    "th": os.getenv("BIBLE_DATA_FILE_TH", os.path.join(_DATA_DIR, "thai_kjv.json")),
+    "zh-CN": os.getenv("BIBLE_DATA_FILE_ZH_CN", os.path.join(_DATA_DIR, "chinese_union_simplified.json")),
+    # Copyrighted drop-in slots. These are intentionally not vendored and are
+    # advertised by languages() only when a licensed same-schema JSON file is
+    # installed at the configured path.
+    "ja-jcb": os.getenv("BIBLE_DATA_FILE_JA_JCB", os.path.join(_DATA_DIR, "japanese_jcb.json")),
+    "zh-CN-ccb": os.getenv("BIBLE_DATA_FILE_ZH_CN_CCB", os.path.join(_DATA_DIR, "chinese_ccb_simplified.json")),
 }
 
 # Translations whose source file has correct, canonically-positioned verse
@@ -225,13 +246,19 @@ _LANGS = (
     "kjv", "en", "he", "my",
     "cfm", "cnh", "mrh", "hlt", "lus", "pck", "csy", "td",
     # World-language Bibles (only those whose data file is actually vendored).
-    "de", "fr", "ta",
+    "ar", "de", "es", "fr", "hi", "ja", "ko", "ta", "th", "zh-CN",
 )
+
+_DROP_IN_LANGS = ("ja-jcb", "zh-CN-ccb")
+
+
+def _drop_in_available(lang: str) -> bool:
+    return os.path.exists(_LANG_FILES.get(lang, ""))
 
 
 def languages() -> list[str]:
     """Translations available to the reader, in display order."""
-    return list(_LANGS)
+    return list(_LANGS) + [lang for lang in _DROP_IN_LANGS if _drop_in_available(lang)]
 
 
 # Canonical Bible knowledge model (platform ontology). Additive + structural;

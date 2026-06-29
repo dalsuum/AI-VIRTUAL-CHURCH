@@ -37,7 +37,7 @@ Route::post('/music/recommend', [MusicController::class, 'recommend'])->middlewa
 // Public Zolai ↔ Burmese ↔ English vocabulary reference (#vocabulary page).
 Route::get('/vocabulary', [VocabularyController::class, 'index']);
 
-// Online Bible reader — public, read-only (en BSB / my Judson 1835 / td Tedim 1932).
+// Online Bible reader — public, read-only Bible translations served by the worker.
 Route::get('/bible/config', [BibleController::class, 'config'])->middleware('throttle:120,1');
 Route::get('/bible/books', [BibleController::class, 'books'])->middleware('throttle:120,1');
 Route::get('/bible/chapter', [BibleController::class, 'chapter'])->middleware('throttle:120,1');

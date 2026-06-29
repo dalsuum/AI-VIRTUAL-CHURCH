@@ -72,6 +72,115 @@ _JUNK_LINK = re.compile(
     re.I,
 )
 
+# Each source maps to the denomination/publisher that runs it (best-effort
+# constant; far cheaper and more reliable than guessing per article).
+_SOURCE_DENOMINATION = {
+    "myanmar3am.com": "Myanmar 3AM",
+    "minlwin.wordpress.com": "Min Lwin",
+}
+
+# Canonical Bible knowledge model, reused from workers/ so sermon references link
+# to the same stable IDs the Bible reader uses. Resolved relative to this file;
+# if the workers tree is absent (tool copied elsewhere) linking degrades to off.
+_WORKERS_DATA = ROOT.parents[3] / "workers" / "data"
+_MY_DIGITS = str.maketrans("၀၁၂၃၄၅၆၇၈၉", "0123456789")
+
+
+def _load_bible_index() -> dict:
+    """book-name (English or Burmese) -> {id, number, testament}."""
+    index: dict[str, dict] = {}
+    try:
+        meta = json.loads((_WORKERS_DATA / "books_meta.json").read_text("utf-8"))["books"]
+        by_number = {b["number"]: b for b in meta.values()}
+    except Exception:
+        return index
+
+    def add(token: str, num: int) -> None:
+        b = by_number.get(num)
+        if token and b:
+            # Normalize digits to ASCII so "၁ ယော" matches references the parser
+            # has already digit-normalized ("1 ယော").
+            key = token.strip().translate(_MY_DIGITS).lower()
+            index[key] = {"id": b["id"], "number": num, "testament": b["testament"]}
+
+    for b in meta.values():
+        for alias in [b["english_name"], *b.get("aliases", [])]:
+            add(alias, b["number"])
+    # Burmese book names from the Judson 1835 edition (canonical 1-66 numbering).
+    try:
+        judson = json.loads((_WORKERS_DATA / "judson1835.json").read_text("utf-8"))["book"]
+        for num_str, book in judson.items():
+            info = book.get("info", {})
+            for token in (info.get("name"), info.get("shortname")):
+                if not token:
+                    continue
+                add(token, int(num_str))
+                # Also index the bare form most writers use: drop the ရှင် Gospel
+                # honorific and the ခရစ်ဝင်/ကျမ်း suffix (e.g. ရှင်ယောဟန်ခရစ်ဝင် -> ယောဟန်).
+                bare = re.sub(r"^ရှင်", "", token.rstrip("။"))
+                bare = re.sub(r"(ခရစ်ဝင်|ကျမ်း)$", "", bare)
+                add(bare, int(num_str))
+    except Exception:
+        pass
+    return index
+
+
+_BIBLE_INDEX = _load_bible_index()
+
+
+def link_references(raw_refs: list[str]) -> list[dict]:
+    """Map raw reference strings to canonical Bible IDs. Unresolved book names
+    are kept with id=None so nothing is silently dropped."""
+    out, seen = [], set()
+    for raw in raw_refs:
+        m = re.match(r"\s*(.+?)\s*(\d+)\s*[:：]\s*(\d+(?:[-–]\d+)?)\s*$", raw.translate(_MY_DIGITS))
+        if not m:
+            continue
+        book_token, chapter, verses = m.group(1).strip(), m.group(2), m.group(3)
+        # Drop the period in abbreviations (Deut. / Gen. / 1 Cor.) — the alias
+        # table is dotless.
+        info = _BIBLE_INDEX.get(book_token.replace(".", "").strip().lower())
+        key = (info["id"] if info else book_token.lower(), chapter, verses)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({
+            "raw": raw.strip(),
+            "id": info["id"] if info else None,
+            "number": info["number"] if info else None,
+            "testament": info["testament"] if info else None,
+            "chapter": int(chapter),
+            "verses": verses,
+        })
+    return out
+
+
+def extractive_summary(text: str, max_sentences: int = 3) -> str:
+    """First few Burmese sentences (split on the ၊/။ sentence marks)."""
+    sentences = [s.strip() for s in re.split(r"(?<=[။\.])\s+", text) if s.strip()]
+    return " ".join(sentences[:max_sentences])
+
+
+def heading_outline(text: str, limit: int = 12) -> list[str]:
+    """Short stand-alone lines read as section headings (no trailing stop)."""
+    out = []
+    for line in text.split("\n"):
+        line = line.strip(" \t-•*၁၂၃၄၅၆၇၈၉0123456789.")
+        if 6 <= len(line) <= 80 and is_burmese(line) and not line.endswith(("။", ".")):
+            out.append(line)
+            if len(out) >= limit:
+                break
+    return out
+
+
+def top_keywords(text: str, limit: int = 15) -> list[str]:
+    """Most frequent multi-char Burmese tokens (cheap TF, no model)."""
+    tokens = [t for t in re.findall(r"[က-႟]{3,}", text)]
+    freq: dict[str, int] = {}
+    for t in tokens:
+        freq[t] = freq.get(t, 0) + 1
+    return [w for w, _ in sorted(freq.items(), key=lambda kv: kv[1], reverse=True)[:limit]]
+
 
 # --------------------------------------------------------------------------- #
 # Records
@@ -83,10 +192,30 @@ class Sermon:
     author: str = ""
     date: str = ""
     url: str = ""
-    bible_references: list = field(default_factory=list)
+    language: str = "my"
+    denomination: str = ""
     series: str = ""
     tags: list = field(default_factory=list)
-    language: str = "my"
+    # Raw reference strings as written in the sermon (English + Burmese forms).
+    bible_references: list = field(default_factory=list)
+    # Structured references linked to the canonical Bible knowledge model.
+    references: list = field(default_factory=list)
+    # Primary passage (first resolved reference), surfaced as flat fields.
+    book: str = ""
+    chapter: str = ""
+    verses: str = ""
+    testament: str = ""
+    # Deterministic enrichment (Phase 2). Semantic fields left for a later LLM
+    # pass are kept as empty placeholders so the schema is stable.
+    summary: str = ""
+    outline: list = field(default_factory=list)
+    keywords: list = field(default_factory=list)
+    topics: list = field(default_factory=list)
+    people: list = field(default_factory=list)
+    places: list = field(default_factory=list)
+    doctrines: list = field(default_factory=list)
+    applications: list = field(default_factory=list)
+    prayer: str = ""
     text: str = ""
 
 
@@ -236,6 +365,8 @@ def parse_sermon(html: str, url: str) -> Sermon | None:
         }
     )
     refs = sorted(set(_BIBLE_REF.findall(body)))
+    references = link_references(refs)
+    primary = next((r for r in references if r["id"]), references[0] if references else None)
 
     return Sermon(
         id=hashlib.sha1(url.encode("utf-8")).hexdigest()[:12],
@@ -243,9 +374,18 @@ def parse_sermon(html: str, url: str) -> Sermon | None:
         author=author,
         date=date,
         url=url,
-        bible_references=refs,
+        denomination=_SOURCE_DENOMINATION.get(urlparse(url).netloc.replace("www.", ""), ""),
         series="Plain Revelation" if "plain-revelation" in url else "",
         tags=tags,
+        bible_references=refs,
+        references=references,
+        book=primary["id"] or "" if primary else "",
+        chapter=str(primary["chapter"]) if primary else "",
+        verses=primary["verses"] if primary else "",
+        testament=primary["testament"] or "" if primary else "",
+        summary=extractive_summary(body),
+        outline=heading_outline(body),
+        keywords=top_keywords(body),
         text=body,
     )
 
@@ -283,31 +423,51 @@ def write_outputs(sermons: list[Sermon]) -> None:
         [
             {
                 "id": s.id, "title": s.title, "author": s.author, "date": s.date,
-                "url": s.url, "series": s.series, "language": s.language,
+                "url": s.url, "denomination": s.denomination, "series": s.series,
+                "language": s.language, "book": s.book, "chapter": s.chapter,
+                "verses": s.verses, "testament": s.testament,
                 "bible_references": "; ".join(s.bible_references),
+                "keywords": "; ".join(s.keywords),
                 "tags": "; ".join(s.tags), "chars": len(s.text),
             }
             for s in sermons
         ]
     ).to_csv(METADATA_CSV, index=False, quoting=csv.QUOTE_MINIMAL)
 
-    with (DATASET_DIR / "train.jsonl").open("w", encoding="utf-8") as f:
-        for s in sermons:
-            rec = {
-                "id": s.id, "title": s.title, "author": s.author, "url": s.url,
-                "series": s.series, "date": s.date, "language": s.language, "text": s.text,
-            }
-            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    def dump(name: str, rows) -> None:
+        with (DATASET_DIR / name).open("w", encoding="utf-8") as f:
+            for r in rows:
+                f.write(json.dumps(r, ensure_ascii=False) + "\n")
 
-    with (DATASET_DIR / "instruction.jsonl").open("w", encoding="utf-8") as f:
-        for s in sermons:
-            rec = {"instruction": "Explain this sermon", "input": s.title, "output": s.text}
-            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    dump("train.jsonl", (
+        {"id": s.id, "title": s.title, "author": s.author, "url": s.url,
+         "series": s.series, "date": s.date, "language": s.language, "text": s.text}
+        for s in sermons
+    ))
+    dump("instruction.jsonl", (
+        {"instruction": "Explain this sermon", "input": s.title, "output": s.text}
+        for s in sermons
+    ))
+    dump("qa.jsonl", (qa for s in sermons for qa in build_qa(s)))
 
-    with (DATASET_DIR / "qa.jsonl").open("w", encoding="utf-8") as f:
-        for s in sermons:
-            for qa in build_qa(s):
-                f.write(json.dumps(qa, ensure_ascii=False) + "\n")
+    # Deterministic Phase-3 datasets, derived from the enriched fields.
+    dump("summary.jsonl", (
+        {"instruction": "Summarize this sermon", "input": s.text, "output": s.summary}
+        for s in sermons if s.summary
+    ))
+    dump("outline.jsonl", (
+        {"instruction": "Outline this sermon", "input": s.text, "output": s.outline}
+        for s in sermons if s.outline
+    ))
+    dump("keywords.jsonl", (
+        {"instruction": "List the key Burmese terms in this sermon",
+         "input": s.text, "output": s.keywords}
+        for s in sermons if s.keywords
+    ))
+    dump("verse_linking.jsonl", (
+        {"id": s.id, "url": s.url, "references": s.references}
+        for s in sermons if s.references
+    ))
 
 
 # --------------------------------------------------------------------------- #

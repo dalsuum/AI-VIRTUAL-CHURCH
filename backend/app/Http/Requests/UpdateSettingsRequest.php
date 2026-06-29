@@ -20,13 +20,17 @@ class UpdateSettingsRequest extends FormRequest
 
     public function rules(): array
     {
-        $rules = [
-            // Per-language narration voice. English supports all providers; Myanmar and
-            // Tedim support edge_tts (Microsoft cloud, free) or mms_tts (local MMS, free).
-            'narration_mode_en'  => ['sometimes', 'string', 'in:' . implode(',', Setting::NARRATION_MODES)],
-            'narration_mode_my'  => ['sometimes', 'string', 'in:edge_tts,mms_tts,off'],
-            'narration_mode_td'  => ['sometimes', 'string', 'in:edge_tts,mms_tts,off'],
-        ];
+        $rules = [];
+
+        // Per-service-language narration voice. The options live on Setting so a
+        // language milestone only updates the registry/helper once.
+        foreach (Setting::LANGUAGES as $code) {
+            $rules['narration_mode_' . $code] = [
+                'sometimes',
+                'string',
+                'in:' . implode(',', Setting::narrationModeOptions($code)),
+            ];
+        }
 
         // Online Bible reader "Listen" voices are generated from the Bible version
         // registry, so a new translation gets validation as soon as it is registered.
@@ -81,20 +85,19 @@ class UpdateSettingsRequest extends FormRequest
             'local_avatar_enabled' => ['sometimes', 'boolean'],
             // Toggle karaoke-style word highlighting in the service player.
             'text_highlight_enabled' => ['sometimes', 'boolean'],
-            // Per-language narration toggles. All languages default on.
-            // Myanmar and Tedim can use native local MMS-TTS through mms_tts mode.
-            'narration_en'        => ['sometimes', 'boolean'],
-            'narration_my'        => ['sometimes', 'boolean'],
-            'narration_td'        => ['sometimes', 'boolean'],
+            // Per-language narration toggles. All service languages default on.
+            ...collect(Setting::LANGUAGES)
+                ->mapWithKeys(fn ($code) => ['narration_' . $code => ['sometimes', 'boolean']])
+                ->all(),
             // Goldfish LLM narrators for the Bible-only Chin/Zo languages
             // (Mizo lus, Paite pck). Toggling writes a Redis flag the worker
             // goldfish_service consults; off → fall back to curated content.
             'narration_lus'       => ['sometimes', 'boolean'],
             'narration_pck'       => ['sometimes', 'boolean'],
             // Which service languages appear as tabs in the intake form.
-            'lang_en'             => ['sometimes', 'boolean'],
-            'lang_my'             => ['sometimes', 'boolean'],
-            'lang_td'             => ['sometimes', 'boolean'],
+            ...collect(Setting::LANGUAGES)
+                ->mapWithKeys(fn ($code) => ['lang_' . $code => ['sometimes', 'boolean']])
+                ->all(),
             // Cards shown during the preparation countdown.
             'countdown_content_enabled' => ['sometimes', 'boolean'],
             'countdown_content_source'  => ['sometimes', 'string', 'in:banners,testimonies,online,both,all,off'],

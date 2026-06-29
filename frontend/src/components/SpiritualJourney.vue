@@ -2,7 +2,10 @@
 // Spiritual Journey dashboard — stat cards + a chronological timeline of every
 // interaction. All figures come from the owner-scoped /history/stats + /history/timeline.
 import { ref, onMounted, computed } from "vue";
+import { useI18n } from "vue-i18n";
 import { api } from "../composables/useApi";
+
+const { t } = useI18n();
 
 const stats = ref(null);
 const timeline = ref(null);
@@ -23,7 +26,7 @@ async function load() {
     stats.value = await api.historyStats();
     timeline.value = await api.historyTimeline(year.value);
     await loadJournal();
-  } catch (e) { error.value = "Could not load your journey."; }
+  } catch (e) { error.value = t("journey.loadError"); }
 }
 
 async function loadJournal() {
@@ -31,7 +34,7 @@ async function loadJournal() {
 }
 
 async function deleteEntry(entry) {
-  if (!confirm("Delete this journal entry?")) return;
+  if (!confirm(t("journey.deleteConfirm"))) return;
   await api.journalDelete(entry.id);
   journal.value = journal.value.filter((e) => e.id !== entry.id);
 }
@@ -49,12 +52,12 @@ onMounted(load);
 <template>
   <section class="journey">
     <header class="journey-head">
-      <h2>📊 My Spiritual Journey</h2>
+      <h2>{{ t("journey.title") }}</h2>
       <div class="journey-exports">
-        <span>Export journal:</span>
+        <span>{{ t("journey.exportJournal") }}</span>
         <button @click="exportAll('pdf')">PDF</button>
         <button @click="exportAll('docx')">DOCX</button>
-        <button @click="exportAll('md')">Markdown</button>
+        <button @click="exportAll('md')">{{ t("journey.markdown") }}</button>
         <button @click="exportAll('json')">JSON</button>
       </div>
     </header>
@@ -62,49 +65,49 @@ onMounted(load);
     <p v-if="error" class="journey-err">{{ error }}</p>
 
     <div v-if="stats" class="cards">
-      <div class="card"><b>{{ stats.counts.total }}</b><span>Total sessions</span></div>
-      <div class="card"><b>{{ stats.counts.bible_study }}</b><span>📖 Bible studies</span></div>
-      <div class="card"><b>{{ stats.counts.pastor }}</b><span>💬 Pastor chats</span></div>
-      <div class="card"><b>{{ stats.counts.music }}</b><span>🎵 Worship</span></div>
-      <div class="card"><b>{{ stats.counts.service }}</b><span>⛪ Services</span></div>
-      <div class="card"><b>{{ stats.counts.prayer }}</b><span>🙏 Prayers</span></div>
-      <div class="card highlight"><b>🔥 {{ stats.streak_days }}</b><span>Day streak</span></div>
-      <div class="card" v-if="stats.favorite_book"><b>{{ stats.favorite_book }}</b><span>Favorite book</span></div>
+      <div class="card"><b>{{ stats.counts.total }}</b><span>{{ t("journey.totalSessions") }}</span></div>
+      <div class="card"><b>{{ stats.counts.bible_study }}</b><span>{{ t("journey.bibleStudies") }}</span></div>
+      <div class="card"><b>{{ stats.counts.pastor }}</b><span>{{ t("journey.pastorChats") }}</span></div>
+      <div class="card"><b>{{ stats.counts.music }}</b><span>{{ t("journey.worship") }}</span></div>
+      <div class="card"><b>{{ stats.counts.service }}</b><span>{{ t("journey.services") }}</span></div>
+      <div class="card"><b>{{ stats.counts.prayer }}</b><span>{{ t("journey.prayers") }}</span></div>
+      <div class="card highlight"><b>🔥 {{ stats.streak_days }}</b><span>{{ t("journey.dayStreak") }}</span></div>
+      <div class="card" v-if="stats.favorite_book"><b>{{ stats.favorite_book }}</b><span>{{ t("journey.favoriteBook") }}</span></div>
     </div>
 
     <div v-if="topics.length" class="topics">
-      <h3>Most discussed topics</h3>
+      <h3>{{ t("journey.mostDiscussed") }}</h3>
       <span v-for="[tag, count] in topics" :key="tag" class="topic">#{{ tag }} · {{ count }}</span>
     </div>
 
     <div v-if="journal.length" class="journal">
-      <h3>📔 My Journal</h3>
+      <h3>{{ t("journey.myJournal") }}</h3>
       <article v-for="e in journal" :key="e.id" class="entry" :class="e.status">
         <header>
-          <b>{{ e.title || 'Journal entry' }}</b>
+          <b>{{ e.title || t("journey.journalEntry") }}</b>
           <span v-if="e.scripture_ref" class="ref">{{ e.scripture_ref }}</span>
-          <button class="del" @click="deleteEntry(e)" title="Delete">✕</button>
+          <button class="del" @click="deleteEntry(e)" :title="t('journey.deleteTitle')">✕</button>
         </header>
-        <p v-if="e.status === 'pending'" class="pending">Writing your reflection… <button @click="loadJournal">refresh</button></p>
-        <p v-else-if="e.status === 'failed'" class="pending">Could not generate this entry.</p>
+        <p v-if="e.status === 'pending'" class="pending">{{ t("journey.writing") }} <button @click="loadJournal">{{ t("journey.refresh") }}</button></p>
+        <p v-else-if="e.status === 'failed'" class="pending">{{ t("journey.generateFailed") }}</p>
         <template v-else>
-          <p v-if="e.insight"><b>Insight.</b> {{ e.insight }}</p>
-          <p v-if="e.prayer"><b>Prayer.</b> {{ e.prayer }}</p>
-          <p v-if="e.reflection"><b>Reflection.</b> {{ e.reflection }}</p>
+          <p v-if="e.insight"><b>{{ t("journey.insight") }}</b> {{ e.insight }}</p>
+          <p v-if="e.prayer"><b>{{ t("journey.prayer") }}</b> {{ e.prayer }}</p>
+          <p v-if="e.reflection"><b>{{ t("journey.reflection") }}</b> {{ e.reflection }}</p>
         </template>
       </article>
     </div>
 
     <div class="timeline">
       <div class="timeline-head">
-        <h3>Timeline</h3>
+        <h3>{{ t("journey.timeline") }}</h3>
         <div class="yearnav">
           <button @click="changeYear(-1)">‹</button>
           <b>{{ year }}</b>
           <button @click="changeYear(1)">›</button>
         </div>
       </div>
-      <p v-if="!months.length" class="journey-dim">Nothing recorded in {{ year }} yet.</p>
+      <p v-if="!months.length" class="journey-dim">{{ t("journey.nothingRecorded", { year }) }}</p>
       <div v-for="[month, items] in months" :key="month" class="month">
         <h4>{{ month }}</h4>
         <ul>

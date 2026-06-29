@@ -338,10 +338,9 @@ class MusicRecommendationService
      * Whether a title's script is compatible with the target language, used to
      * keep cross-language YouTube results out of a catalogue. Latin is allowed
      * for every language (en/td are Latin-script; Burmese titles are often
-     * romanised); Myanmar script is additionally allowed for `my`. A title that
-     * carries any OTHER major script (Devanagari, CJK/kana/Hangul, Arabic,
-     * Hebrew, Thai, Cyrillic, other Indic) belongs to a different language and
-     * is rejected. Emoji/punctuation/digits live outside these ranges and are
+     * romanised); each native-script language below whitelists its own script.
+     * A title that carries any OTHER major script belongs to a different language
+     * and is rejected. Emoji/punctuation/digits live outside these ranges and are
      * ignored, so they never trigger a false rejection.
      */
     private function titleLanguageScriptOk(string $title, string $language): bool
@@ -357,10 +356,22 @@ class MusicRecommendationService
             'arabic'     => '\x{0600}-\x{06FF}',
             'hebrew'     => '\x{0590}-\x{05FF}',
             'cyrillic'   => '\x{0400}-\x{04FF}',
-            'cjk'        => '\x{3040}-\x{30FF}\x{3400}-\x{9FFF}\x{AC00}-\x{D7AF}', // kana + CJK + Hangul
+            'kana'       => '\x{3040}-\x{30FF}',
+            'han'        => '\x{3400}-\x{9FFF}',
+            'hangul'     => '\x{AC00}-\x{D7AF}',
         ];
         // Scripts a language legitimately uses besides Latin.
-        $allowed = ['my' => ['myanmar']];
+        $allowed = [
+            'my' => ['myanmar'],
+            'ja' => ['kana', 'han'],
+            'zh-CN' => ['han'],
+            'ko' => ['hangul', 'han'],
+            'hi' => ['devanagari'],
+            'ta' => ['tamil'],
+            'th' => ['thai'],
+            'ar' => ['arabic'],
+            'he' => ['hebrew'],
+        ];
 
         foreach ($foreign as $name => $range) {
             if (in_array($name, $allowed[$language] ?? [], true)) {

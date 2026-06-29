@@ -38,13 +38,13 @@ class DispatchServiceJob implements ShouldQueue
             'session_id'   => $session->id,
             'session_token'=> $session->session_token,
             'music_source' => $session->music_source, // 'hymn_sung' | 'hymn' | 'suno' | 'youtube'
-            // Service language ('en' | 'my' | 'td'), locked at session start like the music
-            // source. Drives the LLM output language, the Bible translation (BSB vs
-            // Judson 1835 Burmese), the hymn library, and the narration voice.
+            // Service language, locked at session start like the music source.
+            // Drives the LLM output language, Bible lookup, hymn library, and
+            // narration voice.
             'language'     => $language,
             // How spoken segments are voiced — per-language admin setting.
             // Defaults are server-side so the player has audio controls:
-            // English uses Edge TTS; Myanmar/Tedim use local MMS-TTS.
+            // English/world languages use Edge TTS; Myanmar/Tedim use local MMS-TTS.
             'narration_mode'    => Setting::narrationMode($language),
             'voicebox_engine'  => Setting::get('voicebox_engine', 'qwen'),
             // Mode encodes provider choice; this toggle suppresses server TTS entirely.
@@ -284,6 +284,40 @@ class DispatchServiceJob implements ShouldQueue
 
             // The lyric body must clearly be Tedim/Zolai.
             return $tedimHits >= 5 && $coreHits >= 2 && $englishHits === 0 && $terminalTedim >= 2;
+        }
+
+        if ($language === 'ja') {
+            return preg_match('/[\x{3040}-\x{30FF}]/u', $text) === 1
+                && preg_match_all('/[\x{3040}-\x{30FF}\x{4E00}-\x{9FFF}]/u', $text) >= 40;
+        }
+
+        if ($language === 'zh-CN') {
+            return preg_match('/[\x{3040}-\x{30FF}\x{AC00}-\x{D7AF}]/u', $text) !== 1
+                && preg_match_all('/[\x{4E00}-\x{9FFF}]/u', $text) >= 40;
+        }
+
+        if ($language === 'ko') {
+            return preg_match_all('/[\x{AC00}-\x{D7AF}]/u', $text) >= 40;
+        }
+
+        if ($language === 'hi') {
+            return preg_match_all('/[\x{0900}-\x{097F}]/u', $text) >= 40;
+        }
+
+        if ($language === 'ta') {
+            return preg_match_all('/[\x{0B80}-\x{0BFF}]/u', $text) >= 40;
+        }
+
+        if ($language === 'th') {
+            return preg_match_all('/[\x{0E00}-\x{0E7F}]/u', $text) >= 40;
+        }
+
+        if ($language === 'ar') {
+            return preg_match_all('/[\x{0600}-\x{06FF}\x{0750}-\x{077F}\x{08A0}-\x{08FF}]/u', $text) >= 40;
+        }
+
+        if ($language === 'he') {
+            return preg_match_all('/[\x{0590}-\x{05FF}]/u', $text) >= 40;
         }
 
         return true;

@@ -7,9 +7,10 @@ import { onMounted, onBeforeUnmount, reactive, ref, computed, watch } from "vue"
 import { useI18n } from "vue-i18n";
 import { api } from "../composables/useApi";
 import { useStudyStream } from "../composables/useStudyStream";
+import { isRtlLocale, normalizeLanguage } from "../i18n";
 import AdCarousel from "./AdCarousel.vue";
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 // Display label per study style; the English STYLES value is still what we send.
 const STYLE_KEYS = { "Gentle": "gentle", "Teaching": "teaching", "Encouraging": "encouraging", "Deep Theology": "deepTheology", "Youth": "youth", "Family": "family", "Hope": "hope" };
 
@@ -20,6 +21,17 @@ const TRANSLATIONS = {
   en:  [["kjv", "KJV"], ["en", "English (BSB)"]],
   my:  [["my", "Burmese (Judson 1835)"], ["kjv", "KJV (English)"]],
   td:  [["td", "Tedim (Lai Siangtho 1932)"], ["kjv", "KJV (English)"]],
+  fr:  [["fr", "Français (Ostervald 1877)"], ["kjv", "KJV (English)"]],
+  de:  [["de", "Deutsch (Luther 1912)"], ["kjv", "KJV (English)"]],
+  es:  [["es", "Español (Reina-Valera 1909)"], ["kjv", "KJV (English)"]],
+  ja:  [["ja", "日本語 (口語訳 1955)"], ["kjv", "KJV (English)"]],
+  "zh-CN": [["zh-CN", "简体中文 (和合本)"], ["kjv", "KJV (English)"]],
+  ko:  [["ko", "한국어 (개역한글)"], ["kjv", "KJV (English)"]],
+  hi:  [["hi", "हिन्दी (IRV 2019)"], ["kjv", "KJV (English)"]],
+  ta:  [["ta", "தமிழ் (IRV 2019)"], ["kjv", "KJV (English)"]],
+  th:  [["th", "ไทย (Thai KJV)"], ["kjv", "KJV (English)"]],
+  ar:  [["ar", "العربية"], ["kjv", "KJV (English)"]],
+  he:  [["he", "עברית (WLC)"], ["kjv", "KJV (English)"]],
   cnh: [["cnh", "Hakha Chin"], ["kjv", "KJV (English)"]],
   cfm: [["cfm", "Falam Chin"], ["kjv", "KJV (English)"]],
   lus: [["lus", "Mizo"], ["kjv", "KJV (English)"]],
@@ -40,11 +52,6 @@ const form = reactive({
 });
 
 const STYLES = ["Gentle", "Teaching", "Encouraging", "Deep Theology", "Youth", "Family", "Hope"];
-
-const LANG_NAMES = {
-  en: "English", my: "Burmese (ဗမာ)", td: "Tedim", cnh: "Hakha",
-  cfm: "Falam", lus: "Mizo", hlt: "Matu",
-};
 
 const session = ref(null);
 const bubbles = ref([]);            // { turn, persona_id, name, role, text, refs:[] }
@@ -187,6 +194,18 @@ const agentMax = computed(() => config.value?.max_agent_count ?? 7);
 
 // Translation options for the selected language; first is the default.
 const translationOptions = computed(() => TRANSLATIONS[form.language] || TRANSLATIONS.en);
+const studyDir = computed(() => isRtlLocale(form.language) ? "rtl" : "auto");
+
+// Study language follows the one global language authority. There is no per-page
+// language picker; the study just clamps the global language to the set the study
+// backend actually supports (config.languages), falling back to English. Mirrors
+// how Bible Reader clamps to its available versions.
+function clampStudyLanguage() {
+  const supported = config.value?.languages || ["en"];
+  const appLang = normalizeLanguage(locale.value);
+  form.language = supported.includes(appLang) ? appLang : "en";
+}
+watch(locale, clampStudyLanguage);
 
 // When the language changes, snap the translation to that language's default
 // (unless the current pick is still valid for the new language).
@@ -202,6 +221,7 @@ onMounted(async () => {
     await api.ensureSession();
     config.value = await api.studyConfig();
     form.agent_count = config.value.default_agent_count ?? 2;
+    clampStudyLanguage();
   } catch (e) {
     error.value = t("study.msg.notAvailable");
   }
@@ -236,7 +256,7 @@ async function restore(chatId) {
       bubbles.value = (full.messages || []).map((m) => ({
         turn: m.turn,
         persona_id: m.persona_id ?? null,
-        name: m.role === "user" ? "You" : (m.role === "moderator" || m.role === "synthesis" ? "Moderator" : "Pastor"),
+        name: m.role === "user" ? t("common.you") : (m.role === "moderator" || m.role === "synthesis" ? t("study.moderator") : t("pastor.role")),
         role: m.role,
         text: m.content || "",
         refs: (m.scripture_refs || []).map((r) => ({ ref: r, translation: full.translation || "" })),
@@ -251,7 +271,7 @@ async function restore(chatId) {
       bubbles.value = (s.messages || []).map((m, i) => ({
         turn: i,
         persona_id: null,
-        name: m.sender === "user" ? "You" : "Pastor",
+        name: m.sender === "user" ? t("common.you") : t("pastor.role"),
         role: m.sender === "user" ? "user" : "pastor",
         text: m.content || "",
         refs: [],
@@ -270,7 +290,7 @@ onBeforeUnmount(() => { stream.close(); if (audioEl) audioEl.pause(); });
 let userTurnSeq = 0;
 function pushUserBubble(text) {
   bubbles.value.push({
-    turn: --userTurnSeq, persona_id: null, name: "You",
+    turn: --userTurnSeq, persona_id: null, name: t("common.you"),
     role: "user", text, refs: [],
   });
 }
@@ -281,7 +301,7 @@ function bubbleFor(env) {
     b = {
       turn: env.turn,
       persona_id: env.persona_id ?? null,
-      name: env.display_name || "Moderator",
+      name: env.display_name || t("study.moderator"),
       role: env.role || "pastor",
       text: "",
       refs: [],
@@ -392,18 +412,18 @@ function roleClass(role) {
 function summaryText() {
   const s = summary.value || {};
   const L = [];
-  L.push("AI Bible Study — Summary");
-  if (session.value?.topic || form.question) L.push(`Topic: ${session.value?.topic || form.question}`);
+  L.push(`${t("study.title")} - ${t("study.summary")}`);
+  if (session.value?.topic || form.question) L.push(`${t("study.topic")}: ${session.value?.topic || form.question}`);
   const sect = (title, items) => {
     const arr = (items || []).filter(Boolean);
     if (arr.length) { L.push("", title); arr.forEach((i) => L.push("- " + i)); }
   };
-  sect("Key Verses", s.key_verses);
-  sect("Main Lessons", s.lessons);
-  if (s.prayer) { L.push("", "Prayer", s.prayer); }
-  sect("Action Points", s.action_points);
-  sect("Reflection Questions", s.reflection_questions);
-  sect("Study Plan", s.study_plan);
+  sect(t("study.keyVerses"), s.key_verses);
+  sect(t("study.mainLessons"), s.lessons);
+  if (s.prayer) { L.push("", t("study.prayer"), s.prayer); }
+  sect(t("study.actionPoints"), s.action_points);
+  sect(t("study.reflection"), s.reflection_questions);
+  sect(t("study.studyPlan"), s.study_plan);
   return L.join("\n");
 }
 
@@ -418,7 +438,7 @@ async function copySummary() {
 async function shareSummary() {
   const text = summaryText();
   if (navigator.share) {
-    try { await navigator.share({ title: "AI Bible Study", text }); return; } catch { /* cancelled */ }
+    try { await navigator.share({ title: t("study.title"), text }); return; } catch { /* cancelled */ }
   }
   try { await navigator.clipboard.writeText(text); flash(t("study.msg.shareCopied")); }
   catch { flash(t("study.msg.shareUnsupported")); }
@@ -508,11 +528,6 @@ function goHome() { window.location.hash = ""; }
 
     <!-- SETUP -->
     <section v-if="phase === 'setup'" class="setup card">
-      <label>{{ t("common.language") }}
-        <select v-model="form.language">
-          <option v-for="l in (config?.languages || ['en'])" :key="l" :value="l">{{ LANG_NAMES[l] || l }}</option>
-        </select>
-      </label>
       <label>{{ t("study.translation") }}
         <select v-model="form.translation">
           <option v-for="[code, name] in translationOptions" :key="code" :value="code">{{ name }}</option>
@@ -532,7 +547,7 @@ function goHome() { window.location.hash = ""; }
         <span v-if="config?.tier === 'guest'">{{ t("study.registerMore") }}</span>
       </p>
       <label>{{ t("study.yourQuestion") }}
-        <textarea v-model="form.question" rows="3" :placeholder="t('study.questionPlaceholder')" @focus="focusScroll"></textarea>
+        <textarea v-model="form.question" rows="3" :placeholder="t('study.questionPlaceholder')" dir="auto" @focus="focusScroll"></textarea>
       </label>
       <button class="primary" :disabled="loading" @click="start">
         {{ loading ? t("study.starting") : t("study.begin") }}
@@ -577,9 +592,9 @@ function goHome() { window.location.hash = ""; }
               class="narrate-btn" :title="narratingTurn === b.turn ? t('study.stop') : t('study.listen')"
               @click="narrate(b)">{{ narratingTurn === b.turn ? '⏸' : '🔊' }}</button>
           </div>
-          <div class="body">{{ b.text }}<span v-if="!b.text" class="typing">…</span></div>
+          <div class="body bidi-text" :dir="studyDir">{{ b.text }}<span v-if="!b.text" class="typing">…</span></div>
           <div v-if="b.refs.length" class="verses">
-            <span v-for="r in b.refs" :key="r.ref" class="verse-card">📖 {{ r.ref }} <em>{{ r.translation }}</em></span>
+            <span v-for="r in b.refs" :key="r.ref" class="verse-card" dir="auto">📖 {{ r.ref }} <em>{{ r.translation }}</em></span>
           </div>
         </article>
       </div>
@@ -590,11 +605,12 @@ function goHome() { window.location.hash = ""; }
       </div>
 
       <div v-if="inputOpen" class="composer">
-        <textarea
-          ref="composerInput"
-          v-model="followUp"
-          :placeholder="t('study.followUpPlaceholder')"
-          rows="1"
+          <textarea
+            ref="composerInput"
+            v-model="followUp"
+            :placeholder="t('study.followUpPlaceholder')"
+            rows="1"
+            dir="auto"
           @keydown.enter.exact.prevent="send"
           @input="autoGrow"
           @focus="focusScroll"
@@ -605,9 +621,9 @@ function goHome() { window.location.hash = ""; }
 
     <!-- SUMMARY -->
     <section v-else-if="phase === 'summary'" class="summary card">
-      <div id="study-summary-print" class="print-area">
+      <div id="study-summary-print" class="print-area bidi-text" :dir="studyDir">
         <h2>{{ t("study.summaryTitle") }}</h2>
-        <p v-if="session?.topic || form.question" class="topic">{{ session?.topic || form.question }}</p>
+        <p v-if="session?.topic || form.question" class="topic" dir="auto">{{ session?.topic || form.question }}</p>
         <div v-if="summary.key_verses?.length" class="block">
           <h3>📖 {{ t("study.keyVerses") }}</h3>
           <ul><li v-for="(v, i) in summary.key_verses" :key="i">{{ v }}</li></ul>
@@ -698,11 +714,11 @@ function goHome() { window.location.hash = ""; }
 }
 
 .status { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.6rem; color: var(--text-muted); }
-.status .end { margin-left: auto; }
+	.status .end { margin-inline-start: auto; }
 .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
 .dot.on { background: var(--success); } .dot.off { background: #f59e0b; }
 .narration-toggle { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.85em; cursor: pointer; user-select: none; }
-.narration-toggle.standalone { margin-left: auto; }
+	.narration-toggle.standalone { margin-inline-start: auto; }
 .narrate-btn { background: none; border: 0; cursor: pointer; font-size: 0.95em; padding: 0 0.2rem; line-height: 1; opacity: 0.75; }
 .narrate-btn:hover { opacity: 1; }
 

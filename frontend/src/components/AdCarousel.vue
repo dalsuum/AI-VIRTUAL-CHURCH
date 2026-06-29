@@ -1,6 +1,10 @@
 <script setup>
 import { ref, computed, watch, onBeforeUnmount } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { api } from '../composables/useApi.js';
+import { isRtlLocale } from '../i18n';
+
+const { t, locale } = useI18n();
 
 const props = defineProps({
   ads:          { type: Array,  default: () => [] }, // all active ads for this service
@@ -23,6 +27,7 @@ const slides = computed(() => ad.value?.slides || []);
 const slideIndex = ref(0);
 const currentSlide = computed(() => slides.value[slideIndex.value] || null);
 const total = computed(() => slides.value.length);
+const isRtl = computed(() => isRtlLocale(locale.value));
 
 // Duration for current slide: slide override → ad default → 5s
 const slideDuration = computed(() => {
@@ -138,9 +143,9 @@ onBeforeUnmount(() => clearTimeout(timer));
 
       <!-- Slide controls: dots -->
       <div v-if="total > 1" class="slide-controls">
-        <button class="ctrl-btn" :disabled="slideIndex === 0" @click.stop="prevSlide">&#8249;</button>
+        <button class="ctrl-btn" :disabled="slideIndex === 0" @click.stop="prevSlide">{{ isRtl ? "›" : "‹" }}</button>
         <span v-for="(_, i) in slides" :key="i" class="dot" :class="{ active: i === slideIndex }"></span>
-        <button class="ctrl-btn" :disabled="slideIndex === total - 1" @click.stop="nextSlide">&#8250;</button>
+        <button class="ctrl-btn" :disabled="slideIndex === total - 1" @click.stop="nextSlide">{{ isRtl ? "‹" : "›" }}</button>
       </div>
 
       <!-- Progress bar for current slide -->
@@ -151,9 +156,9 @@ onBeforeUnmount(() => clearTimeout(timer));
 
     <!-- Ad label + skip -->
     <div class="ad-footer">
-      <span class="ad-label">Ad</span>
+      <span class="ad-label">{{ t("ads.label") }}</span>
       <span class="ad-title-text">{{ ad.title }}</span>
-      <button class="skip-btn" @click="dismiss">Skip ›</button>
+      <button class="skip-btn" @click="dismiss">{{ t("ads.skip") }}</button>
     </div>
   </div>
 </template>

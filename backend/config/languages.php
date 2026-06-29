@@ -36,6 +36,7 @@ return [
         'hi'    => ['native_name' => 'हिन्दी',    'english_name' => 'Hindi',                'rtl' => false, 'speech_locale' => 'hi-IN', 'tts_locale' => 'hi-IN', 'fallback' => 'en', 'enabled' => true],
         'ko'    => ['native_name' => '한국어',     'english_name' => 'Korean',               'rtl' => false, 'speech_locale' => 'ko-KR', 'tts_locale' => 'ko-KR', 'fallback' => 'en', 'enabled' => true],
         'ar'    => ['native_name' => 'العربية',   'english_name' => 'Arabic',               'rtl' => true,  'speech_locale' => 'ar-SA', 'tts_locale' => 'ar-SA', 'fallback' => 'en', 'enabled' => true],
+        'he'    => ['native_name' => 'עברית',     'english_name' => 'Hebrew',               'rtl' => true,  'speech_locale' => 'he-IL', 'tts_locale' => 'he-IL', 'fallback' => 'en', 'enabled' => true],
         'th'    => ['native_name' => 'ไทย',       'english_name' => 'Thai',                 'rtl' => false, 'speech_locale' => 'th-TH', 'tts_locale' => 'th-TH', 'fallback' => 'en', 'enabled' => true],
         'es'    => ['native_name' => 'Español',   'english_name' => 'Spanish',              'rtl' => false, 'speech_locale' => 'es-ES', 'tts_locale' => 'es-ES', 'fallback' => 'en', 'enabled' => true],
         'ta'    => ['native_name' => 'தமிழ்',     'english_name' => 'Tamil',                'rtl' => false, 'speech_locale' => 'ta-IN', 'tts_locale' => 'ta-IN', 'fallback' => 'en', 'enabled' => true],

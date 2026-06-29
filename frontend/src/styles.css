@@ -75,7 +75,13 @@
 
 * { box-sizing: border-box; }
 
-html, body { margin: 0; }
+html,
+body {
+  margin: 0;
+  overflow-x: hidden;
+}
+
+#app { min-width: 0; }
 
 body {
   font-family: var(--font);
@@ -95,6 +101,7 @@ body {
    without changing Latin rendering. (Falls back gracefully if a Noto family is
    not installed — the browser uses its own system script font.) */
 :lang(ar) { font-family: var(--font), "Noto Naskh Arabic", "Segoe UI", sans-serif; }
+:lang(he) { font-family: var(--font), "Noto Sans Hebrew", "Segoe UI", sans-serif; }
 :lang(zh-CN) { font-family: var(--font), "Noto Sans SC", "Microsoft YaHei", sans-serif; }
 :lang(ja) { font-family: var(--font), "Noto Sans JP", "Hiragino Kaku Gothic Pro", sans-serif; }
 :lang(ko) { font-family: var(--font), "Noto Sans KR", "Malgun Gothic", sans-serif; }
@@ -102,10 +109,11 @@ body {
 :lang(hi) { font-family: var(--font), "Noto Sans Devanagari", sans-serif; }
 :lang(ta) { font-family: var(--font), "Noto Sans Tamil", sans-serif; }
 
-/* RTL support (Arabic). Direction is set on <html dir> by setLocale(); flip the
-   few places that assume a left-to-right reading order. Scoped to [dir="rtl"]
-   so left-to-right languages are completely unaffected. Flex/grid layouts
-   reflow automatically once the document direction changes. */
-[dir="rtl"] { text-align: right; }
+/* RTL support. Direction is set on <html dir> by setLocale(); use logical
+   alignment and component-scoped logical spacing so LTR languages are unchanged. */
+[dir="rtl"] { text-align: start; }
 [dir="rtl"] body { direction: rtl; }
 [dir="rtl"] .ai-disclaimer { text-align: center; }
+.bidi-text { unicode-bidi: plaintext; }
+.rtl-flip:dir(rtl),
+[dir="rtl"] .rtl-flip { transform: scaleX(-1); }

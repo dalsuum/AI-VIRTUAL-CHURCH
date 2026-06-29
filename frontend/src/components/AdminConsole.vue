@@ -59,6 +59,7 @@ const TABS = [
   { name: "grammar-review", label: "Language Review",  can: () => can("language_review.view"), load: () => { grData.value = null; loadGrammarReview(); } },
   { name: "system",         label: "System",           can: () => can("system.view"),          load: () => { loadUpdateStatus(); scheduleUpdatePoll(); loadVoiceboxStatus(); scheduleVoiceboxPoll(); } },
   { name: "freeze",         label: "Freeze Monitor",   can: () => isAdminUser.value,           load: () => { loadFreeze(); scheduleFreezePoll(); } },
+  { name: "knowledge",      label: "Knowledge",         can: () => can("knowledge.view"),       load: () => { loadKnowledgeStatus(); loadKopJobs(); scheduleKopJobsPoll(); } },
 ];
 
 function firstAllowedTab() {
@@ -96,6 +97,15 @@ const musicPoolLanguages = [
   { value: "en", label: "English" },
   { value: "my", label: "Myanmar" },
   { value: "td", label: "Tedim (Zolai)" },
+  { value: "fr", label: "French" },
+  { value: "de", label: "German" },
+  { value: "es", label: "Spanish" },
+  { value: "ja", label: "Japanese" },
+  { value: "zh-CN", label: "Chinese (Simplified)" },
+  { value: "ko", label: "Korean" },
+  { value: "hi", label: "Hindi" },
+  { value: "ta", label: "Tamil" },
+  { value: "th", label: "Thai" },
 ];
 
 const voiceTraining = ref(null);
@@ -145,6 +155,25 @@ const narrationModesTD = [
   { value: "mms_tts",  label: "MMS-TTS (local, free)",  hint: "Local facebook/mms-tts-ctd — the only native Zolai TTS. Requires MMS speech on port 8003." },
   { value: "edge_tts", label: "Edge TTS (cloud, free)", hint: "Microsoft cloud TTS — no native Zolai voice; reads Tedim text phonetically using EDGE_TTS_VOICE_TD (default en-US-AriaNeural). Free but accent will be English." },
   { value: "off",      label: "Off",                    hint: "Segments stay as silent text — nothing is read aloud." },
+];
+
+const narrationModesWorld = [
+  { value: "edge_tts", label: "Edge TTS (cloud, free)", hint: "Native Microsoft neural voice for this language. Recommended." },
+  { value: "browser",  label: "Browser voice",          hint: "The worshipper's browser reads each segment aloud." },
+  { value: "openai",   label: "OpenAI voice",           hint: "Segments are narrated with OpenAI text-to-speech. Requires a TTS key." },
+  { value: "kokoro",   label: "OpenRouter Kokoro",      hint: "Segments are narrated with the open Kokoro voice via OpenRouter." },
+  { value: "off",      label: "Off",                    hint: "Segments stay as silent text — nothing is read aloud." },
+];
+const worldNarrationLanguages = [
+  { code: "fr", label: "French (Français)", fallback: "edge_tts", voices: "Denise / Henri" },
+  { code: "de", label: "German (Deutsch)", fallback: "edge_tts", voices: "Katja / Conrad" },
+  { code: "es", label: "Spanish (Español)", fallback: "edge_tts", voices: "Elvira / Alvaro" },
+  { code: "ja", label: "Japanese (日本語)", fallback: "edge_tts", voices: "Nanami / Keita" },
+  { code: "zh-CN", label: "Chinese Simplified (简体中文)", fallback: "edge_tts", voices: "Xiaoxiao / Yunxi" },
+  { code: "ko", label: "Korean (한국어)", fallback: "edge_tts", voices: "SunHi / InJoon" },
+  { code: "hi", label: "Hindi (हिन्दी)", fallback: "edge_tts", voices: "Swara / Madhur" },
+  { code: "ta", label: "Tamil (தமிழ்)", fallback: "edge_tts", voices: "Pallavi / Valluvar" },
+  { code: "th", label: "Thai (ไทย)", fallback: "edge_tts", voices: "Premwadee / Niwat" },
 ];
 
 // Compact per-version "Listen" voice rows for the Bible page. English & KJV get
@@ -234,6 +263,15 @@ const serviceLanguages = [
   { key: "lang_en", label: "English", hint: "Show the English tab in the intake form. Keep at least one language on." },
   { key: "lang_my", label: "Myanmar (မြန်မာ)", hint: "Show the Myanmar/Burmese tab. Enable once the Burmese LLM is running." },
   { key: "lang_td", label: "Zolai (Tedim)", hint: "Show the Zolai/Tedim tab. Enable once the Tedim LLM is running." },
+  { key: "lang_fr", label: "French (Français)", hint: "Show the French tab in the intake form." },
+  { key: "lang_de", label: "German (Deutsch)", hint: "Show the German tab in the intake form." },
+  { key: "lang_es", label: "Spanish (Español)", hint: "Show the Spanish tab in the intake form." },
+  { key: "lang_ja", label: "Japanese (日本語)", hint: "Show the Japanese tab in the intake form." },
+  { key: "lang_zh-CN", label: "Chinese Simplified (简体中文)", hint: "Show the Simplified Chinese tab in the intake form." },
+  { key: "lang_ko", label: "Korean (한국어)", hint: "Show the Korean tab in the intake form." },
+  { key: "lang_hi", label: "Hindi (हिन्दी)", hint: "Show the Hindi tab in the intake form." },
+  { key: "lang_ta", label: "Tamil (தமிழ்)", hint: "Show the Tamil tab in the intake form." },
+  { key: "lang_th", label: "Thai (ไทย)", hint: "Show the Thai tab in the intake form." },
 ];
 
 // Where the worker stores generated audio. Mirrors Setting::STORAGE_BACKENDS.
@@ -269,7 +307,7 @@ const cfTypeLabels = { block: "Block", allow: "Allow" };
 const countdownSourceOptions = [
   { value: "all", label: "All sources", hint: "Rotate banners, approved testimonies, and mood-matched Scripture from the local Bible." },
   { value: "both", label: "Banners + testimonies", hint: "Rotate admin banners and approved testimonies." },
-  { value: "verses", label: "Scripture verses", hint: "Show mood-matched verses from the local Bible (English / Burmese / Tedim)." },
+  { value: "verses", label: "Scripture verses", hint: "Show mood-matched verses from the local Bible for the service language." },
   { value: "banners", label: "Custom banners", hint: "Show only the admin-managed messages below." },
   { value: "testimonies", label: "Testimonies", hint: "Show only approved testimonies from the moderation queue." },
   { value: "off", label: "Off", hint: "Show the normal countdown without cards." },
@@ -1200,6 +1238,144 @@ function scheduleFreezePoll() {
   clearInterval(freezeTimer);
   freezeTimer = setInterval(loadFreeze, 10000);  // live refresh every 10s
 }
+
+// ─── Knowledge Operations Platform — dashboard ────────────────────────────────
+const knowledgeStatus = ref(null);   // /admin/knowledge/health payload
+const knowledgeError  = ref("");
+async function loadKnowledgeStatus() {
+  try { knowledgeStatus.value = await api.adminKnowledgeHealth(); knowledgeError.value = ""; }
+  catch (e) { knowledgeError.value = e?.data?.message || "Could not load knowledge status."; }
+}
+
+function qdrantOverallStatus(s) {
+  if (s.vector_driver !== 'qdrant') return 'ok';
+  const vals = Object.values(s.collections ?? {});
+  if (vals.some(c => c.error === 'unreachable')) return 'fail';
+  if (vals.every(c => !c.exists)) return 'warn';
+  return 'ok';
+}
+function qdrantOverallLabel(s) {
+  if (s.vector_driver !== 'qdrant') return 'In-memory (dev)';
+  const vals = Object.values(s.collections ?? {});
+  if (vals.some(c => c.error === 'unreachable')) return 'Unreachable';
+  if (vals.every(c => !c.exists)) return 'No collections yet';
+  return 'Healthy';
+}
+function corporaIndexedCount(s) {
+  return Object.values(s.collections ?? {}).filter(c => c.exists && (c.vectors_count ?? 0) > 0).length;
+}
+function corporaIndexedClass(s) {
+  const total = (s.corpora ?? []).length;
+  const indexed = corporaIndexedCount(s);
+  if (indexed === 0) return 'fail';
+  if (indexed < total) return 'warn';
+  return 'ok';
+}
+
+// ─── Knowledge Operations Platform — upload ───────────────────────────────────
+const kopUploadFile      = ref(null);   // File object from the picker
+const kopUploadDragging  = ref(false);
+const kopUploadCorpus    = ref('');
+const kopUploadLanguage  = ref('en');
+const kopUploadSource    = ref('');
+const kopUploadChunker   = ref('text');
+const kopUploadBusy      = ref(false);
+const kopUploadError     = ref('');
+const kopUploadSuccess   = ref('');
+const kopJobs            = ref([]);
+const kopJobsLoading     = ref(false);
+let   kopJobsTimer       = null;
+
+const KOP_ALLOWED_EXTS = ['pdf', 'json', 'md', 'txt'];
+
+function kopFileExt(name) { return (name || '').split('.').pop().toLowerCase(); }
+
+function kopSelectFile(file) {
+  if (!file) return;
+  const ext = kopFileExt(file.name);
+  if (!KOP_ALLOWED_EXTS.includes(ext)) {
+    kopUploadError.value = `Unsupported file type ".${ext}". Allowed: ${KOP_ALLOWED_EXTS.join(', ')}.`;
+    kopUploadFile.value = null;
+    return;
+  }
+  kopUploadFile.value = file;
+  kopUploadError.value = '';
+  // Auto-fill source from filename when empty.
+  if (!kopUploadSource.value) kopUploadSource.value = file.name.replace(/\.[^.]+$/, '');
+}
+
+function kopOnFilePick(e) { kopSelectFile(e.target.files[0]); }
+function kopOnDrop(e) {
+  e.preventDefault(); kopUploadDragging.value = false;
+  kopSelectFile(e.dataTransfer?.files?.[0]);
+}
+
+async function kopSubmitUpload() {
+  if (!kopUploadFile.value || !kopUploadCorpus.value) return;
+  kopUploadBusy.value = true; kopUploadError.value = ''; kopUploadSuccess.value = '';
+  const fd = new FormData();
+  fd.append('file',       kopUploadFile.value);
+  fd.append('collection', kopUploadCorpus.value);
+  fd.append('language',   kopUploadLanguage.value);
+  fd.append('source',     kopUploadSource.value || kopUploadCorpus.value);
+  fd.append('chunker',    kopUploadChunker.value);
+  try {
+    const res = await api.adminKnowledgeUpload(fd);
+    kopUploadSuccess.value = `Job #${res.job.id} queued — ${res.job.original_filename} → ${res.job.collection}.`;
+    kopUploadFile.value = null; kopUploadSource.value = '';
+    await loadKopJobs();
+  } catch (e) {
+    if (e.status === 409) {
+      kopUploadError.value = e.data?.message || 'Duplicate file already indexed.';
+    } else {
+      kopUploadError.value = e.data?.message || 'Upload failed.';
+    }
+  } finally {
+    kopUploadBusy.value = false;
+  }
+}
+
+async function loadKopJobs() {
+  kopJobsLoading.value = true;
+  try { kopJobs.value = (await api.adminKnowledgeJobs()).jobs ?? []; }
+  catch { /* silent */ }
+  finally { kopJobsLoading.value = false; }
+}
+
+function scheduleKopJobsPoll() {
+  clearInterval(kopJobsTimer);
+  kopJobsTimer = setInterval(async () => {
+    // Only keep polling while there are active jobs.
+    if (kopJobs.value.some(j => ['pending', 'processing'].includes(j.status))) {
+      await loadKopJobs();
+    }
+  }, 4000);
+}
+
+async function kopCancelJob(id) {
+  try { const r = await api.adminKnowledgeCancelJob(id); updateKopJob(r.job); } catch { /* silent */ }
+}
+async function kopRetryJob(id) {
+  try { const r = await api.adminKnowledgeRetryJob(id); updateKopJob(r.job); } catch { /* silent */ }
+}
+async function kopDeleteJob(id) {
+  try { await api.adminKnowledgeDeleteJob(id); kopJobs.value = kopJobs.value.filter(j => j.id !== id); } catch { /* silent */ }
+}
+function updateKopJob(job) {
+  const idx = kopJobs.value.findIndex(j => j.id === job.id);
+  if (idx !== -1) kopJobs.value[idx] = job;
+  else kopJobs.value.unshift(job);
+}
+
+function kopJobStatusClass(status) {
+  return { pending: 'pending', processing: 'music-source', completed: 'ok', failed: 'danger', cancelled: '' }[status] ?? '';
+}
+function kopFileSizeLabel(bytes) {
+  if (!bytes) return '—';
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / 1048576).toFixed(1) + ' MB';
+}
 function fmtAge(h) {
   if (h == null) return "—";
   const m = Math.round(h * 60);
@@ -1210,6 +1386,120 @@ function shortTime(ts) {
 }
 function shortDateTime(ts) {
   try { const i = new Date(ts).toISOString(); return i.slice(5, 10) + " " + i.slice(11, 16); } catch { return ts; }
+}
+
+// ─── KOP Retrieval Inspector ───────────────────────────────────────────────────
+
+const inspectQuery    = ref('');
+const inspectLanguage = ref('en');
+const inspectBusy     = ref(false);
+const inspectError    = ref('');
+const inspectResult   = ref(null);
+const inspectOpenPane = ref('context');  // open accordion pane: 'embed'|'corpora'|'rrf'|'context'
+
+async function runInspect() {
+  if (!inspectQuery.value.trim()) return;
+  inspectBusy.value  = true;
+  inspectError.value = '';
+  inspectResult.value = null;
+  try {
+    inspectResult.value = await api.adminKnowledgeInspect(
+      inspectQuery.value.trim(),
+      inspectLanguage.value,
+      null,
+    );
+    inspectOpenPane.value = 'context';
+  } catch (e) {
+    inspectError.value = e.data?.message || e.message || 'Inspect failed.';
+  } finally {
+    inspectBusy.value = false;
+  }
+}
+
+function inspectTogglePane(id) {
+  inspectOpenPane.value = inspectOpenPane.value === id ? '' : id;
+}
+
+function inspectScoreClass(score) {
+  if (score >= 0.7) return 'ok';
+  if (score >= 0.4) return 'pending';
+  return 'danger';
+}
+
+// ─── Knowledge Library ─────────────────────────────────────────────────────────
+
+const klLibrary       = ref(null);   // { corpora: [], embedding_driver, vector_driver }
+const klLoading       = ref(false);
+const klError         = ref('');
+const klActionBusy    = ref('');     // '{corpus}:{action}' while an action is in-flight
+const klConfirmWipe   = ref('');     // corpus waiting for wipe confirmation
+const klExpandedCorpus = ref('');    // corpus with expanded detail row
+
+async function loadKnowledgeLibrary() {
+  klLoading.value = true;
+  klError.value   = '';
+  try { klLibrary.value = await api.adminKnowledgeLibrary(); }
+  catch (e) { klError.value = e.data?.message || 'Failed to load library.'; }
+  finally { klLoading.value = false; }
+}
+
+async function klToggle(corpus) {
+  klActionBusy.value = corpus + ':toggle';
+  try {
+    const r = await api.adminKnowledgeLibraryToggle(corpus);
+    const entry = klLibrary.value?.corpora?.find(c => c.corpus === corpus);
+    if (entry) entry.enabled = r.enabled;
+  } catch (e) {
+    klError.value = e.data?.message || 'Toggle failed.';
+  } finally {
+    klActionBusy.value = '';
+  }
+}
+
+async function klReindex(corpus) {
+  klActionBusy.value = corpus + ':reindex';
+  try {
+    const r = await api.adminKnowledgeLibraryReindex(corpus);
+    klError.value = '';
+    // Reload to show new pending jobs count
+    await loadKnowledgeLibrary();
+    alert(r.message); // simple feedback; stays within existing UI patterns
+  } catch (e) {
+    klError.value = e.data?.message || 'Re-index failed.';
+  } finally {
+    klActionBusy.value = '';
+  }
+}
+
+async function klDestroyConfirmed(corpus) {
+  klConfirmWipe.value = '';
+  klActionBusy.value  = corpus + ':destroy';
+  try {
+    const r = await api.adminKnowledgeLibraryDestroy(corpus);
+    await loadKnowledgeLibrary();
+    alert(r.message);
+  } catch (e) {
+    klError.value = e.data?.message || 'Wipe failed.';
+  } finally {
+    klActionBusy.value = '';
+  }
+}
+
+function klFileSizeLabel(bytes) {
+  if (!bytes) return '—';
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+  if (bytes < 1073741824) return (bytes / 1048576).toFixed(1) + ' MB';
+  return (bytes / 1073741824).toFixed(1) + ' GB';
+}
+
+function klQdrantClass(corpus) {
+  const c = klLibrary.value?.corpora?.find(x => x.corpus === corpus);
+  if (!c?.qdrant?.exists) return 'danger';
+  if (c.qdrant.status === 'green' || c.qdrant.status === 'ok') return 'ok';
+  if (c.qdrant.status === 'yellow') return 'pending';
+  if ((c.qdrant.vectors_count ?? 0) > 0) return 'ok';
+  return '';
 }
 
 // ─── Voicebox TTS Monitor ──────────────────────────────────────────────────────
@@ -1872,9 +2162,11 @@ onUnmounted(() => {
           <div class="pool-grid">
             <input v-model="musicTrackForm.mood" class="pool-input" placeholder="Mood (required)" />
             <select v-model="musicTrackForm.language" class="pool-input">
-              <option value="en">English</option>
-              <option value="my">Myanmar</option>
-              <option value="td">Tedim</option>
+              <option
+                v-for="lang in musicPoolLanguages.filter((l) => l.value)"
+                :key="lang.value"
+                :value="lang.value"
+              >{{ lang.label }}</option>
             </select>
             <select v-model="musicTrackForm.source" class="pool-input">
               <option value="suno">Suno (Vocal)</option>
@@ -2172,8 +2464,8 @@ onUnmounted(() => {
           <h2>Service languages</h2>
           <p class="setting-desc">
             Which language tabs appear in the intake form. Worshippers can only pick a
-            language whose tab is shown. English is on by default; enable Myanmar and
-            Zolai once the corresponding LLM workers are running. Keep at least one on.
+            language whose tab is shown. English is on by default; enable additional
+            languages once their service generation is ready. Keep at least one on.
           </p>
           <div v-if="settings" class="choice-row">
             <button
@@ -2314,6 +2606,27 @@ onUnmounted(() => {
                 <span>{{ m.hint }}</span>
               </button>
             </div>
+
+            <template v-for="lang in worldNarrationLanguages" :key="lang.code">
+              <p class="setting-desc" style="margin-top:1.5rem">
+                <strong>{{ lang.label }}</strong>
+                <span class="hint-inline">Edge voices: {{ lang.voices }}</span>
+              </p>
+              <div class="choice-row">
+                <button
+                  v-for="m in narrationModesWorld"
+                  :key="m.value"
+                  type="button"
+                  class="choice"
+                  :class="{ active: (settings['narration_mode_' + lang.code] || lang.fallback) === m.value }"
+                  :disabled="savingSettings || settingsReadOnly"
+                  @click="setNarrationMode(lang.code, m.value)"
+                >
+                  <strong>{{ m.label }}</strong>
+                  <span>{{ m.hint }}</span>
+                </button>
+              </div>
+            </template>
           </template>
           <p v-else class="setting-desc">Loading…</p>
         </div>
@@ -2813,7 +3126,7 @@ onUnmounted(() => {
                 <button
                   type="button"
                   class="choice bgm-save"
-                  style="margin-left:0.6rem"
+                  style="margin-inline-start:0.6rem"
                   :disabled="bibleBgLibraryLoading"
                   @click="refreshBibleBgLibrary"
                 >
@@ -3294,7 +3607,7 @@ onUnmounted(() => {
                     <code class="git-val" style="font-size:0.72rem">{{ p.id }}</code>
                     <button
                       class="chip"
-                      style="margin-left:0.4rem;font-size:0.7rem;padding:0.1rem 0.45rem"
+                      style="margin-inline-start:0.4rem;font-size:0.7rem;padding:0.1rem 0.45rem"
                       @click="copyProfileId(p.id)"
                     >{{ vbCopied === p.id ? 'Copied!' : 'Copy' }}</button>
                   </td>
@@ -3467,7 +3780,526 @@ onUnmounted(() => {
         <p v-else-if="!freezeError" class="fz-loading">Loading freeze status…</p>
       </section>
 
-      <!-- Language Grammar Review -->
+      <!-- Knowledge Operations Platform — Dashboard -->
+      <section v-else-if="tab === 'knowledge'" class="kop-dashboard">
+        <div class="kop-header">
+          <h2>Knowledge Dashboard</h2>
+          <p class="kop-desc">Read-only view of the RAG engine: worker health, Qdrant collections, and corpus status.</p>
+          <button class="chip" @click="loadKnowledgeStatus">Refresh</button>
+        </div>
+
+        <p v-if="knowledgeError" class="error">{{ knowledgeError }}</p>
+        <p v-else-if="!knowledgeStatus" class="kop-loading">Loading knowledge status…</p>
+
+        <template v-else>
+          <!-- ── At-a-glance health summary ─────────────────────────────── -->
+          <div class="kop-summary">
+            <div class="kop-summary-item" :class="knowledgeStatus.enabled ? 'ok' : 'warn'">
+              <span class="kop-dot"></span>
+              <div>
+                <div class="kop-summary-label">RAG</div>
+                <div class="kop-summary-value">{{ knowledgeStatus.enabled ? 'Enabled' : 'Disabled' }}</div>
+              </div>
+            </div>
+            <div class="kop-summary-item"
+                 :class="knowledgeStatus.embedding_driver !== 'worker' ? 'ok' : (knowledgeStatus.worker_ok ? 'ok' : 'fail')">
+              <span class="kop-dot"></span>
+              <div>
+                <div class="kop-summary-label">Embedding Worker</div>
+                <div class="kop-summary-value">
+                  {{ knowledgeStatus.embedding_driver !== 'worker' ? 'Local (hash)' : (knowledgeStatus.worker_ok ? 'Running' : 'Unreachable') }}
+                </div>
+              </div>
+            </div>
+            <div class="kop-summary-item" :class="qdrantOverallStatus(knowledgeStatus)">
+              <span class="kop-dot"></span>
+              <div>
+                <div class="kop-summary-label">Qdrant</div>
+                <div class="kop-summary-value">{{ qdrantOverallLabel(knowledgeStatus) }}</div>
+              </div>
+            </div>
+            <div class="kop-summary-item" :class="corporaIndexedClass(knowledgeStatus)">
+              <span class="kop-dot"></span>
+              <div>
+                <div class="kop-summary-label">Corpora Indexed</div>
+                <div class="kop-summary-value">{{ corporaIndexedCount(knowledgeStatus) }} / {{ knowledgeStatus.corpora.length }}</div>
+              </div>
+            </div>
+            <div class="kop-summary-item"
+                 :class="knowledgeStatus.last_retrieval ? (knowledgeStatus.last_retrieval.failed ? 'fail' : (knowledgeStatus.last_retrieval.degraded ? 'warn' : 'ok')) : 'dim'">
+              <span class="kop-dot"></span>
+              <div>
+                <div class="kop-summary-label">Last Retrieval</div>
+                <div class="kop-summary-value">
+                  {{ knowledgeStatus.last_retrieval
+                    ? (knowledgeStatus.last_retrieval.failed ? 'Failed' : (knowledgeStatus.last_retrieval.degraded ? 'Degraded' : 'OK'))
+                    : 'No data yet' }}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── Environment summary ───────────────────────────────────── -->
+          <h3 class="kop-section-title">Environment</h3>
+          <div class="kop-cards">
+            <div class="kop-card" :class="knowledgeStatus.enabled ? 'ok' : 'warn'">
+              <div class="kop-card-label">RAG Enabled</div>
+              <div class="kop-card-value">{{ knowledgeStatus.enabled ? 'Yes' : 'No (KNOWLEDGE_ENABLED=false)' }}</div>
+            </div>
+            <div class="kop-card">
+              <div class="kop-card-label">Embedding Driver</div>
+              <div class="kop-card-value">{{ knowledgeStatus.embedding_driver }}</div>
+            </div>
+            <div class="kop-card">
+              <div class="kop-card-label">Vector Driver</div>
+              <div class="kop-card-value">{{ knowledgeStatus.vector_driver }}</div>
+            </div>
+            <div class="kop-card">
+              <div class="kop-card-label">Embedding Dimensions</div>
+              <div class="kop-card-value">{{ knowledgeStatus.embedding_dims }}</div>
+            </div>
+          </div>
+
+          <!-- ── Worker health ─────────────────────────────────────────── -->
+          <h3 class="kop-section-title">Embedding Worker</h3>
+          <div v-if="knowledgeStatus.embedding_driver !== 'worker'" class="kop-na">
+            Not using worker driver — embedding is handled locally.
+          </div>
+          <div v-else-if="knowledgeStatus.worker?.error" class="kop-card warn">
+            <div class="kop-card-label">Worker</div>
+            <div class="kop-card-value danger">Unreachable — {{ knowledgeStatus.worker.error }}</div>
+          </div>
+          <div v-else class="kop-cards">
+            <div class="kop-card" :class="knowledgeStatus.worker_ok ? 'ok' : 'warn'">
+              <div class="kop-card-label">Status</div>
+              <div class="kop-card-value">{{ knowledgeStatus.worker_ok ? 'Healthy' : 'Degraded' }}</div>
+            </div>
+            <div class="kop-card">
+              <div class="kop-card-label">Model</div>
+              <div class="kop-card-value">{{ knowledgeStatus.worker?.model ?? '—' }}</div>
+            </div>
+            <div class="kop-card">
+              <div class="kop-card-label">Model Loaded</div>
+              <div class="kop-card-value">{{ knowledgeStatus.worker?.loaded ? 'Yes' : 'No (loads on first request)' }}</div>
+            </div>
+            <div class="kop-card">
+              <div class="kop-card-label">Expected Dimensions</div>
+              <div class="kop-card-value">{{ knowledgeStatus.worker?.expected_dim ?? '—' }}</div>
+            </div>
+          </div>
+
+          <!-- ── Corpus collections ────────────────────────────────────── -->
+          <h3 class="kop-section-title">Corpus Collections</h3>
+          <div v-if="knowledgeStatus.vector_driver !== 'qdrant'" class="kop-na">
+            Not using Qdrant — collections live in memory and reset between requests.
+          </div>
+          <table v-else class="grid kop-table">
+            <thead>
+              <tr>
+                <th>Corpus</th>
+                <th>Status</th>
+                <th class="num">Vectors</th>
+                <th class="num">Points</th>
+                <th class="num">Dimensions</th>
+                <th>Distance</th>
+                <th class="num">Priority</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="corpus in knowledgeStatus.corpora" :key="corpus">
+                <td class="mono">{{ corpus }}</td>
+                <template v-if="knowledgeStatus.collections[corpus]?.exists">
+                  <td>
+                    <span class="badge" :class="knowledgeStatus.collections[corpus].status === 'green' ? 'ok' : 'pending'">
+                      {{ knowledgeStatus.collections[corpus].status }}
+                    </span>
+                  </td>
+                  <td class="num">{{ (knowledgeStatus.collections[corpus].vectors_count ?? 0).toLocaleString() }}</td>
+                  <td class="num">{{ (knowledgeStatus.collections[corpus].points_count ?? 0).toLocaleString() }}</td>
+                  <td class="num">{{ knowledgeStatus.collections[corpus].vector_size ?? '—' }}</td>
+                  <td>{{ knowledgeStatus.collections[corpus].distance ?? '—' }}</td>
+                </template>
+                <template v-else-if="knowledgeStatus.collections[corpus]">
+                  <td colspan="5"><span class="badge pending">Not created</span>{{ knowledgeStatus.collections[corpus].error ? ' — ' + knowledgeStatus.collections[corpus].error : '' }}</td>
+                </template>
+                <template v-else>
+                  <td colspan="5" class="dim">Qdrant not configured</td>
+                </template>
+                <td class="num">{{ knowledgeStatus.source_priority[corpus] ?? '—' }}</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <!-- ── Retrieval diagnostics ─────────────────────────────────── -->
+          <h3 class="kop-section-title">Retrieval Performance <span class="kop-since">{{ knowledgeStatus.last_retrieval?.recorded_at ? '(last: ' + shortTime(knowledgeStatus.last_retrieval.recorded_at) + ')' : '' }}</span></h3>
+          <div v-if="!knowledgeStatus.last_retrieval" class="kop-na">
+            No retrieval recorded yet. Diagnostics appear after the first chat query with RAG enabled.
+          </div>
+          <template v-else>
+            <div class="kop-cards">
+              <div class="kop-card">
+                <div class="kop-card-label">Total Latency</div>
+                <div class="kop-card-value">{{ knowledgeStatus.last_retrieval.latency_ms }} ms</div>
+              </div>
+              <div class="kop-card">
+                <div class="kop-card-label">Chunks Returned</div>
+                <div class="kop-card-value">{{ knowledgeStatus.last_retrieval.out_count }}</div>
+              </div>
+              <div class="kop-card">
+                <div class="kop-card-label">RRF Candidates</div>
+                <div class="kop-card-value">{{ knowledgeStatus.last_retrieval.rrf_count }}</div>
+              </div>
+              <div class="kop-card" :class="knowledgeStatus.last_retrieval.degraded ? 'warn' : ''">
+                <div class="kop-card-label">Health</div>
+                <div class="kop-card-value">{{ knowledgeStatus.last_retrieval.failed ? 'Failed' : (knowledgeStatus.last_retrieval.degraded ? 'Degraded' : 'Healthy') }}</div>
+              </div>
+            </div>
+            <!-- Per-corpus breakdown -->
+            <table v-if="Object.keys(knowledgeStatus.last_retrieval.corpora ?? {}).length" class="grid kop-table">
+              <thead>
+                <tr>
+                  <th>Corpus</th>
+                  <th class="num">Embed ms</th>
+                  <th class="num">Vector ms</th>
+                  <th class="num">Keyword ms</th>
+                  <th class="num">Vec hits</th>
+                  <th class="num">KW hits</th>
+                  <th class="num">Fused</th>
+                  <th>Errors</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(c, name) in knowledgeStatus.last_retrieval.corpora" :key="name">
+                  <td class="mono">{{ name }}</td>
+                  <td class="num">{{ c.embedding_latency_ms }}</td>
+                  <td class="num">{{ c.vector_latency_ms }}</td>
+                  <td class="num">{{ c.keyword_latency_ms }}</td>
+                  <td class="num">{{ c.vector_hits }}</td>
+                  <td class="num">{{ c.keyword_hits }}</td>
+                  <td class="num">{{ c.fused_hits }}</td>
+                  <td>
+                    <span v-if="c.vector_error" class="badge pending">vec</span>
+                    <span v-if="c.keyword_error" class="badge pending">kw</span>
+                    <span v-if="!c.vector_error && !c.keyword_error" class="dim">—</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </template>
+
+          <!-- ── Verify hint ───────────────────────────────────────────── -->
+          <div class="kop-hint">
+            <strong>Full stack verification:</strong>
+            <code>cd backend &amp;&amp; php artisan knowledge:verify</code>
+          </div>
+
+          <!-- ── Upload ────────────────────────────────────────────────── -->
+          <h3 class="kop-section-title">Upload Document</h3>
+          <div class="kop-upload-form">
+            <!-- Drop zone -->
+            <div
+              class="kop-dropzone"
+              :class="{ dragging: kopUploadDragging, 'has-file': kopUploadFile }"
+              @dragover.prevent="kopUploadDragging = true"
+              @dragleave="kopUploadDragging = false"
+              @drop="kopOnDrop"
+              @click="$refs.kopFileInput.click()"
+            >
+              <input ref="kopFileInput" type="file" :accept="'.' + KOP_ALLOWED_EXTS.join(',.')" style="display:none" @change="kopOnFilePick" />
+              <span v-if="kopUploadFile">
+                📄 {{ kopUploadFile.name }} ({{ kopFileSizeLabel(kopUploadFile.size) }})
+              </span>
+              <span v-else>
+                Drop PDF, JSON, Markdown, or TXT here, or click to choose
+              </span>
+            </div>
+
+            <!-- Form fields -->
+            <div class="kop-upload-fields">
+              <label class="kop-field">
+                <span>Corpus</span>
+                <select v-model="kopUploadCorpus" class="kop-select">
+                  <option value="" disabled>Select corpus…</option>
+                  <option v-for="c in (knowledgeStatus?.corpora ?? [])" :key="c" :value="c">{{ c }}</option>
+                </select>
+              </label>
+              <label class="kop-field">
+                <span>Language</span>
+                <select v-model="kopUploadLanguage" class="kop-select">
+                  <option value="en">English</option>
+                  <option value="my">Myanmar (မြန်မာ)</option>
+                  <option value="td">Tedim (Zolai)</option>
+                  <option value="zh">Chinese</option>
+                  <option value="ko">Korean</option>
+                  <option value="ja">Japanese</option>
+                  <option value="hi">Hindi</option>
+                  <option value="ar">Arabic</option>
+                  <option value="es">Spanish</option>
+                  <option value="th">Thai</option>
+                  <option value="fr">French</option>
+                  <option value="de">German</option>
+                  <option value="ta">Tamil</option>
+                </select>
+              </label>
+              <label class="kop-field">
+                <span>Source tag</span>
+                <input v-model="kopUploadSource" type="text" class="kop-input" placeholder="defaults to corpus name" />
+              </label>
+              <label class="kop-field">
+                <span>Chunker</span>
+                <select v-model="kopUploadChunker" class="kop-select">
+                  <option value="text">Text (overlap)</option>
+                  <option value="bible">Bible verse</option>
+                </select>
+              </label>
+            </div>
+
+            <p v-if="kopUploadError"   class="error kop-msg">{{ kopUploadError }}</p>
+            <p v-if="kopUploadSuccess" class="kop-msg ok-msg">{{ kopUploadSuccess }}</p>
+
+            <button
+              class="primary-btn"
+              :disabled="!kopUploadFile || !kopUploadCorpus || kopUploadBusy"
+              @click="kopSubmitUpload"
+            >{{ kopUploadBusy ? 'Uploading…' : 'Upload & Queue' }}</button>
+          </div>
+
+          <!-- ── Job queue ─────────────────────────────────────────────── -->
+          <h3 class="kop-section-title">Ingestion Jobs <span class="kop-since">(last 50)</span></h3>
+          <p v-if="!kopJobs.length && !kopJobsLoading" class="kop-na">No ingestion jobs yet.</p>
+          <table v-else class="grid kop-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>File</th>
+                <th>Corpus</th>
+                <th>Lang</th>
+                <th>Status</th>
+                <th class="num">Docs</th>
+                <th class="num">Chunks</th>
+                <th class="num">Avg size</th>
+                <th class="num">Duration</th>
+                <th>Queued</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="job in kopJobs" :key="job.id">
+                <td class="mono dim">{{ job.id }}</td>
+                <td>
+                  <span :title="job.original_filename">{{ job.original_filename.length > 28 ? job.original_filename.slice(0, 26) + '…' : job.original_filename }}</span>
+                  <span class="dim"> ({{ kopFileSizeLabel(job.file_size) }})</span>
+                </td>
+                <td class="mono">{{ job.collection }}</td>
+                <td>{{ job.metadata?.language ?? '—' }}</td>
+                <td><span class="badge" :class="kopJobStatusClass(job.status)">{{ job.status }}</span></td>
+                <td class="num">{{ job.document_count ?? '—' }}</td>
+                <td class="num">{{ job.chunk_count ?? '—' }}</td>
+                <td class="num">{{ job.metadata?.avg_chunk_size ? job.metadata.avg_chunk_size + ' ch' : '—' }}</td>
+                <td class="num">{{ job.duration_ms != null ? (job.duration_ms / 1000).toFixed(1) + 's' : '—' }}</td>
+                <td class="dim">{{ job.created_at ? shortDateTime(job.created_at) : '—' }}</td>
+                <td class="kop-job-actions">
+                  <button v-if="['pending','processing'].includes(job.status)" class="link danger" @click="kopCancelJob(job.id)">Cancel</button>
+                  <button v-if="job.status === 'failed'" class="link" @click="kopRetryJob(job.id)">Retry</button>
+                  <button v-if="['completed','failed','cancelled'].includes(job.status)" class="link danger" @click="kopDeleteJob(job.id)">Delete</button>
+                  <span v-if="job.status === 'processing'" class="dim">Running…</span>
+                </td>
+              </tr>
+              <tr v-if="job?.error_message" v-for="job in kopJobs.filter(j => j.error_message)" :key="'err-' + job.id">
+                <td colspan="9" class="kop-error-row">⚠ Job #{{ job.id }}: {{ job.error_message }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </template>
+
+        <!-- ── Retrieval Inspector ────────────────────────────────────────── -->
+        <h3 class="kop-section-title" style="margin-top:2rem">Retrieval Inspector</h3>
+        <p class="kop-hint">Run a query through the full RAG pipeline and see exactly how each stage transforms it.</p>
+
+        <div class="kop-inspect-bar">
+          <textarea
+            v-model="inspectQuery"
+            class="kop-inspect-input"
+            rows="2"
+            placeholder="Type a question to trace through the pipeline…"
+            :disabled="inspectBusy"
+            @keydown.enter.exact.prevent="runInspect"
+          ></textarea>
+          <div class="kop-inspect-controls">
+            <select v-model="inspectLanguage" class="kop-inspect-lang" :disabled="inspectBusy">
+              <option value="en">English</option>
+              <option value="td">Tedim</option>
+              <option value="my">Myanmar</option>
+              <option value="cn">Chin (Hakha)</option>
+              <option value="fl">Falam</option>
+              <option value="mz">Mizo</option>
+              <option value="pt">Paite</option>
+            </select>
+            <button class="kop-inspect-btn" :disabled="inspectBusy || !inspectQuery.trim()" @click="runInspect">
+              <span v-if="inspectBusy">Inspecting…</span>
+              <span v-else>Inspect</span>
+            </button>
+          </div>
+        </div>
+        <p v-if="inspectError" class="kop-upload-error">{{ inspectError }}</p>
+
+        <template v-if="inspectResult">
+          <!-- Stage flow pills -->
+          <div class="inspect-flow">
+            <span class="inspect-step">Query</span>
+            <span class="inspect-arrow">→</span>
+            <span class="inspect-step" :class="inspectResult.normalized_query !== inspectResult.raw_query ? 'ok' : ''">Normalize</span>
+            <span class="inspect-arrow">→</span>
+            <span class="inspect-step" :class="inspectResult.embedding?.error ? 'danger' : 'ok'">Embed</span>
+            <span class="inspect-arrow">→</span>
+            <span class="inspect-step" :class="inspectResult.failed ? 'danger' : (inspectResult.degraded ? 'pending' : 'ok')">Retrieve</span>
+            <span class="inspect-arrow">→</span>
+            <span class="inspect-step ok">RRF ({{ inspectResult.rrf_count }})</span>
+            <span class="inspect-arrow">→</span>
+            <span class="inspect-step" :class="inspectResult.reranked_chunks?.length ? 'ok' : 'danger'">Rerank ({{ inspectResult.reranked_chunks?.length ?? 0 }})</span>
+            <span class="inspect-arrow">→</span>
+            <span class="inspect-step" :class="inspectResult.context?.populated ? 'ok' : 'danger'">Context</span>
+          </div>
+
+          <!-- Normalized query -->
+          <div v-if="inspectResult.normalized_query !== inspectResult.raw_query" class="inspect-normalized">
+            <span class="inspect-label">Normalized:</span>
+            <code>{{ inspectResult.normalized_query }}</code>
+          </div>
+
+          <!-- Accordion panes -->
+          <div class="inspect-accordion">
+
+            <!-- Embedding -->
+            <div class="inspect-pane" :class="{ open: inspectOpenPane === 'embed' }">
+              <button class="inspect-pane-header" @click="inspectTogglePane('embed')">
+                <span>Embedding</span>
+                <span class="inspect-pane-meta">
+                  {{ inspectResult.embedding?.dims ?? 0 }} dims ·
+                  {{ inspectResult.embedding?.latency_ms ?? 0 }}ms ·
+                  {{ inspectResult.embedding?.model }}
+                  <span v-if="inspectResult.embedding?.error" class="badge danger">error</span>
+                </span>
+                <span class="inspect-chevron">{{ inspectOpenPane === 'embed' ? '▲' : '▼' }}</span>
+              </button>
+              <div v-if="inspectOpenPane === 'embed'" class="inspect-pane-body">
+                <p v-if="inspectResult.embedding?.error" class="kop-upload-error">{{ inspectResult.embedding.error }}</p>
+                <template v-else>
+                  <p class="inspect-dim-line">
+                    Magnitude: <strong>{{ inspectResult.embedding.magnitude }}</strong> · Preview (first 8 of {{ inspectResult.embedding.dims }} dims):
+                  </p>
+                  <code class="inspect-vector">[ {{ inspectResult.embedding.preview?.join(', ') }} … ]</code>
+                </template>
+              </div>
+            </div>
+
+            <!-- Per-corpus results -->
+            <div class="inspect-pane" :class="{ open: inspectOpenPane === 'corpora' }">
+              <button class="inspect-pane-header" @click="inspectTogglePane('corpora')">
+                <span>Per-Corpus Results</span>
+                <span class="inspect-pane-meta">{{ Object.keys(inspectResult.corpora ?? {}).length }} corpora searched</span>
+                <span class="inspect-chevron">{{ inspectOpenPane === 'corpora' ? '▲' : '▼' }}</span>
+              </button>
+              <div v-if="inspectOpenPane === 'corpora'" class="inspect-pane-body">
+                <table class="kop-table inspect-corpora-table">
+                  <thead>
+                    <tr>
+                      <th>Corpus</th>
+                      <th class="num">Vector hits</th>
+                      <th class="num">Keyword hits</th>
+                      <th class="num">Fused hits</th>
+                      <th class="num">Embed ms</th>
+                      <th class="num">Vector ms</th>
+                      <th class="num">Keyword ms</th>
+                      <th>Errors</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="(c, name) in inspectResult.corpora" :key="name">
+                      <td><code>{{ name }}</code></td>
+                      <td class="num">{{ c.vector_hits ?? '—' }}</td>
+                      <td class="num">{{ c.keyword_hits ?? '—' }}</td>
+                      <td class="num">{{ c.fused_hits ?? '—' }}</td>
+                      <td class="num">{{ c.embedding_latency_ms ?? '—' }}</td>
+                      <td class="num">{{ c.vector_latency_ms ?? '—' }}</td>
+                      <td class="num">{{ c.keyword_latency_ms ?? '—' }}</td>
+                      <td>
+                        <span v-if="c.vector_error" class="badge danger">vector</span>
+                        <span v-if="c.keyword_error" class="badge pending">keyword</span>
+                        <span v-if="!c.vector_error && !c.keyword_error" class="badge ok">ok</span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Reranked chunks -->
+            <div class="inspect-pane" :class="{ open: inspectOpenPane === 'rrf' }">
+              <button class="inspect-pane-header" @click="inspectTogglePane('rrf')">
+                <span>Reranked Chunks</span>
+                <span class="inspect-pane-meta">
+                  {{ inspectResult.reranked_chunks?.length ?? 0 }} kept
+                  <template v-if="inspectResult.dropped_count > 0"> · {{ inspectResult.dropped_count }} removed by reranker</template>
+                </span>
+                <span class="inspect-chevron">{{ inspectOpenPane === 'rrf' ? '▲' : '▼' }}</span>
+              </button>
+              <div v-if="inspectOpenPane === 'rrf'" class="inspect-pane-body">
+                <div v-if="!inspectResult.reranked_chunks?.length" class="inspect-empty">No chunks retrieved.</div>
+                <div v-for="(c, i) in inspectResult.reranked_chunks" :key="c.chunk_id" class="inspect-chunk">
+                  <div class="inspect-chunk-header">
+                    <span class="badge" :class="inspectScoreClass(c.score)">{{ c.score }}</span>
+                    <code>{{ c.corpus }}</code>
+                    <span class="dim">{{ c.reference || c.source }}</span>
+                    <span class="badge">{{ c.method }}</span>
+                    <span class="dim small">{{ c.text_length }} chars</span>
+                  </div>
+                  <ul class="inspect-decisions">
+                    <li v-for="d in c.decisions" :key="d.text" :class="d.ok ? 'decision-ok' : 'decision-no'">
+                      <span class="decision-icon">{{ d.ok ? '✓' : '✗' }}</span> {{ d.text }}
+                    </li>
+                  </ul>
+                  <p class="inspect-chunk-text">{{ c.text_preview }}<span v-if="c.text_length > 300" class="dim">…</span></p>
+                </div>
+                <div v-if="inspectResult.dropped_count > 0" class="inspect-dropped">
+                  <span class="decision-no">✗</span>
+                  {{ inspectResult.dropped_count }} candidate{{ inspectResult.dropped_count > 1 ? 's' : '' }}
+                  removed by reranker — below score/lexical cutoff or exceeded top-{{ inspectResult.reranked_chunks?.length ?? 0 }} limit.
+                </div>
+              </div>
+            </div>
+
+            <!-- Final context -->
+            <div class="inspect-pane" :class="{ open: inspectOpenPane === 'context' }">
+              <button class="inspect-pane-header" @click="inspectTogglePane('context')">
+                <span>Final Context</span>
+                <span class="inspect-pane-meta">
+                  confidence {{ inspectResult.context?.confidence ?? 0 }} ·
+                  {{ inspectResult.context?.char_count ?? 0 }} chars ·
+                  {{ inspectResult.context?.snippets?.length ?? 0 }} snippets
+                  <span v-if="!inspectResult.context?.populated" class="badge danger">no match</span>
+                  <span v-else-if="inspectResult.degraded" class="badge pending">degraded</span>
+                  <span v-else class="badge ok">ok</span>
+                </span>
+                <span class="inspect-chevron">{{ inspectOpenPane === 'context' ? '▲' : '▼' }}</span>
+              </button>
+              <div v-if="inspectOpenPane === 'context'" class="inspect-pane-body">
+                <div v-if="!inspectResult.context?.populated" class="inspect-empty">
+                  No context was built. The LLM will answer without knowledge grounding.
+                </div>
+                <div v-for="(s, i) in inspectResult.context?.snippets" :key="i" class="inspect-snippet">
+                  <div class="inspect-snippet-header">
+                    <span class="badge" :class="inspectScoreClass(s.score)">{{ s.score }}</span>
+                    <span class="dim">{{ s.source }}</span>
+                  </div>
+                  <p class="inspect-snippet-text">{{ s.text }}</p>
+                </div>
+              </div>
+            </div>
+
+          </div><!-- /accordion -->
+        </template>
+      </section>
       <section v-else-if="tab === 'grammar-review'" class="gr-section">
         <div class="gr-header">
           <h2 class="gr-title">Language Grammar Review</h2>
@@ -3562,7 +4394,7 @@ onUnmounted(() => {
 <style scoped>
 .admin-shell { max-width: 1000px; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
 .admin-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1.75rem; }
-.admin-head h1 { font-size: 1.5rem; margin: 0; letter-spacing: -0.02em; }
+.admin-head h1 { font-size: 1.5rem; margin: 0; letter-spacing: 0; }
 .head-actions { display: flex; align-items: center; gap: 0.6rem; }
 .ghost { border: 1px solid var(--border); background: var(--surface); color: var(--text-muted); border-radius: var(--radius-sm); padding: 0.5rem 0.8rem; cursor: pointer; }
 .ghost:hover { color: var(--text); border-color: var(--border-strong); }
@@ -3580,7 +4412,7 @@ onUnmounted(() => {
 .tabs button:hover { color: var(--text); }
 .tabs button.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 500; }
 .staff-role-badge {
-  margin-left: auto; margin-bottom: 0.25rem; padding: 0.15rem 0.65rem;
+  margin-inline-start: auto; margin-bottom: 0.25rem; padding: 0.15rem 0.65rem;
   border-radius: 999px; font-size: 0.72rem; font-weight: 600;
   text-transform: uppercase; letter-spacing: 0.04em;
 }
@@ -3590,7 +4422,7 @@ onUnmounted(() => {
 
 .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; }
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.1rem 1.2rem; display: flex; flex-direction: column; gap: 0.15rem; box-shadow: var(--shadow-sm); }
-.card .n { font-size: 1.7rem; font-weight: 700; color: var(--text); letter-spacing: -0.02em; line-height: 1.1; }
+.card .n { font-size: 1.7rem; font-weight: 700; color: var(--text); letter-spacing: 0; line-height: 1.1; }
 .card .lbl { font-size: 0.9rem; color: var(--text); font-weight: 500; margin-top: 0.2rem; }
 .card small { color: var(--text-muted); font-size: 0.78rem; }
 
@@ -3609,7 +4441,7 @@ onUnmounted(() => {
 .voice-train-reason { min-width: 180px; color: var(--text-muted); font-size: 0.82rem; line-height: 1.4; }
 
 .exports { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-top: 1.75rem; }
-.exports-label { color: var(--text-muted); font-size: 0.85rem; margin-right: 0.25rem; }
+.exports-label { color: var(--text-muted); font-size: 0.85rem; margin-inline-end: 0.25rem; }
 .chip { border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 999px; padding: 0.4rem 0.85rem; font-size: 0.85rem; cursor: pointer; }
 .chip:hover { border-color: var(--primary); color: var(--primary-hover); }
 .chip:disabled { opacity: 0.55; cursor: default; pointer-events: none; }
@@ -3640,7 +4472,7 @@ onUnmounted(() => {
 .bible-matrix { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
 .bible-matrix th, .bible-matrix td { padding: 0.4rem 0.6rem; text-align: center; border-bottom: 1px solid var(--border); }
 .bible-matrix thead th { font-weight: 600; color: var(--text-muted); white-space: nowrap; }
-.bible-matrix th.bm-ver { text-align: left; white-space: nowrap; font-weight: 600; }
+.bible-matrix th.bm-ver { text-align: start; white-space: nowrap; font-weight: 600; }
 .bible-matrix tbody tr:hover { background: var(--surface); }
 .bm-toggle { display: inline-flex; cursor: pointer; }
 .bm-toggle input { width: 1.05rem; height: 1.05rem; cursor: pointer; accent-color: var(--primary); }
@@ -3673,7 +4505,7 @@ onUnmounted(() => {
 .table-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.75rem 0 0.25rem; }
 .table-head h2 { font-size: 1.05rem; margin: 0; }
 .grid { width: 100%; border-collapse: collapse; }
-.grid th, .grid td { text-align: left; padding: 0.65rem 0.5rem; border-bottom: 1px solid var(--border); vertical-align: top; font-size: 0.9rem; color: var(--text); }
+.grid th, .grid td { text-align: start; padding: 0.65rem 0.5rem; border-bottom: 1px solid var(--border); vertical-align: top; font-size: 0.9rem; color: var(--text); }
 .grid th { color: var(--text-muted); font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; }
 .grid tr:last-child td { border-bottom: 0; }
 .grid small { color: var(--text-faint); }
@@ -3685,7 +4517,7 @@ onUnmounted(() => {
 .link:hover { color: var(--primary-hover); }
 .link.danger { color: var(--danger); }
 
-.tag { display: inline-block; margin-left: 0.4rem; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); background: var(--surface-3); border-radius: 999px; padding: 0.1rem 0.5rem; vertical-align: middle; }
+.tag { display: inline-block; margin-inline-start: 0.4rem; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); background: var(--surface-3); border-radius: 999px; padding: 0.1rem 0.5rem; vertical-align: middle; }
 .tag-blocked { background: #fee2e2; color: #b91c1c; }
 .row-blocked td { opacity: 0.55; }
 .actions { white-space: nowrap; display: flex; gap: 0.25rem; align-items: center; }
@@ -3743,14 +4575,15 @@ onUnmounted(() => {
 .setting-block { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.4rem; box-shadow: var(--shadow-sm); }
 .setting-block h2 { font-size: 1.05rem; margin: 0 0 0.3rem; }
 .setting-desc { color: var(--text-muted); font-size: 0.9rem; line-height: 1.5; margin: 0 0 1rem; }
+.hint-inline { display: block; margin-top: 0.2rem; color: var(--text-muted); font-size: 0.78rem; font-weight: 400; }
 .choice-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0.6rem; }
-.choice { display: flex; flex-direction: column; gap: 0.25rem; padding: 0.85rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); cursor: pointer; text-align: left; transition: border-color 0.12s ease, background 0.12s ease; }
+.choice { display: flex; flex-direction: column; gap: 0.25rem; padding: 0.85rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); cursor: pointer; text-align: start; transition: border-color 0.12s ease, background 0.12s ease; }
 .choice:hover:not(:disabled) { border-color: var(--border-strong); }
 .choice span { font-size: 0.78rem; color: var(--text-muted); line-height: 1.4; }
 .choice.active { border-color: var(--primary); background: var(--primary-soft); }
 .choice.active span { color: var(--primary-hover); }
 .choice:disabled { opacity: 0.6; cursor: default; }
-.choice .state { font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); margin-left: 0.35rem; }
+.choice .state { font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); margin-inline-start: 0.35rem; }
 .choice.active .state { color: var(--primary-hover); }
 
 .mood-editor { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.9rem; }
@@ -3775,7 +4608,7 @@ onUnmounted(() => {
 .cf-badge { border-radius: 999px; padding: 0.1rem 0.55rem; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
 .cf-badge-block { background: #fff0f0; color: #b00; }
 .cf-badge-allow { background: #e9f7ec; color: #18794e; }
-.cf-category.cf-allow { border-left: 3px solid #18794e; }
+.cf-category.cf-allow { border-inline-start: 3px solid #18794e; }
 .cf-cat-controls { display: flex; align-items: center; gap: 0.75rem; }
 .cf-scope { font-size: 0.85rem; color: var(--text-muted); display: flex; align-items: center; gap: 0.4rem; }
 .cf-scope select, .cf-new-row select { padding: 0.4rem 0.5rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font: inherit; }
@@ -3825,10 +4658,10 @@ onUnmounted(() => {
 .gr-stats { color: var(--text-muted); font-size: 0.82rem; margin: 0; }
 .gr-loading { color: var(--text-muted); font-size: 0.88rem; }
 .gr-list { display: flex; flex-direction: column; gap: 0.65rem; }
-.gr-item { background: var(--surface); border: 1px solid var(--border); border-left-width: 3px; border-radius: var(--radius); padding: 0.9rem 1.1rem; box-shadow: var(--shadow-sm); display: flex; flex-direction: column; gap: 0.5rem; }
-.gr-item.gr-approved  { border-left-color: var(--success, #16a34a); }
-.gr-item.gr-corrected { border-left-color: var(--primary); }
-.gr-item.gr-pending   { border-left-color: var(--border); }
+.gr-item { background: var(--surface); border: 1px solid var(--border); border-inline-start-width: 3px; border-radius: var(--radius); padding: 0.9rem 1.1rem; box-shadow: var(--shadow-sm); display: flex; flex-direction: column; gap: 0.5rem; }
+.gr-item.gr-approved  { border-inline-start-color: var(--success, #16a34a); }
+.gr-item.gr-corrected { border-inline-start-color: var(--primary); }
+.gr-item.gr-pending   { border-inline-start-color: var(--border); }
 .gr-item-head { display: flex; align-items: center; gap: 0.5rem; }
 .gr-cat { font-size: 0.75rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
 .gr-text { font-size: 0.92rem; line-height: 1.65; white-space: pre-wrap; }
@@ -3889,12 +4722,12 @@ onUnmounted(() => {
 .git-output { display: block; background: var(--surface-2); border: 1px solid var(--border); border-radius: 4px; padding: 0.4rem 0.6rem; font-size: 0.78rem; white-space: pre-wrap; line-height: 1.5; }
 .git-pull-btn { margin-top: 0.5rem; align-self: flex-start; }
 .up-to-date { color: var(--success, #16a34a); font-size: 0.82rem; font-weight: 500; }
-.update-badge { display: inline-block; background: #fef3c7; color: #92400e; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; border-radius: 999px; padding: 0.1rem 0.5rem; margin-left: 0.35rem; }
+.update-badge { display: inline-block; background: #fef3c7; color: #92400e; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; border-radius: 999px; padding: 0.1rem 0.5rem; margin-inline-start: 0.35rem; }
 
 /* Package table */
 .pkg-table-wrap { overflow-x: auto; }
 .pkg-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
-.pkg-table th { text-align: left; color: var(--text-muted); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--border); }
+.pkg-table th { text-align: start; color: var(--text-muted); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--border); }
 .pkg-table td { padding: 0.55rem 0.6rem; border-bottom: 1px solid var(--border); color: var(--text); vertical-align: middle; }
 .pkg-table tr:last-child td { border-bottom: 0; }
 .pkg-name { font-weight: 500; }
@@ -3942,4 +4775,101 @@ onUnmounted(() => {
   .fz-top, .fz-tables { grid-template-columns: 1fr; }
   .fz-cards { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* ── Knowledge Operations Platform Dashboard ─────────────────────────────── */
+.kop-dashboard { padding: 1.25rem 0; }
+.kop-header { display: flex; align-items: baseline; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
+.kop-header h2 { margin: 0; font-size: 1.15rem; }
+.kop-desc { margin: 0; color: var(--text-muted); font-size: 0.88rem; flex: 1 1 100%; }
+.kop-summary { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 1.75rem; }
+.kop-summary-item { display: flex; align-items: center; gap: 0.55rem; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.7rem 1rem; min-width: 140px; }
+.kop-summary-item.ok   { border-color: var(--success); }
+.kop-summary-item.warn { border-color: var(--warning, #f59e0b); }
+.kop-summary-item.fail { border-color: var(--danger); }
+.kop-summary-item.dim  { opacity: 0.6; }
+.kop-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--border); flex-shrink: 0; }
+.kop-summary-item.ok   .kop-dot { background: var(--success); }
+.kop-summary-item.warn .kop-dot { background: var(--warning, #f59e0b); }
+.kop-summary-item.fail .kop-dot { background: var(--danger); }
+.kop-summary-label { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em; }
+.kop-summary-value { font-size: 0.9rem; font-weight: 600; }
+.kop-section-title { font-size: 0.95rem; font-weight: 600; margin: 1.5rem 0 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.kop-since { font-size: 0.78rem; font-weight: 400; text-transform: none; letter-spacing: 0; margin-inline-start: 0.5rem; }
+.kop-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.75rem; margin-bottom: 1rem; }
+.kop-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.85rem 1rem; }
+.kop-card.ok { border-color: var(--success); }
+.kop-card.warn { border-color: var(--warning, #f59e0b); }
+.kop-card-label { font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.3rem; text-transform: uppercase; letter-spacing: 0.03em; }
+.kop-card-value { font-size: 0.95rem; font-weight: 600; word-break: break-all; }
+.kop-card-value.danger { color: var(--danger); }
+.kop-table { width: 100%; margin-bottom: 1.25rem; }
+.kop-table th, .kop-table td { padding: 0.5rem 0.65rem; }
+.kop-table th.num, .kop-table td.num { text-align: end; font-variant-numeric: tabular-nums; }
+.kop-na { color: var(--text-muted); font-size: 0.88rem; margin-bottom: 1rem; padding: 0.75rem; background: var(--surface); border-radius: var(--radius); border: 1px solid var(--border); }
+.kop-loading { color: var(--text-muted); }
+.kop-hint { margin-top: 1.5rem; padding: 0.85rem 1rem; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); font-size: 0.88rem; }
+.kop-hint code { display: block; margin-top: 0.4rem; font-family: monospace; background: var(--bg); padding: 0.4rem 0.6rem; border-radius: var(--radius-sm); }
+.mono { font-family: monospace; font-size: 0.9rem; }
+.dim { color: var(--text-muted); font-size: 0.88rem; }
+@media (max-width: 640px) {
+  .kop-cards { grid-template-columns: 1fr 1fr; }
+  .kop-summary { flex-direction: column; }
+}
+/* Upload form */
+.kop-upload-form { display: flex; flex-direction: column; gap: 0.9rem; max-width: 640px; margin-bottom: 1.5rem; }
+.kop-dropzone { border: 2px dashed var(--border); border-radius: var(--radius); padding: 1.5rem 1rem; text-align: center; cursor: pointer; font-size: 0.9rem; color: var(--text-muted); transition: border-color 0.15s, background 0.15s; }
+.kop-dropzone:hover, .kop-dropzone.dragging { border-color: var(--primary); background: var(--primary-soft, rgba(99,102,241,.06)); }
+.kop-dropzone.has-file { border-color: var(--success); color: var(--text); }
+.kop-upload-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 0.65rem; }
+.kop-field { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.85rem; color: var(--text-muted); }
+.kop-select, .kop-input { padding: 0.55rem 0.7rem; border: 1px solid var(--border); border-radius: var(--radius-sm); font: inherit; background: var(--surface); color: var(--text); }
+.kop-select:focus, .kop-input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft, rgba(99,102,241,.15)); }
+.kop-msg { font-size: 0.88rem; margin: 0; }
+.ok-msg { color: var(--success); }
+.kop-job-actions { white-space: nowrap; }
+.kop-error-row { font-size: 0.82rem; color: var(--danger); padding: 0.3rem 0.65rem; }
+@media (max-width: 640px) {
+  .kop-upload-fields { grid-template-columns: 1fr; }
+}
+/* Retrieval Inspector */
+.kop-inspect-bar { display: flex; gap: 0.6rem; align-items: flex-end; margin-bottom: 0.8rem; }
+.kop-inspect-input { flex: 1; padding: 0.55rem 0.7rem; border: 1px solid var(--border); border-radius: var(--radius-sm); font: inherit; background: var(--surface); color: var(--text); resize: vertical; }
+.kop-inspect-input:focus { outline: none; border-color: var(--primary); }
+.kop-inspect-controls { display: flex; flex-direction: column; gap: 0.4rem; }
+.kop-inspect-lang { padding: 0.45rem 0.6rem; border: 1px solid var(--border); border-radius: var(--radius-sm); font: inherit; background: var(--surface); color: var(--text); }
+.kop-inspect-btn { padding: 0.55rem 1.2rem; background: var(--primary); color: #fff; border: none; border-radius: var(--radius-sm); cursor: pointer; font: inherit; font-weight: 600; white-space: nowrap; }
+.kop-inspect-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.inspect-flow { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem; margin-bottom: 0.75rem; font-size: 0.82rem; }
+.inspect-step { padding: 0.2rem 0.55rem; border-radius: 999px; background: var(--surface); border: 1px solid var(--border); font-weight: 500; }
+.inspect-step.ok { border-color: var(--success); color: var(--success); background: var(--success-soft, rgba(34,197,94,.08)); }
+.inspect-step.danger { border-color: var(--danger); color: var(--danger); background: var(--danger-soft, rgba(239,68,68,.08)); }
+.inspect-step.pending { border-color: var(--warning, #eab308); color: var(--warning, #eab308); }
+.inspect-arrow { color: var(--text-muted); font-size: 0.9rem; }
+.inspect-normalized { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0.45rem 0.7rem; font-size: 0.85rem; margin-bottom: 0.6rem; }
+.inspect-label { color: var(--text-muted); margin-inline-end: 0.4rem; }
+.inspect-accordion { display: flex; flex-direction: column; gap: 0.5rem; }
+.inspect-pane { border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+.inspect-pane-header { width: 100%; display: flex; align-items: center; gap: 0.7rem; padding: 0.6rem 0.9rem; background: var(--surface); border: none; cursor: pointer; font: inherit; font-weight: 600; font-size: 0.88rem; text-align: start; }
+.inspect-pane-header:hover { background: var(--border); }
+.inspect-pane-meta { flex: 1; font-weight: 400; color: var(--text-muted); font-size: 0.82rem; }
+.inspect-chevron { color: var(--text-muted); font-size: 0.75rem; }
+.inspect-pane-body { padding: 0.75rem 0.9rem; border-top: 1px solid var(--border); background: var(--bg); }
+.inspect-empty { color: var(--text-muted); font-size: 0.88rem; }
+.inspect-dim-line { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.4rem; }
+.inspect-vector { display: block; font-family: monospace; font-size: 0.82rem; background: var(--surface); padding: 0.5rem 0.7rem; border-radius: var(--radius-sm); word-break: break-all; }
+.inspect-corpora-table { font-size: 0.82rem; }
+.inspect-chunk { margin-bottom: 0.8rem; padding-bottom: 0.8rem; border-bottom: 1px solid var(--border); }
+.inspect-chunk:last-child { border-bottom: none; margin-bottom: 0; }
+.inspect-chunk-header { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin-bottom: 0.35rem; font-size: 0.82rem; }
+.inspect-chunk-text { font-size: 0.85rem; color: var(--text); margin: 0; white-space: pre-wrap; word-break: break-word; }
+.inspect-decisions { list-style: none; padding: 0; margin: 0.3rem 0 0.5rem; display: flex; flex-wrap: wrap; gap: 0.25rem 0.5rem; font-size: 0.8rem; }
+.decision-ok { color: var(--success, #22c55e); }
+.decision-no { color: var(--danger, #ef4444); }
+.decision-icon { font-weight: 700; }
+.inspect-dropped { margin-top: 0.5rem; font-size: 0.82rem; color: var(--text-muted); border-top: 1px dashed var(--border); padding-top: 0.5rem; }
+.inspect-snippet { margin-bottom: 0.8rem; padding-bottom: 0.8rem; border-bottom: 1px solid var(--border); }
+.inspect-snippet:last-child { border-bottom: none; margin-bottom: 0; }
+.inspect-snippet-header { display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.35rem; font-size: 0.82rem; }
+.inspect-snippet-text { font-size: 0.85rem; white-space: pre-wrap; word-break: break-word; margin: 0; }
+.small { font-size: 0.78rem; }
 </style>

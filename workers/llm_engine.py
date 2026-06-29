@@ -192,6 +192,10 @@ LOCAL_LLM_TIMEOUT = int(os.getenv("LOCAL_LLM_TIMEOUT", "120"))
 
 _RUNPOD_CACHE = {"value": False, "time": 0.0}
 
+
+def _env_language_key(language: str) -> str:
+    return re.sub(r"[^A-Z0-9]+", "_", (language or "en").upper()).strip("_")
+
 def _is_runpod_enabled(language: str = "en") -> bool:
     now = time.time()
     if now - _RUNPOD_CACHE["time"] < 5.0:
@@ -236,7 +240,7 @@ def _model_for(language: str = "en") -> str:
     if _is_runpod_enabled(language):
         return default_model
 
-    override = (os.getenv(f"LLM_MODEL_{language.upper()}") or "").strip()
+    override = (os.getenv(f"LLM_MODEL_{_env_language_key(language)}") or "").strip()
     if override and not override.startswith(("your-", "change-me", "example")):
         return override
     return default_model
@@ -555,7 +559,7 @@ def _complete(system: str, user: str, max_tokens: int = 1500, language: str = "e
     # OpenRouter
     api_key = _OPENROUTER_API_KEY
     base_url = _OPENROUTER_BASE_URL.rstrip("/")
-    override = (os.getenv(f"LLM_MODEL_{language.upper()}") or "").strip()
+    override = (os.getenv(f"LLM_MODEL_{_env_language_key(language)}") or "").strip()
     if override and not override.startswith(("your-", "change-me", "example")):
         model_name = override
     else:
@@ -661,6 +665,21 @@ def _keyword_anchor(prayer_text: str | None) -> str:
         "Ground this segment directly in these specific feelings and concerns."
     )
 
+_LANGUAGE_NAMES = {
+    "fr": "French",
+    "de": "German",
+    "es": "Spanish",
+    "ja": "Japanese",
+    "zh-CN": "Simplified Chinese",
+    "ko": "Korean",
+    "hi": "Hindi",
+    "ta": "Tamil",
+    "th": "Thai",
+    "ar": "Arabic",
+    "he": "Hebrew",
+}
+
+
 def _fallback_welcome(user_name: str | None, mood: str, language: str) -> str:
     if language == "my":
         name = f"{user_name}၊ " if user_name else ""
@@ -676,6 +695,36 @@ def _fallback_welcome(user_name: str | None, mood: str, language: str) -> str:
             "Topa Pasian in na kiangah om hi. Hih biakna hun sungah Zeisu Krist itna, "
             "nopna leh lam-etna hong thak sak hen."
         )
+    if language == "fr":
+        return f"Bon retour{', ' + user_name if user_name else ''}. Que le Christ vous rencontre aujourd'hui avec paix, espérance et grâce."
+    if language == "de":
+        return f"Willkommen zurück{', ' + user_name if user_name else ''}. Möge Christus Ihnen heute mit Frieden, Hoffnung und Gnade begegnen."
+    if language == "es":
+        return f"Bienvenido de nuevo{', ' + user_name if user_name else ''}. Que Cristo te encuentre hoy con paz, esperanza y gracia."
+    if language == "ja":
+        name = f"{user_name}、" if user_name else ""
+        return f"{name}おかえりなさい。今日、キリストの平安と希望と恵みがあなたに近くありますように。"
+    if language == "zh-CN":
+        name = f"{user_name}，" if user_name else ""
+        return f"{name}欢迎回来。愿基督今天以平安、盼望和恩典与你相遇。"
+    if language == "ko":
+        name = f"{user_name}, " if user_name else ""
+        return f"{name}다시 오신 것을 환영합니다. 오늘 그리스도의 평안과 소망과 은혜가 함께하시기를 바랍니다."
+    if language == "hi":
+        name = f"{user_name}, " if user_name else ""
+        return f"{name}वापस स्वागत है। आज मसीह की शांति, आशा और अनुग्रह आपके निकट हों।"
+    if language == "ta":
+        name = f"{user_name}, " if user_name else ""
+        return f"{name}மீண்டும் வரவேற்கிறோம். இன்று கிறிஸ்துவின் சமாதானமும் நம்பிக்கையும் கிருபையும் உங்களுடன் இருப்பதாக."
+    if language == "th":
+        name = f"{user_name}, " if user_name else ""
+        return f"{name}ยินดีต้อนรับกลับ ขอให้สันติสุข ความหวัง และพระคุณของพระคริสต์อยู่ใกล้คุณในวันนี้."
+    if language == "ar":
+        name = f"{user_name}، " if user_name else ""
+        return f"{name}أهلا بعودتك. ليقترب منك سلام المسيح ورجاؤه ونعمته اليوم."
+    if language == "he":
+        name = f"{user_name}, " if user_name else ""
+        return f"{name}ברוך שובך. יהי שלום המשיח, תקוותו וחסדו קרובים אליך היום."
     return f"Welcome back{', ' + user_name if user_name else ''}. May Christ meet you with peace and hope today."
 
 
@@ -730,6 +779,53 @@ _FALLBACK_OPENING_PRAYERS_EN = [
     "Father, You are our rock and our refuge. As we gather now, quiet our anxious thoughts and fill us with the hope that only You can give. Amen.",
 ]
 
+_FALLBACK_OPENING_PRAYERS_WORLD = {
+    "fr": [
+        "Seigneur, accueille-nous avec ta paix et ta miséricorde au début de ce culte. Parle à nos coeurs et renouvelle notre espérance en Jésus-Christ. Amen.",
+        "Dieu de grâce, nous venons devant toi avec ce qui pèse sur nos coeurs. Donne-nous ton repos, ta lumière et ta paix. Au nom de Jésus, Amen.",
+    ],
+    "de": [
+        "Herr, begegne uns zu Beginn dieses Gottesdienstes mit Barmherzigkeit und Frieden. Sprich zu unseren Herzen und erneuere unsere Hoffnung in Christus. Amen.",
+        "Gnädiger Gott, wir kommen mit allem zu dir, was uns belastet. Schenke uns Ruhe, Wahrheit und Frieden. In Jesu Namen, Amen.",
+    ],
+    "es": [
+        "Señor, recíbenos con misericordia y paz al comenzar este culto. Habla a nuestro corazón y renueva nuestra esperanza en Cristo Jesús. Amén.",
+        "Dios de gracia, venimos ante ti con todo lo que pesa en nuestro corazón. Danos descanso, verdad y paz. En el nombre de Jesús, Amén.",
+    ],
+    "ja": [
+        "主よ、この礼拝の始まりに、あなたのあわれみと平安で私たちを迎えてください。心に語り、キリストにある希望を新しくしてください。アーメン。",
+        "恵み深い神よ、私たちは心にある重荷を携えて御前に来ました。あなたの安息、真理、平安で私たちを導いてください。イエスの御名によって祈ります。アーメン。",
+    ],
+    "zh-CN": [
+        "主啊，在这场礼拜开始时，求你以怜悯和平安接纳我们。向我们的心说话，在基督里更新我们的盼望。阿们。",
+        "施恩的神，我们带着心中的重担来到你面前。求你赐下安息、真理和平安。奉耶稣的名祷告，阿们。",
+    ],
+    "ko": [
+        "주님, 이 예배를 시작할 때 자비와 평안으로 우리를 맞아 주십시오. 우리의 마음에 말씀하시고 그리스도 안의 소망을 새롭게 하소서. 아멘.",
+        "은혜의 하나님, 마음의 짐을 가지고 주님 앞에 나아옵니다. 우리에게 안식과 진리와 평안을 주소서. 예수님의 이름으로 기도합니다. 아멘.",
+    ],
+    "hi": [
+        "हे प्रभु, इस आराधना की शुरुआत में हमें अपनी दया और शांति से ग्रहण कर। हमारे हृदय से बोल और मसीह में हमारी आशा को नया कर। आमीन।",
+        "अनुग्रहकारी परमेश्वर, हम अपने मन के बोझ लेकर तेरे सामने आते हैं। हमें विश्राम, सत्य और शांति दे। यीशु के नाम में, आमीन।",
+    ],
+    "ta": [
+        "ஆண்டவரே, இந்த ஆராதனை தொடங்கும் நேரத்தில் உமது இரக்கத்தாலும் சமாதானத்தாலும் எங்களை ஏற்றுக்கொள்ளும். எங்கள் இதயத்தோடு பேசிச் கிறிஸ்துவிலுள்ள நம்பிக்கையை புதுப்பியும். ஆமென்.",
+        "கிருபையுள்ள தேவனே, எங்கள் இதயத்தின் சுமைகளுடன் உம்முன் வருகிறோம். எங்களுக்கு இளைப்பாறுதலும் சத்தியமும் சமாதானமும் தாரும். இயேசுவின் நாமத்தில், ஆமென்.",
+    ],
+    "th": [
+        "องค์พระผู้เป็นเจ้า เมื่อการนมัสการนี้เริ่มต้น ขอทรงต้อนรับเราด้วยพระเมตตาและสันติสุข ตรัสกับหัวใจของเราและรื้อฟื้นความหวังในพระคริสต์ อาเมน.",
+        "พระเจ้าแห่งพระคุณ เราเข้ามาต่อพระพักตร์พร้อมภาระในใจ ขอประทานการพักสงบ ความจริง และสันติสุขแก่เรา ในพระนามพระเยซู อาเมน.",
+    ],
+    "ar": [
+        "يا رب، في بداية هذه العبادة استقبلنا برحمتك وسلامك. تكلم إلى قلوبنا وجدد رجاءنا في المسيح يسوع. آمين.",
+        "يا إله النعمة، نأتي أمامك حاملين أثقال قلوبنا. امنحنا راحة وحقا وسلاما. باسم يسوع، آمين.",
+    ],
+    "he": [
+        "אדון, בתחילת זמן הפולחן הזה קבל אותנו ברחמיך ובשלומך. דבר אל לבנו וחדש את תקוותנו במשיח ישוע. אמן.",
+        "אלוהי החסד, אנו באים לפניך עם משאות לבנו. תן לנו מנוחה, אמת ושלום. בשם ישוע, אמן.",
+    ],
+}
+
 
 def _burmese_prayer_for_mood(mood: str, user_history: dict | None = None) -> str:
     """Pick a Burmese opening prayer from the 100-prayer corpus that fits the mood.
@@ -782,6 +878,8 @@ def _fallback_opening_prayer(user_name: str | None, mood: str, language: str) ->
         return _burmese_prayer_for_mood(mood)
     if language == "td":
         return random.choice(_FALLBACK_OPENING_PRAYERS_TD)
+    if language in _FALLBACK_OPENING_PRAYERS_WORLD:
+        return random.choice(_FALLBACK_OPENING_PRAYERS_WORLD[language])
     return random.choice(_FALLBACK_OPENING_PRAYERS_EN)
 
 
@@ -812,6 +910,28 @@ def _fallback_sermon(mood: str, scripture_ref: str, language: str) -> str:
             "Na thugen zawhloh thungetna zong Topa in za hi. Tuni in thahat sak kul lo; Topa maiah diktak in ding thei hi. "
             "Zeisu Krist sungah lungdamna leh lam-etna om hi. Pasian in nang hong mangngilh lo hi."
         )
+    if language == "fr":
+        return "Dieu est proche de ceux qui ont le coeur brisé, et le Christ donne l'espérance pour le prochain pas."
+    if language == "de":
+        return "Gott ist den Zerbrochenen nahe, und Christus schenkt Hoffnung für den nächsten Schritt."
+    if language == "es":
+        return "Dios está cerca de los quebrantados de corazón, y Cristo da esperanza para el próximo paso."
+    if language == "ja":
+        return "神は心の砕かれた者に近くおられ、キリストは次の一歩のための希望を与えてくださいます。"
+    if language == "zh-CN":
+        return "神亲近伤心的人，基督也赐下走下一步所需的盼望。"
+    if language == "ko":
+        return "하나님은 마음이 상한 이들에게 가까이 계시며, 그리스도께서는 다음 걸음을 위한 소망을 주십니다."
+    if language == "hi":
+        return "परमेश्वर टूटे हुए मन वालों के निकट है, और मसीह अगले कदम के लिए आशा देता है।"
+    if language == "ta":
+        return "உடைந்த இதயத்தாருக்கு தேவன் அருகில் இருக்கிறார்; அடுத்த படிக்கான நம்பிக்கையை கிறிஸ்து தருகிறார்."
+    if language == "th":
+        return "พระเจ้าทรงอยู่ใกล้ผู้ที่ใจแตกสลาย และพระคริสต์ประทานความหวังสำหรับก้าวต่อไป."
+    if language == "ar":
+        return "الله قريب من منكسري القلوب، والمسيح يعطي رجاء للخطوة التالية."
+    if language == "he":
+        return "אלוהים קרוב לשבורי הלב, והמשיח נותן תקווה לצעד הבא."
     return "God is near to the brokenhearted, and Christ gives hope for the next step."
 
 
@@ -856,12 +976,61 @@ _FALLBACK_BENEDICTIONS_EN = [
     "May the Lord bless you and keep you; may His face shine upon you and give you peace, today and always. Amen.",
 ]
 
+_FALLBACK_BENEDICTIONS_WORLD = {
+    "fr": [
+        "Que la paix du Christ garde votre coeur et guide votre prochain pas. Amen.",
+        "Allez dans la grâce du Père, l'amour du Fils et la communion du Saint-Esprit. Amen.",
+    ],
+    "de": [
+        "Der Friede Christi bewahre Ihr Herz und leite Ihren nächsten Schritt. Amen.",
+        "Gehen Sie in der Gnade des Vaters, der Liebe Christi und der Gemeinschaft des Heiligen Geistes. Amen.",
+    ],
+    "es": [
+        "Que la paz de Cristo guarde tu corazón y guíe tu próximo paso. Amén.",
+        "Ve en la gracia del Padre, el amor de Cristo y la comunión del Espíritu Santo. Amén.",
+    ],
+    "ja": [
+        "キリストの平安があなたの心を守り、次の一歩を導いてくださいますように。アーメン。",
+        "父なる神の恵み、御子キリストの愛、聖霊の交わりのうちに歩んでください。アーメン。",
+    ],
+    "zh-CN": [
+        "愿基督的平安保守你的心，并引导你下一步。阿们。",
+        "愿你行在父的恩典、基督的爱和圣灵的团契中。阿们。",
+    ],
+    "ko": [
+        "그리스도의 평안이 당신의 마음을 지키고 다음 걸음을 인도하시기를 바랍니다. 아멘.",
+        "하나님 아버지의 은혜와 그리스도의 사랑과 성령의 교제 안에서 나아가십시오. 아멘.",
+    ],
+    "hi": [
+        "मसीह की शांति आपके हृदय की रक्षा करे और आपके अगले कदम को मार्ग दिखाए। आमीन।",
+        "पिता के अनुग्रह, पुत्र मसीह के प्रेम, और पवित्र आत्मा की संगति में आगे बढ़ें। आमीन।",
+    ],
+    "ta": [
+        "கிறிஸ்துவின் சமாதானம் உங்கள் இதயத்தை காத்து உங்கள் அடுத்த படியை நடத்துவதாக. ஆமென்.",
+        "பிதாவின் கிருபையிலும் கிறிஸ்துவின் அன்பிலும் பரிசுத்த ஆவியின் ஐக்கியத்திலும் செல்லுங்கள். ஆமென்.",
+    ],
+    "th": [
+        "ขอสันติสุขของพระคริสต์ปกป้องหัวใจของคุณและนำก้าวต่อไปของคุณ อาเมน.",
+        "จงออกไปในพระคุณของพระบิดา ความรักของพระคริสต์ และสามัคคีธรรมของพระวิญญาณบริสุทธิ์ อาเมน.",
+    ],
+    "ar": [
+        "ليحرس سلام المسيح قلبك ويقود خطوتك التالية. آمين.",
+        "اذهب في نعمة الآب، ومحبة المسيح، وشركة الروح القدس. آمين.",
+    ],
+    "he": [
+        "שלום המשיח ישמור את לבך וינחה את הצעד הבא שלך. אמן.",
+        "לך בחסד האב, באהבת המשיח, ובשותפות רוח הקודש. אמן.",
+    ],
+}
+
 
 def _fallback_benediction(user_name: str | None, mood: str, language: str) -> str:
     if language == "my":
         return random.choice(_FALLBACK_BENEDICTIONS_MY)
     if language == "td":
         return random.choice(_FALLBACK_BENEDICTIONS_TD)
+    if language in _FALLBACK_BENEDICTIONS_WORLD:
+        return random.choice(_FALLBACK_BENEDICTIONS_WORLD[language])
     return random.choice(_FALLBACK_BENEDICTIONS_EN)
 
 
@@ -950,6 +1119,14 @@ def _language_instruction(language: str) -> str:
             "'ယေရှုခရစ်တော်သည် ကယ်တင်ခြင်းကို ပေးတော်မူသည်' (Jesus Christ gives salvation — SOV); "
             "'ကျွန်ုပ်တို့နှလုံးကို ကောင်းချီးပေးတော်မူပါစေ' (May He bless our hearts — benediction with -ပါစေ). "
             "Keep sentences short and clear. Use the colloquial-literary blend of Myanmar church Burmese."
+        )
+    if language in _LANGUAGE_NAMES:
+        language_name = _LANGUAGE_NAMES[language]
+        return (
+            f"LANGUAGE LAW — ABSOLUTE: Write EVERY SINGLE SENTENCE in {language_name} ONLY. "
+            f"Do not include English except proper names, Bible reference labels when explicitly requested, or unavoidable song/artist titles. "
+            f"Use natural Christian worship language in {language_name}; do not translate English idioms word-for-word. "
+            "For narration, spell out dates and numbers naturally in the target language when possible."
         )
     if language == "td":
         return (
@@ -1079,6 +1256,197 @@ def _fallback_music_lyrics(mood: str, language: str) -> str:
             "Ni simin na hehpihna ka mu sak in.\n"
             "Ka nuntakna in Nang ading lasa suak hen."
         )
+    world = {
+        "fr": (
+            "[Verse 1]\n"
+            "Seigneur, viens dans ce moment,\n"
+            "avec ta grâce et ta paix.\n"
+            "Tourne mon coeur vers ta promesse,\n"
+            "et calme toute peur.\n\n"
+            "[Chorus]\n"
+            "Je veux t'adorer, je veux te faire confiance,\n"
+            "dans ta grâce je tiens aujourd'hui.\n"
+            "Jésus, conduis-moi, Jésus, garde-moi,\n"
+            "guide mon coeur sur ton chemin.\n\n"
+            "[Verse 2]\n"
+            "Quand l'espoir semble lointain,\n"
+            "ton amour reste mon chant.\n"
+            "Tu es fidèle dans l'attente,\n"
+            "et ta paix me rendra fort."
+        ),
+        "de": (
+            "[Verse 1]\n"
+            "Herr, begegne mir in diesem Augenblick,\n"
+            "mit Gnade, sanft und nah.\n"
+            "Richte mein Herz auf deine Verheissung,\n"
+            "und stille jede Angst.\n\n"
+            "[Chorus]\n"
+            "Ich will dich anbeten, dir vertrauen,\n"
+            "in deiner Gnade stehe ich heut.\n"
+            "Jesus, fuehre mich, Jesus, halte mich,\n"
+            "leite mein Herz auf deinem Weg.\n\n"
+            "[Verse 2]\n"
+            "Wenn Hoffnung klein und fern erscheint,\n"
+            "bleibt deine Liebe mein Lied.\n"
+            "Du bist treu im Warten,\n"
+            "und dein Friede macht mich stark."
+        ),
+        "es": (
+            "[Verse 1]\n"
+            "Señor, encuéntrame en este momento,\n"
+            "con gracia tierna y cercana.\n"
+            "Levanta mi corazón a tu promesa,\n"
+            "y calma todo temor.\n\n"
+            "[Chorus]\n"
+            "Te adoraré, confiaré en ti,\n"
+            "en tu gracia hoy estaré.\n"
+            "Jesús, guíame, Jesús, sosténme,\n"
+            "lleva mi corazón por tu camino.\n\n"
+            "[Verse 2]\n"
+            "Cuando la esperanza parece lejana,\n"
+            "tu amor sigue siendo mi canción.\n"
+            "Eres fiel en la espera,\n"
+            "y tu paz me hará fuerte."
+        ),
+        "ja": (
+            "[Verse 1]\n"
+            "主よ、この時に私の心へ来てください。\n"
+            "恵みと平安で恐れを静めてください。\n"
+            "あなたの約束へ私の目を上げてください。\n"
+            "今日も御手の中で歩ませてください。\n\n"
+            "[Chorus]\n"
+            "イエスよ、あなたを礼拝します。\n"
+            "あなたの愛に信頼します。\n"
+            "導いてください、支えてください。\n"
+            "私の心を平安で満たしてください。\n\n"
+            "[Verse 2]\n"
+            "希望が遠く見える時にも、\n"
+            "あなたの愛は私の歌です。\n"
+            "待つ日々の中でもあなたは真実です。\n"
+            "あなたの平安が私を強くします。"
+        ),
+        "zh-CN": (
+            "[Verse 1]\n"
+            "主啊，求你来到此刻我的心里。\n"
+            "用你的恩典和平安安静我的惧怕。\n"
+            "使我仰望你的应许和慈爱。\n"
+            "今天也牵引我走在你手中。\n\n"
+            "[Chorus]\n"
+            "耶稣，我要敬拜你。\n"
+            "在你的爱里我愿信靠。\n"
+            "求你引导我，扶持我。\n"
+            "用你的平安充满我的心。\n\n"
+            "[Verse 2]\n"
+            "当盼望似乎遥远的时候，\n"
+            "你的爱仍然成为我的诗歌。\n"
+            "在等候中你依然信实。\n"
+            "你的平安使我重新刚强。"
+        ),
+        "ko": (
+            "[Verse 1]\n"
+            "주님, 이 순간 내 마음에 오소서.\n"
+            "은혜와 평안으로 두려움을 잠잠케 하소서.\n"
+            "주의 약속을 바라보게 하소서.\n"
+            "오늘도 주의 손 안에서 걷게 하소서.\n\n"
+            "[Chorus]\n"
+            "예수님, 주님을 예배합니다.\n"
+            "주의 사랑 안에서 신뢰합니다.\n"
+            "인도하소서, 붙드소서.\n"
+            "내 마음을 주의 평안으로 채우소서.\n\n"
+            "[Verse 2]\n"
+            "소망이 멀게 느껴질 때에도,\n"
+            "주의 사랑은 나의 노래입니다.\n"
+            "기다림 속에서도 주는 신실하십니다.\n"
+            "주의 평안이 나를 새롭게 강하게 합니다."
+        ),
+        "hi": (
+            "[Verse 1]\n"
+            "प्रभु, इस क्षण मेरे हृदय में आओ।\n"
+            "अपने अनुग्रह और शांति से मेरा भय शांत करो।\n"
+            "मेरी दृष्टि अपनी प्रतिज्ञा पर उठाओ।\n"
+            "आज भी मुझे अपने हाथों में चलाओ।\n\n"
+            "[Chorus]\n"
+            "यीशु, मैं तेरी आराधना करता हूँ।\n"
+            "तेरे प्रेम में मैं भरोसा रखता हूँ।\n"
+            "मुझे मार्ग दिखा, मुझे थामे रख।\n"
+            "मेरे हृदय को अपनी शांति से भर दे।\n\n"
+            "[Verse 2]\n"
+            "जब आशा दूर दिखाई देती है,\n"
+            "तेरा प्रेम फिर भी मेरा गीत है।\n"
+            "प्रतीक्षा में भी तू विश्वासयोग्य है।\n"
+            "तेरी शांति मुझे फिर से बल देती है।"
+        ),
+        "ta": (
+            "[Verse 1]\n"
+            "ஆண்டவரே, இந்த நேரம் என் இதயத்துக்குள் வாரும்.\n"
+            "உமது கிருபையும் சமாதானமும் என் பயத்தை அமைதிப்படுத்தும்.\n"
+            "உமது வாக்குத்தத்தத்தை நோக்கி என் பார்வையை உயர்த்தும்.\n"
+            "இன்றும் உமது கைகளில் என்னை நடத்தும்.\n\n"
+            "[Chorus]\n"
+            "இயேசுவே, உம்மை நான் ஆராதிக்கிறேன்.\n"
+            "உமது அன்பில் நான் நம்பிக்கை வைக்கிறேன்.\n"
+            "என்னை நடத்தும், என்னை தாங்கும்.\n"
+            "என் இதயத்தை உமது சமாதானத்தால் நிரப்பும்.\n\n"
+            "[Verse 2]\n"
+            "நம்பிக்கை தூரமாகத் தோன்றும் நேரத்திலும்,\n"
+            "உமது அன்பே என் பாடலாக உள்ளது.\n"
+            "காத்திருப்பிலும் நீர் உண்மையுள்ளவர்.\n"
+            "உமது சமாதானம் என்னை மீண்டும் பலப்படுத்தும்."
+        ),
+        "th": (
+            "[Verse 1]\n"
+            "พระเจ้า ขอเสด็จเข้ามาในหัวใจขณะนี้.\n"
+            "ด้วยพระคุณและสันติสุข ขอทำให้ความกลัวสงบลง.\n"
+            "ขอเงยสายตาของข้าพระองค์สู่พระสัญญา.\n"
+            "วันนี้ขอทรงนำข้าพระองค์ในพระหัตถ์ของพระองค์.\n\n"
+            "[Chorus]\n"
+            "พระเยซู ข้าพระองค์นมัสการพระองค์.\n"
+            "ข้าพระองค์วางใจในความรักของพระองค์.\n"
+            "ขอทรงนำ ขอทรงพยุง.\n"
+            "เติมหัวใจของข้าพระองค์ด้วยสันติสุขของพระองค์.\n\n"
+            "[Verse 2]\n"
+            "เมื่อความหวังดูเหมือนอยู่ไกล,\n"
+            "ความรักของพระองค์ยังเป็นบทเพลงของข้าพระองค์.\n"
+            "ในเวลาที่ต้องรอคอย พระองค์ยังสัตย์ซื่อ.\n"
+            "สันติสุขของพระองค์ทำให้ข้าพระองค์เข้มแข็งใหม่."
+        ),
+        "ar": (
+            "[Verse 1]\n"
+            "يا رب، اقترب من قلبي الآن.\n"
+            "بنعمتك وسلامك هدئ كل خوف.\n"
+            "ارفع عيني إلى وعدك الأمين.\n"
+            "وقودني اليوم في يديك.\n\n"
+            "[Chorus]\n"
+            "يا يسوع، لك أسجد.\n"
+            "في محبتك أثق.\n"
+            "قدني، احملني.\n"
+            "املأ قلبي بسلامك.\n\n"
+            "[Verse 2]\n"
+            "حين يبدو الرجاء بعيدا،\n"
+            "تبقى محبتك ترنيمتي.\n"
+            "أنت أمين في الانتظار.\n"
+            "وسلامك يجدد قوتي."
+        ),
+        "he": (
+            "[Verse 1]\n"
+            "אדון, קרב אל לבי עכשיו.\n"
+            "בחסדך ובשלומך השקט כל פחד.\n"
+            "הרם את עיני אל הבטחתך.\n"
+            "הובל אותי היום בידך.\n\n"
+            "[Chorus]\n"
+            "ישוע, אותך אעבוד.\n"
+            "באהבתך אבטח.\n"
+            "הנחה אותי, תמוך בי.\n"
+            "מלא את לבי בשלומך.\n\n"
+            "[Verse 2]\n"
+            "כאשר התקווה נראית רחוקה,\n"
+            "אהבתך עודנה שירי.\n"
+            "גם בהמתנה אתה נאמן.\n"
+            "ושלומך מחדש את כוחי."
+        ),
+    }
+    if language in world:
+        return world[language]
     return (
         "[Verse 1]\n"
         "Lord, meet me in this moment,\n"
@@ -1104,6 +1472,10 @@ def _lyrics_match_language(lyrics: str, language: str) -> bool:
     if not text:
         return False
     lower = text.lower()
+
+    def script_count(pattern: str) -> int:
+        return len(re.findall(pattern, text))
+
     if language == "my":
         # Must be a full song's worth of Myanmar script, not a one-line fragment.
         if sum(1 for ch in text if "က" <= ch <= "႟") < 120:
@@ -1172,6 +1544,25 @@ def _lyrics_match_language(lyrics: str, language: str) -> bool:
             and english_hits == 0
             and terminal_tedim >= 2
         )
+    if language == "ja":
+        return script_count(r"[\u3040-\u30ff]") >= 12 and script_count(r"[\u3040-\u30ff\u4e00-\u9fff]") >= 60
+    if language == "zh-CN":
+        return (
+            not re.search(r"[\u3040-\u30ff\uac00-\ud7af]", text)
+            and script_count(r"[\u4e00-\u9fff]") >= 60
+        )
+    if language == "ko":
+        return script_count(r"[\uac00-\ud7af\u1100-\u11ff]") >= 60
+    if language == "hi":
+        return script_count(r"[\u0900-\u097f]") >= 60
+    if language == "ta":
+        return script_count(r"[\u0b80-\u0bff]") >= 60
+    if language == "th":
+        return script_count(r"[\u0e00-\u0e7f]") >= 60
+    if language == "ar":
+        return script_count(r"[\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff]") >= 60
+    if language == "he":
+        return script_count(r"[\u0590-\u05ff]") >= 60
     return True
 
 
@@ -1247,6 +1638,19 @@ def build_intake_plan(*, user_name: str | None, mood: str, prayer_text: str | No
         if music_source in ("youtube", "hymn_youtube"):
             system += " music_query should similarly target Zomi or Tedim worship songs."
 
+    elif language in _LANGUAGE_NAMES:
+        language_name = _LANGUAGE_NAMES[language]
+        system += (
+            f" This service is conducted in {language_name}. Keep scripture_ref in ENGLISH format "
+            "(e.g. 'Psalm 23:1-4') so the Bible resolver can find the passage."
+        )
+        if music_source in ("suno", "musicgen"):
+            system += f" music_lyrics must be original singable worship lyrics in {language_name}."
+        if music_source in ("youtube", "hymn_youtube"):
+            system += f" music_query should target Christian worship songs in {language_name}."
+        if music_source == "youtube":
+            system += f" preaching_query should target Christian sermon or preaching videos in {language_name}."
+
     schema = {
         "scripture_ref": "string, e.g. 'Psalm 23:1-4'",
     }
@@ -1299,6 +1703,13 @@ def build_intake_plan(*, user_name: str | None, mood: str, prayer_text: str | No
             f"Modern contemporary Burmese Christian worship song for someone feeling {mood}, "
             "in a live contemporary worship style with uplifting congregational energy, "
             "with warm choir and acoustic-band arrangement. Sing the provided Myanmar Unicode lyrics exactly."
+        )
+    elif language in _LANGUAGE_NAMES:
+        language_name = _LANGUAGE_NAMES[language]
+        plan["music_prompt"] = (
+            f"Modern contemporary {language_name} Christian worship song for someone feeling {mood}, "
+            "in a live contemporary worship style with uplifting congregational energy, "
+            f"with warm choir and acoustic-band arrangement. Sing the provided {language_name} lyrics exactly."
         )
     else:
         plan["music_prompt"] = (

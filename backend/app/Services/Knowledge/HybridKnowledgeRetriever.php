@@ -6,6 +6,7 @@ use App\Services\Chat\Contracts\KnowledgeRetriever;
 use App\Services\Chat\Data\KnowledgeContext;
 use App\Services\Knowledge\Retrieval\ContextBuilder;
 use App\Services\Knowledge\Retrieval\RetrievalOrchestrator;
+use Illuminate\Support\Facades\Cache;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -36,17 +37,41 @@ final class HybridKnowledgeRetriever implements KnowledgeRetriever
     private function doRetrieve(string $query, array $filters): KnowledgeContext
     {
         try {
+            $start = microtime(true);
             // Always enforce permission scoping at the retrieval boundary.
             $filters['permissions'] ??= 'public';
 
             $outcome = $this->orchestrator->retrieve($query, $filters);
+            $latencyMs = (int) round((microtime(true) - $start) * 1000);
+            $reason = $outcome->failed
+                ? KnowledgeContext::EMPTY_FAILURE
+                : ($outcome->chunks === [] ? KnowledgeContext::EMPTY_NO_MATCH : KnowledgeContext::POPULATED);
 
             // Annotate the retrieval span with observational signals (no chunk text).
-            $this->tracer->annotate($outcome->diagnostics + [
-                'retrieval.reason'    => $outcome->failed ? KnowledgeContext::EMPTY_FAILURE : ($outcome->chunks === [] ? KnowledgeContext::EMPTY_NO_MATCH : KnowledgeContext::POPULATED),
+            $diagnostics = $outcome->diagnostics + [
+                'retrieval.reason'    => $reason,
                 'retrieval.degraded'  => $outcome->degraded,
                 'retrieval.out_count' => count($outcome->chunks),
-            ]);
+                'retrieval.latency_ms' => $latencyMs,
+                'query_hash'          => hash('sha256', $query),
+                'query_chars'         => mb_strlen($query),
+            ];
+
+            $this->tracer->annotate($diagnostics);
+            $this->log->info('knowledge.retrieval', $diagnostics);
+
+            // Persist a snapshot for the admin dashboard. TTL 24 h; never blocks chat.
+            try {
+                Cache::put('knowledge.last_retrieval', [
+                    'latency_ms'  => $latencyMs,
+                    'corpora'     => $diagnostics['retrieval.corpora'] ?? [],
+                    'rrf_count'   => $diagnostics['retrieval.rrf_count'] ?? 0,
+                    'out_count'   => count($outcome->chunks),
+                    'degraded'    => $outcome->degraded,
+                    'failed'      => $outcome->failed,
+                    'recorded_at' => now()->toIso8601String(),
+                ], 86400);
+            } catch (\Throwable) { /* cache failure must never break retrieval */ }
 
             if ($outcome->degraded || $outcome->failed) {
                 $this->log->warning('knowledge.retrieval_degraded', $outcome->diagnostics + ['failed' => $outcome->failed]);

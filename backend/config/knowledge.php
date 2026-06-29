@@ -31,12 +31,55 @@ return [
     ],
 
     // Corpora available from day one; each gets its own hybrid retriever + collection.
-    'corpora' => ['bible', 'sermon', 'prayer', 'policy', 'document'],
+    'corpora' => [
+        'bible',
+        'bible-meta',
+        'reading-plans',
+        'docs',
+        'faq',
+        'sermon',
+        'prayer',
+        'policy',
+        'document',
+        'commentary',
+        'general',
+    ],
+
+    // Ranking nudge only; prompt policy still decides authority. Values are intentionally
+    // coarse so Scripture is surfaced early without hiding directly relevant support material.
+    'source_priority' => [
+        'bible'         => 100,
+        'bible-meta'    => 80,
+        'docs'          => 70,
+        'faq'           => 70,
+        'policy'        => 70,
+        'reading-plans' => 60,
+        'sermon'        => 50,
+        'prayer'        => 45,
+        'commentary'    => 35,
+        'document'      => 30,
+        'general'       => 10,
+    ],
+
+    'ingestion' => [
+        'default_corpora' => [
+            'bible-meta'    => storage_path('app/knowledge/bible-meta'),
+            'reading-plans' => storage_path('app/knowledge/reading-plans'),
+            'docs'          => storage_path('app/knowledge/docs'),
+            'faq'           => storage_path('app/knowledge/faq'),
+        ],
+    ],
+
+    'verification' => [
+        'collection' => env('KNOWLEDGE_VERIFY_COLLECTION', 'knowledge_chunks'),
+    ],
 
     'retrieval' => [
         'per_corpus_k'      => (int) env('KNOWLEDGE_PER_CORPUS_K', 8),
         'final_k'           => (int) env('KNOWLEDGE_FINAL_K', 6),
         'rrf_k'             => (int) env('KNOWLEDGE_RRF_K', 60),
         'max_context_chars' => (int) env('KNOWLEDGE_MAX_CONTEXT_CHARS', 4000),
+        'lexical_weight'    => (float) env('KNOWLEDGE_LEXICAL_WEIGHT', 0.5),
+        'priority_weight'   => (float) env('KNOWLEDGE_PRIORITY_WEIGHT', 0.2),
     ],
 ];

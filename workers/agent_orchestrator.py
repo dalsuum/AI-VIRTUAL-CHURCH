@@ -387,20 +387,7 @@ def _build_tools(job: dict, plan: dict) -> tuple[list[dict], dict[str, callable]
         """Mirrors tasks._narration_voice without importing tasks."""
         if narration_mode == "voicebox":
             return voicebox_engine
-        # Mirrors tasks._edge_voice
-        suffix = g.upper()
-        if language == "my":
-            default = "my-MM-ThihaNeural" if g == "male" else "my-MM-NilarNeural"
-            return (
-                os.getenv(f"EDGE_TTS_VOICE_MY_{suffix}")
-                or os.getenv("EDGE_TTS_VOICE_MY")
-                or default
-            )
-        if language == "td":
-            default = "en-US-GuyNeural" if g == "male" else "en-US-AriaNeural"
-            return os.getenv("EDGE_TTS_VOICE_TD", default)
-        default = "en-US-GuyNeural" if g == "male" else "en-US-AriaNeural"
-        return os.getenv(f"EDGE_TTS_VOICE_{suffix}") or os.getenv("EDGE_TTS_VOICE", default)
+        return narrator.edge_voice(language, g)
 
     # ---- handlers --------------------------------------------------------
 

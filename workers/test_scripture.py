@@ -196,6 +196,20 @@ def test_accented_book_name_resolves_after_normalization():
     assert bible_api._norm("Genèse") in names
 
 
+def test_books_meta_passes_validator():
+    # The ontology is a verified artifact: the structural validator must be clean
+    # (canon completeness, stable unique ids, testament/category ids, no duplicate
+    # or cross-book-ambiguous aliases, referential integrity of related_books).
+    import json, os, importlib.util, bible_api
+    spec = importlib.util.spec_from_file_location(
+        "validate_books_meta",
+        os.path.join(os.path.dirname(bible_api.__file__), "tools", "validate_books_meta.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    data = json.load(open(os.path.join(os.path.dirname(bible_api.__file__), "data", "books_meta.json"), encoding="utf-8"))
+    assert mod.validate(data) == []
+
+
 def test_books_meta_file_is_versioned():
     import bible_api, json, os
     raw = json.load(open(os.path.join(os.path.dirname(bible_api.__file__), "data", "books_meta.json"), encoding="utf-8"))
@@ -232,14 +246,17 @@ def test_books_meta_testament_and_category_ids():
     assert all("_" in c or c.islower() for c in (b["category"] for b in meta.values()))
 
 
-def test_books_meta_reserved_fields_present_and_empty():
+def test_books_meta_reserved_and_typed_fields():
     import bible_api
-    g = bible_api.book_meta("genesis")
-    assert g is not None
-    # Future-facing fields exist but are empty/null now (additive, no redesign later).
-    assert g["keywords"] == [] and g["themes"] == []
-    assert g["pronunciation"] is None
-    assert g["localized_name"] is None and g["localized_short_name"] is None
+    meta = bible_api.books_meta()
+    for b in meta.values():
+        # Localized display names are NOT stored in the language-neutral ontology
+        # (they come from locale resources); these stay null here.
+        assert b["localized_name"] is None and b["localized_short_name"] is None
+        # keywords/themes are lists (empty until their batch populates them).
+        assert isinstance(b["keywords"], list) and isinstance(b["themes"], list)
+        # pronunciation reserved: null now, may become a string later.
+        assert b["pronunciation"] is None or isinstance(b["pronunciation"], str)
     assert bible_api.book_meta("not-a-book") is None
 
 
@@ -290,6 +307,23 @@ def test_detect_refs_bounded():
 def test_ordinal_book_detected():
     refs = scripture.detect_refs("See 1 John 4:8 about love.", "kjv")
     assert any(r.book_name and r.chapter == 4 and r.verse_start == 8 for r in refs)
+
+
+def test_common_book_abbreviations_resolve():
+    # Milestone 6: worshippers type standard abbreviations ("Gen 1:1", "1 Cor 13",
+    # "Mt 5:9"). These resolve to the same canonical books as the full names.
+    import bible_api
+    cases = {
+        "Gen 1:1": 1, "Ex 20:3": 2, "Deut 6:5": 5, "Ps 23:1": 19,
+        "Prov 3:5": 20, "Eccl 3:1": 21, "Isa 53:5": 23, "Mt 5:9": 40,
+        "Mk 1:1": 41, "Lk 2:11": 42, "Jn 3:16": 43, "Rom 8:28": 45,
+        "1 Cor 13:4": 46, "2 Cor 5:17": 47, "Phil 4:13": 50, "Heb 11:1": 58,
+        "Jas 1:5": 59, "1 Pet 5:7": 60, "1 Jn 4:8": 62, "Rev 21:4": 66,
+    }
+    for ref, book_num in cases.items():
+        parsed = bible_api._parse(ref, "en")
+        assert parsed is not None, ref
+        assert parsed[0] == str(book_num), ref
 
 
 if __name__ == "__main__":

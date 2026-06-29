@@ -6,8 +6,9 @@
 import { ref, nextTick, onMounted, onBeforeUnmount } from "vue";
 import { useI18n } from "vue-i18n";
 import { api } from "../composables/useApi";
+import { normalizeLanguage } from "../i18n";
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 
 const messages = ref([]);          // { sender, content }
 const draft = ref("");
@@ -17,22 +18,10 @@ const error = ref("");
 const scroller = ref(null);
 let poll = null;
 
-// Reply language — locked once the session starts (it is a session property server-side;
-// switch languages by starting a new chat). "auto" lets the worker detect from the first
-// message. Codes mirror the worker's supported set (driver.py _LANG_NAME).
-const LANGUAGES = [
-  { code: "auto", label: t("pastor.autoDetect") },
-  { code: "en", label: "English" },
-  { code: "my", label: "မြန်မာ" },
-  { code: "td", label: "Tedim" },
-  { code: "cnh", label: "Lai Hakha" },
-  { code: "cfm", label: "Falam" },
-  { code: "lus", label: "Mizo" },
-];
-// Default to Auto Detect so typing in any supported language just works; the worker
-// detects from the first message and locks it onto the session. Users can still pick a
-// specific language explicitly before sending.
-const language = ref("auto");
+// There is no per-chat language picker: the reply language follows the one global
+// language authority. The worker still understands whatever language the
+// worshipper types and honours an explicit in-conversation request to switch —
+// this only sets the default reply language.
 
 function sessionFromHash() {
   const m = window.location.hash.match(/session=([0-9a-f-]+)/i);
@@ -85,7 +74,7 @@ async function send() {
   try {
     if (!sessionId.value) {
       await api.ensureSession();
-      const res = await api.pastorStart({ message: text, language: language.value });
+      const res = await api.pastorStart({ message: text, language: normalizeLanguage(locale.value) });
       sessionId.value = res.session.id;
       // Reflect the session id in the URL so a refresh resumes it.
       history.replaceState(null, "", `#pastor?session=${sessionId.value}`);
@@ -112,13 +101,6 @@ onBeforeUnmount(() => clearInterval(poll));
     <header class="pastor-head">
       <h2>💬 {{ t("pastor.title") }}</h2>
       <p>{{ t("pastor.subtitle") }}</p>
-      <label class="pastor-lang">
-        <span>{{ t("common.language") }}</span>
-        <select v-model="language" :disabled="!!sessionId"
-          :title="sessionId ? t('pastor.changeLanguageHint') : ''">
-          <option v-for="l in LANGUAGES" :key="l.code" :value="l.code">{{ l.label }}</option>
-        </select>
-      </label>
     </header>
 
     <div ref="scroller" class="pastor-thread">
@@ -127,7 +109,7 @@ onBeforeUnmount(() => clearInterval(poll));
       </p>
       <div v-for="(m, i) in messages" :key="i" :class="['bubble', m.sender]">
         <span class="who">{{ m.sender === 'user' ? t('common.you') : t('pastor.role') }}</span>
-        <p>{{ m.content }}</p>
+        <p class="bidi-text" dir="auto">{{ m.content }}</p>
       </div>
       <div v-if="waiting" class="bubble assistant typing"><span class="who">{{ t('pastor.role') }}</span><p>…</p></div>
     </div>
@@ -146,18 +128,14 @@ onBeforeUnmount(() => clearInterval(poll));
 .pastor { max-width: 760px; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; height: 100%; }
 .pastor-head h2 { margin: 0; }
 .pastor-head p { opacity: .7; margin: 4px 0 12px; }
-.pastor-lang { display: inline-flex; align-items: center; gap: 8px; margin-bottom: 12px; font-size: 13px; }
-.pastor-lang span { opacity: .7; }
-.pastor-lang select { padding: 5px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); }
-.pastor-lang select:disabled { opacity: .6; cursor: not-allowed; }
 .pastor-thread { flex: 1; overflow-y: auto; min-height: 320px; padding: 8px;
   border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--text); }
 .pastor-empty { opacity: .6; text-align: center; margin-top: 40px; }
 .bubble { max-width: 80%; margin: 8px 0; padding: 8px 12px; border-radius: 12px; }
 .bubble .who { font-size: 11px; opacity: .6; }
 .bubble p { margin: 2px 0 0; white-space: pre-wrap; line-height: 1.45; }
-.bubble.user { margin-left: auto; background: var(--primary); color: var(--on-primary); }
-.bubble.assistant { margin-right: auto; background: var(--surface-2); color: var(--text); }
+	.bubble.user { margin-inline-start: auto; background: var(--primary); color: var(--on-primary); }
+	.bubble.assistant { margin-inline-end: auto; background: var(--surface-2); color: var(--text); }
 .bubble.typing p { letter-spacing: 2px; }
 .pastor-err { color: var(--danger); font-size: 13px; }
 .pastor-input { display: flex; gap: 8px; margin-top: 10px; }

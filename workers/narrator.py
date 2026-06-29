@@ -10,6 +10,11 @@ Providers (set via Admin Console → Settings → Narration voice):
     For English: EDGE_TTS_VOICE_FEMALE / EDGE_TTS_VOICE_MALE (default en-US-Aria/GuyNeural)
     For Myanmar: EDGE_TTS_VOICE_MY_FEMALE / EDGE_TTS_VOICE_MY_MALE (default my-MM-Nilar/ThihaNeural)
     For Tedim:  EDGE_TTS_VOICE_TD (default en-US-AriaNeural; no native Zolai Edge voice)
+    For French/German/Spanish/Japanese/Chinese/Korean/Hindi/Tamil/Thai/Arabic/Hebrew: EDGE_TTS_VOICE_FR_FEMALE / _MALE,
+      EDGE_TTS_VOICE_DE_*, EDGE_TTS_VOICE_ES_*, EDGE_TTS_VOICE_JA_*,
+      EDGE_TTS_VOICE_ZH_CN_*, EDGE_TTS_VOICE_KO_*, EDGE_TTS_VOICE_HI_*,
+      EDGE_TTS_VOICE_TA_*, EDGE_TTS_VOICE_TH_*, EDGE_TTS_VOICE_AR_*,
+      EDGE_TTS_VOICE_HE_* (native defaults)
     EDGE_TTS_RATE — speaking rate adjustment, e.g. '-5%' to slow down (default '')
 
   'mms_tts' — Local Facebook MMS-TTS (free, offline). Best native quality for
@@ -53,6 +58,51 @@ import storage
 # message especially) are split on sentence boundaries and the audio is stitched
 # back together rather than truncated.
 _MAX_CHARS = int(os.getenv("TTS_MAX_CHARS", "3500"))
+
+_EDGE_TTS_NATIVE_VOICES = {
+    "fr": {"female": "fr-FR-DeniseNeural", "male": "fr-FR-HenriNeural"},
+    "de": {"female": "de-DE-KatjaNeural", "male": "de-DE-ConradNeural"},
+    "es": {"female": "es-ES-ElviraNeural", "male": "es-ES-AlvaroNeural"},
+    "ja": {"female": "ja-JP-NanamiNeural", "male": "ja-JP-KeitaNeural"},
+    "zh-CN": {"female": "zh-CN-XiaoxiaoNeural", "male": "zh-CN-YunxiNeural"},
+    "ko": {"female": "ko-KR-SunHiNeural", "male": "ko-KR-InJoonNeural"},
+    "hi": {"female": "hi-IN-SwaraNeural", "male": "hi-IN-MadhurNeural"},
+    "ta": {"female": "ta-IN-PallaviNeural", "male": "ta-IN-ValluvarNeural"},
+    "th": {"female": "th-TH-PremwadeeNeural", "male": "th-TH-NiwatNeural"},
+    "ar": {"female": "ar-SA-ZariyahNeural", "male": "ar-SA-HamedNeural"},
+    "he": {"female": "he-IL-HilaNeural", "male": "he-IL-AvriNeural"},
+}
+
+
+def edge_voice(language: str = "en", gender: str = "female") -> str:
+    """Resolve the Microsoft Edge TTS voice for a service language."""
+    lang = (language or "en").strip()
+    g = "male" if gender == "male" else "female"
+    suffix = g.upper()
+
+    if lang == "my":
+        default = "my-MM-ThihaNeural" if g == "male" else "my-MM-NilarNeural"
+        return (
+            os.getenv(f"EDGE_TTS_VOICE_MY_{suffix}")
+            or os.getenv("EDGE_TTS_VOICE_MY")
+            or default
+        )
+
+    if lang == "td":
+        default = "en-US-GuyNeural" if g == "male" else "en-US-AriaNeural"
+        return os.getenv("EDGE_TTS_VOICE_TD", default)
+
+    if lang in _EDGE_TTS_NATIVE_VOICES:
+        env_key = lang.upper().replace("-", "_")
+        default = _EDGE_TTS_NATIVE_VOICES[lang][g]
+        return (
+            os.getenv(f"EDGE_TTS_VOICE_{env_key}_{suffix}")
+            or os.getenv(f"EDGE_TTS_VOICE_{env_key}")
+            or default
+        )
+
+    default = "en-US-GuyNeural" if g == "male" else "en-US-AriaNeural"
+    return os.getenv(f"EDGE_TTS_VOICE_{suffix}") or os.getenv("EDGE_TTS_VOICE", default)
 
 
 def _providers(gender: str = "female") -> dict[str, dict]:
@@ -357,12 +407,9 @@ def synthesize(
         #   English → EDGE_TTS_VOICE_FEMALE/MALE env vars
         #   Myanmar → EDGE_TTS_VOICE_MY_FEMALE/MALE (my-MM-NilarNeural/ThihaNeural)
         #   Tedim   → EDGE_TTS_VOICE_TD (no native Zolai voice; English phonetic read)
-        # `voice` is pre-resolved by the orchestrator's _edge_voice(); only fall back
-        # to generic env vars when it arrives empty.
-        suffix = gender.upper()
-        resolved_voice = (voice
-                          or os.getenv(f"EDGE_TTS_VOICE_{suffix}")
-                          or os.getenv("EDGE_TTS_VOICE", "en-US-AriaNeural"))
+        #   French/German/Spanish → native language-specific Edge voices.
+        # `voice` is pre-resolved by the orchestrator; resolve here as a fallback.
+        resolved_voice = voice or edge_voice(language, gender)
         audio = _narrate_edge(clean, resolved_voice)
         fmt = "mp3"
     elif mode == "voicebox":

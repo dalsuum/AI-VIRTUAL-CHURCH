@@ -36,6 +36,7 @@ final class RetrievalOrchestrator
         $query = $this->normalizer->normalize($query);
 
         $lists = [];
+        $corpusDiagnostics = [];
         $vectorError = false;
         $keywordError = false;
         foreach ($this->corpora as $corpus) {
@@ -44,6 +45,16 @@ final class RetrievalOrchestrator
             }
             $result = $corpus->retrieve($query, $this->perCorpusK, $filters);
             $lists[] = $result->chunks;
+            $corpusDiagnostics[$corpus->corpus()] = [
+                'keyword_hits' => $result->keywordHitCount,
+                'vector_hits'  => $result->vectorHitCount,
+                'fused_hits'   => count($result->chunks),
+                'embedding_latency_ms' => $result->embeddingLatencyMs,
+                'vector_latency_ms'    => $result->vectorLatencyMs,
+                'keyword_latency_ms'   => $result->keywordLatencyMs,
+                'keyword_error' => $result->keywordError,
+                'vector_error'  => $result->vectorError,
+            ];
             $vectorError = $vectorError || $result->vectorError;
             $keywordError = $keywordError || $result->keywordError;
         }
@@ -72,6 +83,16 @@ final class RetrievalOrchestrator
                 'vector_store_error'    => $vectorError,
                 'keyword_fallback_used' => $vectorError && ! $keywordError,
                 'keyword_error'         => $keywordError,
+                'retrieval.corpora'     => $corpusDiagnostics,
+                'retrieval.rrf_count'   => count($fused),
+                'retrieval.final_chunks' => array_map(static fn ($chunk) => [
+                    'chunk_id'  => $chunk->chunk->id,
+                    'corpus'    => $chunk->corpus,
+                    'source'    => $chunk->chunk->metadata->source,
+                    'reference' => $chunk->chunk->metadata->reference,
+                    'method'    => $chunk->method,
+                    'score'     => round($chunk->score, 4),
+                ], $ranked),
             ],
         );
     }

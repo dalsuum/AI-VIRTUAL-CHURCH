@@ -84,6 +84,30 @@ class RetrievalTest extends TestCase
         $this->assertSame(0.87, $populated->confidence);
     }
 
+    public function test_reranker_nudges_scripture_above_supporting_sources(): void
+    {
+        $bible = new RetrievedChunk(
+            new Chunk('bible:john.3.16', 'salvation comes through Christ', new ChunkMetadata('bible', 'en', 'John 3:16')),
+            0.10,
+            'vector',
+            'bible',
+        );
+        $sermon = new RetrievedChunk(
+            new Chunk('sermon:salvation:1', 'salvation comes through Christ', new ChunkMetadata('sermon', 'en', 'Salvation')),
+            0.12,
+            'vector',
+            'sermon',
+        );
+
+        $ranked = (new HeuristicReranker(
+            lexicalWeight: 0.0,
+            sourcePriority: ['bible' => 100, 'sermon' => 50],
+            priorityWeight: 0.2,
+        ))->rerank('salvation', [$sermon, $bible]);
+
+        $this->assertSame('bible:john.3.16', $ranked[0]->chunk->id);
+    }
+
     public function test_failure_context_is_distinct_from_no_match(): void
     {
         $failure = \App\Services\Chat\Data\KnowledgeContext::failure();
@@ -121,6 +145,10 @@ class RetrievalTest extends TestCase
 
         $outcome = $orchestrator->retrieve('God loved the world', ['language' => 'en']);
         $this->assertFalse($outcome->failed);
+        $this->assertArrayHasKey('retrieval.corpora', $outcome->diagnostics);
+        $this->assertArrayHasKey('retrieval.final_chunks', $outcome->diagnostics);
+        $this->assertArrayNotHasKey('text', $outcome->diagnostics['retrieval.final_chunks'][0], 'diagnostics must never include chunk text');
+        $this->assertSame('bible', $outcome->diagnostics['retrieval.final_chunks'][0]['corpus']);
         $ctx = (new ContextBuilder())->build($outcome->chunks);
 
         $this->assertNotEmpty($ctx->snippets);

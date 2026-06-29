@@ -49,7 +49,7 @@ class WorshipTrackImportExportTest extends TestCase
                 ['title' => 'Broken Vessels', 'artist' => 'Hillsong Worship', 'language' => 'en',
                  'youtube' => 'https://www.youtube.com/watch?v=bbbbbbbbbbb'],
                 // bad language -> rejected
-                ['title' => 'Bad Lang', 'artist' => 'X', 'language' => 'fr'],
+                ['title' => 'Bad Lang', 'artist' => 'X', 'language' => 'xx'],
                 // unknown mood -> rejected
                 ['title' => 'Bad Mood', 'artist' => 'Y', 'language' => 'en', 'moods' => ['xyzzy']],
                 // valid new row -> imported

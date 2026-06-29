@@ -114,8 +114,12 @@ _BOOK_NAMES_FROM_CANON = {"hlt"}
 # books shown greyed (available=False). Hebrew Tanakh = Old Testament (1-39).
 _PARTIAL_CANON = {"he": 39}
 
-# Book-name variants the model emits that don't match the data file's `name` field.
+# Book-name variants the model emits that don't match the data file's `name` field,
+# plus the common English abbreviations worshippers type ("Gen 1:1", "1 Cor 13").
+# Values are the canonical (normalized) keys of _book_index("en"); ordinals like
+# "1 cor" reach here already merged by _parse, so list the merged form.
 _ALIASES = {
+    # alternate full names
     "psalm": "psalms",
     "song of solomon": "song",
     "song of songs": "song",
@@ -123,6 +127,26 @@ _ALIASES = {
     "qoheleth": "ecclesiastes",
     "revelations": "revelation",
     "apocalypse": "revelation",
+    # Old Testament abbreviations
+    "gen": "genesis", "ex": "exodus", "exod": "exodus", "lev": "leviticus",
+    "num": "numbers", "deut": "deuteronomy", "dt": "deuteronomy",
+    "josh": "joshua", "judg": "judges", "neh": "nehemiah", "est": "esther",
+    "ps": "psalms", "psa": "psalms", "prov": "proverbs", "prv": "proverbs",
+    "eccl": "ecclesiastes", "qoh": "ecclesiastes", "sos": "song",
+    "isa": "isaiah", "jer": "jeremiah", "lam": "lamentations", "ezek": "ezekiel",
+    "dan": "daniel", "hos": "hosea", "obad": "obadiah", "mic": "micah",
+    "nah": "nahum", "hab": "habakkuk", "zeph": "zephaniah", "hag": "haggai",
+    "zech": "zechariah", "mal": "malachi",
+    # New Testament abbreviations
+    "matt": "matthew", "mt": "matthew", "mk": "mark", "lk": "luke", "jn": "john",
+    "rom": "romans", "gal": "galatians", "eph": "ephesians", "phil": "philippians",
+    "col": "colossians", "philem": "philemon", "phlm": "philemon",
+    "heb": "hebrews", "jas": "james", "rev": "revelation", "tit": "titus",
+    "1 cor": "1 corinthians", "2 cor": "2 corinthians",
+    "1 thess": "1 thessalonians", "2 thess": "2 thessalonians",
+    "1 tim": "1 timothy", "2 tim": "2 timothy",
+    "1 pet": "1 peter", "2 pet": "2 peter",
+    "1 jn": "1 john", "2 jn": "2 john", "3 jn": "3 john",
 }
 
 # Leading book ordinals: "1 John", "I John", "First John" all mean book ordinal 1.

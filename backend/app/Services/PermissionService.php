@@ -46,6 +46,9 @@ class PermissionService
         // AI Bible Study (AI Core console).
         'study.view',
         'study.manage',
+        // Knowledge Operations Platform.
+        'knowledge.view',
+        'knowledge.manage',
     ];
 
     /** Only these roles appear in the permissions matrix. Admin is always full access. */
@@ -65,6 +68,7 @@ class PermissionService
             'ads.view',
             'ads.analytics',
             'special_sundays.view',
+            'knowledge.view',
         ],
         'presenter' => [
             'dashboard.view',

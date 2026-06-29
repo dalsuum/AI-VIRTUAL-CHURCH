@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Models\Setting;
 use App\Services\SpecialSundayResolver;
 use Illuminate\Console\Command;
 
@@ -28,7 +29,7 @@ class EvaluateSpecialSunday extends Command
         }
 
         // Warm the cache the public endpoint / dispatch path reads.
-        foreach (['en', 'my', 'td'] as $lang) {
+        foreach (Setting::LANGUAGES as $lang) {
             $resolver->currentPayload($lang);
         }
 

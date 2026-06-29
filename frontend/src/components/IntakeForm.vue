@@ -1,32 +1,31 @@
 <script setup>
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
+import { api } from "../composables/useApi";
+import { normalizeLanguage } from "../i18n";
 
 const localTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-import { api } from "../composables/useApi";
-
 const emit = defineEmits(["started", "intercepted"]);
 
+const { t, te, locale } = useI18n();
+
 // ---- Service language ------------------------------------------------------
-// 'en' | 'my' | 'td'. Drives (a) this form's own labels, (b) the language sent
-// with the intake so the whole service — prayers, sermon, scripture (Judson
-// 1835 Burmese / Lai Siangtho 1932 Tedim), hymns (dalsuum/myanmar-hymns / ZBC
-// Labu Lui), narration voice — is conducted in that language.
-// Persisted so a returning worshipper lands back on their tab.
-// NOTE: the Tedim (Zolai) strings below are best-effort — please have a native
-// speaker review them (you wrote the Zolai dictionary; corrections welcome).
-const LANGS = ["en", "my", "td"];
-const enabledLangs = ref(["en"]); // filled from config; English always the fallback
-const stored = localStorage.getItem("service_language");
-const language = ref(LANGS.includes(stored) ? stored : "en");
-function setLanguage(l) {
-  language.value = l;
-  localStorage.setItem("service_language", l);
-  loadSpecialSunday(); // re-fetch the highlight in the newly selected language
-}
+// Follows the one global language authority. There is no per-page picker and no
+// stored service_language: the service language is the global UI language,
+// clamped to the set the service backend actually supports
+// (config.enabled_languages) so generation never receives a language
+// it cannot produce. Mirrors how Bible Reader/Study clamp to their capabilities.
+const enabledLangs = ref(["en"]); // filled from config; English is always the fallback
+const language = computed(() => {
+  const appLang = normalizeLanguage(locale.value);
+  return enabledLangs.value.includes(appLang) ? appLang : (enabledLangs.value[0] || "en");
+});
+const usesMyanmarFont = computed(() => ["my", "td"].includes(language.value));
 
 // ---- Special-Sunday highlight ---------------------------------------------
 // The active observance (localized title + short brief), or null outside any
-// window. Best-effort: a failure simply hides the card.
+// window. Best-effort: a failure simply hides the card. Re-fetched whenever the
+// global language changes so the highlight matches the service language.
 const specialSunday = ref(null);
 async function loadSpecialSunday() {
   try {
@@ -36,157 +35,29 @@ async function loadSpecialSunday() {
     specialSunday.value = null;
   }
 }
+watch(language, loadSpecialSunday);
 
-// UI strings per language. Myanmar text is Myanmar Unicode (rendered with
-// Padauk / Noto Sans Myanmar below) — never Zawgyi.
-const STRINGS = {
-  en: {
-    welcome: "Welcome",
-    welcomeBack: (n) => `Welcome back, ${n}`,
-    sub: "Let us prepare a service just for you.",
-    subBack: "It's good to see you again. Let us prepare a service just for you.",
-    nameLabel: "Your name (optional)",
-    namePh: "We'll give you a visitor name if you'd rather not say",
-    emailLabel: "Email",
-    emailReq: "(required — we'll send you a reminder)",
-    emailOpt: "(optional)",
-    emailPhLater: "Enter your email to receive a reminder",
-    emailPhNow: "So we can welcome you back",
-    moodLabel: "How are you feeling today?",
-    customMoodLabel: "Or describe your feeling in one word (optional)",
-    customMoodPh: "e.g. sad, hopeful, numb…",
-    prayerLabel: "Prayer request (optional)",
-    prayerPh: "Share what is on your heart…",
-    musicLabel: "Music for your service",
-    whenLabel: "When would you like your service?",
-    now: "Right now", nowDesc: "Begin immediately",
-    later: "Schedule it", laterDesc: "Pick a future time",
-    historyLabel: "Your previous services",
-    begin: "Begin my service", schedule: "Schedule my service",
-    preparing: "Preparing your service…",
-    localTime: "Your local time",
-    customize: "Add a prayer request or schedule",
-    noAccount: "No account needed · takes about 30 seconds",
-  },
-  my: {
-    welcome: "ကြိုဆိုပါသည်",
-    welcomeBack: (n) => `ပြန်လည်ကြိုဆိုပါသည်၊ ${n}`,
-    sub: "သင့်အတွက် ဝတ်ပြုကိုးကွယ်ခြင်းအစီအစဉ်ကို ပြင်ဆင်ပေးပါမည်။",
-    subBack: "ပြန်လည်တွေ့ရသည့်အတွက် ဝမ်းမြောက်ပါသည်။ သင့်အတွက် ဝတ်ပြုကိုးကွယ်ခြင်းကို ပြင်ဆင်ပေးပါမည်။",
-    nameLabel: "သင့်အမည် (ရွေးချယ်နိုင်သည်)",
-    namePh: "မဖော်ပြလိုပါက ဧည့်သည်အမည် သတ်မှတ်ပေးပါမည်",
-    emailLabel: "အီးမေးလ်",
-    emailReq: "(လိုအပ်သည် — သတိပေးချက် ပေးပို့ပါမည်)",
-    emailOpt: "(ရွေးချယ်နိုင်သည်)",
-    emailPhLater: "သတိပေးချက်ရရန် သင့်အီးမေးလ်ကို ရိုက်ထည့်ပါ",
-    emailPhNow: "နောက်တစ်ကြိမ် ကြိုဆိုနိုင်ရန်",
-    moodLabel: "ယနေ့ မည်သို့ ခံစားနေရပါသနည်း။",
-    customMoodLabel: "သို့မဟုတ် သင့်ခံစားချက်ကို စကားလုံးတစ်လုံးဖြင့် ဖော်ပြပါ (ရွေးချယ်နိုင်သည်)",
-    customMoodPh: "ဥပမာ — ဝမ်းနည်း၊ မျှော်လင့်…",
-    prayerLabel: "ဆုတောင်းချက် (ရွေးချယ်နိုင်သည်)",
-    prayerPh: "သင့်စိတ်နှလုံးထဲမှ အရာများကို မျှဝေပါ…",
-    musicLabel: "ဝတ်ပြုခြင်းအတွက် တေးဂီတ",
-    whenLabel: "ဝတ်ပြုခြင်းကို မည်သည့်အချိန်တွင် ပြုလုပ်လိုပါသနည်း။",
-    now: "ယခုချက်ချင်း", nowDesc: "ချက်ချင်း စတင်မည်",
-    later: "အချိန်ဇယားသတ်မှတ်မည်", laterDesc: "နောင်အချိန်တစ်ခု ရွေးပါ",
-    historyLabel: "ယခင်ဝတ်ပြုခြင်းများ",
-    begin: "ဝတ်ပြုခြင်း စတင်မည်", schedule: "ဝတ်ပြုခြင်း စီစဉ်မည်",
-    preparing: "သင့်ဝတ်ပြုခြင်းကို ပြင်ဆင်နေပါသည်…",
-    localTime: "သင့်ဒေသစံတော်ချိန်",
-    customize: "ဆုတောင်းချက် ထည့်မည် / အချိန်ဇယားသတ်မှတ်မည်",
-    noAccount: "အကောင့်မလိုအပ်ပါ · ၃၀ စက္ကန့်ခန့်သာ ကြာပါမည်",
-  },
-  td: {
-    welcome: "Hong kipahpih ung",
-    welcomeBack: (n) => `Hong kipahpih kik ung, ${n}`,
-    sub: "Nangma adingin Pasian biakna hun ka bawlsak ding uh hi.",
-    subBack: "Na hong pai kik ka kipak mahmah uh hi. Nangma adingin biakna hun ka bawlsak ding uh hi.",
-    nameLabel: "Na min (na deih leh)",
-    namePh: "Na gen nop kei leh khualpa min kong pia ding uh hi",
-    emailLabel: "Email",
-    emailReq: "(kisam hi — theihsakna kong khak ding uh hi)",
-    emailOpt: "(na deih leh)",
-    emailPhLater: "Theihsakna na muh nadingin na email gelh in",
-    emailPhNow: "Nang hong kipahpih kik thei nadingin",
-    moodLabel: "Tuni in na lungsim bangci hiam?",
-    customMoodLabel: "A hih kei leh na lungsim thuakna kammal khat tawh gen in (na deih leh)",
-    customMoodPh: "gentehna — dah, lametna…",
-    prayerLabel: "Thungetna (na deih leh)",
-    prayerPh: "Na lungsim sunga om thute hong gen in…",
-    musicLabel: "Na biakna ading lasa",
-    whenLabel: "Bang hun in na biakna na deih hiam?",
-    now: "Tu in", nowDesc: "Tu in kipan pah ding",
-    later: "Hun khen ding", laterDesc: "Mailam hun khat teel in",
-    historyLabel: "Na biakna masate",
-    begin: "Ka biakna kipan ding", schedule: "Ka biakna hun khen ding",
-    preparing: "Na biakna ka bawl laitak uh hi…",
-    localTime: "Na omna mun hun",
-    customize: "Thungetna gelh ding ahih kei leh hun khen ding",
-    noAccount: "Account kigelhsak theih nai hi · minute khat bek laitak",
-  },
-};
-const t = computed(() => STRINGS[language.value]);
+// Localized mood + music-source labels come from vue-i18n (the canonical string
+// store) — the VALUE sent to the backend stays the English key. An admin-added
+// mood outside the default set falls back to its raw label.
+const moodLabel = (m) => (te(`intake.moods.${m}`) ? t(`intake.moods.${m}`) : m);
+const srcTitle = (v) => t(`intake.sources.${v}.title`);
+const srcDesc = (v) => t(`intake.sources.${v}.desc`);
 
-// Display labels for the default mood set (the VALUE sent to the backend stays
-// English — the admin's moods config and the worker's mood matching are English).
-const MOOD_MY = {
-  Grateful: "ကျေးဇူးတင်ခြင်း", Anxious: "စိုးရိမ်ပူပန်ခြင်း", Grieving: "ဝမ်းနည်းကြေကွဲခြင်း",
-  Joyful: "ဝမ်းမြောက်ခြင်း", Seeking: "ရှာဖွေခြင်း", Hopeful: "မျှော်လင့်ခြင်း",
-};
-const MOOD_TD = {
-  Grateful: "Lungdam", Anxious: "Lunghimawh", Grieving: "Dahna",
-  Joyful: "Nopna", Seeking: "Pasian zon", Hopeful: "Lametna",
-};
-const moodLabel = (m) =>
-  (language.value === "my" && MOOD_MY[m]) ||
-  (language.value === "td" && MOOD_TD[m]) || m;
-
-// Music-source copy per language (values unchanged).
-const SOURCE_MY = {
-  hymn_sung:    { title: "ဓမ္မသီချင်း (သီဆို)", desc: "မြန်မာဓမ္မသီချင်းကို သီဆိုပြီး စာသားများကို ဖန်သားပြင်တွင် ပြသပေးမည်" },
-  hymn:         { title: "ဓမ္မသီချင်း", desc: "မြန်မာဓမ္မသီချင်း — စာသားနှင့်အတူ လိုက်ဆိုနိုင်သည်" },
-  hymn_youtube: { title: "ဓမ္မသီချင်း (YouTube)", desc: "သင့်ခံစားချက်နှင့် ကိုက်ညီသော ဓမ္မသီချင်း" },
-  suno:         { title: "AI ရေးစပ်တေးဂီတ", desc: "သင့်အတွက် အသစ်ဖန်တီးထားသော ဝတ်ပြုတေးဂီတ" },
-  musicgen:     { title: "AI ရေးစပ်တေးဂီတ (Local)", desc: "ဆာဗာပေါ်တွင် ဖန်တီးထားသော ဝတ်ပြုတေးဂီတ" },
-  local_ai:     { title: "AI ရေးစပ်တေးဂီတ (Local AI · တူရိယာ)", desc: "Local AI ဖြင့် ဖန်တီးထားသော တူရိယာဝတ်ပြုတေးဂီတ" },
-  youtube:      { title: "ခေတ်သစ်ဝတ်ပြုတေးဂီတ (YouTube)", desc: "ရှိပြီးသား ဝတ်ပြုတေးဂီတနှင့် တရားဒေသနာ" },
-};
-const SOURCE_TD = {
-  hymn_sung:    { title: "ZBC Labu la (sak)", desc: "Tedim labu la khat, a kammal te screen ah kilang ding" },
-  hymn:         { title: "ZBC Labu la", desc: "Labu la — a kammal te tawh sak khawm thei" },
-  hymn_youtube: { title: "Labu la (YouTube)", desc: "Na lungsim tawh kituak labu la" },
-  suno:         { title: "AI phuah lasa", desc: "Nangma ading a kiphuah biakna lasa thak" },
-  musicgen:     { title: "AI phuah lasa (Local)", desc: "Server tungah a kiphuah biakna lasa" },
-  local_ai:     { title: "AI phuah lasa (Local AI · Tumging)", desc: "Local AI in a kiphuah tumging biakna lasa" },
-  youtube:      { title: "Tulai biakna lasa (YouTube)", desc: "Om sa biakna lasa leh thugenna" },
-};
-const sourceLabel = (s_) =>
-  (language.value === "my" && SOURCE_MY[s_.value]) ||
-  (language.value === "td" && SOURCE_TD[s_.value]) || s_;
-
-
-// Every music source the app knows about, with its copy. The admin decides which of
-// these actually appear (config.music_sources); we render that subset in this order.
-const MUSIC_SOURCES = [
-  { value: "hymn_sung", title: "Sung hymn", desc: "A classic hymn sung aloud, with the words on screen" },
-  { value: "hymn", title: "Instrumental hymn", desc: "The hymn played, with the words to sing along" },
-  { value: "hymn_youtube", title: "Sung Hymn (YouTube)", desc: "A traditional hymn sung by a choir, matched to your mood" },
-  { value: "suno", title: "AI-composed (Suno)", desc: "Original worship, generated for you" },
-  { value: "musicgen", title: "AI-composed (Local)", desc: "Worship music created on-server — no account needed" },
-  { value: "local_ai", title: "Local AI (Instrumental)", desc: "Instrumental worship music generated on-server — no account needed" },
-  { value: "youtube", title: "Modern Worship (YouTube)", desc: "An existing worship track and sermon" },
-];
+// Canonical music-source order; the admin's config.music_sources picks the
+// subset that actually appears, rendered in this order.
+const MUSIC_SOURCE_ORDER = ["hymn_sung", "hymn", "hymn_youtube", "suno", "musicgen", "local_ai", "youtube"];
 
 // Intake options come from the backend so an admin can curate moods, music sources,
 // and scheduling without a redeploy. Sensible defaults keep the form usable if the
 // config request is slow or fails.
 const moods = ref(["Grateful", "Anxious", "Grieving", "Joyful", "Seeking", "Hopeful"]);
-const enabledSources = ref(MUSIC_SOURCES.map((s) => s.value));
+const enabledSources = ref(MUSIC_SOURCE_ORDER.slice());
 const schedulingEnabled = ref(true);
 
 // Only the admin-enabled sources, in canonical order.
 const musicSources = computed(() =>
-  MUSIC_SOURCES.filter((s) => enabledSources.value.includes(s.value)),
+  MUSIC_SOURCE_ORDER.filter((v) => enabledSources.value.includes(v)),
 );
 
 const selectedMood = ref("Grateful");
@@ -211,15 +82,14 @@ onMounted(async () => {
     if (cfg.default_music_source && enabledSources.value.includes(cfg.default_music_source)) {
       musicSource.value = cfg.default_music_source;
     } else if (!enabledSources.value.includes(musicSource.value)) {
-      musicSource.value = musicSources.value[0]?.value || musicSource.value;
+      musicSource.value = musicSources.value[0] || musicSource.value;
     }
     schedulingEnabled.value = cfg.scheduling_enabled !== false;
     if (!schedulingEnabled.value) when.value = "now";
     if (Array.isArray(cfg.enabled_languages) && cfg.enabled_languages.length) {
+      // `language` is a computed clamp over this set, so just record it — no need
+      // to select anything; the global language drives the choice.
       enabledLangs.value = cfg.enabled_languages;
-      if (!enabledLangs.value.includes(language.value)) {
-        setLanguage(enabledLangs.value[0]);
-      }
     }
   } catch {
     // Keep the defaults above — the worshipper can still begin a service.
@@ -251,7 +121,7 @@ if (returningName && api.hasToken()) {
 function fmtHistoryDate(v) {
   if (!v) return "";
   const d = new Date(v);
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  return d.toLocaleDateString(locale.value, { month: "short", day: "numeric", year: "numeric" });
 }
 const email = ref("");
 
@@ -263,24 +133,24 @@ async function begin() {
   let scheduledIso = null;
   if (when.value === "later") {
     if (!email.value.trim()) {
-      error.value = "Please enter your email so we can send you a reminder when your service begins.";
+      error.value = t("intake.errors.emailForReminder");
       return;
     }
     if (!scheduledAt.value) {
-      error.value = "Please choose a date and time for your service.";
+      error.value = t("intake.errors.chooseTime");
       return;
     }
     const dt = new Date(scheduledAt.value);
     if (isNaN(dt) || dt <= new Date()) {
-      error.value = "Please choose a time in the future.";
+      error.value = t("intake.errors.futureTime");
       return;
     }
     scheduledIso = dt.toISOString();
   }
 
   const trimmedCustomMood = customMood.value.trim();
-  if (trimmedCustomMood && !/^[A-Za-z]+$/.test(trimmedCustomMood)) {
-    error.value = "Your custom feeling must be a single word using only letters.";
+  if (trimmedCustomMood && !/^\p{L}+$/u.test(trimmedCustomMood)) {
+    error.value = t("intake.errors.customMoodLetters");
     return;
   }
 
@@ -339,11 +209,11 @@ async function begin() {
         await submitOnce();
         return;
       } catch (retryErr) {
-        error.value = retryErr.data?.message || "Something went wrong. Please try again.";
+        error.value = retryErr.data?.message || t("intake.errors.generic");
         return;
       }
     }
-    error.value = e.data?.message || "Something went wrong. Please try again.";
+    error.value = e.data?.message || t("intake.errors.generic");
   } finally {
     loading.value = false;
   }
@@ -351,37 +221,24 @@ async function begin() {
 </script>
 
 <template>
-  <div class="intake" :class="{ 'lang-my': language === 'my' }">
-    <!-- AI Bible Study entry — a live multi-pastor discussion, above the language bar. -->
+  <div class="intake" :class="{ 'lang-my': usesMyanmarFont }">
+    <!-- AI Bible Study entry — a live multi-pastor discussion. -->
     <a href="#bible-study" class="study-cta">
       <span class="study-cta-icon" aria-hidden="true">💬</span>
       <span class="study-cta-text">
-        <strong>AI Bible Study</strong>
-        <small>Discuss any Bible question with experienced pastors →</small>
+        <strong>{{ t("intake.studyCtaTitle") }}</strong>
+        <small>{{ t("intake.studyCtaDesc") }}</small>
       </span>
     </a>
 
-    <!-- Service language tabs: the whole service — UI, prayers, sermon,
-         scripture (Judson 1835), hymns, narration voice — follows this choice. -->
-    <div v-if="enabledLangs.length > 1" class="lang-tabs" role="tablist" aria-label="Service language">
-      <button v-if="enabledLangs.includes('en')" type="button" role="tab" class="lang-tab"
-              :aria-selected="language === 'en'" :class="{ active: language === 'en' }"
-              @click="setLanguage('en')">English</button>
-      <button v-if="enabledLangs.includes('my')" type="button" role="tab" class="lang-tab lang-tab-my"
-              :aria-selected="language === 'my'" :class="{ active: language === 'my' }"
-              @click="setLanguage('my')">မြန်မာ</button>
-      <button v-if="enabledLangs.includes('td')" type="button" role="tab" class="lang-tab"
-              :aria-selected="language === 'td'" :class="{ active: language === 'td' }"
-              @click="setLanguage('td')">Zolai</button>
-    </div>
-
     <!-- Special-Sunday highlight: only shown during the observance's active
          window (Fri–Sun). Title + short brief localized to the service language;
-         Myanmar Unicode font for my/td (see .lang-my below + lang-my-text). -->
+         Myanmar Unicode font only for my/td (see .lang-my below + lang-my-text). -->
     <div
       v-if="specialSunday"
       class="special-sunday"
-      :class="{ 'lang-my-text': language !== 'en' }"
+      :class="{ 'lang-my-text': usesMyanmarFont }"
+      dir="auto"
     >
       <span class="special-sunday-badge">✦</span>
       <div class="special-sunday-body">
@@ -390,23 +247,23 @@ async function begin() {
       </div>
     </div>
 
-    <h1>{{ returningName ? t.welcomeBack(returningName) : t.welcome }}</h1>
-    <p class="sub">{{ returningName ? t.subBack : t.sub }}</p>
+    <h1>{{ returningName ? t("intake.welcomeBack", { name: returningName }) : t("intake.welcome") }}</h1>
+    <p class="sub">{{ returningName ? t("intake.subBack") : t("intake.sub") }}</p>
 
     <!-- Previous services for returning worshippers -->
     <template v-if="returningName && historyLoaded && history.length">
       <div class="history">
-        <p class="history-label">{{ t.historyLabel }}</p>
+        <p class="history-label">{{ t("intake.historyLabel") }}</p>
         <div v-for="s in history" :key="s.session_token" class="history-row">
           <span class="history-date">{{ fmtHistoryDate(s.date) }}</span>
           <span class="badge pending history-mood">{{ s.mood }}</span>
-          <span class="history-sermon">{{ s.sermon_topic || "—" }}</span>
+          <span class="history-sermon bidi-text" dir="auto">{{ s.sermon_topic || "—" }}</span>
         </div>
       </div>
     </template>
 
     <!-- Mood picker is first: the only question a first-time visitor must answer -->
-    <label class="field-label">{{ t.moodLabel }}</label>
+    <label class="field-label">{{ t("intake.moodLabel") }}</label>
     <div class="mood-grid">
       <button
         v-for="m in moods"
@@ -428,72 +285,75 @@ async function begin() {
       :aria-expanded="String(expanded)"
       @click="expanded = !expanded"
     >
-      {{ t.customize }}
+      {{ t("intake.customize") }}
       <span class="toggle-chevron" :class="{ open: expanded }">▼</span>
     </button>
 
     <div v-show="expanded || returningName" class="customize-body">
       <template v-if="!returningName">
-        <label class="field-label" for="name">{{ t.nameLabel }}</label>
+        <label class="field-label" for="name">{{ t("intake.nameLabel") }}</label>
         <input
           id="name"
           v-model="name"
           type="text"
           class="text-input"
-          :placeholder="t.namePh"
+          :placeholder="t('intake.namePh')"
           autocomplete="name"
+          dir="auto"
         />
       </template>
 
       <label class="field-label" for="email">
-        {{ t.emailLabel }} <span v-if="when === 'later'">{{ t.emailReq }}</span><span v-else>{{ t.emailOpt }}</span>
+        {{ t("intake.emailLabel") }} <span v-if="when === 'later'">{{ t("intake.emailReq") }}</span><span v-else>{{ t("intake.emailOpt") }}</span>
       </label>
       <input
         id="email"
         v-model="email"
         type="email"
         class="text-input"
-        :placeholder="when === 'later' ? t.emailPhLater : t.emailPhNow"
+        :placeholder="when === 'later' ? t('intake.emailPhLater') : t('intake.emailPhNow')"
         autocomplete="email"
         :required="when === 'later'"
       />
 
-      <label class="field-label" for="custom-mood">{{ t.customMoodLabel }}</label>
+      <label class="field-label" for="custom-mood">{{ t("intake.customMoodLabel") }}</label>
       <input
         id="custom-mood"
         v-model="customMood"
         type="text"
         class="text-input"
-        :placeholder="t.customMoodPh"
+        :placeholder="t('intake.customMoodPh')"
         maxlength="50"
         autocomplete="off"
+        dir="auto"
       />
 
-      <label class="field-label" for="prayer">{{ t.prayerLabel }}</label>
+      <label class="field-label" for="prayer">{{ t("intake.prayerLabel") }}</label>
       <textarea
         id="prayer"
         v-model="prayerText"
         rows="3"
-        :placeholder="t.prayerPh"
+        :placeholder="t('intake.prayerPh')"
+        dir="auto"
       ></textarea>
 
-      <label class="field-label">{{ t.musicLabel }}</label>
+      <label class="field-label">{{ t("intake.musicLabel") }}</label>
       <div class="source-row">
         <button
-          v-for="s in musicSources"
-          :key="s.value"
+          v-for="v in musicSources"
+          :key="v"
           type="button"
           class="source"
-          :class="{ active: musicSource === s.value }"
-          @click="musicSource = s.value"
+          :class="{ active: musicSource === v }"
+          @click="musicSource = v"
         >
-          <strong>{{ sourceLabel(s).title }}</strong>
-          <span>{{ sourceLabel(s).desc }}</span>
+          <strong>{{ srcTitle(v) }}</strong>
+          <span>{{ srcDesc(v) }}</span>
         </button>
       </div>
 
       <template v-if="schedulingEnabled">
-        <label class="field-label">{{ t.whenLabel }}</label>
+        <label class="field-label">{{ t("intake.whenLabel") }}</label>
         <div class="source-row">
           <button
             type="button"
@@ -501,8 +361,8 @@ async function begin() {
             :class="{ active: when === 'now' }"
             @click="when = 'now'"
           >
-            <strong>{{ t.now }}</strong>
-            <span>{{ t.nowDesc }}</span>
+            <strong>{{ t("intake.now") }}</strong>
+            <span>{{ t("intake.nowDesc") }}</span>
           </button>
           <button
             type="button"
@@ -510,8 +370,8 @@ async function begin() {
             :class="{ active: when === 'later' }"
             @click="setScheduleLater"
           >
-            <strong>{{ t.later }}</strong>
-            <span>{{ t.laterDesc }}</span>
+            <strong>{{ t("intake.later") }}</strong>
+            <span>{{ t("intake.laterDesc") }}</span>
           </button>
         </div>
         <input
@@ -519,19 +379,19 @@ async function begin() {
           v-model="scheduledAt"
           type="datetime-local"
           class="schedule-input"
-          aria-label="Service date and time"
+          :aria-label="t('intake.scheduleAria')"
         />
-        <small v-if="when === 'later'" class="tz-hint">{{ t.localTime }} · {{ localTimezone }}</small>
+        <small v-if="when === 'later'" class="tz-hint">{{ t("intake.localTime") }} · {{ localTimezone }}</small>
       </template>
     </div>
 
     <p v-if="error" class="error">{{ error }}</p>
 
     <button class="begin" :disabled="loading" @click="begin">
-      {{ loading ? t.preparing : (when === "later" ? t.schedule : t.begin) }}
+      {{ loading ? t("intake.preparing") : (when === "later" ? t("intake.schedule") : t("intake.begin")) }}
     </button>
 
-    <p v-if="!returningName" class="no-account-hint">{{ t.noAccount }}</p>
+    <p v-if="!returningName" class="no-account-hint">{{ t("intake.noAccount") }}</p>
   </div>
 </template>
 
@@ -558,11 +418,6 @@ async function begin() {
 .study-cta-text { display: flex; flex-direction: column; }
 .study-cta-text strong { color: var(--text); font-size: 1rem; }
 .study-cta-text small { color: var(--text-muted); font-size: 0.85rem; }
-.lang-tabs { display: flex; gap: 0; margin-bottom: 1.25rem; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
-.lang-tab { flex: 1; padding: 0.55rem; border: none; background: var(--surface); color: var(--text-muted); cursor: pointer; font: inherit; transition: background 0.12s ease, color 0.12s ease; }
-.lang-tab + .lang-tab { border-left: 1px solid var(--border); }
-.lang-tab.active { background: var(--primary); color: var(--on-primary); font-weight: 600; }
-.lang-tab-my { font-family: "Padauk", "Noto Sans Myanmar", "Myanmar Text", sans-serif; }
 
 /* Special-Sunday highlight card */
 .special-sunday {
@@ -582,7 +437,7 @@ async function begin() {
 .special-sunday.lang-my-text { font-family: "Pyidaungsu", "Padauk", "Noto Sans Myanmar", "Myanmar Text", sans-serif; }
 .special-sunday.lang-my-text .special-sunday-brief { line-height: 1.9; }
 
-h1 { font-size: 1.55rem; margin: 0 0 0.35rem; letter-spacing: -0.02em; }
+h1 { font-size: 1.55rem; margin: 0 0 0.35rem; letter-spacing: 0; }
 .sub { color: var(--text-muted); margin: 0 0 1.5rem; line-height: 1.55; }
 .field-label { display: block; font-size: 0.85rem; color: var(--text-muted); margin: 1rem 0 0.5rem; }
 .text-input { width: 100%; padding: 0.65rem 0.75rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font: inherit; }
@@ -596,7 +451,7 @@ textarea { width: 100%; border: 1px solid var(--border); border-radius: var(--ra
 textarea::placeholder { color: var(--text-faint); }
 textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
 .source-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
-.source { display: flex; flex-direction: column; gap: 0.2rem; padding: 0.75rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); cursor: pointer; text-align: left; transition: border-color 0.12s ease, background 0.12s ease; }
+.source { display: flex; flex-direction: column; gap: 0.2rem; padding: 0.75rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); cursor: pointer; text-align: start; transition: border-color 0.12s ease, background 0.12s ease; }
 .source:hover { border-color: var(--border-strong); }
 .source span { font-size: 0.75rem; color: var(--text-muted); }
 .source.active { border-color: var(--primary); background: var(--primary-soft); }

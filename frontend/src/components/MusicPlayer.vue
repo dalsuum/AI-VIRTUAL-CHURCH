@@ -7,7 +7,9 @@
 // the opening prayer. For stored audio this is the native <audio> ended event; for
 // YouTube we load the IFrame API and watch for the ENDED player state.
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 
+const { t } = useI18n();
 const props = defineProps({
   // { asset_type, url?, provider_ref?, title?, lyrics?, timings? }
   asset: { type: Object, required: true },
@@ -75,16 +77,16 @@ function describeMediaError(el) {
   const code = el?.error?.code;
   return (
     {
-      1: "Playback was aborted.",
-      2: "Network error while fetching the music.",
-      3: "The music file could not be decoded.",
-      4: "Music source unavailable — the track may have expired.",
-    }[code] || "The worship music failed to play."
+      1: t("player.errAborted"),
+      2: t("player.errMusicNetwork"),
+      3: t("player.errMusicDecode"),
+      4: t("player.errMusicSource"),
+    }[code] || t("player.errMusicGeneric")
   );
 }
 
 function onAudioError(ev) {
-  audioNote.value = `${describeMediaError(ev.target)} Tap ▶ to retry.`;
+  audioNote.value = `${describeMediaError(ev.target)} ${t("player.tapRetry")}`;
 }
 
 async function playAudio() {
@@ -97,8 +99,8 @@ async function playAudio() {
   } catch (err) {
     audioNote.value =
       err?.name === "NotAllowedError"
-        ? "Tap ▶ on the bar to start the worship music."
-        : `Couldn't start the music: ${err?.name || err}`;
+        ? t("player.tapToStartMusic")
+        : `${t("player.errMusicGeneric")} (${err?.name || err})`;
   }
 }
 
@@ -179,12 +181,12 @@ onBeforeUnmount(() => {
       <div ref="ytEl"></div>
     </div>
 
-    <p v-if="asset.title" class="title">{{ asset.title }}</p>
+    <p v-if="asset.title" class="title bidi-text" dir="auto">{{ asset.title }}</p>
 
     <!-- LRC line-synced lyrics: real per-line timings drive a whole-line
          highlight that scrolls into view as the hymn plays. Falls back to the
          plain verses block when the asset has no `timings`. -->
-    <div v-if="hasTimings" class="lyrics lrc">
+    <div v-if="hasTimings" class="lyrics lrc bidi-text" dir="auto">
       <p
         v-for="(line, li) in lyricLines"
         :key="li"
@@ -193,7 +195,7 @@ onBeforeUnmount(() => {
       >{{ line }}</p>
     </div>
     <!-- Public-domain hymn verses, shown to read/sing along (hymn sources). -->
-    <pre v-else-if="asset.lyrics" class="lyrics">{{ asset.lyrics }}</pre>
+    <pre v-else-if="asset.lyrics" class="lyrics bidi-text" dir="auto">{{ asset.lyrics }}</pre>
   </div>
 </template>
 
@@ -216,7 +218,7 @@ audio { width: 100%; }
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  text-align: left;
+  text-align: start;
 }
 /* LRC line-synced lyrics: dim inactive lines, lift the active one. */
 .lyrics.lrc p { margin: 0 0 0.4rem; transition: color 0.2s, opacity 0.2s; color: var(--text-muted); opacity: 0.55; }

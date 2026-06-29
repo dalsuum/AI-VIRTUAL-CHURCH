@@ -36,6 +36,17 @@ class BibleStudySeeder extends Seeder
         'en'  => 'English',
         'my'  => 'Burmese (Myanmar)',
         'td'  => 'Tedim (Zolai)',
+        'fr'  => 'French',
+        'de'  => 'German',
+        'es'  => 'Spanish',
+        'ja'  => 'Japanese',
+        'zh-CN' => 'Chinese (Simplified)',
+        'ko'  => 'Korean',
+        'hi'  => 'Hindi',
+        'ta'  => 'Tamil',
+        'th'  => 'Thai',
+        'ar'  => 'Arabic',
+        'he'  => 'Hebrew',
         'cnh' => 'Hakha Chin',
         'cfm' => 'Falam Chin',
         'lus' => 'Mizo',
@@ -66,6 +77,72 @@ class BibleStudySeeder extends Seeder
             ['Pa Thang Lian', 'grace-evangelistic',    75, false],
             ['Pa Cin Khaw',   'expository-doctrinal',  65, false],
             ['Pa Mang Suan',  'pastoral-application',  55, false],
+        ],
+        'fr' => [
+            ['Pasteur Etienne', 'moderator-synthesis', 60, true],
+            ['Pasteure Claire', 'grace-evangelistic', 80, false],
+            ['Pasteur Matthieu', 'expository-doctrinal', 70, false],
+            ['Pasteure Elise', 'pastoral-application', 60, false],
+        ],
+        'de' => [
+            ['Pastor Johannes', 'moderator-synthesis', 60, true],
+            ['Pastorin Anna', 'grace-evangelistic', 80, false],
+            ['Pastor Matthias', 'expository-doctrinal', 70, false],
+            ['Pastorin Lea', 'pastoral-application', 60, false],
+        ],
+        'es' => [
+            ['Pastor Esteban', 'moderator-synthesis', 60, true],
+            ['Pastora Clara', 'grace-evangelistic', 80, false],
+            ['Pastor Mateo', 'expository-doctrinal', 70, false],
+            ['Pastora Esperanza', 'pastoral-application', 60, false],
+        ],
+        'ja' => [
+            ['牧師 直人', 'moderator-synthesis', 60, true],
+            ['牧師 恵', 'grace-evangelistic', 80, false],
+            ['牧師 真司', 'expository-doctrinal', 70, false],
+            ['牧師 愛', 'pastoral-application', 60, false],
+        ],
+        'zh-CN' => [
+            ['恩典牧者', 'moderator-synthesis', 60, true],
+            ['明光牧者', 'grace-evangelistic', 80, false],
+            ['真道牧者', 'expository-doctrinal', 70, false],
+            ['平安牧者', 'pastoral-application', 60, false],
+        ],
+        'ko' => [
+            ['한빛 목사', 'moderator-synthesis', 60, true],
+            ['은혜 목사', 'grace-evangelistic', 80, false],
+            ['진리 목사', 'expository-doctrinal', 70, false],
+            ['소망 목사', 'pastoral-application', 60, false],
+        ],
+        'hi' => [
+            ['पास्टर आरव', 'moderator-synthesis', 60, true],
+            ['पास्टर अनुग्रह', 'grace-evangelistic', 80, false],
+            ['पास्टर मत्ती', 'expository-doctrinal', 70, false],
+            ['पास्टर आशा', 'pastoral-application', 60, false],
+        ],
+        'ta' => [
+            ['பாஸ்டர் அருள்', 'moderator-synthesis', 60, true],
+            ['பாஸ்டர் கிருபை', 'grace-evangelistic', 80, false],
+            ['பாஸ்டர் மத்தேயு', 'expository-doctrinal', 70, false],
+            ['பாஸ்டர் நம்பிக்கை', 'pastoral-application', 60, false],
+        ],
+        'th' => [
+            ['ศิษยาภิบาลอรุณ', 'moderator-synthesis', 60, true],
+            ['ศิษยาภิบาลพระคุณ', 'grace-evangelistic', 80, false],
+            ['ศิษยาภิบาลมัทธิว', 'expository-doctrinal', 70, false],
+            ['ศิษยาภิบาลความหวัง', 'pastoral-application', 60, false],
+        ],
+        'ar' => [
+            ['القس نور', 'moderator-synthesis', 60, true],
+            ['القس نعمة', 'grace-evangelistic', 80, false],
+            ['القس متى', 'expository-doctrinal', 70, false],
+            ['القس رجاء', 'pastoral-application', 60, false],
+        ],
+        'he' => [
+            ['הרועה אור', 'moderator-synthesis', 60, true],
+            ['הרועה חסד', 'grace-evangelistic', 80, false],
+            ['הרועה מתי', 'expository-doctrinal', 70, false],
+            ['הרועה תקווה', 'pastoral-application', 60, false],
         ],
         'cnh' => [
             ['Pa Bawi Hmung', 'moderator-synthesis',   60, true],
@@ -277,7 +354,10 @@ class BibleStudySeeder extends Seeder
      * so turns finish their thoughts. English stays at 1.0.
      */
     private const TOKEN_SCALE = [
-        'en' => 1.0, 'my' => 3.0, 'td' => 3.0, 'cnh' => 3.0,
+        'en' => 1.0, 'fr' => 1.5, 'de' => 1.5, 'es' => 1.5,
+        'ja' => 2.0, 'zh-CN' => 2.0, 'ko' => 2.0,
+        'hi' => 2.5, 'ta' => 2.5, 'th' => 2.5, 'ar' => 2.5, 'he' => 2.5,
+        'my' => 3.0, 'td' => 3.0, 'cnh' => 3.0,
         'cfm' => 3.0, 'lus' => 3.0, 'hlt' => 3.0,
     ];
 

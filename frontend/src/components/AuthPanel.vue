@@ -3,8 +3,10 @@
 // rest of the app — no client router. On success the parent reloads /me and
 // redirects; register auto-logs-in server-side, so both paths land authenticated.
 import { ref, computed, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import { api } from "../composables/useApi";
 
+const { t } = useI18n();
 const props = defineProps({
   mode: { type: String, default: "login" }, // "login" | "register"
 });
@@ -20,8 +22,8 @@ const error    = ref("");
 const registered = ref(false);
 
 const isRegister = computed(() => props.mode === "register");
-const title   = computed(() => (isRegister.value ? "Create your account" : "Welcome back"));
-const cta     = computed(() => (isRegister.value ? "Create account" : "Log in"));
+const title   = computed(() => (isRegister.value ? t("authPanel.createAccount") : t("authPanel.welcomeBack")));
+const cta     = computed(() => (isRegister.value ? t("authPanel.createCta") : t("authPanel.loginCta")));
 
 // Clear transient state when switching between login/register.
 watch(() => props.mode, () => { error.value = ""; password.value = ""; registered.value = false; });
@@ -29,11 +31,11 @@ watch(() => props.mode, () => { error.value = ""; password.value = ""; registere
 async function submit() {
   error.value = "";
   if (!email.value.trim() || !password.value) {
-    error.value = "Email and password are required.";
+    error.value = t("authPanel.errRequired");
     return;
   }
   if (isRegister.value && !name.value.trim()) {
-    error.value = "Please enter your name.";
+    error.value = t("authPanel.errName");
     return;
   }
   busy.value = true;
@@ -54,7 +56,7 @@ async function submit() {
       emit("authed");
     }
   } catch (e) {
-    error.value = e?.data?.message || "Something went wrong. Please try again.";
+    error.value = e?.data?.message || t("authPanel.errGeneric");
   } finally {
     busy.value = false;
   }
@@ -65,31 +67,30 @@ async function submit() {
   <div class="auth-wrap">
     <!-- Post-registration confirmation: account is pending until the emailed link is clicked. -->
     <template v-if="registered">
-      <h1 class="auth-title">Registration successful</h1>
+      <h1 class="auth-title">{{ t("authPanel.regSuccessTitle") }}</h1>
       <p class="auth-sub">
-        Please check your email and activate your account before signing in. The
-        activation link expires in 24 hours.
+        {{ t("authPanel.regSuccessBody") }}
       </p>
-      <p class="auth-switch"><a href="#login">← Back to login</a></p>
+      <p class="auth-switch"><a href="#login">{{ t("authPanel.backToLogin") }}</a></p>
     </template>
 
     <template v-else>
     <h1 class="auth-title">{{ title }}</h1>
     <p class="auth-sub">
-      {{ isRegister ? "Register to keep your services, tokens and preferences." : "Log in to your account." }}
+      {{ isRegister ? t("authPanel.registerSub") : t("authPanel.loginSub") }}
     </p>
 
     <form class="auth-form" @submit.prevent="submit">
       <label v-if="isRegister" class="field">
-        <span>Name</span>
-        <input v-model="name" type="text" autocomplete="name" placeholder="Your name" />
+        <span>{{ t("authPanel.nameLabel") }}</span>
+        <input v-model="name" type="text" autocomplete="name" :placeholder="t('authPanel.namePh')" />
       </label>
       <label class="field">
-        <span>Email</span>
-        <input v-model="email" type="email" autocomplete="username" placeholder="you@example.com" />
+        <span>{{ t("authPanel.emailLabel") }}</span>
+        <input v-model="email" type="email" autocomplete="username" :placeholder="t('authPanel.emailPh')" />
       </label>
       <label class="field">
-        <span>Password</span>
+        <span>{{ t("authPanel.passwordLabel") }}</span>
         <input
           v-model="password"
           type="password"
@@ -101,20 +102,20 @@ async function submit() {
       <p v-if="error" class="auth-error">{{ error }}</p>
 
       <button class="auth-btn" type="submit" :disabled="busy">
-        {{ busy ? "Please wait…" : cta }}
+        {{ busy ? t("common.pleaseWait") : cta }}
       </button>
     </form>
 
     <p class="auth-switch">
       <template v-if="isRegister">
-        Already have an account? <a href="#login">Log in</a>
+        {{ t("authPanel.haveAccount") }} <a href="#login">{{ t("authPanel.loginLink") }}</a>
       </template>
       <template v-else>
-        New here? <a href="#register">Create an account</a>
+        {{ t("authPanel.newHere") }} <a href="#register">{{ t("authPanel.createLink") }}</a>
       </template>
     </p>
     <p class="auth-switch">
-      <a href="#">← Back to worship</a>
+      <a href="#">{{ t("authPanel.backToWorship") }}</a>
     </p>
     </template>
   </div>

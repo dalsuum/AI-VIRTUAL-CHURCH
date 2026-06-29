@@ -51,7 +51,7 @@ Route::get('/bible/bg-music/file', [BibleController::class, 'bgMusicFile'])->mid
 Route::get('/bible/bg-music/match', [BibleController::class, 'bgMusicMatch'])->middleware('throttle:120,1');
 
 // Public special-Sunday highlight — the active observance (if any) for the
-// intake/home card, localized to ?language=en|my|td.
+// intake/home card, localized to the requested service language.
 Route::get('/special-sunday/current', [SpecialSundayController::class, 'current'])
     ->middleware('throttle:60,1');
 
@@ -394,6 +394,25 @@ Route::middleware(['auth:sanctum', 'account.usable'])->group(function () {
 
         // Read-only freeze-harness monitor for the admin console.
         Route::get('/freeze/status',                   [AdminController::class, 'freezeStatus']);
+
+        // Knowledge Operations Platform — read-only health dashboard.
+        Route::get('/knowledge/health',                [AdminController::class, 'knowledgeHealth']);
+
+        // Knowledge Operations Platform — file upload and job management.
+        Route::post('/knowledge/upload',               [\App\Http\Controllers\KnowledgeUploadController::class, 'upload']);
+        Route::get('/knowledge/jobs',                  [\App\Http\Controllers\KnowledgeUploadController::class, 'jobs']);
+        Route::post('/knowledge/jobs/{job}/cancel',    [\App\Http\Controllers\KnowledgeUploadController::class, 'cancel']);
+        Route::post('/knowledge/jobs/{job}/retry',     [\App\Http\Controllers\KnowledgeUploadController::class, 'retry']);
+        Route::delete('/knowledge/jobs/{job}',         [\App\Http\Controllers\KnowledgeUploadController::class, 'destroy']);
+
+        // Knowledge Operations Platform — retrieval inspector.
+        Route::post('/knowledge/inspect',              [\App\Http\Controllers\KnowledgeInspectorController::class, 'inspect']);
+
+        // Knowledge Operations Platform — library management.
+        Route::get('/knowledge/library',                        [\App\Http\Controllers\KnowledgeLibraryController::class, 'index']);
+        Route::post('/knowledge/library/{corpus}/toggle',       [\App\Http\Controllers\KnowledgeLibraryController::class, 'toggle']);
+        Route::post('/knowledge/library/{corpus}/reindex',      [\App\Http\Controllers\KnowledgeLibraryController::class, 'reindex']);
+        Route::delete('/knowledge/library/{corpus}',            [\App\Http\Controllers\KnowledgeLibraryController::class, 'destroy']);
         Route::patch('/users/{user}/presenter-gender', [AdminController::class, 'updatePresenterGender']);
         Route::post('/users/{user}/force-reset',       [AdminController::class, 'forcePasswordReset']);
         Route::delete('/users/{user}',                 [AdminController::class, 'deleteUser']);

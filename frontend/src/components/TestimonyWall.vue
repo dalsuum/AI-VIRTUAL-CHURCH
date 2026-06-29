@@ -2,8 +2,10 @@
 // The testimony segment: read what others have shared, and add your own. Submitted
 // testimonies are held for moderation, so the wall only ever shows approved ones.
 import { ref, onMounted } from "vue";
+import { useI18n } from "vue-i18n";
 import { api } from "../composables/useApi";
 
+const { t } = useI18n();
 const testimonies = ref([]);
 const content = ref("");
 const stage = ref("idle"); // "idle" | "sending" | "thanks"
@@ -20,7 +22,7 @@ async function load() {
 
 async function share() {
   if (content.value.trim().length < 10) {
-    error.value = "Please share a little more (at least 10 characters).";
+    error.value = t("testimony.errMore");
     return;
   }
   error.value = null;
@@ -30,7 +32,7 @@ async function share() {
     content.value = "";
     stage.value = "thanks";
   } catch (e) {
-    error.value = e?.data?.message || "Could not send right now. Please try again.";
+    error.value = e?.data?.message || t("testimony.errSend");
     stage.value = "idle";
   }
 }
@@ -40,30 +42,30 @@ onMounted(load);
 
 <template>
   <section class="testimony">
-    <h2>Testimony</h2>
+    <h2>{{ t("testimony.title") }}</h2>
 
     <ul v-if="testimonies.length" class="wall">
-      <li v-for="t in testimonies" :key="t.id">{{ t.content }}</li>
+      <li v-for="item in testimonies" :key="item.id">{{ item.content }}</li>
     </ul>
-    <p v-else class="sub">Be the first to share what God has done.</p>
+    <p v-else class="sub">{{ t("testimony.beFirst") }}</p>
 
     <template v-if="stage !== 'thanks'">
-      <label class="share-label" for="testimony-input">Share your testimony</label>
+      <label class="share-label" for="testimony-input">{{ t("testimony.shareLabel") }}</label>
       <textarea
         id="testimony-input"
         v-model="content"
         rows="3"
-        placeholder="In a sentence or two, what are you grateful for today?"
+        :placeholder="t('testimony.placeholder')"
         :disabled="stage === 'sending'"
       ></textarea>
       <p v-if="error" class="error">{{ error }}</p>
       <button class="primary" type="button" :disabled="stage === 'sending'" @click="share">
-        {{ stage === "sending" ? "Sending…" : "Share" }}
+        {{ stage === "sending" ? t("testimony.sending") : t("testimony.share") }}
       </button>
     </template>
 
     <p v-else class="thanks">
-      Thank you for sharing. Your testimony will appear once reviewed. 🙏
+      {{ t("testimony.thanks") }}
     </p>
   </section>
 </template>

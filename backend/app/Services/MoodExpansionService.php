@@ -26,24 +26,33 @@ class MoodExpansionService
         $norm = $this->normalize($mood);
         $mc   = $this->moods();
 
-        if ($language === 'en' || $norm === '' || ! isset($mc[$norm])) {
-            return ucwords($norm !== '' ? $norm : trim($mood));
+        if ($norm !== '' && isset($mc[$norm])) {
+            return $mc[$norm]['labels'][$language]
+                ?? $mc[$norm]['labels']['en']
+                ?? $this->title($norm);
         }
 
-        return $mc[$norm]['labels'][$language] ?? ucwords($norm);
+        return $this->title(trim($mood));
     }
 
-    /** Per-language label map ({en, my, td}) for one mood id. */
+    /** Per-language label map for one mood id. */
     public function labels(string $mood): array
     {
         $norm   = $this->normalize($mood);
         $labels = $this->moods()[$norm]['labels'] ?? [];
+        $codes = array_values(array_unique(array_merge(
+            ['en', 'my', 'td'],
+            array_keys((array) config('worship_moods.languages', [])),
+            array_keys($labels),
+        )));
 
-        return [
-            'en' => $labels['en'] ?? ucwords($norm),
-            'my' => $labels['my'] ?? ($labels['en'] ?? ucwords($norm)),
-            'td' => $labels['td'] ?? ($labels['en'] ?? ucwords($norm)),
-        ];
+        $fallback = $labels['en'] ?? $this->title($norm);
+        $out = [];
+        foreach ($codes as $code) {
+            $out[$code] = $labels[$code] ?? $fallback;
+        }
+
+        return $out;
     }
 
     /** Chip emoji for a mood id (🎵 fallback). */
@@ -158,13 +167,16 @@ class MoodExpansionService
         return array_merge($base, $clean);
     }
 
-    /** Whether $haystack contains $needle as a whole word (or substring for multi-word triggers). */
+    /** Whether $haystack contains $needle as a whole word, or substring for scripts without word spacing. */
     private function mentions(string $haystack, string $needle): bool
     {
         if ($needle === '') {
             return false;
         }
         if (str_contains($needle, ' ')) {
+            return str_contains($haystack, $needle);
+        }
+        if (preg_match('/[\x{0900}-\x{097F}\x{0B80}-\x{0BFF}\x{0E00}-\x{0E7F}\x{3040}-\x{30FF}\x{3400}-\x{9FFF}\x{AC00}-\x{D7AF}]/u', $needle) === 1) {
             return str_contains($haystack, $needle);
         }
 
@@ -178,6 +190,11 @@ class MoodExpansionService
         $all = array_map(fn ($t) => $this->normalize((string) $t), $all);
 
         return array_values(array_unique(array_filter($all, fn ($t) => $t !== '')));
+    }
+
+    private function title(string $value): string
+    {
+        return ucwords(str_replace('_', ' ', $value));
     }
 
     /** Lower-case, collapse whitespace, strip surrounding punctuation. */

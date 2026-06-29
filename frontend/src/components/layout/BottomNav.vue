@@ -6,7 +6,10 @@
 //
 // Icons are Iconify (mdi) via <AppIcon>; no emojis (design-system rule).
 import { computed, ref } from "vue";
+import { useI18n } from "vue-i18n";
 import AppIcon from "../AppIcon.vue";
+
+const { t } = useI18n();
 
 const props = defineProps({
   currentHash: { type: String, default: "" },
@@ -21,25 +24,27 @@ defineEmits(["logout"]);
 
 // Four primary tabs — the highest-frequency worship surfaces. Everything else
 // lives behind "More". `prefix` matches sub-routes (e.g. #pastor?session=…).
+// Labels resolve through i18n at render time via `labelKey`; the Father's Day
+// item carries a dynamic backend title in `label` instead.
 const tabs = [
-  { href: "#", label: "Home", icon: "mdi:home", root: true },
-  { href: "#pastor", label: "Pastor", icon: "mdi:chat", prefix: true },
-  { href: "#worship", label: "Worship", icon: "mdi:radio" },
-  { href: "#bible", label: "Bible", icon: "mdi:book-cross" },
+  { href: "#", labelKey: "common.home", icon: "mdi:home", root: true },
+  { href: "#pastor", labelKey: "nav.pastor", icon: "mdi:chat", prefix: true },
+  { href: "#worship", labelKey: "nav.worship", icon: "mdi:radio" },
+  { href: "#bible", labelKey: "nav.bible", icon: "mdi:book-cross" },
 ];
 
 // Secondary destinations shown in the "More" sheet. `show` gates visibility the
 // same way AppHeader's nav does, so the sheet mirrors the user's permissions.
 const moreItems = computed(() =>
   [
-    { href: "#bible-study", label: "Bible Study", icon: "mdi:book-open-page-variant" },
-    { href: "#lyrics", label: "Songs", icon: "mdi:music-note" },
-    { href: "#journey", label: "Spiritual Journey", icon: "mdi:chart-line", prefix: true, show: props.isAuthed },
-    { href: "#vocabulary", label: "Vocabulary", icon: "mdi:translate" },
+    { href: "#bible-study", labelKey: "nav.bibleStudy", icon: "mdi:book-open-page-variant" },
+    { href: "#lyrics", labelKey: "nav.lyrics", icon: "mdi:music-note" },
+    { href: "#journey", labelKey: "nav.journey", icon: "mdi:chart-line", prefix: true, show: props.isAuthed },
+    { href: "#vocabulary", labelKey: "nav.vocabulary", icon: "mdi:translate" },
     { href: "#fathers-day", label: props.fdTitle, icon: "mdi:heart", show: props.fathersDayEnabled },
-    { href: "#stickers", label: "Live Stickers", icon: "mdi:sticker-emoji", show: props.stickersEnabled },
-    { href: "#account", label: "Account", icon: "mdi:account", show: props.isAuthed },
-    { href: "#admin", label: "Admin", icon: "mdi:wrench", show: props.isAdmin },
+    { href: "#stickers", labelKey: "nav.stickers", icon: "mdi:sticker-emoji", show: props.stickersEnabled },
+    { href: "#account", labelKey: "nav.account", icon: "mdi:account", show: props.isAuthed },
+    { href: "#admin", labelKey: "nav.admin", icon: "mdi:wrench", show: props.isAdmin },
   ].filter((i) => i.show !== false),
 );
 
@@ -65,7 +70,7 @@ function closeSheet() { sheetOpen.value = false; }
 
 <template>
   <!-- Fixed bottom tab bar — phones only (hidden ≥641px via media query). -->
-  <nav class="bottom-nav" aria-label="Primary">
+  <nav class="bottom-nav" :aria-label="t('nav.primaryNav')">
     <a
       v-for="tab in tabs"
       :key="tab.href"
@@ -75,7 +80,7 @@ function closeSheet() { sheetOpen.value = false; }
       :aria-current="matches(tab) ? 'page' : undefined"
     >
       <AppIcon :name="tab.icon" size="24px" />
-      <span class="bn-label">{{ tab.label }}</span>
+      <span class="bn-label">{{ t(tab.labelKey) }}</span>
     </a>
 
     <button
@@ -87,17 +92,17 @@ function closeSheet() { sheetOpen.value = false; }
       @click="openSheet"
     >
       <AppIcon name="mdi:dots-horizontal" size="24px" />
-      <span class="bn-label">More</span>
+      <span class="bn-label">{{ t("common.more") }}</span>
     </button>
   </nav>
 
   <!-- "More" bottom sheet -->
   <Teleport to="body">
     <div v-if="sheetOpen" class="sheet-backdrop" @click="closeSheet">
-      <div class="sheet" role="menu" aria-label="More" @click.stop>
+      <div class="sheet" role="menu" :aria-label="t('common.more')" @click.stop>
         <div class="sheet-head">
-          <span class="sheet-title">More</span>
-          <button type="button" class="sheet-close" aria-label="Close" @click="closeSheet">
+          <span class="sheet-title">{{ t("common.more") }}</span>
+          <button type="button" class="sheet-close" :aria-label="t('common.close')" @click="closeSheet">
             <AppIcon name="mdi:close" size="22px" />
           </button>
         </div>
@@ -113,20 +118,20 @@ function closeSheet() { sheetOpen.value = false; }
             @click="closeSheet"
           >
             <AppIcon :name="item.icon" size="26px" />
-            <span class="sheet-label">{{ item.label }}</span>
+            <span class="sheet-label">{{ item.labelKey ? t(item.labelKey) : item.label }}</span>
           </a>
         </div>
 
         <div class="sheet-auth">
           <button v-if="isAuthed" type="button" class="sheet-row" role="menuitem" @click="$emit('logout'); closeSheet()">
-            <AppIcon name="mdi:logout" size="22px" /><span>Logout</span>
+            <AppIcon name="mdi:logout" size="22px" /><span>{{ t("buttons.logout") }}</span>
           </button>
           <template v-else>
             <a href="#login" class="sheet-row" role="menuitem" @click="closeSheet">
-              <AppIcon name="mdi:login" size="22px" /><span>Login</span>
+              <AppIcon name="mdi:login" size="22px" /><span>{{ t("buttons.login") }}</span>
             </a>
             <a href="#register" class="sheet-row" role="menuitem" @click="closeSheet">
-              <AppIcon name="mdi:account-plus" size="22px" /><span>Register</span>
+              <AppIcon name="mdi:account-plus" size="22px" /><span>{{ t("buttons.register") }}</span>
             </a>
           </template>
         </div>
@@ -142,7 +147,8 @@ function closeSheet() { sheetOpen.value = false; }
 @media (max-width: 640px) {
   .bottom-nav {
     position: fixed;
-    left: 0; right: 0; bottom: 0;
+    inset-inline: 0;
+    bottom: 0;
     z-index: 40;
     display: flex;
     align-items: stretch;
@@ -177,8 +183,8 @@ function closeSheet() { sheetOpen.value = false; }
 .sheet {
   width: 100%;
   background: var(--surface);
-  border-top-left-radius: var(--radius);
-  border-top-right-radius: var(--radius);
+  border-start-start-radius: var(--radius);
+  border-start-end-radius: var(--radius);
   padding: 16px 16px calc(16px + env(safe-area-inset-bottom, 0px));
   box-shadow: var(--shadow);
   animation: sheet-up 0.18s ease-out;

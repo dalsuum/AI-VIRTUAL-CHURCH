@@ -1,6 +1,10 @@
 <script setup>
 import { ref, computed, onMounted } from "vue";
+import { useI18n } from "vue-i18n";
 import { api } from "../composables/useApi.js";
+import { normalizeLanguage } from "../i18n";
+
+const { t, locale } = useI18n();
 
 // Vocabulary is served from the DB (admin-editable) — see VocabularyManager.
 const vocab = ref([]);
@@ -26,7 +30,13 @@ const LANGUAGES = [
   { code: "english", label: "English" },
 ];
 
-const primaryLang = ref("zolai");
+// The primary (left-most) column defaults from the one global language authority
+// (en→english, my→burmese, td→zolai). The dropdown still lets the worshipper
+// compare the other Chin/Zo tongues, which are not UI locales of their own.
+const LANG_TO_COLUMN = { en: "english", my: "burmese", td: "zolai" };
+const primaryLang = ref(
+  LANG_TO_COLUMN[normalizeLanguage(locale.value)] || "zolai",
+);
 
 const primaryMeta = computed(
   () => LANGUAGES.find((l) => l.code === primaryLang.value) || LANGUAGES[0],
@@ -48,7 +58,7 @@ onMounted(async () => {
     const res = await api.getVocabulary();
     vocab.value = res.vocabulary || [];
   } catch (e) {
-    loadError.value = "Could not load the vocabulary list.";
+    loadError.value = t("vocabulary.loadError");
   } finally {
     loading.value = false;
   }
@@ -90,11 +100,8 @@ function catColor(cat) {
     <header class="vocab-header">
       <!-- No back-link: the global header nav handles navigation now. -->
       <div class="vocab-title-block">
-        <h1 class="vocab-title">Vocabulary</h1>
-        <p class="vocab-sub">
-          Chin/Zo ↔ Burmese ↔ Hebrew ↔ English reference — {{ vocab.length }} words &amp; phrases.
-          Pick your language above; Zolai (Tedim) is the default.
-        </p>
+        <h1 class="vocab-title">{{ t("vocabulary.title") }}</h1>
+        <p class="vocab-sub">{{ t("vocabulary.subtitle", { count: vocab.length }) }}</p>
       </div>
     </header>
 
@@ -104,17 +111,17 @@ function catColor(cat) {
           v-model="search"
           class="search-input"
           type="search"
-          placeholder="Search any language…"
-          aria-label="Search vocabulary"
+          :placeholder="t('vocabulary.searchPlaceholder')"
+          :aria-label="t('vocabulary.searchAria')"
         />
         <label class="lang-picker">
-          <span class="lang-picker-label">Language</span>
-          <select v-model="primaryLang" class="lang-select" aria-label="Choose display language">
+          <span class="lang-picker-label">{{ t("vocabulary.languageLabel") }}</span>
+          <select v-model="primaryLang" class="lang-select" :aria-label="t('vocabulary.chooseDisplay')">
             <option v-for="l in LANGUAGES" :key="l.code" :value="l.code">{{ l.label }}</option>
           </select>
         </label>
       </div>
-      <div class="cat-filters" role="group" aria-label="Filter by category">
+      <div class="cat-filters" role="group" :aria-label="t('vocabulary.filterByCategory')">
         <button
           v-for="cat in categories"
           :key="cat"
@@ -123,14 +130,14 @@ function catColor(cat) {
           :style="activeCategory === cat && cat !== 'All' ? { borderColor: catColor(cat), color: catColor(cat) } : {}"
           @click="activeCategory = cat"
         >
-          {{ cat }}
+          {{ cat === "All" ? t("vocabulary.all") : cat }}
         </button>
       </div>
     </div>
 
-    <p v-if="loading" class="empty">Loading…</p>
+    <p v-if="loading" class="empty">{{ t("vocabulary.loading") }}</p>
     <p v-else-if="loadError" class="empty">{{ loadError }}</p>
-    <p v-else-if="filtered.length === 0" class="empty">No matches found.</p>
+    <p v-else-if="filtered.length === 0" class="empty">{{ t("vocabulary.noMatches") }}</p>
 
     <div v-else class="table-wrap">
       <table class="vocab-table">
@@ -138,7 +145,7 @@ function catColor(cat) {
           <tr>
             <th>{{ primaryMeta.label }}</th>
             <th v-for="col in referenceCols" :key="col.code">{{ col.label }}</th>
-            <th>Category</th>
+            <th>{{ t("vocabulary.category") }}</th>
           </tr>
         </thead>
         <tbody>

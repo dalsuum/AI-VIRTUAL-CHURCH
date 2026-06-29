@@ -63,7 +63,7 @@ class ConfigController extends Controller
 
     public function show(Request $request): JsonResponse
     {
-        $language = in_array($request->query('language'), ['en', 'my', 'td'], true)
+        $language = in_array($request->query('language'), Setting::LANGUAGES, true)
             ? $request->query('language')
             : 'en';
         $mood = trim((string) $request->query('mood', ''));
@@ -167,11 +167,20 @@ class ConfigController extends Controller
         $cacheKey = 'countdown_verse_' . $language . '_' . substr(md5(implode('|', $refs)), 0, 16);
 
         return Cache::remember($cacheKey, now()->addHours(6), function () use ($refs, $language) {
-            $file = match ($language) {
-                'my'    => base_path('../workers/data/judson1835.json'),
-                'td'    => base_path('../workers/data/tedim1932.json'),
-                default => base_path('../workers/data/bsb.json'),
-            };
+            $files = [
+                'my' => base_path('../workers/data/judson1835.json'),
+                'td' => base_path('../workers/data/tedim1932.json'),
+                'fr' => base_path('../workers/data/ostervald1877.json'),
+                'de' => base_path('../workers/data/luther1912.json'),
+                'es' => base_path('../workers/data/spanish_rv1909.json'),
+                'ja' => base_path('../workers/data/japanese_colloquial1955.json'),
+                'zh-CN' => base_path('../workers/data/chinese_union_simplified.json'),
+                'ko' => base_path('../workers/data/korean_krv.json'),
+                'hi' => base_path('../workers/data/hindi_irv2019.json'),
+                'ta' => base_path('../workers/data/tamil_irv2019.json'),
+                'th' => base_path('../workers/data/thai_kjv.json'),
+            ];
+            $file = $files[$language] ?? base_path('../workers/data/bsb.json');
 
             if (! is_readable($file)) {
                 return [];
@@ -184,8 +193,17 @@ class ConfigController extends Controller
                 : null;
 
             $translation = match ($language) {
-                'my'    => 'Judson 1835',
-                'td'    => 'Lai Siangtho 1932',
+                'my' => 'Judson 1835',
+                'td' => 'Lai Siangtho 1932',
+                'fr' => 'Ostervald 1877',
+                'de' => 'Luther 1912',
+                'es' => 'Reina-Valera 1909',
+                'ja' => 'Japanese Colloquial 1955',
+                'zh-CN' => 'Chinese Union Version (Simplified)',
+                'ko' => 'Korean Revised Version',
+                'hi' => 'Hindi IRV 2019',
+                'ta' => 'Tamil IRV 2019',
+                'th' => 'Thai KJV',
                 default => 'BSB',
             };
 

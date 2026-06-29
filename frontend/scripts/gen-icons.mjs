@@ -16,6 +16,11 @@ const ICON_NAMES = [
   "radio", "chat", "chart-line", "translate", "heart", "sticker-emoji",
   "wrench", "account", "login", "logout", "account-plus", "close",
   "magnify", "cog",
+  // Worship Radio
+  "play", "pause", "skip-next", "stop",
+  "flash", "emoticon-happy-outline", "target", "leaf", "heart-broken",
+  // Theme toggle
+  "weather-sunny", "moon-waning-crescent",
   // Songs screen (MyanmarLyrics)
   "arrow-left", "chevron-left", "chevron-right", "download",
   "file-pdf-box", "file-powerpoint-box", "file-document-outline",

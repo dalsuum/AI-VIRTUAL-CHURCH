@@ -106,11 +106,16 @@ def _pastor_system(language: str, memory: list) -> str:
         "Scripture (citing book chapter:verse), and never give medical, legal, or "
         "financial advice. Keep replies concise and caring. "
         # Understanding is never restricted to one language: comprehend the
-        # worshipper whatever language they write in. Reply by default in the
-        # worshipper's selected interface language, but if they explicitly ask you
-        # to reply in another language, honour that for the rest of the conversation.
-        f"By default reply in {lang}, but understand any language the worshipper "
-        "writes in, and switch your reply language if they explicitly ask you to."
+        # worshipper whatever language they write in. The reply language is the
+        # worshipper's selected language and is authoritative — do NOT mirror the
+        # language their message happens to be written in. Only an explicit request
+        # ("please answer in X") changes it, for the rest of the conversation.
+        f"LANGUAGE LAW: Write EVERY sentence of your reply in {lang} ONLY, even when "
+        "the worshipper writes to you in English or any other language. Understand "
+        "whatever language they write in, but never switch your reply language just "
+        f"because their message is in another language — keep replying in {lang}. The "
+        "ONLY exception is when the worshipper explicitly asks you to answer in a "
+        "different language; honour that request for the rest of the conversation."
     )
     if memory:
         recalls = "; ".join(

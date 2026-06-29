@@ -201,6 +201,12 @@ php artisan knowledge:ingest sermon storage/app/knowledge/sermons_my.json --chun
 After ingest, sermon retrieval is automatically combined with Bible retrieval in Pastor Chat
 (the `RetrievalOrchestrator` fans out across all corpora including `sermon`).
 
+Pastor Chat replies in the worshipper's selected interface language (`_pastor_system` in
+`workers/plugins/history/driver.py`). The reply-language instruction is authoritative — the
+model keeps replying in the chosen language even when the worshipper types in English, and only
+switches when the worshipper explicitly asks. Adding a locale to `config/languages.php` (and the
+mirrored `_LANG_NAME` map) is all that is needed for the Pastor to answer in it.
+
 The directory form parses every `*.pdf` inside; a corrupt/unreadable file is **skipped with a
 warning**, never aborting the batch. Required infra env (backend `.env`):
 

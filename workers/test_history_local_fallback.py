@@ -73,3 +73,15 @@ def test_tedim_markers_short_circuit_detection_without_llm():
 
     assert driver._detect_language("Biakinn pai hoih hia?", _Boom()) == "td"
     assert driver._detect_language("Pasian in hong it hi", _Boom()) == "td"
+
+
+def test_pastor_system_language_is_authoritative_for_world_locales():
+    # A newly added world locale (e.g. Japanese) must produce an authoritative reply-
+    # language instruction so the model does not mirror an English-typed message.
+    sys_prompt = driver._pastor_system("ja", [])
+    assert "Japanese" in sys_prompt
+    assert "LANGUAGE LAW" in sys_prompt
+    # The instruction must forbid mirroring the worshipper's input language while
+    # still allowing an explicit request to switch.
+    assert "never switch" in sys_prompt.lower()
+    assert "explicit" in sys_prompt.lower()

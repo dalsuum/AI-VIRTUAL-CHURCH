@@ -51,7 +51,7 @@ Route::get('/bible/bg-music/file', [BibleController::class, 'bgMusicFile'])->mid
 Route::get('/bible/bg-music/match', [BibleController::class, 'bgMusicMatch'])->middleware('throttle:120,1');
 
 // Public special-Sunday highlight — the active observance (if any) for the
-// intake/home card, localized to ?language=en|my|td.
+// intake/home card, localized to the requested service language.
 Route::get('/special-sunday/current', [SpecialSundayController::class, 'current'])
     ->middleware('throttle:60,1');
 

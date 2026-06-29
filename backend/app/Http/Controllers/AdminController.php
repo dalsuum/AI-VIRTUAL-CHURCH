@@ -459,7 +459,7 @@ class AdminController extends Controller
         }
 
         $language = trim((string) $request->query('language', ''));
-        if (in_array($language, ['en', 'my', 'td'], true)) {
+        if (in_array($language, Setting::LANGUAGES, true)) {
             $q->where('language', $language);
         }
 
@@ -488,7 +488,7 @@ class AdminController extends Controller
     {
         $data = $request->validate([
             'mood'         => ['required', 'string', 'max:100'],
-            'language'     => ['required', 'string', 'in:en,my,td'],
+            'language'     => ['required', 'string', 'in:' . implode(',', Setting::LANGUAGES)],
             'provider_ref' => ['required', 'string', 'max:255', 'unique:music_tracks,provider_ref'],
             'storage_key'  => ['required', 'string', 'max:500'],
             'title'        => ['nullable', 'string', 'max:255'],
@@ -513,7 +513,7 @@ class AdminController extends Controller
     {
         $data = $request->validate([
             'mood'         => ['sometimes', 'string', 'max:100'],
-            'language'     => ['sometimes', 'string', 'in:en,my,td'],
+            'language'     => ['sometimes', 'string', 'in:' . implode(',', Setting::LANGUAGES)],
             'provider_ref' => ['sometimes', 'string', 'max:255', 'unique:music_tracks,provider_ref,' . $musicTrack->id],
             'storage_key'  => ['sometimes', 'string', 'max:500'],
             'title'        => ['nullable', 'string', 'max:255'],
@@ -682,7 +682,7 @@ class AdminController extends Controller
     {
         PermissionService::require($request->user(), 'special_sundays.view');
 
-        $language = in_array($request->query('language'), ['en', 'my', 'td'], true)
+        $language = in_array($request->query('language'), Setting::LANGUAGES, true)
             ? $request->query('language')
             : 'en';
         $mood = mb_substr(trim((string) $request->query('mood', '')), 0, 100);
@@ -692,7 +692,7 @@ class AdminController extends Controller
         return response()->json([
             'language'    => $language,
             'mood'        => $mood,
-            'title'       => $specialSunday->titles[$language] ?? $specialSunday->titles['en'] ?? $specialSunday->key,
+            'title'       => $specialSunday->localizedTitle($language),
             'sermon'      => $content['sermon'],
             'music'       => $content['music'],
             // For the 'auto' case, the bias that would steer the AI selection.
@@ -745,13 +745,7 @@ class AdminController extends Controller
             'rule_type'      => [$req, 'string', 'in:nth_weekday,easter_offset,fixed'],
             'rule'           => [$req, 'array'],
             'titles'         => [$req, 'array'],
-            'titles.en'      => [$req, 'string', 'max:120'],
-            'titles.my'      => ['nullable', 'string', 'max:120'],
-            'titles.td'      => ['nullable', 'string', 'max:120'],
             'briefs'         => [$req, 'array'],
-            'briefs.en'      => [$req, 'string', 'max:500'],
-            'briefs.my'      => ['nullable', 'string', 'max:500'],
-            'briefs.td'      => ['nullable', 'string', 'max:500'],
             'sermon_tags'    => ['sometimes', 'array', 'max:20'],
             'sermon_tags.*'  => ['string', 'max:60'],
             'music_moods'    => ['sometimes', 'array', 'max:20'],
@@ -759,13 +753,20 @@ class AdminController extends Controller
             'region'         => ['nullable', 'string', 'max:60'],
             'priority'       => ['sometimes', 'integer', 'min:0', 'max:1000'],
             'active'         => ['sometimes', 'boolean'],
-            // Per-language delivery mode: { sermon: {en,my,td}, music: {en,my,td} }
+            // Per-language delivery mode, keyed by Setting::LANGUAGES.
             'content_modes'              => ['sometimes', 'nullable', 'array'],
             'content_modes.sermon'       => ['sometimes', 'array'],
             'content_modes.sermon.*'     => ['in:auto,manual'],
             'content_modes.music'        => ['sometimes', 'array'],
             'content_modes.music.*'      => ['in:auto,manual'],
         ];
+
+        foreach (Setting::LANGUAGES as $code) {
+            $titleRule = $code === 'en' ? [$req, 'string', 'max:120'] : ['nullable', 'string', 'max:120'];
+            $briefRule = $code === 'en' ? [$req, 'string', 'max:500'] : ['nullable', 'string', 'max:500'];
+            $rules['titles.' . $code] = $titleRule;
+            $rules['briefs.' . $code] = $briefRule;
+        }
 
         $data = $request->validate($rules);
 
@@ -814,10 +815,15 @@ class AdminController extends Controller
         }
     }
 
-    /** NFC-normalize each {en,my,td} string so Myanmar text is canonical Unicode. */
+    /** NFC-normalize each localized string so Myanmar text stays canonical Unicode. */
     private function normalizeLangMap(array $map): array
     {
         foreach ($map as $lang => $text) {
+            if ($lang !== 'en' && ($text === null || (is_string($text) && trim($text) === ''))) {
+                unset($map[$lang]);
+                continue;
+            }
+
             if (is_string($text) && class_exists(\Normalizer::class)) {
                 $map[$lang] = \Normalizer::normalize($text, \Normalizer::FORM_C) ?: $text;
             }
@@ -870,7 +876,7 @@ class AdminController extends Controller
     {
         $req  = $partial ? 'sometimes' : 'required';
         $data = $request->validate([
-            'language' => [$req, 'string', 'in:en,my,td'],
+            'language' => [$req, 'string', 'in:' . implode(',', Setting::LANGUAGES)],
             'title'    => [$req, 'string', 'max:200'],
             'body'     => [$req, 'string', 'max:20000'],
             'mood'     => ['nullable', 'string', 'max:60'],
@@ -919,7 +925,7 @@ class AdminController extends Controller
     {
         $req  = $partial ? 'sometimes' : 'required';
         $data = $request->validate([
-            'language'    => [$req, 'string', 'in:en,my,td'],
+            'language'    => [$req, 'string', 'in:' . implode(',', Setting::LANGUAGES)],
             'title'       => [$req, 'string', 'max:200'],
             'source_type' => [$req, 'string', 'in:youtube,hymn,audio,suno'],
             'source_ref'  => [$req, 'string', 'max:5000'],
@@ -1161,7 +1167,8 @@ class AdminController extends Controller
     {
         $data = $request->validated();
 
-        foreach (['narration_mode_en', 'narration_mode_my', 'narration_mode_td'] as $key) {
+        foreach (Setting::LANGUAGES as $code) {
+            $key = 'narration_mode_' . $code;
             if (array_key_exists($key, $data)) {
                 Setting::set($key, $data[$key]);
             }
@@ -1228,12 +1235,14 @@ class AdminController extends Controller
         if (array_key_exists('bible_features', $data)) {
             Setting::setBibleFeatures($data['bible_features']);
         }
-        foreach (['narration_en', 'narration_my', 'narration_td', 'narration_fr', 'narration_de', 'narration_es'] as $key) {
+        foreach (Setting::LANGUAGES as $code) {
+            $key = 'narration_' . $code;
             if (array_key_exists($key, $data)) {
                 Setting::set($key, $data[$key] ? '1' : '0');
             }
         }
-        foreach (['lang_en', 'lang_my', 'lang_td', 'lang_fr', 'lang_de', 'lang_es'] as $key) {
+        foreach (Setting::LANGUAGES as $code) {
+            $key = 'lang_' . $code;
             if (array_key_exists($key, $data)) {
                 Setting::set($key, $data[$key] ? '1' : '0');
             }
@@ -1305,10 +1314,12 @@ class AdminController extends Controller
     /** The settings shape shared by the read and write endpoints. */
     private function settingsPayload(): array
     {
+        $enabledLanguages = Setting::enabledLanguages();
+
         return [
-            'narration_mode_en'  => Setting::narrationMode('en'),
-            'narration_mode_my'  => Setting::narrationMode('my'),
-            'narration_mode_td'  => Setting::narrationMode('td'),
+            ...collect(Setting::LANGUAGES)
+                ->mapWithKeys(fn ($code) => ['narration_mode_' . $code => Setting::narrationMode($code)])
+                ->all(),
             'edge_tts_voice'     => Setting::get('edge_tts_voice', 'en-US-AriaNeural'),
             'voicebox_engine'    => Setting::get('voicebox_engine', 'qwen'),
             'music_reuse'        => Setting::get('music_reuse', '1') === '1',
@@ -1328,21 +1339,14 @@ class AdminController extends Controller
             'bible_bg_music_volume' => Setting::bibleBgMusicVolume(),
             'bible_features' => Setting::bibleFeatureMatrix(),
             'runpod_enabled'     => Setting::get('runpod_enabled', '0') === '1',
-            // Per-language narration: all on by default.
-            // Myanmar/Tedim: edge_tts = Microsoft cloud; mms_tts = local MMS-TTS.
-            'narration_en'       => Setting::narrationEnabled('en'),
-            'narration_my'       => Setting::narrationEnabled('my'),
-            'narration_td'       => Setting::narrationEnabled('td'),
-            'narration_fr'       => Setting::narrationEnabled('fr'),
-            'narration_de'       => Setting::narrationEnabled('de'),
-            'narration_es'       => Setting::narrationEnabled('es'),
+            // Per-language narration: all service languages default on.
+            ...collect(Setting::LANGUAGES)
+                ->mapWithKeys(fn ($code) => ['narration_' . $code => Setting::narrationEnabled($code)])
+                ->all(),
             // Which service languages appear in the intake form.
-            'lang_en'            => Setting::get('lang_en', '1') === '1',
-            'lang_my'            => Setting::get('lang_my', '0') === '1',
-            'lang_td'            => Setting::get('lang_td', '0') === '1',
-            'lang_fr'            => Setting::get('lang_fr', '0') === '1',
-            'lang_de'            => Setting::get('lang_de', '0') === '1',
-            'lang_es'            => Setting::get('lang_es', '0') === '1',
+            ...collect(Setting::LANGUAGES)
+                ->mapWithKeys(fn ($code) => ['lang_' . $code => in_array($code, $enabledLanguages, true)])
+                ->all(),
             // Goldfish LLM narrators (Bible-only Chin/Zo); default on.
             'narration_lus'      => Setting::get('narration_lus', '1') === '1',
             'narration_pck'      => Setting::get('narration_pck', '1') === '1',

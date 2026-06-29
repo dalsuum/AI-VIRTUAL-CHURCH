@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Setting;
 use App\Services\SpecialSundayResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -16,7 +17,7 @@ class SpecialSundayController extends Controller
 {
     public function current(Request $request, SpecialSundayResolver $resolver): JsonResponse
     {
-        $language = in_array($request->query('language'), ['en', 'my', 'td'], true)
+        $language = in_array($request->query('language'), Setting::LANGUAGES, true)
             ? $request->query('language')
             : 'en';
 

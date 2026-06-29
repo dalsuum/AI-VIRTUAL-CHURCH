@@ -173,6 +173,12 @@ class ConfigController extends Controller
                 'fr' => base_path('../workers/data/ostervald1877.json'),
                 'de' => base_path('../workers/data/luther1912.json'),
                 'es' => base_path('../workers/data/spanish_rv1909.json'),
+                'ja' => base_path('../workers/data/japanese_colloquial1955.json'),
+                'zh-CN' => base_path('../workers/data/chinese_union_simplified.json'),
+                'ko' => base_path('../workers/data/korean_krv.json'),
+                'hi' => base_path('../workers/data/hindi_irv2019.json'),
+                'ta' => base_path('../workers/data/tamil_irv2019.json'),
+                'th' => base_path('../workers/data/thai_kjv.json'),
             ];
             $file = $files[$language] ?? base_path('../workers/data/bsb.json');
 
@@ -192,6 +198,12 @@ class ConfigController extends Controller
                 'fr' => 'Ostervald 1877',
                 'de' => 'Luther 1912',
                 'es' => 'Reina-Valera 1909',
+                'ja' => 'Japanese Colloquial 1955',
+                'zh-CN' => 'Chinese Union Version (Simplified)',
+                'ko' => 'Korean Revised Version',
+                'hi' => 'Hindi IRV 2019',
+                'ta' => 'Tamil IRV 2019',
+                'th' => 'Thai KJV',
                 default => 'BSB',
             };
 

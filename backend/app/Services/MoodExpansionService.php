@@ -167,13 +167,16 @@ class MoodExpansionService
         return array_merge($base, $clean);
     }
 
-    /** Whether $haystack contains $needle as a whole word (or substring for multi-word triggers). */
+    /** Whether $haystack contains $needle as a whole word, or substring for scripts without word spacing. */
     private function mentions(string $haystack, string $needle): bool
     {
         if ($needle === '') {
             return false;
         }
         if (str_contains($needle, ' ')) {
+            return str_contains($haystack, $needle);
+        }
+        if (preg_match('/[\x{0900}-\x{097F}\x{0B80}-\x{0BFF}\x{0E00}-\x{0E7F}\x{3040}-\x{30FF}\x{3400}-\x{9FFF}\x{AC00}-\x{D7AF}]/u', $needle) === 1) {
             return str_contains($haystack, $needle);
         }
 

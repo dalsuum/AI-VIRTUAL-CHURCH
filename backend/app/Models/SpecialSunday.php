@@ -185,18 +185,47 @@ class SpecialSunday extends Model
      */
     public function localizedPayload(string $language, CarbonImmutable $sunday): array
     {
-        $lang = array_key_exists($language, $this->titles ?? []) ? $language : 'en';
+        $lang = (
+            $this->hasLocalizedText($this->titles ?? [], $language)
+            || $this->hasLocalizedText($this->briefs ?? [], $language)
+        ) ? $language : 'en';
 
         return [
             'key'         => $this->key,
-            'title'       => $this->titles[$lang] ?? $this->titles['en'] ?? $this->key,
-            'brief'       => $this->briefs[$lang] ?? $this->briefs['en'] ?? '',
+            'title'       => $this->localizedTitle($language),
+            'brief'       => $this->localizedBrief($language),
             'sermon_tags' => array_values($this->sermon_tags ?? []),
             'music_moods' => array_values($this->music_moods ?? []),
             'region'      => $this->region,
             'date'        => $sunday->toDateString(),
             'language'    => $lang,
         ];
+    }
+
+    public function localizedTitle(string $language): string
+    {
+        return $this->localizedString($this->titles ?? [], $language, $this->key);
+    }
+
+    public function localizedBrief(string $language): string
+    {
+        return $this->localizedString($this->briefs ?? [], $language, '');
+    }
+
+    private function hasLocalizedText(array $map, string $language): bool
+    {
+        return isset($map[$language])
+            && is_string($map[$language])
+            && trim($map[$language]) !== '';
+    }
+
+    private function localizedString(array $map, string $language, string $fallback): string
+    {
+        if ($this->hasLocalizedText($map, $language)) {
+            return $map[$language];
+        }
+
+        return $this->hasLocalizedText($map, 'en') ? $map['en'] : $fallback;
     }
 
     // ── rule resolvers ──────────────────────────────────────────────────────

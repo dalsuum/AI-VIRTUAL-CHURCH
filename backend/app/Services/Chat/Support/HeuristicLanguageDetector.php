@@ -19,7 +19,7 @@ final class HeuristicLanguageDetector implements LanguageDetector
     public function detect(string $text, ?string $hint = null): string
     {
         $supported = $this->supportedCodes();
-        $hint = $this->normalizeCode($hint);
+        $hint = $this->canonicalCode($hint, $supported);
 
         if ($hint !== null && in_array($hint, $supported, true)) {
             return $hint;
@@ -30,8 +30,38 @@ final class HeuristicLanguageDetector implements LanguageDetector
             return 'my';
         }
 
+        if (preg_match('/[\x{0900}-\x{097F}]/u', $text) === 1
+            && ($code = $this->supportedCodeFor('hi', $supported)) !== null) {
+            return $code;
+        }
+
+        if (preg_match('/[\x{0B80}-\x{0BFF}]/u', $text) === 1
+            && ($code = $this->supportedCodeFor('ta', $supported)) !== null) {
+            return $code;
+        }
+
+        if (preg_match('/[\x{0E00}-\x{0E7F}]/u', $text) === 1
+            && ($code = $this->supportedCodeFor('th', $supported)) !== null) {
+            return $code;
+        }
+
+        if (preg_match('/[\x{3040}-\x{30FF}]/u', $text) === 1
+            && ($code = $this->supportedCodeFor('ja', $supported)) !== null) {
+            return $code;
+        }
+
+        if (preg_match('/[\x{AC00}-\x{D7AF}\x{1100}-\x{11FF}]/u', $text) === 1
+            && ($code = $this->supportedCodeFor('ko', $supported)) !== null) {
+            return $code;
+        }
+
+        if (preg_match('/[\x{4E00}-\x{9FFF}]/u', $text) === 1
+            && ($code = $this->supportedCodeFor('zh-CN', $supported)) !== null) {
+            return $code;
+        }
+
         $latin = $this->latinHeuristic($text);
-        if ($latin !== null && in_array($latin, $supported, true)) {
+        if ($latin !== null && ($latin = $this->supportedCodeFor($latin, $supported)) !== null) {
             return $latin;
         }
 
@@ -49,7 +79,7 @@ final class HeuristicLanguageDetector implements LanguageDetector
 
         $expanded = [];
         foreach ($codes as $code) {
-            $norm = $this->normalizeCode((string) $code);
+            $norm = $this->normalizeCanonical((string) $code);
             if ($norm !== null) {
                 $expanded[] = $norm;
             }
@@ -58,14 +88,51 @@ final class HeuristicLanguageDetector implements LanguageDetector
         return array_values(array_unique($expanded ?: ['en']));
     }
 
-    private function normalizeCode(?string $code): ?string
+    /** @param list<string> $supported */
+    private function supportedCodeFor(string $candidate, array $supported): ?string
     {
-        $code = trim((string) $code);
+        $code = $this->canonicalCode($candidate, $supported);
+
+        return $code !== null && in_array($code, $supported, true) ? $code : null;
+    }
+
+    /** @param list<string> $supported */
+    private function canonicalCode(?string $code, array $supported): ?string
+    {
+        $norm = $this->normalizeCanonical($code);
+        if ($norm === null) {
+            return null;
+        }
+
+        foreach ($supported as $known) {
+            if (strcasecmp($known, $norm) === 0) {
+                return $known;
+            }
+        }
+
+        $base = strtolower(strtok($norm, '-'));
+        foreach ($supported as $known) {
+            if (strtolower(strtok($known, '-')) === $base) {
+                return $known;
+            }
+        }
+
+        return $norm;
+    }
+
+    private function normalizeCanonical(?string $code): ?string
+    {
+        $code = str_replace('_', '-', trim((string) $code));
         if ($code === '') {
             return null;
         }
 
-        return strtolower(strtok($code, '-'));
+        $parts = explode('-', $code, 2);
+        $base = strtolower($parts[0]);
+
+        return isset($parts[1]) && $parts[1] !== ''
+            ? $base . '-' . strtoupper($parts[1])
+            : $base;
     }
 
     private function latinHeuristic(string $text): ?string

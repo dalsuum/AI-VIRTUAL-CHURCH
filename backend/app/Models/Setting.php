@@ -34,14 +34,45 @@ class Setting extends Model
         'hlt' => 'mms_tts',
         // Hebrew Bible reader: Edge TTS has native he-IL neural voices.
         'he' => 'edge_tts',
-        // World-language Bibles default to text-only narration OFF: Edge TTS has
-        // native de-DE/fr-FR/ta-IN voices, but the narrator only uses them when
-        // EDGE_TTS_VOICE_DE/FR/TA is set (else it reads with an English voice).
-        // An admin can switch these to edge_tts once those voices are configured.
-        'de' => 'off',
-        'fr' => 'off',
-        'ta' => 'off',
+        // World-language Bibles with native Edge TTS voices narrate by default;
+        // admins can still switch a translation to Off in the Bible settings.
+        'ar' => 'edge_tts',
+        'de' => 'edge_tts',
+        'es' => 'edge_tts',
+        'fr' => 'edge_tts',
+        'hi' => 'edge_tts',
+        'ja' => 'edge_tts',
+        'ko' => 'edge_tts',
+        'ta' => 'edge_tts',
+        'th' => 'edge_tts',
+        'zh-CN' => 'edge_tts',
     ];
+
+    /** Native Edge TTS voices for Bible-reader translations. */
+    public const BIBLE_EDGE_TTS_VOICES = [
+        'my' => ['female' => 'my-MM-NilarNeural', 'male' => 'my-MM-ThihaNeural'],
+        'td' => ['female' => 'en-US-AriaNeural', 'male' => 'en-US-GuyNeural'],
+        'he' => ['female' => 'he-IL-HilaNeural', 'male' => 'he-IL-AvriNeural'],
+        'ar' => ['female' => 'ar-SA-ZariyahNeural', 'male' => 'ar-SA-HamedNeural'],
+        'de' => ['female' => 'de-DE-KatjaNeural', 'male' => 'de-DE-ConradNeural'],
+        'es' => ['female' => 'es-ES-ElviraNeural', 'male' => 'es-ES-AlvaroNeural'],
+        'fr' => ['female' => 'fr-FR-DeniseNeural', 'male' => 'fr-FR-HenriNeural'],
+        'hi' => ['female' => 'hi-IN-SwaraNeural', 'male' => 'hi-IN-MadhurNeural'],
+        'ja' => ['female' => 'ja-JP-NanamiNeural', 'male' => 'ja-JP-KeitaNeural'],
+        'ko' => ['female' => 'ko-KR-SunHiNeural', 'male' => 'ko-KR-InJoonNeural'],
+        'ta' => ['female' => 'ta-IN-PallaviNeural', 'male' => 'ta-IN-ValluvarNeural'],
+        'th' => ['female' => 'th-TH-PremwadeeNeural', 'male' => 'th-TH-NiwatNeural'],
+        'zh-CN' => ['female' => 'zh-CN-XiaoxiaoNeural', 'male' => 'zh-CN-YunxiNeural'],
+    ];
+
+    /** Bible translation codes that use an existing interface/speech locale. */
+    public const BIBLE_VERSION_LOCALES = [
+        'ja-jcb' => 'ja',
+        'zh-CN-ccb' => 'zh-CN',
+    ];
+
+    /** Copyrighted drop-in Bible versions are present in admin, but hidden until licensed text is installed. */
+    public const OPTIONAL_BIBLE_VERSIONS = ['ja-jcb', 'zh-CN-ccb'];
 
     /** Edge TTS voice names the admin may pick from. */
     public const EDGE_TTS_VOICES = [
@@ -187,18 +218,54 @@ class Setting extends Model
         return static::get('narration_' . $language, '1') === '1';
     }
 
+    /** Voice providers the Bible reader may use for a translation. */
+    public static function bibleNarrationModeOptions(string $language): array
+    {
+        return match (self::bibleLocale($language)) {
+            'en', 'kjv' => self::NARRATION_MODES,
+            'my', 'td', 'cfm', 'cnh', 'hlt' => ['edge_tts', 'mms_tts', 'off'],
+            default => ['edge_tts', 'off'],
+        };
+    }
+
+    /** Locale backing a Bible version; alternate translations inherit their language locale. */
+    public static function bibleLocale(string $language): string
+    {
+        return self::BIBLE_VERSION_LOCALES[$language] ?? $language;
+    }
+
+    /** Default Bible-reader voice mode for a translation, before admin overrides. */
+    public static function defaultBibleNarrationMode(string $language): string
+    {
+        $locale = self::bibleLocale($language);
+        $default = self::DEFAULT_NARRATION_MODES[$locale] ?? 'edge_tts';
+
+        return in_array($default, self::bibleNarrationModeOptions($language), true) ? $default : 'edge_tts';
+    }
+
     /**
-     * Voice provider for the online Bible reader's "Listen" button. Admins can
-     * pick a Bible-specific voice; when unset it inherits the live-service
-     * narration voice for that language so existing behavior is preserved.
+     * Voice provider for the online Bible reader's "Listen" button. Admins can pick
+     * a Bible-specific mode; unset or invalid values fall back to the Bible default.
      */
     public static function bibleNarrationMode(string $language): string
     {
         $mode = static::get('bible_narration_mode_' . $language);
-        if ($mode !== null && in_array($mode, self::NARRATION_MODES, true)) {
+        if ($mode !== null && in_array($mode, self::bibleNarrationModeOptions($language), true)) {
             return $mode;
         }
-        return static::narrationMode($language);
+
+        return static::defaultBibleNarrationMode($language);
+    }
+
+    /** Edge TTS voice for Bible narration; unmapped Latin-script Bibles use the admin English voice. */
+    public static function bibleEdgeTtsVoice(string $language, string $gender): string
+    {
+        $voices = self::BIBLE_EDGE_TTS_VOICES[self::bibleLocale($language)] ?? null;
+        if (is_array($voices)) {
+            return $voices[$gender === 'male' ? 'male' : 'female'];
+        }
+
+        return static::get('edge_tts_voice', 'en-US-AriaNeural');
     }
 
     /** Whether the Bible reader highlights verses as narration plays. */
@@ -261,10 +328,24 @@ class Setting extends Model
         'csy' => 'Sizang',
         'td'  => 'Tedim',
         // World-language Bibles (public-domain / Creative Commons).
+        'ar'  => 'العربية (Arabic)',
+        'zh-CN' => '简体中文 (Chinese Simplified)',
+        'zh-CN-ccb' => '当代译本 (CCB)',
         'de'  => 'Deutsch',
+        'es'  => 'Español',
         'fr'  => 'Français',
+        'hi'  => 'हिन्दी (Hindi)',
+        'ja'  => '日本語 (Japanese)',
+        'ja-jcb' => 'リビングバイブル (JCB)',
+        'ko'  => '한국어 (Korean)',
         'ta'  => 'தமிழ் (Tamil)',
+        'th'  => 'ไทย (Thai)',
     ];
+
+    private static function defaultBibleVersionEnabled(string $code): bool
+    {
+        return ! in_array($code, self::OPTIONAL_BIBLE_VERSIONS, true);
+    }
 
     /**
      * Per-version reader feature buttons the admin can enable/disable. These
@@ -293,7 +374,7 @@ class Setting extends Model
         $matrix = [];
         foreach (array_keys(self::BIBLE_VERSIONS) as $code) {
             $row = is_array($stored[$code] ?? null) ? $stored[$code] : [];
-            $clean = ['enabled' => ($row['enabled'] ?? true) !== false];
+            $clean = ['enabled' => ($row['enabled'] ?? self::defaultBibleVersionEnabled($code)) !== false];
             foreach (self::BIBLE_FEATURES as $feature) {
                 $clean[$feature] = ($row[$feature] ?? true) !== false;
             }
@@ -330,7 +411,7 @@ class Setting extends Model
         $clean = [];
         foreach (array_keys(self::BIBLE_VERSIONS) as $code) {
             $row = is_array($matrix[$code] ?? null) ? $matrix[$code] : [];
-            $entry = ['enabled' => ($row['enabled'] ?? true) !== false];
+            $entry = ['enabled' => ($row['enabled'] ?? self::defaultBibleVersionEnabled($code)) !== false];
             foreach (self::BIBLE_FEATURES as $feature) {
                 $entry[$feature] = ($row[$feature] ?? true) !== false;
             }

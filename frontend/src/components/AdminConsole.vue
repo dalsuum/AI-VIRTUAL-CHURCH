@@ -149,9 +149,14 @@ const narrationModesTD = [
 
 // Compact per-version "Listen" voice rows for the Bible page. English & KJV get
 // the full English provider set; Myanmar & Tedim reuse their native-aware lists;
-// Hebrew uses its he-IL Edge voice; Falam, Hakha & Matu have native MMS-TTS voices;
-// the remaining Chin/Zo Bibles read phonetically via the English Edge voice (or Off).
+// Hebrew and the world-language Bibles use native Edge voices; Falam, Hakha &
+// Matu have native MMS-TTS voices; the remaining Chin/Zo Bibles read phonetically
+// via the English Edge voice (or Off).
 const bibleVoiceEN = narrationModes.filter((x) => x.value !== "browser");
+const nativeEdgeVoice = (locale, voices) => [
+  { value: "edge_tts", label: "Edge TTS (cloud, free)", hint: `Microsoft ${locale} neural voice (${voices}) — native narration, no server needed.` },
+  { value: "off",      label: "Off",                    hint: "No narration for this translation." },
+];
 const bibleVoiceHE = [
   { value: "edge_tts", label: "Edge TTS (cloud, free)", hint: "Microsoft he-IL neural voice (Avri / Hila) — native Hebrew, no server needed." },
   { value: "off",      label: "Off",                    hint: "No narration for this translation." },
@@ -188,11 +193,33 @@ const bibleVoiceMatu = [
   { value: "mms_tts",  label: "MMS-TTS (local, free)",  hint: "Local facebook/mms-tts-hlt — native Matu voice. Requires MMS speech on port 8003." },
   { value: "off",      label: "Off",                    hint: "No narration for this translation." },
 ];
+const bibleVoiceArabic = nativeEdgeVoice("ar-SA", "Zariyah / Hamed");
+const bibleVoiceChinese = nativeEdgeVoice("zh-CN", "Xiaoxiao / Yunxi");
+const bibleVoiceGerman = nativeEdgeVoice("de-DE", "Katja / Conrad");
+const bibleVoiceSpanish = nativeEdgeVoice("es-ES", "Elvira / Alvaro");
+const bibleVoiceFrench = nativeEdgeVoice("fr-FR", "Denise / Henri");
+const bibleVoiceHindi = nativeEdgeVoice("hi-IN", "Swara / Madhur");
+const bibleVoiceJapanese = nativeEdgeVoice("ja-JP", "Nanami / Keita");
+const bibleVoiceKorean = nativeEdgeVoice("ko-KR", "SunHi / InJoon");
+const bibleVoiceTamil = nativeEdgeVoice("ta-IN", "Pallavi / Valluvar");
+const bibleVoiceThai = nativeEdgeVoice("th-TH", "Premwadee / Niwat");
 const bibleVoiceLangs = [
   { code: "kjv", label: "KJV (English)",  modes: bibleVoiceEN },
   { code: "en",  label: "English (BSB)",  modes: bibleVoiceEN },
   { code: "he",  label: "Hebrew (עברית)", modes: bibleVoiceHE },
   { code: "my",  label: "Burmese (ဗမာ)",  modes: bibleVoiceBurmese },
+  { code: "ar",  label: "Arabic (العربية)", modes: bibleVoiceArabic },
+  { code: "zh-CN", label: "Chinese Simplified (简体中文)", modes: bibleVoiceChinese },
+  { code: "zh-CN-ccb", label: "Chinese CCB (当代译本)", modes: bibleVoiceChinese },
+  { code: "de",  label: "German (Deutsch)", modes: bibleVoiceGerman },
+  { code: "es",  label: "Spanish (Español)", modes: bibleVoiceSpanish },
+  { code: "fr",  label: "French (Français)", modes: bibleVoiceFrench },
+  { code: "hi",  label: "Hindi (हिन्दी)", modes: bibleVoiceHindi },
+  { code: "ja",  label: "Japanese (日本語)", modes: bibleVoiceJapanese },
+  { code: "ja-jcb", label: "Japanese JCB (リビングバイブル)", modes: bibleVoiceJapanese },
+  { code: "ko",  label: "Korean (한국어)", modes: bibleVoiceKorean },
+  { code: "ta",  label: "Tamil (தமிழ்)", modes: bibleVoiceTamil },
+  { code: "th",  label: "Thai (ไทย)", modes: bibleVoiceThai },
   { code: "td",  label: "Tedim (Zolai)",  modes: bibleVoiceTedim },
   { code: "cfm", label: "Falam",          modes: bibleVoiceFalam },
   { code: "cnh", label: "Hakha",          modes: bibleVoiceHakha },
@@ -541,6 +568,18 @@ const BIBLE_VERSIONS = [
   { code: "pck", label: "Paite" },
   { code: "csy", label: "Sizang" },
   { code: "td",  label: "Tedim" },
+  { code: "ar",  label: "العربية (Arabic)" },
+  { code: "zh-CN", label: "简体中文 (Chinese Simplified)" },
+  { code: "zh-CN-ccb", label: "当代译本 (CCB)" },
+  { code: "de",  label: "Deutsch" },
+  { code: "es",  label: "Español" },
+  { code: "fr",  label: "Français" },
+  { code: "hi",  label: "हिन्दी (Hindi)" },
+  { code: "ja",  label: "日本語 (Japanese)" },
+  { code: "ja-jcb", label: "リビングバイブル (JCB)" },
+  { code: "ko",  label: "한국어 (Korean)" },
+  { code: "ta",  label: "தமிழ் (Tamil)" },
+  { code: "th",  label: "ไทย (Thai)" },
 ];
 const BIBLE_FEATURE_COLS = [
   { key: "enabled",    label: "Show tab" },
@@ -2610,11 +2649,12 @@ onUnmounted(() => {
           <p class="setting-desc">
             The voice used by the online Bible reader's <strong>🔊 Listen</strong> button,
             per translation. Independent of the live-service narration. English &amp;
-            KJV support every provider; Burmese, Tedim, Falam, Hakha &amp; Matu add a
-            native local MMS-TTS voice; Hebrew uses its he-IL voice; the remaining
-            Chin/Zo Bibles (Mizo, Paite, Mara, Sizang) have no native voice,
-            so they read phonetically with the English Edge voice — or
-            set any translation to <strong>Off</strong> to disable narration there.
+            KJV support every provider; Hebrew and the world-language Bibles use
+            native Edge voices; Burmese, Tedim, Falam, Hakha &amp; Matu add a native
+            local MMS-TTS voice; the remaining Chin/Zo Bibles (Mizo, Paite, Mara,
+            Sizang) have no native voice, so they read phonetically with the
+            English Edge voice — or set any translation to <strong>Off</strong>
+            to disable narration there.
             Hover a button for details.
           </p>
           <template v-if="settings">

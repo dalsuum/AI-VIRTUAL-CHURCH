@@ -7,7 +7,7 @@ this once per machine (before first service, alongside seed_hymns.py):
     pip install requests
     python workers/tools/seed_language_data.py
 
-It produces four files, all from dalsuum-owned public repos:
+It produces the Bible/text files used by workers/bible_api.py:
 
     data/kjv.json          Authorized (King James) Version — from
                            dalsuum/bible if present, else built from getbible.net
@@ -17,6 +17,25 @@ It produces four files, all from dalsuum-owned public repos:
     data/wlc.json          Hebrew Tanakh (Westminster Leningrad Codex) — from
                            dalsuum/bible if present, else built from getbible.net
                            by build_hebrew_bible.py (Old Testament only, RTL)
+    data/japanese_colloquial1955.json
+                           Colloquial Japanese (1955) — github.com/dalsuum/bible
+    data/hindi_irv2019.json
+                           Hindi Indian Revised Version (2019) — built from
+                           eBible.org hin2017 USFM (CC BY-SA 4.0)
+    data/arabic_vandyke.json
+                           Arabic Van Dyck Bible — built from eBible.org arb-vd
+                           USFM (public domain)
+    data/chinese_union_simplified.json
+                           Chinese Union Version (simplified) — built from
+                           eBible.org cmn-cu89s USFM (public domain)
+    data/spanish_rv1909.json
+                           Reina Valera 1909 — built from eBible.org spaRV1909
+                           USFM (public domain)
+    data/thai_kjv.json
+                           Thai KJV Bible — built from eBible.org thaKJV USFM
+                           (CC BY-NC-ND 4.0)
+    data/korean_krv.json   Korean Revised Version — built from getBible v2
+                           Korean module (public domain)
     data/books_en.json     canonical 66-book English index, extracted from the
                            same repo's category.json (name/abbr -> book number)
     data/hymns_my.json     852 Burmese songs, built from
@@ -131,6 +150,74 @@ def _seed_kjv(force: bool) -> None:
     print(f"  kjv.json: {len(payload['book'])} books ✓ (built from getbible.net)")
 
 
+def _seed_japanese(force: bool) -> None:
+    """Colloquial Japanese 1955 -> data/japanese_colloquial1955.json.
+
+    Public-domain edition, already available in dalsuum/bible's shared JSON
+    schema as identify 81.
+    """
+    out = os.path.join(DATA_DIR, "japanese_colloquial1955.json")
+    if os.path.exists(out) and not force:
+        print("  japanese_colloquial1955.json: already present, skipping")
+        return
+    data = _fetch(BIBLE_RAW + "/json/81.json")
+    payload = json.loads(data)
+    assert len(payload.get("book", {})) == 66, "unexpected Japanese canon"
+    open(out, "wb").write(data)
+    print(f"  japanese_colloquial1955.json: {len(data) / 1e6:.1f} MB ✓")
+
+
+def _seed_hindi(force: bool) -> None:
+    """Hindi IRV 2019 -> data/hindi_irv2019.json.
+
+    Built from eBible's hin2017 USFM so study notes/cross-references can be
+    stripped before the reader/search/AI surfaces consume verse text.
+    """
+    out = os.path.join(DATA_DIR, "hindi_irv2019.json")
+    if os.path.exists(out) and not force:
+        print("  hindi_irv2019.json: already present, skipping")
+        return
+    import build_hindi_irv_bible  # noqa: PLC0415 — sibling tool, path set above
+
+    payload = build_hindi_irv_bible.build()
+    with open(out, "w", encoding="utf-8") as fh:
+        json.dump(payload, fh, ensure_ascii=False, indent=1)
+        fh.write("\n")
+    print(f"  hindi_irv2019.json: {len(payload['book'])} books ✓ (built from eBible USFM)")
+
+
+def _seed_ebible_world_bibles(force: bool) -> None:
+    import build_ebible_bible  # noqa: PLC0415 — sibling tool, path set above
+
+    for lang in ("ar", "zh-CN", "es", "th"):
+        cfg = build_ebible_bible.TRANSLATIONS[lang]
+        out = os.path.join(DATA_DIR, cfg.out_file)
+        if os.path.exists(out) and not force:
+            print(f"  {cfg.out_file}: already present, skipping")
+            continue
+        payload = build_ebible_bible.build(lang)
+        with open(out, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh, ensure_ascii=False, indent=1)
+            fh.write("\n")
+        print(f"  {cfg.out_file}: {len(payload['book'])} books ✓ (built from eBible USFM)")
+
+
+def _seed_getbible_world_bibles(force: bool) -> None:
+    import build_getbible_bible  # noqa: PLC0415 — sibling tool, path set above
+
+    for lang in ("ko",):
+        cfg = build_getbible_bible.TRANSLATIONS[lang]
+        out = os.path.join(DATA_DIR, cfg.out_file)
+        if os.path.exists(out) and not force:
+            print(f"  {cfg.out_file}: already present, skipping")
+            continue
+        payload = build_getbible_bible.build(lang)
+        with open(out, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh, ensure_ascii=False, indent=1)
+            fh.write("\n")
+        print(f"  {cfg.out_file}: {len(payload['book'])} books ✓ (built from getBible v2)")
+
+
 def _seed_books_index(force: bool) -> None:
     out = os.path.join(DATA_DIR, "books_en.json")
     if os.path.exists(out) and not force:
@@ -180,6 +267,14 @@ def main() -> None:
     _seed_kjv(args.force)
     print("Seeding Hebrew Tanakh (WLC)…")
     _seed_hebrew(args.force)
+    print("Seeding Japanese Bible…")
+    _seed_japanese(args.force)
+    print("Seeding Hindi Bible…")
+    _seed_hindi(args.force)
+    print("Seeding additional eBible world-language Bibles…")
+    _seed_ebible_world_bibles(args.force)
+    print("Seeding getBible world-language Bibles…")
+    _seed_getbible_world_bibles(args.force)
     print("Seeding canonical book index…")
     _seed_books_index(args.force)
     print("Seeding Myanmar hymn library (dalsuum/myanmar-hymns)…")

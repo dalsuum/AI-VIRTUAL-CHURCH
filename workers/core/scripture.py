@@ -67,9 +67,14 @@ def canonical_id(book_num: int, chapter: int, verse: int) -> str:
 def _resolve_translation(translation: str) -> tuple[str, bool]:
     """Map a requested translation to one we actually carry. Unknown codes (NIV/
     NLT, not vendored in v1) degrade to the fallback — never fabricate."""
-    code = (translation or "").strip().lower()
-    if code in bible_api.languages():
-        return code, False
+    requested = (translation or "").strip()
+    langs = bible_api.languages()
+    if requested in langs:
+        return requested, False
+    code = requested.lower()
+    canonical = {lang.lower(): lang for lang in langs}.get(code)
+    if canonical:
+        return canonical, False
     return _FALLBACK_TRANSLATION, True
 
 

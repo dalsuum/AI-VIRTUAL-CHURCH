@@ -55,12 +55,98 @@ def test_world_language_bibles_resolve():
     # Public-domain / CC world-language Bibles vendored from dalsuum/bible.
     # English references resolve against the canonical book index; native text
     # is returned without fabrication or fallback.
-    for lang in ("de", "fr", "ta"):
+    for lang in ("ar", "de", "es", "fr", "hi", "ja", "ko", "ta", "th", "zh-CN"):
         vo = scripture.resolve_ref("John 3:16", lang)
         assert vo.resolved is True, lang
         assert vo.translation == lang and vo.translation_fallback is False, lang
         assert vo.book_num == 43 and vo.chapter == 3 and vo.verse_start == 16, lang
         assert vo.text.strip(), lang
+
+
+def test_japanese_and_hindi_bibles_are_registered_full_canon():
+    import bible_api
+    assert "ja" in bible_api.languages()
+    assert "hi" in bible_api.languages()
+
+    for lang in ("ja", "hi"):
+        books = bible_api.list_books(lang)
+        assert len(books) == 66, lang
+        assert books[0]["num"] == 1 and books[-1]["num"] == 66, lang
+        assert books[0]["chapters"] == 50, lang
+        assert books[42]["chapters"] == 21, lang  # John
+        assert books[-1]["chapters"] == 22, lang
+        assert all(b["available"] is True for b in books), lang
+
+
+def test_japanese_and_hindi_verse_lookup_and_reader_search():
+    import bible_api
+
+    ja = scripture.resolve_ref("John 3:16", "ja")
+    hi = scripture.resolve_ref("John 3:16", "hi")
+    assert "神" in ja.text
+    assert "परमेश्वर" in hi.text
+
+    for lang in ("ja", "hi"):
+        john = bible_api.chapter(lang, 43, 3)
+        assert john["verses"][15]["num"] == 16
+        assert john["verses"][15]["text"].strip()
+        aliases = [a.lower() for a in bible_api.list_books(lang)[42]["aliases"]]
+        assert "john" in aliases and "jn" in aliases
+
+
+def test_remaining_world_language_bibles_are_registered_full_canon():
+    import bible_api
+
+    for lang in ("ar", "es", "ko", "th", "zh-CN"):
+        assert lang in bible_api.languages()
+        books = bible_api.list_books(lang)
+        assert len(books) == 66, lang
+        assert books[0]["num"] == 1 and books[-1]["num"] == 66, lang
+        assert books[0]["chapters"] == 50, lang
+        assert books[42]["chapters"] == 21, lang  # John
+        assert books[59]["chapters"] == 5, lang  # 1 Peter
+        assert books[-1]["chapters"] == 22, lang
+        assert all(b["available"] is True for b in books), lang
+
+
+def test_remaining_world_language_verse_lookup_and_reader_search():
+    import bible_api
+
+    expected = {
+        "ar": "ٱلله",
+        "es": "Dios",
+        "ko": "하나님",
+        "th": "พระเจ้า",
+        "zh-CN": "神",
+    }
+    for lang, needle in expected.items():
+        vo = scripture.resolve_ref("John 3:16", lang)
+        assert needle in vo.text, lang
+        john = bible_api.chapter(lang, 43, 3)
+        assert john["verses"][15]["num"] == 16
+        assert john["verses"][15]["text"].strip()
+        aliases = [a.lower() for a in bible_api.list_books(lang)[42]["aliases"]]
+        assert "john" in aliases and "jn" in aliases
+
+
+def test_copyrighted_drop_in_translations_are_hidden_until_dataset_exists(tmp_path):
+    import bible_api
+
+    old_ja = bible_api._LANG_FILES["ja-jcb"]
+    old_zh = bible_api._LANG_FILES["zh-CN-ccb"]
+    try:
+        bible_api._LANG_FILES["ja-jcb"] = str(tmp_path / "missing_jcb.json")
+        bible_api._LANG_FILES["zh-CN-ccb"] = str(tmp_path / "missing_ccb.json")
+        assert "ja-jcb" not in bible_api.languages()
+        assert "zh-CN-ccb" not in bible_api.languages()
+
+        drop_in = tmp_path / "japanese_jcb.json"
+        drop_in.write_text('{"book": {}}\n', encoding="utf-8")
+        bible_api._LANG_FILES["ja-jcb"] = str(drop_in)
+        assert "ja-jcb" in bible_api.languages()
+    finally:
+        bible_api._LANG_FILES["ja-jcb"] = old_ja
+        bible_api._LANG_FILES["zh-CN-ccb"] = old_zh
 
 
 def test_list_books_carries_english_aliases_for_non_english():

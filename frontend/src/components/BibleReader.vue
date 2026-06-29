@@ -1,9 +1,6 @@
 <script setup>
-// Online Bible reader. Browses the vendored public-domain translations served
-// by the backend (/api/bible/*): English (Berean Standard Bible & King James
-// Version), Burmese (Judson 1835), Hebrew Tanakh (WLC) and a set of Chin/Zo
-// language Bibles from the Bible Society of Myanmar (Tedim, Falam, Hakha, Mizo,
-// Paite, Sizang, Mara, Matu). Read-only, no auth required.
+// Online Bible reader. Browses the vendored public-domain / freely licensed
+// translations served by the backend (/api/bible/*). Read-only, no auth required.
 import { ref, computed, watch, onMounted, nextTick } from "vue";
 import { useI18n } from "vue-i18n";
 import { api } from "../composables/useApi.js";
@@ -29,14 +26,23 @@ const LANGS = [
   { code: "csy", label: "Sizang", note: "Lai Siangtho (Sizang, 1932)" },
   { code: "td", label: "Tedim", note: "Lai Siangtho 1932" },
   // World-language Bibles (public-domain / Creative Commons). A→Z by label.
+  { code: "ar", label: "العربية", note: "Arabic Van Dyck Bible" },
+  { code: "zh-CN", label: "简体中文", note: "Chinese Union Version (Simplified)" },
+  { code: "zh-CN-ccb", label: "当代译本 (CCB)", note: "Chinese Contemporary Bible (1979)" },
   { code: "de", label: "Deutsch", note: "Luther Bibel (1912)" },
+  { code: "es", label: "Español", note: "Reina Valera (1909)" },
   { code: "fr", label: "Français", note: "Bible Ostervald (1877)" },
+  { code: "hi", label: "हिन्दी", note: "Indian Revised Version (Hindi, 2019)" },
+  { code: "ja", label: "日本語", note: "Colloquial Japanese (1955)" },
+  { code: "ja-jcb", label: "リビングバイブル (JCB)", note: "Japanese Contemporary Bible (1978)" },
+  { code: "ko", label: "한국어", note: "Korean Revised Version" },
   { code: "ta", label: "தமிழ்", note: "Indian Revised Version (Tamil, 2019)" },
+  { code: "th", label: "ไทย", note: "Thai KJV Bible (2003)" },
 ];
 
 // Right-to-left scripts (Hebrew) need the reader heading and verse body laid out
 // RTL. Kept as a set so future RTL translations are a one-line addition.
-const RTL_LANGS = new Set(["he"]);
+const RTL_LANGS = new Set(["ar", "he"]);
 
 // Latin-script translations (both English editions) use the default typography;
 // the `mm` class only suits the larger Myanmar/Tedim/Hebrew scripts.
@@ -44,9 +50,9 @@ const LATIN_LANGS = new Set([
   "en", "kjv",
   // The Chin/Zo Bibles are written in Latin script.
   "cfm", "cnh", "lus", "pck", "csy", "mrh", "hlt",
-  // German and French are Latin script too (Tamil is not — it keeps the large
-  // `mm` script class, like Myanmar/Hebrew).
-  "de", "fr",
+  // German, French, and Spanish are Latin script too. The other world-language
+  // Bibles keep the larger script class, like Myanmar/Hebrew.
+  "de", "es", "fr",
 ]);
 
 const lang = ref("en");

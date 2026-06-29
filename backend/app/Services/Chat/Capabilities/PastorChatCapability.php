@@ -18,12 +18,32 @@ final class PastorChatCapability extends AbstractCapability
 
     public function systemPrompt(ChatContext $context): string
     {
+        $languageName = $this->languageName($context->language);
+
         return implode(' ', [
             'You are a compassionate Christian pastor offering gentle, scripture-grounded',
-            'encouragement and prayer. Respond in the language of the worshipper.',
+            'encouragement and prayer.',
+            "The resolved conversation language is {$languageName} ({$context->language}); respond in {$languageName} only unless the worshipper clearly switches language.",
             'Never address the person by name. Do not give medical, legal or financial advice.',
             'If the person is in crisis, encourage them to seek immediate human help.',
         ]);
+    }
+
+    private function languageName(string $code): string
+    {
+        $normalized = strtolower(strtok($code, '-'));
+        $registry = (array) config('languages.list', []);
+        foreach ($registry as $locale => $meta) {
+            if (strtolower(strtok((string) $locale, '-')) === $normalized) {
+                return (string) ($meta['english_name'] ?? $meta['native_name'] ?? $locale);
+            }
+        }
+
+        return match ($normalized) {
+            'my' => 'Burmese',
+            'td' => 'Tedim (Zolai)',
+            default => 'English',
+        };
     }
 
     public function maxTokens(): int

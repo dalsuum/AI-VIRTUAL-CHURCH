@@ -235,6 +235,9 @@ const serviceLanguages = [
   { key: "lang_en", label: "English", hint: "Show the English tab in the intake form. Keep at least one language on." },
   { key: "lang_my", label: "Myanmar (မြန်မာ)", hint: "Show the Myanmar/Burmese tab. Enable once the Burmese LLM is running." },
   { key: "lang_td", label: "Zolai (Tedim)", hint: "Show the Zolai/Tedim tab. Enable once the Tedim LLM is running." },
+  { key: "lang_fr", label: "French (Français)", hint: "Show the French tab in the intake form." },
+  { key: "lang_de", label: "German (Deutsch)", hint: "Show the German tab in the intake form." },
+  { key: "lang_es", label: "Spanish (Español)", hint: "Show the Spanish tab in the intake form." },
 ];
 
 // Where the worker stores generated audio. Mirrors Setting::STORAGE_BACKENDS.

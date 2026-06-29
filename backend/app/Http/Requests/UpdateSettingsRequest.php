@@ -86,6 +86,9 @@ class UpdateSettingsRequest extends FormRequest
             'narration_en'        => ['sometimes', 'boolean'],
             'narration_my'        => ['sometimes', 'boolean'],
             'narration_td'        => ['sometimes', 'boolean'],
+            'narration_fr'        => ['sometimes', 'boolean'],
+            'narration_de'        => ['sometimes', 'boolean'],
+            'narration_es'        => ['sometimes', 'boolean'],
             // Goldfish LLM narrators for the Bible-only Chin/Zo languages
             // (Mizo lus, Paite pck). Toggling writes a Redis flag the worker
             // goldfish_service consults; off → fall back to curated content.
@@ -95,6 +98,9 @@ class UpdateSettingsRequest extends FormRequest
             'lang_en'             => ['sometimes', 'boolean'],
             'lang_my'             => ['sometimes', 'boolean'],
             'lang_td'             => ['sometimes', 'boolean'],
+            'lang_fr'             => ['sometimes', 'boolean'],
+            'lang_de'             => ['sometimes', 'boolean'],
+            'lang_es'             => ['sometimes', 'boolean'],
             // Cards shown during the preparation countdown.
             'countdown_content_enabled' => ['sometimes', 'boolean'],
             'countdown_content_source'  => ['sometimes', 'string', 'in:banners,testimonies,online,both,all,off'],

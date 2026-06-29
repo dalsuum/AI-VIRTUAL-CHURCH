@@ -190,7 +190,7 @@ class Setting extends Model
     ];
 
     /** All supported service languages. */
-    public const LANGUAGES = ['en', 'my', 'td'];
+    public const LANGUAGES = ['en', 'my', 'td', 'fr', 'de', 'es'];
 
     public static function get(string $key, ?string $default = null): ?string
     {
@@ -501,7 +501,7 @@ class Setting extends Model
      */
     public static function enabledLanguages(): array
     {
-        $defaults = ['en' => '1', 'my' => '0', 'td' => '0'];
+        $defaults = ['en' => '1', 'my' => '0', 'td' => '0', 'fr' => '0', 'de' => '0', 'es' => '0'];
         return array_values(array_filter(
             self::LANGUAGES,
             fn($l) => static::get('lang_' . $l, $defaults[$l]) === '1'

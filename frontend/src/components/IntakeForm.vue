@@ -13,7 +13,7 @@ const { t, te, locale } = useI18n();
 // Follows the one global language authority. There is no per-page picker and no
 // stored service_language: the service language is the global UI language,
 // clamped to the set the service backend actually supports
-// (config.enabled_languages → en/my/td) so generation never receives a language
+// (config.enabled_languages) so generation never receives a language
 // it cannot produce. Mirrors how Bible Reader/Study clamp to their capabilities.
 const enabledLangs = ref(["en"]); // filled from config; English is always the fallback
 const language = computed(() => {
@@ -120,7 +120,7 @@ if (returningName && api.hasToken()) {
 function fmtHistoryDate(v) {
   if (!v) return "";
   const d = new Date(v);
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  return d.toLocaleDateString(locale.value, { month: "short", day: "numeric", year: "numeric" });
 }
 const email = ref("");
 

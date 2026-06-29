@@ -1228,12 +1228,12 @@ class AdminController extends Controller
         if (array_key_exists('bible_features', $data)) {
             Setting::setBibleFeatures($data['bible_features']);
         }
-        foreach (['narration_en', 'narration_my', 'narration_td'] as $key) {
+        foreach (['narration_en', 'narration_my', 'narration_td', 'narration_fr', 'narration_de', 'narration_es'] as $key) {
             if (array_key_exists($key, $data)) {
                 Setting::set($key, $data[$key] ? '1' : '0');
             }
         }
-        foreach (['lang_en', 'lang_my', 'lang_td'] as $key) {
+        foreach (['lang_en', 'lang_my', 'lang_td', 'lang_fr', 'lang_de', 'lang_es'] as $key) {
             if (array_key_exists($key, $data)) {
                 Setting::set($key, $data[$key] ? '1' : '0');
             }
@@ -1333,10 +1333,16 @@ class AdminController extends Controller
             'narration_en'       => Setting::narrationEnabled('en'),
             'narration_my'       => Setting::narrationEnabled('my'),
             'narration_td'       => Setting::narrationEnabled('td'),
+            'narration_fr'       => Setting::narrationEnabled('fr'),
+            'narration_de'       => Setting::narrationEnabled('de'),
+            'narration_es'       => Setting::narrationEnabled('es'),
             // Which service languages appear in the intake form.
             'lang_en'            => Setting::get('lang_en', '1') === '1',
             'lang_my'            => Setting::get('lang_my', '0') === '1',
             'lang_td'            => Setting::get('lang_td', '0') === '1',
+            'lang_fr'            => Setting::get('lang_fr', '0') === '1',
+            'lang_de'            => Setting::get('lang_de', '0') === '1',
+            'lang_es'            => Setting::get('lang_es', '0') === '1',
             // Goldfish LLM narrators (Bible-only Chin/Zo); default on.
             'narration_lus'      => Setting::get('narration_lus', '1') === '1',
             'narration_pck'      => Setting::get('narration_pck', '1') === '1',

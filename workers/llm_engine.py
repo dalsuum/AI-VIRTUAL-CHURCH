@@ -661,6 +661,13 @@ def _keyword_anchor(prayer_text: str | None) -> str:
         "Ground this segment directly in these specific feelings and concerns."
     )
 
+_LANGUAGE_NAMES = {
+    "fr": "French",
+    "de": "German",
+    "es": "Spanish",
+}
+
+
 def _fallback_welcome(user_name: str | None, mood: str, language: str) -> str:
     if language == "my":
         name = f"{user_name}၊ " if user_name else ""
@@ -676,6 +683,12 @@ def _fallback_welcome(user_name: str | None, mood: str, language: str) -> str:
             "Topa Pasian in na kiangah om hi. Hih biakna hun sungah Zeisu Krist itna, "
             "nopna leh lam-etna hong thak sak hen."
         )
+    if language == "fr":
+        return f"Bon retour{', ' + user_name if user_name else ''}. Que le Christ vous rencontre aujourd'hui avec paix, espérance et grâce."
+    if language == "de":
+        return f"Willkommen zurück{', ' + user_name if user_name else ''}. Möge Christus Ihnen heute mit Frieden, Hoffnung und Gnade begegnen."
+    if language == "es":
+        return f"Bienvenido de nuevo{', ' + user_name if user_name else ''}. Que Cristo te encuentre hoy con paz, esperanza y gracia."
     return f"Welcome back{', ' + user_name if user_name else ''}. May Christ meet you with peace and hope today."
 
 
@@ -730,6 +743,21 @@ _FALLBACK_OPENING_PRAYERS_EN = [
     "Father, You are our rock and our refuge. As we gather now, quiet our anxious thoughts and fill us with the hope that only You can give. Amen.",
 ]
 
+_FALLBACK_OPENING_PRAYERS_WORLD = {
+    "fr": [
+        "Seigneur, accueille-nous avec ta paix et ta miséricorde au début de ce culte. Parle à nos coeurs et renouvelle notre espérance en Jésus-Christ. Amen.",
+        "Dieu de grâce, nous venons devant toi avec ce qui pèse sur nos coeurs. Donne-nous ton repos, ta lumière et ta paix. Au nom de Jésus, Amen.",
+    ],
+    "de": [
+        "Herr, begegne uns zu Beginn dieses Gottesdienstes mit Barmherzigkeit und Frieden. Sprich zu unseren Herzen und erneuere unsere Hoffnung in Christus. Amen.",
+        "Gnädiger Gott, wir kommen mit allem zu dir, was uns belastet. Schenke uns Ruhe, Wahrheit und Frieden. In Jesu Namen, Amen.",
+    ],
+    "es": [
+        "Señor, recíbenos con misericordia y paz al comenzar este culto. Habla a nuestro corazón y renueva nuestra esperanza en Cristo Jesús. Amén.",
+        "Dios de gracia, venimos ante ti con todo lo que pesa en nuestro corazón. Danos descanso, verdad y paz. En el nombre de Jesús, Amén.",
+    ],
+}
+
 
 def _burmese_prayer_for_mood(mood: str, user_history: dict | None = None) -> str:
     """Pick a Burmese opening prayer from the 100-prayer corpus that fits the mood.
@@ -782,6 +810,8 @@ def _fallback_opening_prayer(user_name: str | None, mood: str, language: str) ->
         return _burmese_prayer_for_mood(mood)
     if language == "td":
         return random.choice(_FALLBACK_OPENING_PRAYERS_TD)
+    if language in _FALLBACK_OPENING_PRAYERS_WORLD:
+        return random.choice(_FALLBACK_OPENING_PRAYERS_WORLD[language])
     return random.choice(_FALLBACK_OPENING_PRAYERS_EN)
 
 
@@ -812,6 +842,12 @@ def _fallback_sermon(mood: str, scripture_ref: str, language: str) -> str:
             "Na thugen zawhloh thungetna zong Topa in za hi. Tuni in thahat sak kul lo; Topa maiah diktak in ding thei hi. "
             "Zeisu Krist sungah lungdamna leh lam-etna om hi. Pasian in nang hong mangngilh lo hi."
         )
+    if language == "fr":
+        return "Dieu est proche de ceux qui ont le coeur brisé, et le Christ donne l'espérance pour le prochain pas."
+    if language == "de":
+        return "Gott ist den Zerbrochenen nahe, und Christus schenkt Hoffnung für den nächsten Schritt."
+    if language == "es":
+        return "Dios está cerca de los quebrantados de corazón, y Cristo da esperanza para el próximo paso."
     return "God is near to the brokenhearted, and Christ gives hope for the next step."
 
 
@@ -856,12 +892,29 @@ _FALLBACK_BENEDICTIONS_EN = [
     "May the Lord bless you and keep you; may His face shine upon you and give you peace, today and always. Amen.",
 ]
 
+_FALLBACK_BENEDICTIONS_WORLD = {
+    "fr": [
+        "Que la paix du Christ garde votre coeur et guide votre prochain pas. Amen.",
+        "Allez dans la grâce du Père, l'amour du Fils et la communion du Saint-Esprit. Amen.",
+    ],
+    "de": [
+        "Der Friede Christi bewahre Ihr Herz und leite Ihren nächsten Schritt. Amen.",
+        "Gehen Sie in der Gnade des Vaters, der Liebe Christi und der Gemeinschaft des Heiligen Geistes. Amen.",
+    ],
+    "es": [
+        "Que la paz de Cristo guarde tu corazón y guíe tu próximo paso. Amén.",
+        "Ve en la gracia del Padre, el amor de Cristo y la comunión del Espíritu Santo. Amén.",
+    ],
+}
+
 
 def _fallback_benediction(user_name: str | None, mood: str, language: str) -> str:
     if language == "my":
         return random.choice(_FALLBACK_BENEDICTIONS_MY)
     if language == "td":
         return random.choice(_FALLBACK_BENEDICTIONS_TD)
+    if language in _FALLBACK_BENEDICTIONS_WORLD:
+        return random.choice(_FALLBACK_BENEDICTIONS_WORLD[language])
     return random.choice(_FALLBACK_BENEDICTIONS_EN)
 
 
@@ -950,6 +1003,14 @@ def _language_instruction(language: str) -> str:
             "'ယေရှုခရစ်တော်သည် ကယ်တင်ခြင်းကို ပေးတော်မူသည်' (Jesus Christ gives salvation — SOV); "
             "'ကျွန်ုပ်တို့နှလုံးကို ကောင်းချီးပေးတော်မူပါစေ' (May He bless our hearts — benediction with -ပါစေ). "
             "Keep sentences short and clear. Use the colloquial-literary blend of Myanmar church Burmese."
+        )
+    if language in _LANGUAGE_NAMES:
+        language_name = _LANGUAGE_NAMES[language]
+        return (
+            f"LANGUAGE LAW — ABSOLUTE: Write EVERY SINGLE SENTENCE in {language_name} ONLY. "
+            f"Do not include English except proper names, Bible reference labels when explicitly requested, or unavoidable song/artist titles. "
+            f"Use natural Christian worship language in {language_name}; do not translate English idioms word-for-word. "
+            "For narration, spell out dates and numbers naturally in the target language when possible."
         )
     if language == "td":
         return (
@@ -1079,6 +1140,61 @@ def _fallback_music_lyrics(mood: str, language: str) -> str:
             "Ni simin na hehpihna ka mu sak in.\n"
             "Ka nuntakna in Nang ading lasa suak hen."
         )
+    world = {
+        "fr": (
+            "[Verse 1]\n"
+            "Seigneur, viens dans ce moment,\n"
+            "avec ta grâce et ta paix.\n"
+            "Tourne mon coeur vers ta promesse,\n"
+            "et calme toute peur.\n\n"
+            "[Chorus]\n"
+            "Je veux t'adorer, je veux te faire confiance,\n"
+            "dans ta grâce je tiens aujourd'hui.\n"
+            "Jésus, conduis-moi, Jésus, garde-moi,\n"
+            "guide mon coeur sur ton chemin.\n\n"
+            "[Verse 2]\n"
+            "Quand l'espoir semble lointain,\n"
+            "ton amour reste mon chant.\n"
+            "Tu es fidèle dans l'attente,\n"
+            "et ta paix me rendra fort."
+        ),
+        "de": (
+            "[Verse 1]\n"
+            "Herr, begegne mir in diesem Augenblick,\n"
+            "mit Gnade, sanft und nah.\n"
+            "Richte mein Herz auf deine Verheissung,\n"
+            "und stille jede Angst.\n\n"
+            "[Chorus]\n"
+            "Ich will dich anbeten, dir vertrauen,\n"
+            "in deiner Gnade stehe ich heut.\n"
+            "Jesus, fuehre mich, Jesus, halte mich,\n"
+            "leite mein Herz auf deinem Weg.\n\n"
+            "[Verse 2]\n"
+            "Wenn Hoffnung klein und fern erscheint,\n"
+            "bleibt deine Liebe mein Lied.\n"
+            "Du bist treu im Warten,\n"
+            "und dein Friede macht mich stark."
+        ),
+        "es": (
+            "[Verse 1]\n"
+            "Señor, encuéntrame en este momento,\n"
+            "con gracia tierna y cercana.\n"
+            "Levanta mi corazón a tu promesa,\n"
+            "y calma todo temor.\n\n"
+            "[Chorus]\n"
+            "Te adoraré, confiaré en ti,\n"
+            "en tu gracia hoy estaré.\n"
+            "Jesús, guíame, Jesús, sosténme,\n"
+            "lleva mi corazón por tu camino.\n\n"
+            "[Verse 2]\n"
+            "Cuando la esperanza parece lejana,\n"
+            "tu amor sigue siendo mi canción.\n"
+            "Eres fiel en la espera,\n"
+            "y tu paz me hará fuerte."
+        ),
+    }
+    if language in world:
+        return world[language]
     return (
         "[Verse 1]\n"
         "Lord, meet me in this moment,\n"
@@ -1246,6 +1362,19 @@ def build_intake_plan(*, user_name: str | None, mood: str, prayer_text: str | No
             )
         if music_source in ("youtube", "hymn_youtube"):
             system += " music_query should similarly target Zomi or Tedim worship songs."
+
+    elif language in _LANGUAGE_NAMES:
+        language_name = _LANGUAGE_NAMES[language]
+        system += (
+            f" This service is conducted in {language_name}. Keep scripture_ref in ENGLISH format "
+            "(e.g. 'Psalm 23:1-4') so the Bible resolver can find the passage."
+        )
+        if music_source in ("suno", "musicgen"):
+            system += f" music_lyrics must be original singable worship lyrics in {language_name}."
+        if music_source in ("youtube", "hymn_youtube"):
+            system += f" music_query should target Christian worship songs in {language_name}."
+        if music_source == "youtube":
+            system += f" preaching_query should target Christian sermon or preaching videos in {language_name}."
 
     schema = {
         "scripture_ref": "string, e.g. 'Psalm 23:1-4'",

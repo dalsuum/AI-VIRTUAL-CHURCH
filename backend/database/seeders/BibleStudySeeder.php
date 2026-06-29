@@ -36,6 +36,9 @@ class BibleStudySeeder extends Seeder
         'en'  => 'English',
         'my'  => 'Burmese (Myanmar)',
         'td'  => 'Tedim (Zolai)',
+        'fr'  => 'French',
+        'de'  => 'German',
+        'es'  => 'Spanish',
         'cnh' => 'Hakha Chin',
         'cfm' => 'Falam Chin',
         'lus' => 'Mizo',
@@ -66,6 +69,24 @@ class BibleStudySeeder extends Seeder
             ['Pa Thang Lian', 'grace-evangelistic',    75, false],
             ['Pa Cin Khaw',   'expository-doctrinal',  65, false],
             ['Pa Mang Suan',  'pastoral-application',  55, false],
+        ],
+        'fr' => [
+            ['Pasteur Etienne', 'moderator-synthesis', 60, true],
+            ['Pasteure Claire', 'grace-evangelistic', 80, false],
+            ['Pasteur Matthieu', 'expository-doctrinal', 70, false],
+            ['Pasteure Elise', 'pastoral-application', 60, false],
+        ],
+        'de' => [
+            ['Pastor Johannes', 'moderator-synthesis', 60, true],
+            ['Pastorin Anna', 'grace-evangelistic', 80, false],
+            ['Pastor Matthias', 'expository-doctrinal', 70, false],
+            ['Pastorin Lea', 'pastoral-application', 60, false],
+        ],
+        'es' => [
+            ['Pastor Esteban', 'moderator-synthesis', 60, true],
+            ['Pastora Clara', 'grace-evangelistic', 80, false],
+            ['Pastor Mateo', 'expository-doctrinal', 70, false],
+            ['Pastora Esperanza', 'pastoral-application', 60, false],
         ],
         'cnh' => [
             ['Pa Bawi Hmung', 'moderator-synthesis',   60, true],
@@ -277,7 +298,8 @@ class BibleStudySeeder extends Seeder
      * so turns finish their thoughts. English stays at 1.0.
      */
     private const TOKEN_SCALE = [
-        'en' => 1.0, 'my' => 3.0, 'td' => 3.0, 'cnh' => 3.0,
+        'en' => 1.0, 'fr' => 1.5, 'de' => 1.5, 'es' => 1.5,
+        'my' => 3.0, 'td' => 3.0, 'cnh' => 3.0,
         'cfm' => 3.0, 'lus' => 3.0, 'hlt' => 3.0,
     ];
 

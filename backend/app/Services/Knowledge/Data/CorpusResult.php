@@ -14,6 +14,11 @@ final class CorpusResult
         public readonly array $chunks,
         public readonly bool $vectorError = false,
         public readonly bool $keywordError = false,
+        public readonly int $vectorHitCount = 0,
+        public readonly int $keywordHitCount = 0,
+        public readonly int $embeddingLatencyMs = 0,
+        public readonly int $vectorLatencyMs = 0,
+        public readonly int $keywordLatencyMs = 0,
     ) {}
 
     /** True when the corpus produced nothing because BOTH branches failed. */

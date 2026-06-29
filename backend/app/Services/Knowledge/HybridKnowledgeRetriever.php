@@ -36,17 +36,28 @@ final class HybridKnowledgeRetriever implements KnowledgeRetriever
     private function doRetrieve(string $query, array $filters): KnowledgeContext
     {
         try {
+            $start = microtime(true);
             // Always enforce permission scoping at the retrieval boundary.
             $filters['permissions'] ??= 'public';
 
             $outcome = $this->orchestrator->retrieve($query, $filters);
+            $latencyMs = (int) round((microtime(true) - $start) * 1000);
+            $reason = $outcome->failed
+                ? KnowledgeContext::EMPTY_FAILURE
+                : ($outcome->chunks === [] ? KnowledgeContext::EMPTY_NO_MATCH : KnowledgeContext::POPULATED);
 
             // Annotate the retrieval span with observational signals (no chunk text).
-            $this->tracer->annotate($outcome->diagnostics + [
-                'retrieval.reason'    => $outcome->failed ? KnowledgeContext::EMPTY_FAILURE : ($outcome->chunks === [] ? KnowledgeContext::EMPTY_NO_MATCH : KnowledgeContext::POPULATED),
+            $diagnostics = $outcome->diagnostics + [
+                'retrieval.reason'    => $reason,
                 'retrieval.degraded'  => $outcome->degraded,
                 'retrieval.out_count' => count($outcome->chunks),
-            ]);
+                'retrieval.latency_ms' => $latencyMs,
+                'query_hash'          => hash('sha256', $query),
+                'query_chars'         => mb_strlen($query),
+            ];
+
+            $this->tracer->annotate($diagnostics);
+            $this->log->info('knowledge.retrieval', $diagnostics);
 
             if ($outcome->degraded || $outcome->failed) {
                 $this->log->warning('knowledge.retrieval_degraded', $outcome->diagnostics + ['failed' => $outcome->failed]);

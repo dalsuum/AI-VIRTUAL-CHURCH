@@ -4,18 +4,17 @@
 // account details ourselves. The amount/allocation choices here are guidance —
 // the final amount is entered on PayPal's page.
 import { ref } from "vue";
+import { useI18n } from "vue-i18n";
 
+const { t } = useI18n();
 const emit = defineEmits(["skip"]);
 
 const PAYPAL_DONATE_URL =
   "https://www.paypal.com/donate/?hosted_button_id=MEVYT7QZ2CHT6";
 
 const PRESETS = [5, 10, 25, 50]; // whole currency units
-const ALLOCATIONS = [
-  { value: "operations", label: "Keep the lights on" },
-  { value: "charity", label: "Charity" },
-  { value: "missions", label: "Missions" },
-];
+// Allocation labels are resolved through i18n at render time (offering.<value>).
+const ALLOCATIONS = ["operations", "charity", "missions"];
 
 const amount = ref(10);
 const allocation = ref("operations");
@@ -34,10 +33,10 @@ function skip() {
 
 <template>
   <section class="offering">
-    <h2>Offering</h2>
+    <h2>{{ t("offering.title") }}</h2>
 
     <template v-if="stage === 'choose'">
-      <p class="sub">Give as you feel led. Every gift is optional.</p>
+      <p class="sub">{{ t("offering.sub") }}</p>
 
       <div class="amounts">
         <button
@@ -49,29 +48,29 @@ function skip() {
         >
           ${{ p }}
         </button>
-        <input v-model.number="amount" type="number" min="1" step="1" aria-label="Custom amount" />
+        <input v-model.number="amount" type="number" min="1" step="1" :aria-label="t('offering.customAmount')" />
       </div>
 
       <label class="alloc">
-        Direct it toward
+        {{ t("offering.directToward") }}
         <select v-model="allocation">
-          <option v-for="a in ALLOCATIONS" :key="a.value" :value="a.value">{{ a.label }}</option>
+          <option v-for="a in ALLOCATIONS" :key="a" :value="a">{{ t('offering.' + a) }}</option>
         </select>
       </label>
 
       <button class="primary" type="button" @click="give">
-        Give ${{ amount }} with PayPal
+        {{ t("offering.give", { amount }) }}
       </button>
       <button class="secondary" type="button" @click="skip">
-        Maybe later
+        {{ t("offering.maybeLater") }}
       </button>
     </template>
 
     <p v-else-if="stage === 'done'" class="thanks">
-      Thank you. A PayPal tab has opened to complete your gift. 🙏
+      {{ t("offering.thanksDone") }}
     </p>
 
-    <p v-else class="thanks">No worries — you can give any time. 🙏</p>
+    <p v-else class="thanks">{{ t("offering.thanksSkipped") }}</p>
   </section>
 </template>
 

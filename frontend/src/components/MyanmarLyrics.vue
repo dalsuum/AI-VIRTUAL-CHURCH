@@ -1,8 +1,11 @@
 <script setup>
 import { ref, computed, onMounted } from "vue";
+import { useI18n } from "vue-i18n";
 import { ChordProParser, HtmlDivFormatter } from "chordsheetjs";
 import { api } from "../composables/useApi.js";
 import AppIcon from "./AppIcon.vue";
+
+const { t } = useI18n();
 
 // ── Data loading ────────────────────────────────────────────────────────────
 // Two sources: the static classic/modern hymn corpus (hymns_my.json: 852 hymns,
@@ -42,7 +45,7 @@ onMounted(async () => {
 
     allSongs.value = [...hymns, ...library];
   } catch (e) {
-    error.value = "သီချင်းများ ဖတ်ရန် မရနိုင်ပါ။ (Could not load songs.)";
+    error.value = t("songs.loadError");
   } finally {
     loading.value = false;
   }
@@ -55,13 +58,8 @@ const selectedId   = ref(null);
 const PAGE_SIZE    = 48;
 const page         = ref(1);
 
-const SOURCE_LABELS = {
-  all:    "အားလုံး",
-  hymnal: "ဓမ္မသီချင်း",
-  modern: "ခေတ်မီသီချင်း",
-  praise: "ချီးမွမ်းသီချင်း",
-  zolai:  "Zolai",
-};
+// Source/category labels resolve through i18n at render time (songs.<key>).
+const SOURCE_KEYS = ["all", "hymnal", "modern", "praise", "zolai"];
 
 const filtered = computed(() => {
   const q = search.value.trim().toLowerCase();
@@ -213,23 +211,23 @@ async function exportPptx() {
     <!-- Header -->
     <header class="lyrics-header">
       <a v-if="!activeSong" href="#" class="back-link">
-        <AppIcon name="mdi:arrow-left" size="18px" /> ဝတ်ပြုပွဲသို့ ပြန်သွားမည်
+        <AppIcon name="mdi:arrow-left" size="18px" /> {{ t("songs.backToWorship") }}
       </a>
       <button v-else class="back-link as-button" @click="selectedId = null">
-        <AppIcon name="mdi:arrow-left" size="18px" /> စာရင်းသို့ ပြန်သွားမည်
+        <AppIcon name="mdi:arrow-left" size="18px" /> {{ t("songs.backToList") }}
       </button>
       <div class="title-block">
-        <h1 class="lyrics-title">မြန်မာ ဝတ်ပြုသီချင်း</h1>
+        <h1 class="lyrics-title">{{ t("songs.title") }}</h1>
         <p class="lyrics-sub">
-          Myanmar Worship Song Lyrics ·
-          <span v-if="!loading">{{ allSongs.length.toLocaleString() }} သီချင်း</span>
-          <span v-else>တင်နေသည်…</span>
+          {{ t("songs.subtitle") }} ·
+          <span v-if="!loading">{{ t('songs.songCount', { count: allSongs.length.toLocaleString() }) }}</span>
+          <span v-else>{{ t("songs.loading") }}</span>
         </p>
       </div>
     </header>
 
     <!-- Loading / error -->
-    <div v-if="loading" class="status-msg">တင်နေသည်…</div>
+    <div v-if="loading" class="status-msg">{{ t("songs.loading") }}</div>
     <div v-else-if="error" class="status-msg error-msg">{{ error }}</div>
 
     <!-- ── LIST VIEW ── -->
@@ -242,14 +240,14 @@ async function exportPptx() {
             v-model="search"
             class="search-input"
             type="search"
-            placeholder="ခေါင်းစဉ် သို့ စာသားဖြင့် ရှာပါ…"
-            aria-label="Search songs"
+            :placeholder="t('songs.searchPlaceholder')"
+            :aria-label="t('songs.searchPlaceholder')"
             @input="onSearch"
           />
         </div>
-        <div class="source-tabs" role="tablist" aria-label="Categories">
+        <div class="source-tabs" role="tablist" :aria-label="t('songs.all')">
           <button
-            v-for="(label, key) in SOURCE_LABELS"
+            v-for="key in SOURCE_KEYS"
             :key="key"
             role="tab"
             :aria-selected="activeSource === key"
@@ -257,7 +255,7 @@ async function exportPptx() {
             :class="{ active: activeSource === key }"
             @click="setSource(key)"
           >
-            {{ label }}
+            {{ t('songs.' + key) }}
             <span class="src-count">
               {{ key === 'all' ? allSongs.length : allSongs.filter(s => s.source === key).length }}
             </span>
@@ -266,12 +264,12 @@ async function exportPptx() {
       </div>
 
       <div v-if="search || activeSource !== 'all'" class="results-info">
-        {{ filtered.length }} သီချင်း တွေ့ရသည်
-        <span v-if="totalPages > 1"> · စာမျက်နှာ {{ page }} / {{ totalPages }}</span>
+        {{ t('songs.resultsFound', { count: filtered.length }) }}
+        <span v-if="totalPages > 1"> · {{ t('songs.page', { page, total: totalPages }) }}</span>
       </div>
 
       <div class="song-grid">
-        <p v-if="pageSongs.length === 0" class="empty">မတွေ့ပါ။</p>
+        <p v-if="pageSongs.length === 0" class="empty">{{ t('songs.empty') }}</p>
         <button
           v-for="song in pageSongs"
           :key="song.id"
@@ -280,17 +278,17 @@ async function exportPptx() {
         >
           <span class="song-card-icon"><AppIcon name="mdi:music-note" size="20px" /></span>
           <span class="song-title">{{ song.title }}</span>
-          <span class="src-badge" :class="song.source">{{ SOURCE_LABELS[song.source] }}</span>
+          <span class="src-badge" :class="song.source">{{ t('songs.' + song.source) }}</span>
         </button>
       </div>
 
       <div v-if="totalPages > 1" class="pagination">
-        <button class="page-btn" :disabled="page === 1" aria-label="Previous page" @click="prevPage">
-          <AppIcon name="mdi:chevron-left" size="20px" /> နောက်ဆုတ်
+        <button class="page-btn" :disabled="page === 1" :aria-label="t('songs.prevPage')" @click="prevPage">
+          <AppIcon name="mdi:chevron-left" size="20px" /> {{ t('songs.prevPage') }}
         </button>
         <span class="page-info">{{ page }} / {{ totalPages }}</span>
-        <button class="page-btn" :disabled="page === totalPages" aria-label="Next page" @click="nextPage">
-          ရှေ့ဆက် <AppIcon name="mdi:chevron-right" size="20px" />
+        <button class="page-btn" :disabled="page === totalPages" :aria-label="t('songs.nextPage')" @click="nextPage">
+          {{ t('songs.nextPage') }} <AppIcon name="mdi:chevron-right" size="20px" />
         </button>
       </div>
     </template>
@@ -302,17 +300,17 @@ async function exportPptx() {
           <AppIcon name="mdi:file-document-outline" size="18px" /> .TXT
         </button>
         <button class="tool-btn primary" :disabled="pdfBusy" @click="exportPdf">
-          <AppIcon name="mdi:file-pdf-box" size="18px" /> {{ pdfBusy ? "Generating…" : "PDF" }}
+          <AppIcon name="mdi:file-pdf-box" size="18px" /> {{ pdfBusy ? t("songs.generating") : "PDF" }}
         </button>
         <button class="tool-btn primary" :disabled="pptxBusy" @click="exportPptx">
-          <AppIcon name="mdi:file-powerpoint-box" size="18px" /> {{ pptxBusy ? "Generating…" : "PPTX" }}
+          <AppIcon name="mdi:file-powerpoint-box" size="18px" /> {{ pptxBusy ? t("songs.generating") : "PPTX" }}
         </button>
       </div>
 
       <div ref="lyricsContentRef" class="lyrics-sheet">
         <div class="sheet-head">
           <h2>{{ activeSong.title }}</h2>
-          <p class="sheet-sub">{{ SOURCE_LABELS[activeSong.source] }}</p>
+          <p class="sheet-sub">{{ t('songs.' + activeSong.source) }}</p>
         </div>
 
         <!-- Chord sheet (songs with inline chords) -->
@@ -334,7 +332,7 @@ async function exportPptx() {
     </template>
 
     <footer class="lyrics-footer">
-      မြန်မာ ဝတ်ပြုသီချင်းနှင့် ဓမ္မသီချင်းများ
+      {{ t("songs.footer") }}
     </footer>
   </div>
 </template>

@@ -5,7 +5,10 @@
 // read-only transcript; "Continue" resumes a Pastor Chat. Owner-scoping is enforced
 // server-side — this component only ever sees the caller's own sessions.
 import { ref, onMounted, computed } from "vue";
+import { useI18n } from "vue-i18n";
 import { api } from "../composables/useApi";
+
+const { t } = useI18n();
 
 const props = defineProps({
   authed: { type: Boolean, default: false },
@@ -58,7 +61,7 @@ async function load(reset = true) {
     }
     nextCursor.value = res.next_cursor || null;
   } catch (e) {
-    flash.value = "Could not load history.";
+    flash.value = t("history.couldNotLoad");
   } finally {
     loading.value = false;
   }
@@ -85,12 +88,13 @@ async function openItem(item) {
   try {
     const res = await api.historyShow(item.id);
     detail.value = res.session;
-  } catch { flash.value = "Could not open session."; }
+  } catch { flash.value = t("history.couldNotOpen"); }
 }
 
 function resume(item) {
   // Pastor chats resume interactively; others open their module page.
-  const moodQ = item.mood ? `?mood=${encodeURIComponent(item.mood)}&language=${encodeURIComponent(item.language || "en")}` : "";
+  // Worship language is global now, so only the mood is carried in the hash.
+  const moodQ = item.mood ? `?mood=${encodeURIComponent(item.mood)}` : "";
   // Bible Study carries the chat-session id; the page resolves bridged (multi-pastor)
   // vs chat-spine transcripts itself, so both kinds restore.
   const routes = {
@@ -105,11 +109,11 @@ function resume(item) {
 }
 
 async function rename(item) {
-  const title = prompt("Rename session", item.title);
+  const title = prompt(t("history.renamePrompt"), item.title);
   if (title == null) return;
   await api.historyUpdate(item.id, { title });
   item.title = title;
-  flash.value = "Renamed.";
+  flash.value = t("history.renamed");
 }
 
 async function togglePin(item) {
@@ -126,21 +130,21 @@ async function archive(item) {
   await api.historyUpdate(item.id, { archived: true });
   detail.value = null;
   await load(true);
-  flash.value = "Archived.";
+  flash.value = t("history.archivedFlash");
 }
 
 async function restore(item) {
   await api.historyUpdate(item.id, { archived: false });
   detail.value = null;
   await load(true);
-  flash.value = "Restored.";
+  flash.value = t("history.restoredFlash");
 }
 
 async function restoreDeleted(item) {
-  if (!confirm(`Restore "${item.title}"?`)) return;
+  if (!confirm(t("history.restoreConfirm", { title: item.title }))) return;
   await api.historyRestore(item.id);
   await load(true);
-  flash.value = "Restored.";
+  flash.value = t("history.restoredFlash");
 }
 
 function setView(v) {
@@ -175,30 +179,30 @@ function selectAll() {
 async function bulkAction(action) {
   const ids = [...selected.value];
   if (!ids.length) return;
-  const verb = { delete: "Delete", archive: "Archive", unarchive: "Restore", untrash: "Restore", purge: "Permanently delete" }[action];
-  if (action === "delete" && !confirm(`Delete ${ids.length} session(s)? You can restore them later.`)) return;
-  if (action === "purge" && !confirm(`Permanently delete ${ids.length} session(s)? This cannot be undone.`)) return;
+  const doneKey = { delete: "bulkDoneDelete", archive: "bulkDoneArchive", unarchive: "bulkDoneRestore", untrash: "bulkDoneRestore", purge: "bulkDonePurge" }[action];
+  if (action === "delete" && !confirm(t("history.bulkDeleteConfirm", { n: ids.length }))) return;
+  if (action === "purge" && !confirm(t("history.bulkPurgeConfirm", { n: ids.length }))) return;
   try {
     await api.historyBulk(action, ids);
-    flash.value = `${verb}d ${ids.length} session(s).`;
-  } catch { flash.value = "Bulk action failed."; }
+    flash.value = t(`history.${doneKey}`, { n: ids.length });
+  } catch { flash.value = t("history.bulkFailed"); }
   selectMode.value = false;
   selected.value = new Set();
   await load(true);
 }
 
 async function remove(item) {
-  if (!confirm("Delete this session? You can restore it later.")) return;
+  if (!confirm(t("history.deleteConfirm"))) return;
   await api.historyDelete(item.id);
   detail.value = null;
   await load(true);
-  flash.value = "Deleted.";
+  flash.value = t("history.deletedFlash");
 }
 
 async function share(item) {
   const res = await api.historyShare(item.id, {});
   await navigator.clipboard?.writeText(res.url).catch(() => {});
-  flash.value = "Share link copied: " + res.url;
+  flash.value = t("history.shareCopied", { url: res.url });
 }
 
 function exportItem(item, format) {
@@ -208,8 +212,8 @@ function exportItem(item, format) {
 async function saveToJournal(item) {
   try {
     await api.journalGenerate(item.id);
-    flash.value = "Writing your journal entry… find it under 📊 My Journey.";
-  } catch { flash.value = "Could not start journal entry."; }
+    flash.value = t("history.journalStarted");
+  } catch { flash.value = t("history.journalFailed"); }
 }
 
 // On phones the rail is an overlay drawer; close it after navigating so the
@@ -230,52 +234,52 @@ defineExpose({ reload: () => load(true) });
   <aside v-if="authed" class="history-rail" :class="{ open, closed: !open }">
     <div class="hr-body">
       <div class="hr-head">
-        <strong>📜 My Journey</strong>
-        <button class="hr-mini" @click="openJourney" title="Spiritual Journey">📊</button>
+        <strong>📜 {{ t("history.myJourney") }}</strong>
+        <button class="hr-mini" @click="openJourney" :title="t('history.spiritualJourney')">📊</button>
       </div>
-      <button class="hr-new" @click="newPastor">＋ New Pastor Chat</button>
+      <button class="hr-new" @click="newPastor">{{ t("history.newPastorChat") }}</button>
 
       <div class="hr-search">
-        <input v-model="query" @keyup.enter="runSearch" placeholder="Search everything…" />
+        <input v-model="query" @keyup.enter="runSearch" :placeholder="t('history.searchPlaceholder')" />
         <button v-if="searchResults" class="hr-mini" @click="clearSearch">✕</button>
         <button v-else class="hr-mini" @click="runSearch">🔎</button>
       </div>
 
       <p v-if="flash" class="hr-flash" @click="flash = ''">{{ flash }}</p>
-      <p v-if="view === 'deleted'" class="hr-dim">Tap a session to restore it.</p>
+      <p v-if="view === 'deleted'" class="hr-dim">{{ t("history.tapToRestore") }}</p>
 
       <div class="hr-views">
         <button class="hr-toggle" :class="{ on: view === 'archived' }" @click="setView('archived')">
-          {{ view === 'archived' ? "← Active" : "🗄 Archived" }}
+          {{ view === 'archived' ? t("history.active") : t("history.archived") }}
         </button>
         <button class="hr-toggle" :class="{ on: view === 'deleted' }" @click="setView('deleted')">
-          {{ view === 'deleted' ? "← Active" : "🗑 Deleted" }}
+          {{ view === 'deleted' ? t("history.active") : t("history.deleted") }}
         </button>
         <button v-if="!searchResults" class="hr-toggle" :class="{ on: selectMode }" @click="toggleSelectMode">
-          {{ selectMode ? "Cancel" : "☑ Select" }}
+          {{ selectMode ? t("history.cancel") : t("history.select") }}
         </button>
       </div>
 
       <!-- Bulk action bar (multi-select) -->
       <div v-if="selectMode" class="hr-bulk">
         <button class="hr-mini" @click="selectAll">
-          {{ selected.size === visibleItems.length && visibleItems.length ? "Clear" : "All" }}
+          {{ selected.size === visibleItems.length && visibleItems.length ? t("history.clear") : t("history.all") }}
         </button>
-        <span class="hr-bulk-n">{{ selected.size }} selected</span>
+        <span class="hr-bulk-n">{{ t("history.nSelected", { n: selected.size }) }}</span>
         <template v-if="selected.size">
-          <button v-if="view === 'active'" class="hr-bulk-btn" @click="bulkAction('archive')">🗄 Archive</button>
-          <button v-if="view === 'archived'" class="hr-bulk-btn" @click="bulkAction('unarchive')">♻ Restore</button>
-          <button v-if="view === 'deleted'" class="hr-bulk-btn" @click="bulkAction('untrash')">♻ Restore</button>
-          <button v-if="view === 'deleted'" class="hr-bulk-btn danger" @click="bulkAction('purge')">✖ Delete forever</button>
-          <button v-if="view !== 'deleted'" class="hr-bulk-btn danger" @click="bulkAction('delete')">🗑 Delete</button>
+          <button v-if="view === 'active'" class="hr-bulk-btn" @click="bulkAction('archive')">{{ t("history.bulkArchive") }}</button>
+          <button v-if="view === 'archived'" class="hr-bulk-btn" @click="bulkAction('unarchive')">{{ t("history.bulkRestore") }}</button>
+          <button v-if="view === 'deleted'" class="hr-bulk-btn" @click="bulkAction('untrash')">{{ t("history.bulkRestore") }}</button>
+          <button v-if="view === 'deleted'" class="hr-bulk-btn danger" @click="bulkAction('purge')">{{ t("history.bulkPurge") }}</button>
+          <button v-if="view !== 'deleted'" class="hr-bulk-btn danger" @click="bulkAction('delete')">{{ t("history.bulkDelete") }}</button>
         </template>
       </div>
 
       <!-- Search results -->
       <div v-if="searchResults" class="hr-section">
-        <h4>Results ({{ searchResults.length }})</h4>
-        <p v-if="searching" class="hr-dim">Searching…</p>
-        <p v-else-if="!searchResults.length" class="hr-dim">Nothing found.</p>
+        <h4>{{ t("history.results", { n: searchResults.length }) }}</h4>
+        <p v-if="searching" class="hr-dim">{{ t("history.searching") }}</p>
+        <p v-else-if="!searchResults.length" class="hr-dim">{{ t("history.nothingFound") }}</p>
         <button v-for="it in searchResults" :key="it.id" class="hr-item" @click="openItem(it)">
           <span class="hr-tt">{{ it.title }}</span>
         </button>
@@ -284,7 +288,7 @@ defineExpose({ reload: () => load(true) });
       <!-- Normal grouped list -->
       <template v-else>
         <div v-if="pinned.length && view === 'active'" class="hr-section">
-          <h4>📌 Pinned</h4>
+          <h4>{{ t("history.pinned") }}</h4>
           <button v-for="it in pinned" :key="it.id" class="hr-item" :class="{ sel: selected.has(it.id) }"
                   @click="selectMode ? toggleSelect(it) : openItem(it)">
             <input v-if="selectMode" type="checkbox" class="hr-cb" :checked="selected.has(it.id)" @click.stop="toggleSelect(it)" />
@@ -303,12 +307,12 @@ defineExpose({ reload: () => load(true) });
         </div>
 
         <button v-if="nextCursor" class="hr-more" @click="load(false)" :disabled="loading">
-          {{ loading ? "Loading…" : "Load more" }}
+          {{ loading ? t("history.loading") : t("history.loadMore") }}
         </button>
         <p v-else-if="!loading && !pinned.length && !orderedGroups.length" class="hr-dim">
-          {{ view === 'archived' ? "No archived sessions."
-             : view === 'deleted' ? "No deleted sessions."
-             : "No sessions yet. Start a Bible Study, Worship, or Pastor Chat." }}
+          {{ view === 'archived' ? t("history.noArchived")
+             : view === 'deleted' ? t("history.noDeleted")
+             : t("history.noSessions") }}
         </p>
       </template>
     </div>
@@ -322,19 +326,19 @@ defineExpose({ reload: () => load(true) });
           <button class="hr-mini" @click="detail = null">✕</button>
         </header>
         <div class="hr-actions">
-          <button @click="resume(detail)">▶ Continue</button>
-          <button @click="rename(detail)">Rename</button>
-          <button @click="togglePin(detail)">{{ detail.pinned ? "Unpin" : "Pin" }}</button>
-          <button @click="toggleFavorite(detail)">{{ detail.favorite ? "Unstar" : "Star" }}</button>
-          <button @click="saveToJournal(detail)">📔 Journal</button>
-          <button @click="share(detail)">Share</button>
+          <button @click="resume(detail)">{{ t("history.continue") }}</button>
+          <button @click="rename(detail)">{{ t("history.rename") }}</button>
+          <button @click="togglePin(detail)">{{ detail.pinned ? t("history.unpin") : t("history.pin") }}</button>
+          <button @click="toggleFavorite(detail)">{{ detail.favorite ? t("history.unstar") : t("history.star") }}</button>
+          <button @click="saveToJournal(detail)">{{ t("history.journal") }}</button>
+          <button @click="share(detail)">{{ t("history.share") }}</button>
           <button @click="exportItem(detail, 'md')">MD</button>
           <button @click="exportItem(detail, 'pdf')">PDF</button>
           <button @click="exportItem(detail, 'docx')">DOCX</button>
           <button @click="exportItem(detail, 'json')">JSON</button>
-          <button v-if="detail.archived" @click="restore(detail)">♻ Restore</button>
-          <button v-else @click="archive(detail)">Archive</button>
-          <button class="danger" @click="remove(detail)">Delete</button>
+          <button v-if="detail.archived" @click="restore(detail)">{{ t("history.restore") }}</button>
+          <button v-else @click="archive(detail)">{{ t("history.archiveAction") }}</button>
+          <button class="danger" @click="remove(detail)">{{ t("history.delete") }}</button>
         </div>
         <p v-if="detail.summary" class="hr-summary">{{ detail.summary }}</p>
         <div class="hr-tags" v-if="detail.tags?.length">
@@ -342,10 +346,10 @@ defineExpose({ reload: () => load(true) });
         </div>
         <div class="hr-transcript">
           <p v-for="(m, i) in (detail.messages || [])" :key="i" :class="['hr-msg', m.sender]">
-            <b>{{ m.sender === 'user' ? 'You' : m.sender }}:</b> {{ m.content }}
+            <b>{{ m.sender === 'user' ? t('common.you') : m.sender }}:</b> {{ m.content }}
           </p>
           <p v-if="!(detail.messages || []).length" class="hr-dim">
-            This session has no chat transcript.
+            {{ t("history.noTranscript") }}
           </p>
         </div>
       </div>

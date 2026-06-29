@@ -3,7 +3,10 @@
 // steps that tick off as each segment arrives from the worker. Doors open the
 // instant every required step is done — no fixed countdown to wait for.
 import { computed, onMounted, onUnmounted, ref, watch, nextTick } from "vue";
+import { useI18n } from "vue-i18n";
 import { api } from "../composables/useApi";
+
+const { t } = useI18n();
 
 const props = defineProps({
   service:     { type: Object,  default: null },
@@ -126,7 +129,7 @@ onUnmounted(() => {
 <template>
   <section class="preparing">
     <div class="mark" aria-hidden="true">✝</div>
-    <h1 class="title">AI Virtual Church</h1>
+    <h1 class="title">{{ t("preparing.title") }}</h1>
 
     <transition name="fade">
       <p v-if="welcome" class="welcome">{{ welcome }}</p>
@@ -136,35 +139,35 @@ onUnmounted(() => {
     <div class="prep-steps">
       <div class="step" :class="{ done: stepServiceCreated, waiting: !stepServiceCreated }">
         <span class="step-dot" aria-hidden="true"></span>
-        <span>{{ stepServiceCreated ? "Service created" : "Creating your service…" }}</span>
+        <span>{{ stepServiceCreated ? t("preparing.serviceCreated") : t("preparing.creatingService") }}</span>
       </div>
       <div class="step" :class="{ done: stepScripture, waiting: !stepScripture }">
         <span class="step-dot" aria-hidden="true"></span>
-        <span>{{ stepScripture ? "Scripture selected" : "Selecting scripture…" }}</span>
+        <span>{{ stepScripture ? t("preparing.scriptureSelected") : t("preparing.selectingScripture") }}</span>
       </div>
       <div class="step" :class="{ done: stepPrayer, waiting: !stepPrayer }">
         <span class="step-dot" aria-hidden="true"></span>
-        <span>{{ stepPrayer ? "Opening prayer composed" : "Composing opening prayer…" }}</span>
+        <span>{{ stepPrayer ? t("preparing.prayerComposed") : t("preparing.composingPrayer") }}</span>
       </div>
       <div v-if="showMusicStep" class="step" :class="{ done: stepMusic, waiting: !stepMusic }">
         <span class="step-dot" aria-hidden="true"></span>
-        <span>{{ stepMusic ? "Worship music ready" : "Loading worship music…" }}</span>
+        <span>{{ stepMusic ? t("preparing.musicReady") : t("preparing.loadingMusic") }}</span>
       </div>
       <div v-if="showNarrationStep" class="step" :class="{ done: stepNarration, waiting: !stepNarration }">
         <span class="step-dot" aria-hidden="true"></span>
-        <span>{{ stepNarration ? "Voice narration ready" : "Generating voice narration…" }}</span>
+        <span>{{ stepNarration ? t("preparing.narrationReady") : t("preparing.generatingNarration") }}</span>
       </div>
     </div>
 
     <transition name="fade" mode="out-in">
       <div v-if="currentCard" :key="currentCardIndex" class="wait-card">
-        <span class="card-label">{{ currentCard.type === "testimony" ? "Testimony" : currentCard.type === "verse" ? "Scripture" : "While you wait" }}</span>
+        <span class="card-label">{{ currentCard.type === "testimony" ? t("preparing.labelTestimony") : currentCard.type === "verse" ? t("preparing.labelScripture") : t("preparing.labelWhileWait") }}</span>
         <p>{{ currentCard.text }}</p>
         <small v-if="currentCard.source">{{ currentCard.source }}</small>
       </div>
     </transition>
 
-    <p class="hint">Take a breath. Your worship will begin soon.</p>
+    <p class="hint">{{ t("preparing.hint") }}</p>
   </section>
 </template>
 

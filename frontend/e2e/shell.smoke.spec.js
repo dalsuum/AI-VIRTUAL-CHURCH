@@ -58,7 +58,7 @@ test.describe("global layout shell", () => {
     const vh = page.viewportSize().height;
     // On phones the fixed bottom nav reserves space, so the footer sits just
     // above it rather than flush with the viewport bottom. Account for it.
-    const navBox = await page.locator('nav[aria-label="Primary"]').boundingBox();
+    const navBox = await page.locator('nav[aria-label="Primary navigation"]').boundingBox();
     const navH = navBox && navBox.height ? navBox.height : 0;
     expect(footer.y + footer.height).toBeGreaterThanOrEqual(vh - navH - 2);
   });
@@ -70,7 +70,7 @@ test.describe("mobile bottom navigation", () => {
   test("shows exactly one bottom nav with 5 tabs on phones", async ({ page }) => {
     await page.setViewportSize(PHONE);
     await goto(page, "");
-    const nav = page.locator('nav[aria-label="Primary"]');
+    const nav = page.locator('nav[aria-label="Primary navigation"]');
     await expect(nav).toHaveCount(1);
     await expect(nav).toBeVisible();
     // Home / Songs / Bible / Study + More.
@@ -80,7 +80,7 @@ test.describe("mobile bottom navigation", () => {
   test("bottom nav is hidden on desktop widths", async ({ page }) => {
     await page.setViewportSize({ width: 1200, height: 800 });
     await goto(page, "");
-    await expect(page.locator('nav[aria-label="Primary"]')).toBeHidden();
+    await expect(page.locator('nav[aria-label="Primary navigation"]')).toBeHidden();
   });
 
   test('"More" opens a sheet of secondary destinations', async ({ page }) => {

@@ -1,8 +1,11 @@
 <script setup>
 // A small sun/moon button that flips the global theme. Used in both the worship
 // shell and the admin console.
+import { useI18n } from "vue-i18n";
 import { useTheme } from "../composables/useTheme";
+import AppIcon from "./AppIcon.vue";
 
+const { t } = useI18n();
 const { theme, toggle } = useTheme();
 </script>
 
@@ -11,10 +14,10 @@ const { theme, toggle } = useTheme();
     class="theme-toggle"
     type="button"
     @click="toggle"
-    :aria-label="theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'"
-    :title="theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'"
+    :aria-label="theme === 'dark' ? t('theme.toLight') : t('theme.toDark')"
+    :title="theme === 'dark' ? t('theme.toLight') : t('theme.toDark')"
   >
-    <span aria-hidden="true">{{ theme === "dark" ? "☀️" : "🌙" }}</span>
+    <AppIcon :name="theme === 'dark' ? 'mdi:weather-sunny' : 'mdi:moon-waning-crescent'" size="20px" />
   </button>
 </template>
 

@@ -1,0 +1,5 @@
+# Crawled / generated data — regenerable and may be copyrighted; do not commit.
+raw/
+dataset/
+metadata.csv
+crawl_state.json

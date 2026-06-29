@@ -169,6 +169,14 @@ php artisan knowledge:ingest sermon storage/app/knowledge/sermons_my --chunker=t
 php artisan knowledge:ingest sermon storage/app/knowledge/sermons_td --chunker=text --lang=td
 ```
 
+**Harvesting Burmese sermons from the web.** `backend/storage/knowledge/sermons_my/` holds a
+standalone crawler (`run.py`) that builds a clean Burmese training dataset from public sermon
+sites (myanmar3am.com, minlwin.wordpress.com). It honours robots.txt, throttles requests,
+checkpoints every 20 pages (resumable), and emits `dataset/{train,instruction,qa}.jsonl` plus
+`metadata.csv`. Run `pip install -r requirements.txt && python run.py` in that folder; see its
+README for output schema and the licensing caveat. Crawled output is gitignored (regenerable
+and may be copyrighted).
+
 The directory form parses every `*.pdf` inside; a corrupt/unreadable file is **skipped with a
 warning**, never aborting the batch. Required infra env (backend `.env`):
 

@@ -1948,6 +1948,7 @@ class AdminController extends Controller
             'worker_ok'        => $workerOk,
             'collections'      => $collections,
             'source_priority'  => (array) config('knowledge.source_priority', []),
+            'last_retrieval'   => \Illuminate\Support\Facades\Cache::get('knowledge.last_retrieval'),
         ]);
     }
 }

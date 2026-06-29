@@ -1209,6 +1209,31 @@ async function loadKnowledgeStatus() {
   try { knowledgeStatus.value = await api.adminKnowledgeHealth(); knowledgeError.value = ""; }
   catch (e) { knowledgeError.value = e?.data?.message || "Could not load knowledge status."; }
 }
+
+function qdrantOverallStatus(s) {
+  if (s.vector_driver !== 'qdrant') return 'ok';
+  const vals = Object.values(s.collections ?? {});
+  if (vals.some(c => c.error === 'unreachable')) return 'fail';
+  if (vals.every(c => !c.exists)) return 'warn';
+  return 'ok';
+}
+function qdrantOverallLabel(s) {
+  if (s.vector_driver !== 'qdrant') return 'In-memory (dev)';
+  const vals = Object.values(s.collections ?? {});
+  if (vals.some(c => c.error === 'unreachable')) return 'Unreachable';
+  if (vals.every(c => !c.exists)) return 'No collections yet';
+  return 'Healthy';
+}
+function corporaIndexedCount(s) {
+  return Object.values(s.collections ?? {}).filter(c => c.exists && (c.vectors_count ?? 0) > 0).length;
+}
+function corporaIndexedClass(s) {
+  const total = (s.corpora ?? []).length;
+  const indexed = corporaIndexedCount(s);
+  if (indexed === 0) return 'fail';
+  if (indexed < total) return 'warn';
+  return 'ok';
+}
 function fmtAge(h) {
   if (h == null) return "—";
   const m = Math.round(h * 60);
@@ -3488,7 +3513,55 @@ onUnmounted(() => {
         <p v-else-if="!knowledgeStatus" class="kop-loading">Loading knowledge status…</p>
 
         <template v-else>
-          <!-- Environment summary -->
+          <!-- ── At-a-glance health summary ─────────────────────────────── -->
+          <div class="kop-summary">
+            <div class="kop-summary-item" :class="knowledgeStatus.enabled ? 'ok' : 'warn'">
+              <span class="kop-dot"></span>
+              <div>
+                <div class="kop-summary-label">RAG</div>
+                <div class="kop-summary-value">{{ knowledgeStatus.enabled ? 'Enabled' : 'Disabled' }}</div>
+              </div>
+            </div>
+            <div class="kop-summary-item"
+                 :class="knowledgeStatus.embedding_driver !== 'worker' ? 'ok' : (knowledgeStatus.worker_ok ? 'ok' : 'fail')">
+              <span class="kop-dot"></span>
+              <div>
+                <div class="kop-summary-label">Embedding Worker</div>
+                <div class="kop-summary-value">
+                  {{ knowledgeStatus.embedding_driver !== 'worker' ? 'Local (hash)' : (knowledgeStatus.worker_ok ? 'Running' : 'Unreachable') }}
+                </div>
+              </div>
+            </div>
+            <div class="kop-summary-item" :class="qdrantOverallStatus(knowledgeStatus)">
+              <span class="kop-dot"></span>
+              <div>
+                <div class="kop-summary-label">Qdrant</div>
+                <div class="kop-summary-value">{{ qdrantOverallLabel(knowledgeStatus) }}</div>
+              </div>
+            </div>
+            <div class="kop-summary-item" :class="corporaIndexedClass(knowledgeStatus)">
+              <span class="kop-dot"></span>
+              <div>
+                <div class="kop-summary-label">Corpora Indexed</div>
+                <div class="kop-summary-value">{{ corporaIndexedCount(knowledgeStatus) }} / {{ knowledgeStatus.corpora.length }}</div>
+              </div>
+            </div>
+            <div class="kop-summary-item"
+                 :class="knowledgeStatus.last_retrieval ? (knowledgeStatus.last_retrieval.failed ? 'fail' : (knowledgeStatus.last_retrieval.degraded ? 'warn' : 'ok')) : 'dim'">
+              <span class="kop-dot"></span>
+              <div>
+                <div class="kop-summary-label">Last Retrieval</div>
+                <div class="kop-summary-value">
+                  {{ knowledgeStatus.last_retrieval
+                    ? (knowledgeStatus.last_retrieval.failed ? 'Failed' : (knowledgeStatus.last_retrieval.degraded ? 'Degraded' : 'OK'))
+                    : 'No data yet' }}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── Environment summary ───────────────────────────────────── -->
+          <h3 class="kop-section-title">Environment</h3>
           <div class="kop-cards">
             <div class="kop-card" :class="knowledgeStatus.enabled ? 'ok' : 'warn'">
               <div class="kop-card-label">RAG Enabled</div>
@@ -3508,7 +3581,7 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <!-- Worker health -->
+          <!-- ── Worker health ─────────────────────────────────────────── -->
           <h3 class="kop-section-title">Embedding Worker</h3>
           <div v-if="knowledgeStatus.embedding_driver !== 'worker'" class="kop-na">
             Not using worker driver — embedding is handled locally.
@@ -3528,7 +3601,7 @@ onUnmounted(() => {
             </div>
             <div class="kop-card">
               <div class="kop-card-label">Model Loaded</div>
-              <div class="kop-card-value">{{ knowledgeStatus.worker?.loaded ? 'Yes' : 'No (first request will trigger load)' }}</div>
+              <div class="kop-card-value">{{ knowledgeStatus.worker?.loaded ? 'Yes' : 'No (loads on first request)' }}</div>
             </div>
             <div class="kop-card">
               <div class="kop-card-label">Expected Dimensions</div>
@@ -3536,7 +3609,7 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <!-- Corpus collections -->
+          <!-- ── Corpus collections ────────────────────────────────────── -->
           <h3 class="kop-section-title">Corpus Collections</h3>
           <div v-if="knowledgeStatus.vector_driver !== 'qdrant'" class="kop-na">
             Not using Qdrant — collections live in memory and reset between requests.
@@ -3578,9 +3651,66 @@ onUnmounted(() => {
             </tbody>
           </table>
 
-          <!-- Verify hint -->
+          <!-- ── Retrieval diagnostics ─────────────────────────────────── -->
+          <h3 class="kop-section-title">Retrieval Performance <span class="kop-since">{{ knowledgeStatus.last_retrieval?.recorded_at ? '(last: ' + shortTime(knowledgeStatus.last_retrieval.recorded_at) + ')' : '' }}</span></h3>
+          <div v-if="!knowledgeStatus.last_retrieval" class="kop-na">
+            No retrieval recorded yet. Diagnostics appear after the first chat query with RAG enabled.
+          </div>
+          <template v-else>
+            <div class="kop-cards">
+              <div class="kop-card">
+                <div class="kop-card-label">Total Latency</div>
+                <div class="kop-card-value">{{ knowledgeStatus.last_retrieval.latency_ms }} ms</div>
+              </div>
+              <div class="kop-card">
+                <div class="kop-card-label">Chunks Returned</div>
+                <div class="kop-card-value">{{ knowledgeStatus.last_retrieval.out_count }}</div>
+              </div>
+              <div class="kop-card">
+                <div class="kop-card-label">RRF Candidates</div>
+                <div class="kop-card-value">{{ knowledgeStatus.last_retrieval.rrf_count }}</div>
+              </div>
+              <div class="kop-card" :class="knowledgeStatus.last_retrieval.degraded ? 'warn' : ''">
+                <div class="kop-card-label">Health</div>
+                <div class="kop-card-value">{{ knowledgeStatus.last_retrieval.failed ? 'Failed' : (knowledgeStatus.last_retrieval.degraded ? 'Degraded' : 'Healthy') }}</div>
+              </div>
+            </div>
+            <!-- Per-corpus breakdown -->
+            <table v-if="Object.keys(knowledgeStatus.last_retrieval.corpora ?? {}).length" class="grid kop-table">
+              <thead>
+                <tr>
+                  <th>Corpus</th>
+                  <th class="num">Embed ms</th>
+                  <th class="num">Vector ms</th>
+                  <th class="num">Keyword ms</th>
+                  <th class="num">Vec hits</th>
+                  <th class="num">KW hits</th>
+                  <th class="num">Fused</th>
+                  <th>Errors</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(c, name) in knowledgeStatus.last_retrieval.corpora" :key="name">
+                  <td class="mono">{{ name }}</td>
+                  <td class="num">{{ c.embedding_latency_ms }}</td>
+                  <td class="num">{{ c.vector_latency_ms }}</td>
+                  <td class="num">{{ c.keyword_latency_ms }}</td>
+                  <td class="num">{{ c.vector_hits }}</td>
+                  <td class="num">{{ c.keyword_hits }}</td>
+                  <td class="num">{{ c.fused_hits }}</td>
+                  <td>
+                    <span v-if="c.vector_error" class="badge pending">vec</span>
+                    <span v-if="c.keyword_error" class="badge pending">kw</span>
+                    <span v-if="!c.vector_error && !c.keyword_error" class="dim">—</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </template>
+
+          <!-- ── Verify hint ───────────────────────────────────────────── -->
           <div class="kop-hint">
-            <strong>To run a full verification:</strong>
+            <strong>Full stack verification:</strong>
             <code>cd backend &amp;&amp; php artisan knowledge:verify</code>
           </div>
         </template>
@@ -4065,7 +4195,20 @@ onUnmounted(() => {
 .kop-header { display: flex; align-items: baseline; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
 .kop-header h2 { margin: 0; font-size: 1.15rem; }
 .kop-desc { margin: 0; color: var(--text-muted); font-size: 0.88rem; flex: 1 1 100%; }
+.kop-summary { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 1.75rem; }
+.kop-summary-item { display: flex; align-items: center; gap: 0.55rem; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.7rem 1rem; min-width: 140px; }
+.kop-summary-item.ok   { border-color: var(--success); }
+.kop-summary-item.warn { border-color: var(--warning, #f59e0b); }
+.kop-summary-item.fail { border-color: var(--danger); }
+.kop-summary-item.dim  { opacity: 0.6; }
+.kop-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--border); flex-shrink: 0; }
+.kop-summary-item.ok   .kop-dot { background: var(--success); }
+.kop-summary-item.warn .kop-dot { background: var(--warning, #f59e0b); }
+.kop-summary-item.fail .kop-dot { background: var(--danger); }
+.kop-summary-label { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em; }
+.kop-summary-value { font-size: 0.9rem; font-weight: 600; }
 .kop-section-title { font-size: 0.95rem; font-weight: 600; margin: 1.5rem 0 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.kop-since { font-size: 0.78rem; font-weight: 400; text-transform: none; letter-spacing: 0; margin-left: 0.5rem; }
 .kop-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.75rem; margin-bottom: 1rem; }
 .kop-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.85rem 1rem; }
 .kop-card.ok { border-color: var(--success); }
@@ -4084,5 +4227,6 @@ onUnmounted(() => {
 .dim { color: var(--text-muted); font-size: 0.88rem; }
 @media (max-width: 640px) {
   .kop-cards { grid-template-columns: 1fr 1fr; }
+  .kop-summary { flex-direction: column; }
 }
 </style>

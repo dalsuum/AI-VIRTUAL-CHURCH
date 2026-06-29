@@ -167,9 +167,12 @@ final class HeuristicLanguageDetector implements LanguageDetector
     private function latinSignals(): array
     {
         return [
-            'fr' => ['bonjour', 'merci', 'prière', 'prier', 'dieu', 'jésus', 'seigneur', 'église', 'foi', 'paix', 'amour', 'pourquoi', 'comment'],
-            'de' => ['hallo', 'danke', 'gebet', 'beten', 'gott', 'jesus', 'herr', 'kirche', 'glaube', 'frieden', 'liebe', 'warum', 'wie'],
-            'es' => ['hola', 'gracias', 'oración', 'orar', 'dios', 'jesús', 'señor', 'iglesia', 'fe', 'paz', 'amor', 'por qué', 'cómo'],
+            'fr' => ['bonjour', 'merci', 'prière', 'prier', 'dieu', 'jésus', 'seigneur', 'église', 'foi', 'paix', 'amour', 'pourquoi', 'comment',
+                'pardon', 'espérance', 'sauveur', 'saint', 'esprit', 'louange', 'adoration', 'péché', 'croix', 'ciel', 'âme', 'frère', 'sœur', 'béni', 'aide', 'souffrance', 's\'il vous plaît'],
+            'de' => ['hallo', 'danke', 'gebet', 'beten', 'gott', 'jesus', 'herr', 'kirche', 'glaube', 'frieden', 'liebe', 'warum', 'wie',
+                'vergebung', 'hoffnung', 'erlöser', 'heilig', 'geist', 'lobpreis', 'anbetung', 'sünde', 'kreuz', 'himmel', 'seele', 'bruder', 'schwester', 'gesegnet', 'hilfe', 'leiden', 'bitte'],
+            'es' => ['hola', 'gracias', 'oración', 'orar', 'dios', 'jesús', 'señor', 'iglesia', 'fe', 'paz', 'amor', 'por qué', 'cómo',
+                'perdón', 'esperanza', 'salvador', 'santo', 'espíritu', 'alabanza', 'adoración', 'pecado', 'cruz', 'cielo', 'alma', 'hermano', 'hermana', 'bendito', 'ayuda', 'sufrimiento', 'por favor'],
         ];
     }
 }

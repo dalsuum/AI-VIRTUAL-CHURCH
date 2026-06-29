@@ -238,6 +238,7 @@ async function begin() {
       v-if="specialSunday"
       class="special-sunday"
       :class="{ 'lang-my-text': usesMyanmarFont }"
+      dir="auto"
     >
       <span class="special-sunday-badge">✦</span>
       <div class="special-sunday-body">
@@ -256,7 +257,7 @@ async function begin() {
         <div v-for="s in history" :key="s.session_token" class="history-row">
           <span class="history-date">{{ fmtHistoryDate(s.date) }}</span>
           <span class="badge pending history-mood">{{ s.mood }}</span>
-          <span class="history-sermon">{{ s.sermon_topic || "—" }}</span>
+          <span class="history-sermon bidi-text" dir="auto">{{ s.sermon_topic || "—" }}</span>
         </div>
       </div>
     </template>
@@ -298,6 +299,7 @@ async function begin() {
           class="text-input"
           :placeholder="t('intake.namePh')"
           autocomplete="name"
+          dir="auto"
         />
       </template>
 
@@ -323,6 +325,7 @@ async function begin() {
         :placeholder="t('intake.customMoodPh')"
         maxlength="50"
         autocomplete="off"
+        dir="auto"
       />
 
       <label class="field-label" for="prayer">{{ t("intake.prayerLabel") }}</label>
@@ -331,6 +334,7 @@ async function begin() {
         v-model="prayerText"
         rows="3"
         :placeholder="t('intake.prayerPh')"
+        dir="auto"
       ></textarea>
 
       <label class="field-label">{{ t("intake.musicLabel") }}</label>
@@ -433,7 +437,7 @@ async function begin() {
 .special-sunday.lang-my-text { font-family: "Pyidaungsu", "Padauk", "Noto Sans Myanmar", "Myanmar Text", sans-serif; }
 .special-sunday.lang-my-text .special-sunday-brief { line-height: 1.9; }
 
-h1 { font-size: 1.55rem; margin: 0 0 0.35rem; letter-spacing: -0.02em; }
+h1 { font-size: 1.55rem; margin: 0 0 0.35rem; letter-spacing: 0; }
 .sub { color: var(--text-muted); margin: 0 0 1.5rem; line-height: 1.55; }
 .field-label { display: block; font-size: 0.85rem; color: var(--text-muted); margin: 1rem 0 0.5rem; }
 .text-input { width: 100%; padding: 0.65rem 0.75rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font: inherit; }
@@ -447,7 +451,7 @@ textarea { width: 100%; border: 1px solid var(--border); border-radius: var(--ra
 textarea::placeholder { color: var(--text-faint); }
 textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
 .source-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
-.source { display: flex; flex-direction: column; gap: 0.2rem; padding: 0.75rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); cursor: pointer; text-align: left; transition: border-color 0.12s ease, background 0.12s ease; }
+.source { display: flex; flex-direction: column; gap: 0.2rem; padding: 0.75rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); cursor: pointer; text-align: start; transition: border-color 0.12s ease, background 0.12s ease; }
 .source:hover { border-color: var(--border-strong); }
 .source span { font-size: 0.75rem; color: var(--text-muted); }
 .source.active { border-color: var(--primary); background: var(--primary-soft); }

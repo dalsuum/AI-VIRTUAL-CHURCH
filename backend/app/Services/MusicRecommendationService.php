@@ -369,6 +369,8 @@ class MusicRecommendationService
             'hi' => ['devanagari'],
             'ta' => ['tamil'],
             'th' => ['thai'],
+            'ar' => ['arabic'],
+            'he' => ['hebrew'],
         ];
 
         foreach ($foreign as $name => $range) {

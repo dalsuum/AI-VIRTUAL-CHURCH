@@ -11,6 +11,7 @@ import TestimonyWall from "./TestimonyWall.vue";
 import OfferingForm from "./OfferingForm.vue";
 import AdCarousel from "./AdCarousel.vue";
 import { api } from "../composables/useApi.js";
+import { isRtlLocale } from "../i18n";
 
 const { t } = useI18n();
 
@@ -25,6 +26,7 @@ const emit = defineEmits(["exit"]);
 
 // The mood the worshipper chose at intake, carried through on the service object.
 const mood = computed(() => props.service?.mood || "");
+const serviceDir = computed(() => isRtlLocale(props.service?.language) ? "rtl" : "auto");
 const musicFallbackNotice = computed(() => {
   const asset = props.service?.music_asset;
   if (!asset || asset.asset_type !== "text") return "";
@@ -542,7 +544,7 @@ watch(stages, (list) => {
             >
               {{ narrating ? t("player.stopReading") : t("player.readAloud") }}
             </button>
-            <div class="stage-text">
+            <div class="stage-text bidi-text" :dir="serviceDir">
               <p v-for="(para, pi) in paragraphs" :key="pi">
                 <template v-for="({ word, idx }) in para.words" :key="idx">
                   <span :class="{ highlight: textHighlightEnabled && idx === highlightedWordIndex }">{{ word }}</span>{{ ' ' }}
@@ -644,7 +646,7 @@ watch(stages, (list) => {
 .pip.active { background: var(--primary); }
 
 .stage { flex: 1; display: flex; flex-direction: column; }
-.stage-title { font-size: 1.4rem; margin: 0 0 0.9rem; letter-spacing: -0.02em; }
+.stage-title { font-size: 1.4rem; margin: 0 0 0.9rem; }
 .stage-hint { color: var(--text-muted); font-size: 0.9rem; margin: 0.75rem 0 0; }
 
 /* Pin the presenter while a long segment scrolls. The backdrop + blur keep the
@@ -653,7 +655,7 @@ watch(stages, (list) => {
   position: sticky;
   top: 0;
   z-index: 5;
-  margin-bottom: 0.9rem;
+	  margin-block-end: 0.9rem;
   padding: 0.5rem 0 0.75rem;
   background: var(--surface-2, var(--surface, #14141a));
   backdrop-filter: blur(8px);
@@ -672,7 +674,7 @@ watch(stages, (list) => {
 .media-note { color: var(--text-muted); font-size: 0.85rem; margin: 0.5rem 0 0; }
 .read-aloud {
   align-self: flex-start;
-  margin-bottom: 0.9rem;
+  margin-block-end: 0.9rem;
   padding: 0.55rem 1rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -685,7 +687,7 @@ watch(stages, (list) => {
 .read-aloud:hover { border-color: var(--primary); background: var(--primary-soft); }
 .stage-text { line-height: 1.75; color: var(--text); margin: 0; font-size: 1.05rem; }
 .stage-text p { margin: 0 0 0.75rem; }
-.stage-text p:last-child { margin-bottom: 0; }
+.stage-text p:last-child { margin-block-end: 0; }
 .stage-text span { border-radius: 3px; transition: background 0.15s; }
 .stage-text span.highlight { background: rgba(99, 179, 237, 0.35); }
 

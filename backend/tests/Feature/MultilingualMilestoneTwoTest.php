@@ -60,9 +60,8 @@ class MultilingualMilestoneTwoTest extends TestCase
             $this->assertArrayHasKey($code, $languages);
         }
 
-        foreach (['ar'] as $code) {
-            $this->assertArrayNotHasKey($code, $languages);
-        }
+        // Later milestones extend this registry; this test only locks the
+        // Milestone 2 CJK additions in place.
     }
 
     public function test_church_service_intake_accepts_cjk_languages_and_unicode_custom_moods(): void

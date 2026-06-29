@@ -147,7 +147,8 @@ function closeSheet() { sheetOpen.value = false; }
 @media (max-width: 640px) {
   .bottom-nav {
     position: fixed;
-    left: 0; right: 0; bottom: 0;
+    inset-inline: 0;
+    bottom: 0;
     z-index: 40;
     display: flex;
     align-items: stretch;
@@ -182,8 +183,8 @@ function closeSheet() { sheetOpen.value = false; }
 .sheet {
   width: 100%;
   background: var(--surface);
-  border-top-left-radius: var(--radius);
-  border-top-right-radius: var(--radius);
+  border-start-start-radius: var(--radius);
+  border-start-end-radius: var(--radius);
   padding: 16px 16px calc(16px + env(safe-area-inset-bottom, 0px));
   box-shadow: var(--shadow);
   animation: sheet-up 0.18s ease-out;

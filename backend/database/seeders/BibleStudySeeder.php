@@ -45,6 +45,8 @@ class BibleStudySeeder extends Seeder
         'hi'  => 'Hindi',
         'ta'  => 'Tamil',
         'th'  => 'Thai',
+        'ar'  => 'Arabic',
+        'he'  => 'Hebrew',
         'cnh' => 'Hakha Chin',
         'cfm' => 'Falam Chin',
         'lus' => 'Mizo',
@@ -129,6 +131,18 @@ class BibleStudySeeder extends Seeder
             ['ศิษยาภิบาลพระคุณ', 'grace-evangelistic', 80, false],
             ['ศิษยาภิบาลมัทธิว', 'expository-doctrinal', 70, false],
             ['ศิษยาภิบาลความหวัง', 'pastoral-application', 60, false],
+        ],
+        'ar' => [
+            ['القس نور', 'moderator-synthesis', 60, true],
+            ['القس نعمة', 'grace-evangelistic', 80, false],
+            ['القس متى', 'expository-doctrinal', 70, false],
+            ['القس رجاء', 'pastoral-application', 60, false],
+        ],
+        'he' => [
+            ['הרועה אור', 'moderator-synthesis', 60, true],
+            ['הרועה חסד', 'grace-evangelistic', 80, false],
+            ['הרועה מתי', 'expository-doctrinal', 70, false],
+            ['הרועה תקווה', 'pastoral-application', 60, false],
         ],
         'cnh' => [
             ['Pa Bawi Hmung', 'moderator-synthesis',   60, true],
@@ -342,7 +356,7 @@ class BibleStudySeeder extends Seeder
     private const TOKEN_SCALE = [
         'en' => 1.0, 'fr' => 1.5, 'de' => 1.5, 'es' => 1.5,
         'ja' => 2.0, 'zh-CN' => 2.0, 'ko' => 2.0,
-        'hi' => 2.5, 'ta' => 2.5, 'th' => 2.5,
+        'hi' => 2.5, 'ta' => 2.5, 'th' => 2.5, 'ar' => 2.5, 'he' => 2.5,
         'my' => 3.0, 'td' => 3.0, 'cnh' => 3.0,
         'cfm' => 3.0, 'lus' => 3.0, 'hlt' => 3.0,
     ];

@@ -109,7 +109,7 @@ onBeforeUnmount(() => clearInterval(poll));
       </p>
       <div v-for="(m, i) in messages" :key="i" :class="['bubble', m.sender]">
         <span class="who">{{ m.sender === 'user' ? t('common.you') : t('pastor.role') }}</span>
-        <p>{{ m.content }}</p>
+        <p class="bidi-text" dir="auto">{{ m.content }}</p>
       </div>
       <div v-if="waiting" class="bubble assistant typing"><span class="who">{{ t('pastor.role') }}</span><p>…</p></div>
     </div>
@@ -134,8 +134,8 @@ onBeforeUnmount(() => clearInterval(poll));
 .bubble { max-width: 80%; margin: 8px 0; padding: 8px 12px; border-radius: 12px; }
 .bubble .who { font-size: 11px; opacity: .6; }
 .bubble p { margin: 2px 0 0; white-space: pre-wrap; line-height: 1.45; }
-.bubble.user { margin-left: auto; background: var(--primary); color: var(--on-primary); }
-.bubble.assistant { margin-right: auto; background: var(--surface-2); color: var(--text); }
+	.bubble.user { margin-inline-start: auto; background: var(--primary); color: var(--on-primary); }
+	.bubble.assistant { margin-inline-end: auto; background: var(--surface-2); color: var(--text); }
 .bubble.typing p { letter-spacing: 2px; }
 .pastor-err { color: var(--danger); font-size: 13px; }
 .pastor-input { display: flex; gap: 8px; margin-top: 10px; }

@@ -36,6 +36,13 @@ class TestNarratorEdgeVoice(unittest.TestCase):
             self.assertEqual(narrator.edge_voice("th", "female"), "th-TH-PremwadeeNeural")
             self.assertEqual(narrator.edge_voice("th", "male"), "th-TH-NiwatNeural")
 
+    def test_milestone_four_rtl_languages_use_native_edge_defaults(self):
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(narrator.edge_voice("ar", "female"), "ar-SA-ZariyahNeural")
+            self.assertEqual(narrator.edge_voice("ar", "male"), "ar-SA-HamedNeural")
+            self.assertEqual(narrator.edge_voice("he", "female"), "he-IL-HilaNeural")
+            self.assertEqual(narrator.edge_voice("he", "male"), "he-IL-AvriNeural")
+
     def test_language_specific_override_does_not_change_other_languages(self):
         with patch.dict(os.environ, {"EDGE_TTS_VOICE_ES_MALE": "es-ES-TestNeural"}, clear=True):
             self.assertEqual(narrator.edge_voice("es", "male"), "es-ES-TestNeural")
@@ -50,6 +57,11 @@ class TestNarratorEdgeVoice(unittest.TestCase):
         with patch.dict(os.environ, {"EDGE_TTS_VOICE_HI_MALE": "hi-IN-TestNeural"}, clear=True):
             self.assertEqual(narrator.edge_voice("hi", "male"), "hi-IN-TestNeural")
             self.assertEqual(narrator.edge_voice("ta", "male"), "ta-IN-ValluvarNeural")
+
+    def test_milestone_four_language_specific_override_is_scoped(self):
+        with patch.dict(os.environ, {"EDGE_TTS_VOICE_HE_MALE": "he-IL-TestNeural"}, clear=True):
+            self.assertEqual(narrator.edge_voice("he", "male"), "he-IL-TestNeural")
+            self.assertEqual(narrator.edge_voice("ar", "male"), "ar-SA-HamedNeural")
 
     def test_existing_english_and_myanmar_defaults_are_preserved(self):
         with patch.dict(os.environ, {}, clear=True):

@@ -144,7 +144,7 @@ function isActive(item) {
   .topbar .brand {
     flex: 1 1 calc(100% - 44px);
     min-width: 0;
-    margin-right: 0;
+    margin-inline-end: 0;
   }
   .topbar-right {
     flex: 1 0 100%;
@@ -173,10 +173,10 @@ function isActive(item) {
     padding: 0.35rem 0.55rem;
   }
 }
-/* Keep logo + wordmark hugging the left (next to the hamburger); the auto
-   margin pushes the auth controls + theme toggle to the far right instead of
+/* Keep logo + wordmark at the start edge (next to the hamburger); the auto
+   margin pushes the auth controls + theme toggle to the far edge instead of
    space-between spreading the brand into the centre. */
-.brand { display: inline-flex; align-items: center; gap: 0.55rem; min-width: 0; margin-right: auto; text-decoration: none; color: var(--text); font-weight: 600; }
+.brand { display: inline-flex; align-items: center; gap: 0.55rem; min-width: 0; margin-inline-end: auto; text-decoration: none; color: var(--text); font-weight: 600; }
 .brand-mark {
   display: inline-flex; align-items: center; justify-content: center;
   width: 30px; height: 30px; border-radius: 9px;

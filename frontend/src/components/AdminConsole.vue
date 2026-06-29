@@ -97,6 +97,15 @@ const musicPoolLanguages = [
   { value: "en", label: "English" },
   { value: "my", label: "Myanmar" },
   { value: "td", label: "Tedim (Zolai)" },
+  { value: "fr", label: "French" },
+  { value: "de", label: "German" },
+  { value: "es", label: "Spanish" },
+  { value: "ja", label: "Japanese" },
+  { value: "zh-CN", label: "Chinese (Simplified)" },
+  { value: "ko", label: "Korean" },
+  { value: "hi", label: "Hindi" },
+  { value: "ta", label: "Tamil" },
+  { value: "th", label: "Thai" },
 ];
 
 const voiceTraining = ref(null);
@@ -146,6 +155,25 @@ const narrationModesTD = [
   { value: "mms_tts",  label: "MMS-TTS (local, free)",  hint: "Local facebook/mms-tts-ctd — the only native Zolai TTS. Requires MMS speech on port 8003." },
   { value: "edge_tts", label: "Edge TTS (cloud, free)", hint: "Microsoft cloud TTS — no native Zolai voice; reads Tedim text phonetically using EDGE_TTS_VOICE_TD (default en-US-AriaNeural). Free but accent will be English." },
   { value: "off",      label: "Off",                    hint: "Segments stay as silent text — nothing is read aloud." },
+];
+
+const narrationModesWorld = [
+  { value: "edge_tts", label: "Edge TTS (cloud, free)", hint: "Native Microsoft neural voice for this language. Recommended." },
+  { value: "browser",  label: "Browser voice",          hint: "The worshipper's browser reads each segment aloud." },
+  { value: "openai",   label: "OpenAI voice",           hint: "Segments are narrated with OpenAI text-to-speech. Requires a TTS key." },
+  { value: "kokoro",   label: "OpenRouter Kokoro",      hint: "Segments are narrated with the open Kokoro voice via OpenRouter." },
+  { value: "off",      label: "Off",                    hint: "Segments stay as silent text — nothing is read aloud." },
+];
+const worldNarrationLanguages = [
+  { code: "fr", label: "French (Français)", fallback: "edge_tts", voices: "Denise / Henri" },
+  { code: "de", label: "German (Deutsch)", fallback: "edge_tts", voices: "Katja / Conrad" },
+  { code: "es", label: "Spanish (Español)", fallback: "edge_tts", voices: "Elvira / Alvaro" },
+  { code: "ja", label: "Japanese (日本語)", fallback: "edge_tts", voices: "Nanami / Keita" },
+  { code: "zh-CN", label: "Chinese Simplified (简体中文)", fallback: "edge_tts", voices: "Xiaoxiao / Yunxi" },
+  { code: "ko", label: "Korean (한국어)", fallback: "edge_tts", voices: "SunHi / InJoon" },
+  { code: "hi", label: "Hindi (हिन्दी)", fallback: "edge_tts", voices: "Swara / Madhur" },
+  { code: "ta", label: "Tamil (தமிழ்)", fallback: "edge_tts", voices: "Pallavi / Valluvar" },
+  { code: "th", label: "Thai (ไทย)", fallback: "edge_tts", voices: "Premwadee / Niwat" },
 ];
 
 // Compact per-version "Listen" voice rows for the Bible page. English & KJV get
@@ -238,6 +266,12 @@ const serviceLanguages = [
   { key: "lang_fr", label: "French (Français)", hint: "Show the French tab in the intake form." },
   { key: "lang_de", label: "German (Deutsch)", hint: "Show the German tab in the intake form." },
   { key: "lang_es", label: "Spanish (Español)", hint: "Show the Spanish tab in the intake form." },
+  { key: "lang_ja", label: "Japanese (日本語)", hint: "Show the Japanese tab in the intake form." },
+  { key: "lang_zh-CN", label: "Chinese Simplified (简体中文)", hint: "Show the Simplified Chinese tab in the intake form." },
+  { key: "lang_ko", label: "Korean (한국어)", hint: "Show the Korean tab in the intake form." },
+  { key: "lang_hi", label: "Hindi (हिन्दी)", hint: "Show the Hindi tab in the intake form." },
+  { key: "lang_ta", label: "Tamil (தமிழ்)", hint: "Show the Tamil tab in the intake form." },
+  { key: "lang_th", label: "Thai (ไทย)", hint: "Show the Thai tab in the intake form." },
 ];
 
 // Where the worker stores generated audio. Mirrors Setting::STORAGE_BACKENDS.
@@ -273,7 +307,7 @@ const cfTypeLabels = { block: "Block", allow: "Allow" };
 const countdownSourceOptions = [
   { value: "all", label: "All sources", hint: "Rotate banners, approved testimonies, and mood-matched Scripture from the local Bible." },
   { value: "both", label: "Banners + testimonies", hint: "Rotate admin banners and approved testimonies." },
-  { value: "verses", label: "Scripture verses", hint: "Show mood-matched verses from the local Bible (English / Burmese / Tedim)." },
+  { value: "verses", label: "Scripture verses", hint: "Show mood-matched verses from the local Bible for the service language." },
   { value: "banners", label: "Custom banners", hint: "Show only the admin-managed messages below." },
   { value: "testimonies", label: "Testimonies", hint: "Show only approved testimonies from the moderation queue." },
   { value: "off", label: "Off", hint: "Show the normal countdown without cards." },
@@ -2128,9 +2162,11 @@ onUnmounted(() => {
           <div class="pool-grid">
             <input v-model="musicTrackForm.mood" class="pool-input" placeholder="Mood (required)" />
             <select v-model="musicTrackForm.language" class="pool-input">
-              <option value="en">English</option>
-              <option value="my">Myanmar</option>
-              <option value="td">Tedim</option>
+              <option
+                v-for="lang in musicPoolLanguages.filter((l) => l.value)"
+                :key="lang.value"
+                :value="lang.value"
+              >{{ lang.label }}</option>
             </select>
             <select v-model="musicTrackForm.source" class="pool-input">
               <option value="suno">Suno (Vocal)</option>
@@ -2428,8 +2464,8 @@ onUnmounted(() => {
           <h2>Service languages</h2>
           <p class="setting-desc">
             Which language tabs appear in the intake form. Worshippers can only pick a
-            language whose tab is shown. English is on by default; enable Myanmar and
-            Zolai once the corresponding LLM workers are running. Keep at least one on.
+            language whose tab is shown. English is on by default; enable additional
+            languages once their service generation is ready. Keep at least one on.
           </p>
           <div v-if="settings" class="choice-row">
             <button
@@ -2570,6 +2606,27 @@ onUnmounted(() => {
                 <span>{{ m.hint }}</span>
               </button>
             </div>
+
+            <template v-for="lang in worldNarrationLanguages" :key="lang.code">
+              <p class="setting-desc" style="margin-top:1.5rem">
+                <strong>{{ lang.label }}</strong>
+                <span class="hint-inline">Edge voices: {{ lang.voices }}</span>
+              </p>
+              <div class="choice-row">
+                <button
+                  v-for="m in narrationModesWorld"
+                  :key="m.value"
+                  type="button"
+                  class="choice"
+                  :class="{ active: (settings['narration_mode_' + lang.code] || lang.fallback) === m.value }"
+                  :disabled="savingSettings || settingsReadOnly"
+                  @click="setNarrationMode(lang.code, m.value)"
+                >
+                  <strong>{{ m.label }}</strong>
+                  <span>{{ m.hint }}</span>
+                </button>
+              </div>
+            </template>
           </template>
           <p v-else class="setting-desc">Loading…</p>
         </div>
@@ -4518,6 +4575,7 @@ onUnmounted(() => {
 .setting-block { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.4rem; box-shadow: var(--shadow-sm); }
 .setting-block h2 { font-size: 1.05rem; margin: 0 0 0.3rem; }
 .setting-desc { color: var(--text-muted); font-size: 0.9rem; line-height: 1.5; margin: 0 0 1rem; }
+.hint-inline { display: block; margin-top: 0.2rem; color: var(--text-muted); font-size: 0.78rem; font-weight: 400; }
 .choice-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0.6rem; }
 .choice { display: flex; flex-direction: column; gap: 0.25rem; padding: 0.85rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); cursor: pointer; text-align: left; transition: border-color 0.12s ease, background 0.12s ease; }
 .choice:hover:not(:disabled) { border-color: var(--border-strong); }

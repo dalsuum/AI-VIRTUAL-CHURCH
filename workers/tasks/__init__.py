@@ -232,19 +232,7 @@ def _segment_gender(segment: str, presenter_gender: str = "female") -> str:
 
 
 def _edge_voice(language: str, gender: str) -> str:
-    suffix = gender.upper()
-    if language == "my":
-        default = "my-MM-ThihaNeural" if gender == "male" else "my-MM-NilarNeural"
-        return (
-            os.getenv(f"EDGE_TTS_VOICE_MY_{suffix}")
-            or os.getenv("EDGE_TTS_VOICE_MY")
-            or default
-        )
-    if language == "td":
-        default = "en-US-GuyNeural" if gender == "male" else "en-US-AriaNeural"
-        return os.getenv("EDGE_TTS_VOICE_TD", default)
-    default = "en-US-GuyNeural" if gender == "male" else "en-US-AriaNeural"
-    return os.getenv(f"EDGE_TTS_VOICE_{suffix}") or os.getenv("EDGE_TTS_VOICE", default)
+    return narrator.edge_voice(language, gender)
 
 
 def _narration_voice(mode: str, voicebox_engine: str, language: str, gender: str) -> str:
@@ -350,7 +338,7 @@ def generate_text_segments(job: dict, plan: dict) -> None:
 
     token, name, mood = job["session_token"], job["user_name"], job["mood"]
     ref = plan["scripture_ref"]
-    language = job.get("language", "en")  # 'en' | 'my' | 'td' — the whole service's language
+    language = job.get("language", "en")  # Whole service language.
 
     # Synthesize TTS audio only when the admin chose a server voice provider —
     # 'openai', 'kokoro', 'edge_tts', 'mms_tts', or 'voicebox'. In 'browser'/'off'

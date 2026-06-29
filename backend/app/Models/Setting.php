@@ -190,7 +190,7 @@ class Setting extends Model
     ];
 
     /** All supported service languages. */
-    public const LANGUAGES = ['en', 'my', 'td', 'fr', 'de', 'es'];
+    public const LANGUAGES = ['en', 'my', 'td', 'fr', 'de', 'es', 'ja', 'zh-CN', 'ko', 'hi', 'ta', 'th'];
 
     public static function get(string $key, ?string $default = null): ?string
     {
@@ -210,12 +210,22 @@ class Setting extends Model
     public static function narrationMode(string $language): string
     {
         $mode = static::get('narration_mode_' . $language, self::defaultNarrationMode($language));
-        return in_array($mode, self::NARRATION_MODES, true) ? $mode : self::defaultNarrationMode($language);
+        return in_array($mode, self::narrationModeOptions($language), true) ? $mode : self::defaultNarrationMode($language);
     }
 
     public static function narrationEnabled(string $language): bool
     {
         return static::get('narration_' . $language, '1') === '1';
+    }
+
+    /** Voice providers live services may use for a service language. */
+    public static function narrationModeOptions(string $language): array
+    {
+        return match ($language) {
+            'en' => self::NARRATION_MODES,
+            'my', 'td' => ['edge_tts', 'mms_tts', 'off'],
+            default => ['off', 'browser', 'openai', 'kokoro', 'edge_tts'],
+        };
     }
 
     /** Voice providers the Bible reader may use for a translation. */
@@ -497,11 +507,24 @@ class Setting extends Model
 
     /**
      * The service languages currently offered in the intake form.
-     * English defaults on; Myanmar and Tedim default off until the admin enables them.
+     * English defaults on; all milestone languages default off until the admin enables them.
      */
     public static function enabledLanguages(): array
     {
-        $defaults = ['en' => '1', 'my' => '0', 'td' => '0', 'fr' => '0', 'de' => '0', 'es' => '0'];
+        $defaults = [
+            'en' => '1',
+            'my' => '0',
+            'td' => '0',
+            'fr' => '0',
+            'de' => '0',
+            'es' => '0',
+            'ja' => '0',
+            'zh-CN' => '0',
+            'ko' => '0',
+            'hi' => '0',
+            'ta' => '0',
+            'th' => '0',
+        ];
         return array_values(array_filter(
             self::LANGUAGES,
             fn($l) => static::get('lang_' . $l, $defaults[$l]) === '1'

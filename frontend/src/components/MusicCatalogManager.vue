@@ -13,6 +13,15 @@ const LANGUAGES = [
   { code: "en", label: "English" },
   { code: "my", label: "Burmese" },
   { code: "td", label: "Zolai" },
+  { code: "fr", label: "French" },
+  { code: "de", label: "German" },
+  { code: "es", label: "Spanish" },
+  { code: "ja", label: "Japanese" },
+  { code: "zh-CN", label: "Chinese (Simplified)" },
+  { code: "ko", label: "Korean" },
+  { code: "hi", label: "Hindi" },
+  { code: "ta", label: "Tamil" },
+  { code: "th", label: "Thai" },
 ];
 
 const tracks = ref([]);

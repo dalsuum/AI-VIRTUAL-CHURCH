@@ -57,9 +57,9 @@ final class WorshipServicePipeline extends AiServicePipeline
 
         $this->data = $request->validate([
             'mood'          => ['required', 'string', 'max:100'],
-            // Service language ('en' | 'my' | 'td'); locked per session like music_source.
-            'language'      => ['nullable', 'string', 'in:en,my,td'],
-            'custom_mood'   => ['nullable', 'string', 'max:50', 'regex:/^[A-Za-z]+$/'],
+            // Service language is locked per session like music_source.
+            'language'      => ['nullable', 'string', 'in:' . implode(',', Setting::LANGUAGES)],
+            'custom_mood'   => ['nullable', 'string', 'max:50', 'regex:/^[\p{L}\p{M}\p{N}\s.-]+$/u'],
             'prayer_text'   => ['nullable', 'string', 'max:5000'],
             'scheduled_at'  => ['nullable', 'date', 'after:now'],
             'contact_email' => ['nullable', 'email', 'max:255'],

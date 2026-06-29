@@ -8,6 +8,22 @@ const props = defineProps({
   canManage: { type: Boolean, default: false },
 });
 
+const LANGS = ["en", "my", "td", "fr", "de", "es", "ja", "zh-CN", "ko", "hi", "ta", "th"];
+const LANG_LABEL = {
+  en: "English",
+  my: "မြန်မာ",
+  td: "Zolai",
+  fr: "Français",
+  de: "Deutsch",
+  es: "Español",
+  ja: "日本語",
+  "zh-CN": "简体中文",
+  ko: "한국어",
+  hi: "हिन्दी",
+  ta: "தமிழ்",
+  th: "ไทย",
+};
+
 // ── State ──────────────────────────────────────────────────────────────────
 const loading     = ref(false);
 const busy        = ref(false);
@@ -28,8 +44,6 @@ const contentRow  = ref(null);    // the observance whose content we're managing
 const sermonForm  = ref(null);    // editing/creating a sermon, or null
 const songForm    = ref(null);    // editing/creating a song, or null
 
-const LANGS = ["en", "my", "td"];
-const LANG_LABEL = { en: "English", my: "မြန်မာ", td: "Zolai" };
 const SONG_TYPES = [
   { value: "youtube", label: "YouTube link", hint: "Video id or URL" },
   { value: "hymn",    label: "Hymn library", hint: "Song id from your library" },
@@ -39,13 +53,21 @@ const SONG_TYPES = [
 
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
+function blankLangMap() {
+  return Object.fromEntries(LANGS.map((lang) => [lang, ""]));
+}
+
+function usesMyanmarFont(lang) {
+  return ["my", "td"].includes(lang);
+}
+
 function blankForm() {
   return {
     key: "",
     rule_type: "nth_weekday",
     rule: { month: 5, weekday: 0, nth: 2, offset: 0, day: 1 },
-    titles: { en: "", my: "", td: "" },
-    briefs: { en: "", my: "", td: "" },
+    titles: blankLangMap(),
+    briefs: blankLangMap(),
     sermon_tags: "",
     music_moods: "",
     region: "",
@@ -120,8 +142,8 @@ function startEdit(o) {
     key: o.key,
     rule_type: o.rule_type,
     rule: { month: 1, weekday: 0, nth: 1, offset: 0, day: 1, ...(o.rule || {}) },
-    titles: { en: "", my: "", td: "", ...(o.titles || {}) },
-    briefs: { en: "", my: "", td: "", ...(o.briefs || {}) },
+    titles: { ...blankLangMap(), ...(o.titles || {}) },
+    briefs: { ...blankLangMap(), ...(o.briefs || {}) },
     sermon_tags: (o.sermon_tags || []).join(", "),
     music_moods: (o.music_moods || []).join(", "),
     region: o.region || "",
@@ -477,22 +499,34 @@ async function reloadKeepingContent(id) {
 
       <fieldset class="ss-fieldset">
         <legend>Title</legend>
-        <label>English <small>(required)</small></label>
-        <input v-model="form.titles.en" required />
-        <label>Myanmar (မြန်မာ) <small>— Unicode only</small></label>
-        <input v-model="form.titles.my" class="my-text" />
-        <label>Zolai / Tedim</label>
-        <input v-model="form.titles.td" class="my-text" />
+        <template v-for="l in LANGS" :key="'title-' + l">
+          <label>
+            {{ LANG_LABEL[l] }}
+            <small v-if="l === 'en'">(required)</small>
+            <small v-else-if="usesMyanmarFont(l)">— Unicode only</small>
+          </label>
+          <input
+            v-model="form.titles[l]"
+            :required="l === 'en'"
+            :class="{ 'my-text': usesMyanmarFont(l) }"
+          />
+        </template>
       </fieldset>
 
       <fieldset class="ss-fieldset">
         <legend>Short brief</legend>
-        <label>English <small>(required)</small></label>
-        <textarea v-model="form.briefs.en" rows="2" required></textarea>
-        <label>Myanmar (မြန်မာ)</label>
-        <textarea v-model="form.briefs.my" rows="2" class="my-text"></textarea>
-        <label>Zolai / Tedim</label>
-        <textarea v-model="form.briefs.td" rows="2" class="my-text"></textarea>
+        <template v-for="l in LANGS" :key="'brief-' + l">
+          <label>
+            {{ LANG_LABEL[l] }}
+            <small v-if="l === 'en'">(required)</small>
+          </label>
+          <textarea
+            v-model="form.briefs[l]"
+            rows="2"
+            :required="l === 'en'"
+            :class="{ 'my-text': usesMyanmarFont(l) }"
+          ></textarea>
+        </template>
       </fieldset>
 
       <label>Sermon tags <small>(comma-separated — bias the sermon theme)</small></label>
@@ -562,7 +596,7 @@ async function reloadKeepingContent(id) {
           <button class="btn primary" :disabled="previewBusy" @click="runPreview">{{ previewBusy ? "…" : "Preview" }}</button>
         </div>
 
-        <div v-if="preview" class="ss-preview-out" :class="{ 'my-text': preview.language !== 'en' }">
+        <div v-if="preview" class="ss-preview-out" :class="{ 'my-text': usesMyanmarFont(preview.language) }">
           <div class="ss-preview-seg">
             <span class="ss-preview-label">Sermon</span>
             <template v-if="preview.sermon.mode === 'manual'">
@@ -593,7 +627,7 @@ async function reloadKeepingContent(id) {
       </div>
 
       <!-- Per-language sermon + song libraries -->
-      <div v-for="l in LANGS" :key="'lib'+l" class="ss-lang-block" :class="{ 'my-text': l !== 'en' }">
+      <div v-for="l in LANGS" :key="'lib'+l" class="ss-lang-block" :class="{ 'my-text': usesMyanmarFont(l) }">
         <h4>{{ LANG_LABEL[l] }}</h4>
 
         <div class="ss-lib">
@@ -634,9 +668,9 @@ async function reloadKeepingContent(id) {
         <form class="ss-modal-box" @submit.prevent="saveSermon">
           <h4>{{ sermonForm.id ? "Edit" : "New" }} sermon — {{ LANG_LABEL[sermonForm.language] }}</h4>
           <label>Title</label>
-          <input v-model="sermonForm.title" :class="{ 'my-text': sermonForm.language !== 'en' }" required />
+          <input v-model="sermonForm.title" :class="{ 'my-text': usesMyanmarFont(sermonForm.language) }" required />
           <label>Body <small>(spoken verbatim)</small></label>
-          <textarea v-model="sermonForm.body" rows="8" :class="{ 'my-text': sermonForm.language !== 'en' }" required></textarea>
+          <textarea v-model="sermonForm.body" rows="8" :class="{ 'my-text': usesMyanmarFont(sermonForm.language) }" required></textarea>
           <div class="ss-rule-row">
             <span><label>Mood <small>(optional tag)</small></label><input v-model="sermonForm.mood" style="width:9rem" /></span>
             <span><label>Priority</label><input type="number" v-model.number="sermonForm.priority" style="width:6rem" /></span>
@@ -654,7 +688,7 @@ async function reloadKeepingContent(id) {
         <form class="ss-modal-box" @submit.prevent="saveSong">
           <h4>{{ songForm.id ? "Edit" : "New" }} song — {{ LANG_LABEL[songForm.language] }}</h4>
           <label>Title</label>
-          <input v-model="songForm.title" :class="{ 'my-text': songForm.language !== 'en' }" required />
+          <input v-model="songForm.title" :class="{ 'my-text': usesMyanmarFont(songForm.language) }" required />
           <label>Source type</label>
           <select v-model="songForm.source_type">
             <option v-for="t in SONG_TYPES" :key="t.value" :value="t.value">{{ t.label }}</option>
@@ -662,7 +696,7 @@ async function reloadKeepingContent(id) {
           <label>Source <small>{{ (SONG_TYPES.find(t => t.value === songForm.source_type) || {}).hint }}</small></label>
           <input v-model="songForm.source_ref" required />
           <label>Lyrics <small>(optional, on-screen)</small></label>
-          <textarea v-model="songForm.lyrics" rows="4" :class="{ 'my-text': songForm.language !== 'en' }"></textarea>
+          <textarea v-model="songForm.lyrics" rows="4" :class="{ 'my-text': usesMyanmarFont(songForm.language) }"></textarea>
           <div class="ss-rule-row">
             <span><label>Mood</label><input v-model="songForm.mood" style="width:9rem" /></span>
             <span><label>Priority</label><input type="number" v-model.number="songForm.priority" style="width:6rem" /></span>

@@ -20,6 +20,7 @@ const language = computed(() => {
   const appLang = normalizeLanguage(locale.value);
   return enabledLangs.value.includes(appLang) ? appLang : (enabledLangs.value[0] || "en");
 });
+const usesMyanmarFont = computed(() => ["my", "td"].includes(language.value));
 
 // ---- Special-Sunday highlight ---------------------------------------------
 // The active observance (localized title + short brief), or null outside any
@@ -148,7 +149,7 @@ async function begin() {
   }
 
   const trimmedCustomMood = customMood.value.trim();
-  if (trimmedCustomMood && !/^[A-Za-z]+$/.test(trimmedCustomMood)) {
+  if (trimmedCustomMood && !/^\p{L}+$/u.test(trimmedCustomMood)) {
     error.value = t("intake.errors.customMoodLetters");
     return;
   }
@@ -220,7 +221,7 @@ async function begin() {
 </script>
 
 <template>
-  <div class="intake" :class="{ 'lang-my': language === 'my' }">
+  <div class="intake" :class="{ 'lang-my': usesMyanmarFont }">
     <!-- AI Bible Study entry — a live multi-pastor discussion. -->
     <a href="#bible-study" class="study-cta">
       <span class="study-cta-icon" aria-hidden="true">💬</span>
@@ -232,11 +233,11 @@ async function begin() {
 
     <!-- Special-Sunday highlight: only shown during the observance's active
          window (Fri–Sun). Title + short brief localized to the service language;
-         Myanmar Unicode font for my/td (see .lang-my below + lang-my-text). -->
+         Myanmar Unicode font only for my/td (see .lang-my below + lang-my-text). -->
     <div
       v-if="specialSunday"
       class="special-sunday"
-      :class="{ 'lang-my-text': language !== 'en' }"
+      :class="{ 'lang-my-text': usesMyanmarFont }"
     >
       <span class="special-sunday-badge">✦</span>
       <div class="special-sunday-body">

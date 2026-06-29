@@ -86,12 +86,21 @@ export function getRegistry() {
 
 /**
  * The single canonical language resolver. Worshipper-facing features must derive
- * their content language from THIS — never from the raw UI locale — so the UI
- * locale (e.g. "zh-CN") and the backend content code (e.g. "zh") stay distinct
- * concepts with one authority. Strips the region/script subtag to the base
- * language; "en"/"my"/"td" pass through unchanged. Adding a regional locale
- * later (pt-BR, zh-TW) needs no feature changes.
+ * their content language from THIS — never from the raw UI locale. Exact registry
+ * or locale-file codes win first (so "zh-CN" stays "zh-CN"); only then do we fall
+ * back to a base-language match for future regional variants.
  */
 export function normalizeLanguage(code = i18n.global.locale.value) {
-  return String(code || "en").split("-")[0].toLowerCase();
+  const raw = String(code || "en").trim() || "en";
+  const known = [...new Set([...Object.keys(registry), ...Object.keys(messages)])];
+
+  if (known.includes(raw)) return raw;
+
+  const exact = known.find((candidate) => candidate.toLowerCase() === raw.toLowerCase());
+  if (exact) return exact;
+
+  const base = raw.split("-")[0].toLowerCase();
+  const baseMatch = known.find((candidate) => candidate.split("-")[0].toLowerCase() === base);
+
+  return baseMatch || base || "en";
 }

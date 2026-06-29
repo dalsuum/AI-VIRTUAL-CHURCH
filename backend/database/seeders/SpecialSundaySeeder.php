@@ -42,7 +42,7 @@ class SpecialSundaySeeder extends Seeder
         }
     }
 
-    /** NFC-normalize each {en,my,td} string so Myanmar text is canonical Unicode. */
+    /** NFC-normalize each localized string so Myanmar and CJK text stay canonical Unicode. */
     private function normalizeLangMap(array $map): array
     {
         foreach ($map as $lang => $text) {

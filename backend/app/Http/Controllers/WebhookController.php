@@ -5,8 +5,10 @@ namespace App\Http\Controllers;
 use App\Models\MusicTrack;
 use App\Models\ServiceAsset;
 use App\Models\ServiceSession;
+use App\Models\Setting;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 /**
  * Internal endpoint hit by the Python workers. Protected by a shared secret header
@@ -135,16 +137,14 @@ class WebhookController extends Controller
 
         $data = $request->validate([
             'mood'         => ['required', 'string', 'max:100'],
-            'language'     => ['nullable', 'string', 'max:5'],
+            'language'     => ['nullable', 'string', 'max:5', Rule::in(Setting::LANGUAGES)],
             'provider_ref' => ['required', 'string'],
             'storage_key'  => ['required', 'string'],   // RAW object key, not a presigned URL
             'title'        => ['nullable', 'string'],
             'lyrics'       => ['nullable', 'string'],
         ]);
 
-        $language = in_array($data['language'] ?? 'en', ['en', 'my', 'td'], true)
-            ? ($data['language'] ?? 'en')
-            : 'en';
+        $language = $data['language'] ?? 'en';
 
         $track = MusicTrack::updateOrCreate(
             ['provider_ref' => $data['provider_ref']],
@@ -319,7 +319,11 @@ class WebhookController extends Controller
             'tags'             => ['nullable', 'array'],
             'tags.*'           => ['string', 'max:40'],
             'token_usage'      => ['nullable', 'integer'],
-            'detected_language' => ['nullable', 'string', 'in:en,my,td,cnh,cfm,lus'],
+            'detected_language' => [
+                'nullable',
+                'string',
+                Rule::in(array_values(array_unique([...Setting::LANGUAGES, 'cnh', 'cfm', 'lus']))),
+            ],
         ]);
 
         // Journal fills an entry by its own id, not a chat session.

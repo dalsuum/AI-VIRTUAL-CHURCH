@@ -26,13 +26,22 @@ final class WorkerEmbeddingService implements EmbeddingService
             return [];
         }
 
-        $vectors = $this->http
+        $payload = $this->http
             ->timeout($this->timeout)
             ->post("{$this->baseUrl}/knowledge/embed", ['texts' => array_values($texts)])
             ->throw()
-            ->json('vectors', []);
+            ->json() ?? [];
 
-        return array_map(static fn ($v) => array_map('floatval', (array) $v), $vectors);
+        $vectors = $payload['vectors'] ?? $payload['embeddings'] ?? [];
+
+        return array_map(function ($v) {
+            $vector = array_map('floatval', (array) $v);
+            if (count($vector) !== $this->dimensions) {
+                throw new \RuntimeException("Embedding worker returned " . count($vector) . " dimensions; expected {$this->dimensions}.");
+            }
+
+            return $vector;
+        }, $vectors);
     }
 
     public function dimensions(): int

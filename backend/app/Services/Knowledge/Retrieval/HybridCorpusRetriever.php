@@ -37,27 +37,43 @@ final class HybridCorpusRetriever implements CorpusRetriever
         // "vector failure must never become chat failure".
         $keywordHits = [];
         $keywordError = false;
+        $keywordLatencyMs = 0;
         try {
+            $keywordStart = microtime(true);
             $keywordHits = $this->keyword->search($this->corpus, $query, $k, $filters);
         } catch (\Throwable) {
             $keywordError = true;
+        } finally {
+            $keywordLatencyMs = (int) round((microtime(true) - ($keywordStart ?? microtime(true))) * 1000);
         }
 
         $vectorHits = [];
         $vectorError = false;
+        $embeddingLatencyMs = 0;
+        $vectorLatencyMs = 0;
         try {
+            $embeddingStart = microtime(true);
             $embedded = $this->embeddings->embed([$query]);
+            $embeddingLatencyMs = (int) round((microtime(true) - $embeddingStart) * 1000);
             if (isset($embedded[0])) {
+                $vectorStart = microtime(true);
                 $vectorHits = $this->vectors->search($this->corpus, $embedded[0], $k, $filters);
+                $vectorLatencyMs = (int) round((microtime(true) - $vectorStart) * 1000);
             }
         } catch (\Throwable) {
             $vectorError = true; // embedding OR vector search failed → vector branch down
+            $embeddingLatencyMs = $embeddingLatencyMs ?: (int) round((microtime(true) - ($embeddingStart ?? microtime(true))) * 1000);
         }
 
         return new CorpusResult(
             $this->merger->fuse([$keywordHits, $vectorHits]),
             vectorError: $vectorError,
             keywordError: $keywordError,
+            vectorHitCount: count($vectorHits),
+            keywordHitCount: count($keywordHits),
+            embeddingLatencyMs: $embeddingLatencyMs,
+            vectorLatencyMs: $vectorLatencyMs,
+            keywordLatencyMs: $keywordLatencyMs,
         );
     }
 }

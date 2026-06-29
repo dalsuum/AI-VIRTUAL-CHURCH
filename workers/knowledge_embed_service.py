@@ -27,6 +27,7 @@ from pydantic import BaseModel, Field
 router = APIRouter()
 
 _MODEL_NAME = os.environ.get("KNOWLEDGE_EMBED_MODEL", "all-MiniLM-L6-v2")
+_EXPECTED_DIM = int(os.environ.get("KNOWLEDGE_EMBEDDING_DIMS", "384"))
 _model = None
 _model_lock = threading.Lock()
 
@@ -47,10 +48,20 @@ class EmbedRequest(BaseModel):
     texts: list[str] = Field(default_factory=list)
 
 
+@router.get("/knowledge/health")
+async def health():
+    return {
+        "ok": True,
+        "model": _MODEL_NAME,
+        "expected_dim": _EXPECTED_DIM,
+        "loaded": _model is not None,
+    }
+
+
 @router.post("/knowledge/embed")
 async def embed(req: EmbedRequest):
     if not req.texts:
-        return {"vectors": [], "model": _MODEL_NAME, "dim": 0}
+        return {"vectors": [], "embeddings": [], "model": _MODEL_NAME, "dim": _EXPECTED_DIM}
 
     model = _get_model()
     # normalize_embeddings=True → unit vectors, so cosine == dot product in the vector store.
@@ -60,4 +71,11 @@ async def embed(req: EmbedRequest):
         convert_to_numpy=True,
     ).tolist()
 
-    return {"vectors": vectors, "model": _MODEL_NAME, "dim": len(vectors[0]) if vectors else 0}
+    dim = len(vectors[0]) if vectors else _EXPECTED_DIM
+
+    return {
+        "vectors": vectors,
+        "embeddings": vectors,
+        "model": _MODEL_NAME,
+        "dim": dim,
+    }

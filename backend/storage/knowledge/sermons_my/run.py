@@ -25,6 +25,7 @@ import re
 import sys
 import time
 import unicodedata
+from collections import deque
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
@@ -222,14 +223,58 @@ class Sermon:
 # --------------------------------------------------------------------------- #
 # Crawl state (resume + dedupe)
 # --------------------------------------------------------------------------- #
+def normalize_url(url: str) -> str:
+    return url.rstrip("/")
+
+
+def seed_queue(visited: set[str]) -> list[str]:
+    return [normalize_url(u) for u in SOURCES if normalize_url(u) not in visited]
+
+
+def compact_queue(urls: list[str], visited: set[str]) -> list[str]:
+    queue, queued = [], set()
+    for url in urls:
+        url = normalize_url(url)
+        if url and url not in visited and url not in queued:
+            queue.append(url)
+            queued.add(url)
+    return queue
+
+
 def load_state() -> dict:
     if STATE_FILE.exists():
-        return json.loads(STATE_FILE.read_text(encoding="utf-8"))
-    return {"visited": [], "sermons": [], "seen_hashes": []}
+        state = json.loads(STATE_FILE.read_text(encoding="utf-8"))
+    else:
+        state = {}
+
+    state.setdefault("visited", [])
+    state.setdefault("sermons", [])
+    state.setdefault("seen_hashes", [])
+    if "queue" not in state:
+        state["queue"] = seed_queue({normalize_url(u) for u in state["visited"]})
+    return state
 
 
 def save_state(state: dict) -> None:
-    STATE_FILE.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp = STATE_FILE.with_name(f"{STATE_FILE.name}.tmp")
+    tmp.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(STATE_FILE)
+
+
+def checkpoint_state(
+    state: dict,
+    visited: set[str],
+    seen_hashes: set[str],
+    sermons: list[Sermon],
+    queue: list[str] | deque[str],
+) -> None:
+    state.update(
+        visited=sorted(visited),
+        queue=list(queue),
+        sermons=[asdict(s) for s in sermons],
+        seen_hashes=sorted(seen_hashes),
+    )
+    save_state(state)
 
 
 # --------------------------------------------------------------------------- #
@@ -473,63 +518,86 @@ def write_outputs(sermons: list[Sermon]) -> None:
 # --------------------------------------------------------------------------- #
 # Main crawl loop
 # --------------------------------------------------------------------------- #
-def crawl(max_pages: int | None) -> None:
+def crawl(max_pages: int | None) -> bool:
     RAW_DIR.mkdir(parents=True, exist_ok=True)
+    had_state = STATE_FILE.exists()
     state = load_state()
-    visited = set(state["visited"])
+    visited = {normalize_url(u) for u in state["visited"]}
     seen_hashes = set(state["seen_hashes"])
     sermons = [Sermon(**s) for s in state["sermons"]]
 
-    queue = [u for u in SOURCES if u.rstrip("/") not in visited]
-    queue += [u for u in state.get("queue", []) if u not in visited]
+    queue = deque(compact_queue(state["queue"], visited))
+    queued = set(queue)
+
+    print(f"{'Loaded' if had_state else 'Created'} {STATE_FILE.name}")
+    print(f"Visited URLs : {len(visited)}")
+    print(f"Pending queue: {len(queue)}")
+    print(f"Recovered sermons: {len(sermons)}")
+    print("Resuming crawl..." if had_state else "Starting crawl...")
 
     processed = 0
+    interrupted = False
+    current_url: str | None = None
     bar = tqdm(total=max_pages, desc="crawling", unit="page")
-    while queue:
-        if max_pages and processed >= max_pages:
-            break
-        url = queue.pop(0).rstrip("/")
-        if url in visited:
-            continue
-        visited.add(url)
+    try:
+        while queue:
+            if max_pages and processed >= max_pages:
+                break
+            url = normalize_url(queue.popleft())
+            queued.discard(url)
+            if url in visited:
+                continue
+            current_url = url
+            visited.add(url)
 
-        html = fetch(url)
-        processed += 1
-        bar.update(1)
-        if not html:
-            continue
+            html = fetch(url)
+            processed += 1
+            bar.update(1)
+            if not html:
+                current_url = None
+                continue
 
-        for link in discover_links(html, url):
-            if link not in visited:
-                queue.append(link)
+            for link in discover_links(html, url):
+                link = normalize_url(link)
+                if link not in visited and link not in queued:
+                    queue.append(link)
+                    queued.add(link)
 
-        sermon = parse_sermon(html, url)
-        if sermon:
-            dedupe = hashlib.sha1(sermon.text.encode("utf-8")).hexdigest()
-            if dedupe not in seen_hashes:
-                seen_hashes.add(dedupe)
-                sermons.append(sermon)
-                (RAW_DIR / f"{sermon.id}.json").write_text(
-                    json.dumps(asdict(sermon), ensure_ascii=False, indent=2), encoding="utf-8"
-                )
+            sermon = parse_sermon(html, url)
+            if sermon:
+                dedupe = hashlib.sha1(sermon.text.encode("utf-8")).hexdigest()
+                if dedupe not in seen_hashes:
+                    seen_hashes.add(dedupe)
+                    sermons.append(sermon)
+                    (RAW_DIR / f"{sermon.id}.json").write_text(
+                        json.dumps(asdict(sermon), ensure_ascii=False, indent=2), encoding="utf-8"
+                    )
 
-        if processed % CHECKPOINT_EVERY == 0:
-            state.update(
-                visited=sorted(visited), seen_hashes=sorted(seen_hashes),
-                sermons=[asdict(s) for s in sermons], queue=queue,
-            )
-            save_state(state)
-            write_outputs(sermons)
+            current_url = None
+            if processed % CHECKPOINT_EVERY == 0:
+                checkpoint_state(state, visited, seen_hashes, sermons, queue)
+                write_outputs(sermons)
+    except KeyboardInterrupt:
+        interrupted = True
+        if current_url:
+            visited.discard(current_url)
+            if current_url not in queued:
+                queue.appendleft(current_url)
+                queued.add(current_url)
+        print("\nInterrupted; saving crawl checkpoint...")
+    finally:
+        bar.close()
+        checkpoint_state(state, visited, seen_hashes, sermons, queue)
+        write_outputs(sermons)
 
-    bar.close()
-    state.update(
-        visited=sorted(visited), seen_hashes=sorted(seen_hashes),
-        sermons=[asdict(s) for s in sermons], queue=queue,
-    )
-    save_state(state)
-    write_outputs(sermons)
+    if interrupted:
+        print(f"\nSaved. {len(sermons)} sermons -> {DATASET_DIR}")
+        print(f"Pages visited: {len(visited)} | pending queue: {len(queue)}")
+        return False
+
     print(f"\nDone. {len(sermons)} sermons -> {DATASET_DIR}")
     print(f"Pages visited: {len(visited)} | metadata: {METADATA_CSV}")
+    return True
 
 
 def main() -> int:
@@ -539,8 +607,7 @@ def main() -> int:
     args = ap.parse_args()
     if args.reset and STATE_FILE.exists():
         STATE_FILE.unlink()
-    crawl(args.max_pages)
-    return 0
+    return 0 if crawl(args.max_pages) else 130
 
 
 if __name__ == "__main__":

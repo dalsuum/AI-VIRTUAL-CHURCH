@@ -1879,4 +1879,75 @@ class AdminController extends Controller
 
         return response()->json($result, 201);
     }
+
+    /**
+     * Read-only Knowledge Operations Platform health summary for the admin dashboard.
+     * Probes the embedding worker, inspects each configured Qdrant corpus collection,
+     * and reflects the active config. Never mutates anything; safe to call at any time.
+     */
+    public function knowledgeHealth(): JsonResponse
+    {
+        PermissionService::require(request()->user(), 'knowledge.view');
+
+        $http = Http::getFacadeRoot();
+
+        // ── Worker health ────────────────────────────────────────────────────
+        $workerHealth = null;
+        $workerOk     = false;
+        if (config('knowledge.embedding.driver') === 'worker') {
+            $url = rtrim((string) config('knowledge.embedding.worker_url', ''), '/') . '/knowledge/health';
+            try {
+                $resp         = $http->timeout(5)->get($url);
+                $workerHealth = $resp->successful() ? $resp->json() : ['error' => "HTTP {$resp->status()}"];
+                $workerOk     = (bool) ($workerHealth['ok'] ?? false);
+            } catch (\Throwable $e) {
+                $workerHealth = ['error' => $e->getMessage()];
+            }
+        }
+
+        // ── Qdrant collections ───────────────────────────────────────────────
+        $corpora    = (array) config('knowledge.corpora', []);
+        $qdrantUrl  = rtrim((string) config('knowledge.vector.qdrant.url', ''), '/');
+        $qdrantKey  = config('knowledge.vector.qdrant.key');
+        $collections = [];
+
+        if (config('knowledge.vector.driver') === 'qdrant' && $qdrantUrl !== '') {
+            foreach ($corpora as $corpus) {
+                try {
+                    $req = $http->timeout(5);
+                    if ($qdrantKey) {
+                        $req = $req->withHeaders(['api-key' => $qdrantKey]);
+                    }
+                    $resp = $req->get("{$qdrantUrl}/collections/{$corpus}");
+                    if ($resp->successful()) {
+                        $r = $resp->json('result', []);
+                        $collections[$corpus] = [
+                            'exists'        => true,
+                            'status'        => $r['status'] ?? 'unknown',
+                            'vectors_count' => $r['vectors_count'] ?? 0,
+                            'points_count'  => $r['points_count'] ?? 0,
+                            'vector_size'   => $r['config']['params']['vectors']['size'] ?? null,
+                            'distance'      => $r['config']['params']['vectors']['distance'] ?? null,
+                        ];
+                    } else {
+                        $collections[$corpus] = ['exists' => false];
+                    }
+                } catch (\Throwable) {
+                    $collections[$corpus] = ['exists' => false, 'error' => 'unreachable'];
+                }
+            }
+        }
+
+        return response()->json([
+            'enabled'          => (bool) config('knowledge.enabled'),
+            'embedding_driver' => config('knowledge.embedding.driver', 'hash'),
+            'vector_driver'    => config('knowledge.vector.driver', 'memory'),
+            'embedding_dims'   => (int) config('knowledge.embedding.dimensions', 384),
+            'corpora'          => $corpora,
+            'worker'           => $workerHealth,
+            'worker_ok'        => $workerOk,
+            'collections'      => $collections,
+            'source_priority'  => (array) config('knowledge.source_priority', []),
+        ]);
+    }
 }

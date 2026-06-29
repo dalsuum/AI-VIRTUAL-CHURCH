@@ -7,9 +7,10 @@ import { onMounted, onBeforeUnmount, reactive, ref, computed, watch } from "vue"
 import { useI18n } from "vue-i18n";
 import { api } from "../composables/useApi";
 import { useStudyStream } from "../composables/useStudyStream";
+import { normalizeLanguage } from "../i18n";
 import AdCarousel from "./AdCarousel.vue";
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 // Display label per study style; the English STYLES value is still what we send.
 const STYLE_KEYS = { "Gentle": "gentle", "Teaching": "teaching", "Encouraging": "encouraging", "Deep Theology": "deepTheology", "Youth": "youth", "Family": "family", "Hope": "hope" };
 
@@ -40,11 +41,6 @@ const form = reactive({
 });
 
 const STYLES = ["Gentle", "Teaching", "Encouraging", "Deep Theology", "Youth", "Family", "Hope"];
-
-const LANG_NAMES = {
-  en: "English", my: "Burmese (ဗမာ)", td: "Tedim", cnh: "Hakha",
-  cfm: "Falam", lus: "Mizo", hlt: "Matu",
-};
 
 const session = ref(null);
 const bubbles = ref([]);            // { turn, persona_id, name, role, text, refs:[] }
@@ -188,6 +184,17 @@ const agentMax = computed(() => config.value?.max_agent_count ?? 7);
 // Translation options for the selected language; first is the default.
 const translationOptions = computed(() => TRANSLATIONS[form.language] || TRANSLATIONS.en);
 
+// Study language follows the one global language authority. There is no per-page
+// language picker; the study just clamps the global language to the set the study
+// backend actually supports (config.languages), falling back to English. Mirrors
+// how Bible Reader clamps to its available versions.
+function clampStudyLanguage() {
+  const supported = config.value?.languages || ["en"];
+  const appLang = normalizeLanguage(locale.value);
+  form.language = supported.includes(appLang) ? appLang : "en";
+}
+watch(locale, clampStudyLanguage);
+
 // When the language changes, snap the translation to that language's default
 // (unless the current pick is still valid for the new language).
 watch(() => form.language, () => {
@@ -202,6 +209,7 @@ onMounted(async () => {
     await api.ensureSession();
     config.value = await api.studyConfig();
     form.agent_count = config.value.default_agent_count ?? 2;
+    clampStudyLanguage();
   } catch (e) {
     error.value = t("study.msg.notAvailable");
   }
@@ -508,11 +516,6 @@ function goHome() { window.location.hash = ""; }
 
     <!-- SETUP -->
     <section v-if="phase === 'setup'" class="setup card">
-      <label>{{ t("common.language") }}
-        <select v-model="form.language">
-          <option v-for="l in (config?.languages || ['en'])" :key="l" :value="l">{{ LANG_NAMES[l] || l }}</option>
-        </select>
-      </label>
       <label>{{ t("study.translation") }}
         <select v-model="form.translation">
           <option v-for="[code, name] in translationOptions" :key="code" :value="code">{{ name }}</option>

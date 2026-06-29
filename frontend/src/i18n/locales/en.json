@@ -197,8 +197,6 @@
   "pastor": {
     "title": "AI Pastor Chat",
     "subtitle": "A caring, Scripture-grounded companion. Your conversation is saved to your journal.",
-    "autoDetect": "Auto Detect",
-    "changeLanguageHint": "Start a new chat to change language",
     "empty": "Share what's on your heart. The pastor is listening. 🙏",
     "role": "Pastor",
     "placeholder": "Type your message…",
@@ -234,6 +232,64 @@
       "noMatch": "No songs matched yet — try another mood.",
       "buildFailed": "Could not build a playlist. Please try again.",
       "stopped": "Radio stopped — no more songs."
+    }
+  },
+  "intake": {
+    "studyCtaTitle": "AI Bible Study",
+    "studyCtaDesc": "Discuss any Bible question with experienced pastors →",
+    "welcome": "Welcome",
+    "welcomeBack": "Welcome back, {name}",
+    "sub": "Let us prepare a service just for you.",
+    "subBack": "It's good to see you again. Let us prepare a service just for you.",
+    "nameLabel": "Your name (optional)",
+    "namePh": "We'll give you a visitor name if you'd rather not say",
+    "emailLabel": "Email",
+    "emailReq": "(required — we'll send you a reminder)",
+    "emailOpt": "(optional)",
+    "emailPhLater": "Enter your email to receive a reminder",
+    "emailPhNow": "So we can welcome you back",
+    "moodLabel": "How are you feeling today?",
+    "customMoodLabel": "Or describe your feeling in one word (optional)",
+    "customMoodPh": "e.g. sad, hopeful, numb…",
+    "prayerLabel": "Prayer request (optional)",
+    "prayerPh": "Share what is on your heart…",
+    "musicLabel": "Music for your service",
+    "whenLabel": "When would you like your service?",
+    "now": "Right now",
+    "nowDesc": "Begin immediately",
+    "later": "Schedule it",
+    "laterDesc": "Pick a future time",
+    "historyLabel": "Your previous services",
+    "begin": "Begin my service",
+    "schedule": "Schedule my service",
+    "preparing": "Preparing your service…",
+    "localTime": "Your local time",
+    "customize": "Add a prayer request or schedule",
+    "noAccount": "No account needed · takes about 30 seconds",
+    "scheduleAria": "Service date and time",
+    "moods": {
+      "Grateful": "Grateful",
+      "Anxious": "Anxious",
+      "Grieving": "Grieving",
+      "Joyful": "Joyful",
+      "Seeking": "Seeking",
+      "Hopeful": "Hopeful"
+    },
+    "sources": {
+      "hymn_sung": { "title": "Sung hymn", "desc": "A classic hymn sung aloud, with the words on screen" },
+      "hymn": { "title": "Instrumental hymn", "desc": "The hymn played, with the words to sing along" },
+      "hymn_youtube": { "title": "Sung Hymn (YouTube)", "desc": "A traditional hymn sung by a choir, matched to your mood" },
+      "suno": { "title": "AI-composed (Suno)", "desc": "Original worship, generated for you" },
+      "musicgen": { "title": "AI-composed (Local)", "desc": "Worship music created on-server — no account needed" },
+      "local_ai": { "title": "Local AI (Instrumental)", "desc": "Instrumental worship music generated on-server — no account needed" },
+      "youtube": { "title": "Modern Worship (YouTube)", "desc": "An existing worship track and sermon" }
+    },
+    "errors": {
+      "emailForReminder": "Please enter your email so we can send you a reminder when your service begins.",
+      "chooseTime": "Please choose a date and time for your service.",
+      "futureTime": "Please choose a time in the future.",
+      "customMoodLetters": "Your custom feeling must be a single word using only letters.",
+      "generic": "Something went wrong. Please try again."
     }
   }
 }

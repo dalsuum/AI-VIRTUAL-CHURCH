@@ -75,7 +75,13 @@
 
 * { box-sizing: border-box; }
 
-html, body { margin: 0; }
+html,
+body {
+  margin: 0;
+  overflow-x: hidden;
+}
+
+#app { min-width: 0; }
 
 body {
   font-family: var(--font);

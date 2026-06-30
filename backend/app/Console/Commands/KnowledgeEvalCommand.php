@@ -35,12 +35,12 @@ final class KnowledgeEvalCommand extends Command
     /** Near-verbatim English questions → the reference whose book+chapter must surface. */
     private const ENGLISH_SEMANTIC = [
         ['q' => 'For God so loved the world that he gave his only Son', 'ref' => 'John 3:16'],
-        ['q' => 'The Lord is my shepherd, I shall not want', 'ref' => 'Psalm 23:1'],
+        ['q' => 'The Lord is my shepherd, I shall not want', 'ref' => 'Psalms 23:1'],
         ['q' => 'In the beginning God created the heavens and the earth', 'ref' => 'Genesis 1:1'],
-        ['q' => 'Faith is the assurance of things hoped for', 'ref' => 'Hebrews 11:1'],
+        ['q' => 'Now faith is the assurance of what we hope for', 'ref' => 'Hebrews 11:1'],
         ['q' => 'The fruit of the Spirit is love, joy, and peace', 'ref' => 'Galatians 5:22'],
         ['q' => 'I can do all things through him who gives me strength', 'ref' => 'Philippians 4:13'],
-        ['q' => 'Be still and know that I am God', 'ref' => 'Psalm 46:10'],
+        ['q' => 'Be still and know that I am God', 'ref' => 'Psalms 46:10'],
     ];
 
     public function handle(RetrievalOrchestrator $orchestrator): int

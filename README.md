@@ -48,6 +48,8 @@ Redis queue so neither has to know the other's serializer.
 ## Architecture at a glance
 
 ```
+Service-generation pipeline (async — sermon · music · avatar · narration; Redis → Celery)
+
 ┌────────────┐    HTTPS/JSON     ┌──────────────────┐   rpush JSON    ┌─────────────┐
 │  Vue 3 SPA │ ───────────────▶  │  Laravel 12 API  │ ──────────────▶ │ Redis list  │
 │ (frontend) │ ◀───────────────  │   (backend)      │   ai:intake     │ ai:intake   │
@@ -85,6 +87,38 @@ Redis queue so neither has to know the other's serializer.
 task serializer. `DispatchServiceJob` just `rpush`es a language-agnostic JSON blob onto
 `ai:intake`; `bridge.py` `BLPOP`s it and hands it to the Celery orchestrator. The
 contract between the two worlds is "a JSON object on a list," nothing more.
+
+**The chat path is separate and synchronous.** Pastor Chat and Bible Study don't use the
+Redis/Celery pipeline — they are request/response. When `KNOWLEDGE_ENABLED` is on, the Laravel
+`Knowledge` layer (`App\Services\Knowledge`) grounds each reply in retrieved context (hybrid
+RAG); when off it falls back to `NullKnowledgeRetriever` (no retrieval) so production is
+unaffected. Query embeddings come from the Python embedding service (`POST /knowledge/embed`,
+driver `worker`); vectors **and** the keyword index live in Qdrant (driver `qdrant`); both
+degrade to in-process stubs (`hash` / `memory`) in dev. Corpora are loaded offline with
+`php artisan knowledge:ingest`.
+
+```
+Chat / RAG path (synchronous — Pastor Chat · Bible Study), gated by KNOWLEDGE_ENABLED
+(off → NullKnowledgeRetriever, no retrieval; on → each reply grounded in retrieved context)
+
+┌────────────┐  HTTPS/JSON  ┌──────────────────┐  grounded prompt  ┌──────────────────┐
+│  Vue 3 SPA │ ───────────▶ │  Laravel 12 API  │ ────────────────▶ │  OpenRouter LLM  │
+│ (frontend) │ ◀─────────── │   (backend)      │ ◀───── reply ──── │                  │
+└────────────┘  reply       └────────┬─────────┘                   └──────────────────┘
+                                     │ App\Services\Knowledge — Hybrid RAG
+                                     │ keyword + vector → RRF → rerank → KnowledgeContext
+                        ┌────────────┴────────────┐
+                   embed query             keyword + vector search
+                        ▼                         ▼
+              ┌──────────────────┐       ┌──────────────────┐
+              │ Embedding service│       │   Qdrant  :6333  │
+              │  FastAPI  :8004  │       │ vector + keyword │
+              │ all-MiniLM-L6-v2 │       │   collections    │
+              └──────────────────┘       └────────▲─────────┘
+                                                  │ php artisan knowledge:ingest
+                                                  │ chunk → embed → upsert
+                            corpora: bible · sermon · faq · docs · prayer · commentary …
+```
 
 ---
 

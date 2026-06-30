@@ -210,6 +210,32 @@ php artisan knowledge:ingest sermon storage/app/knowledge/sermons_my.json --chun
 After ingest, sermon retrieval is automatically combined with Bible retrieval in Pastor Chat
 (the `RetrievalOrchestrator` fans out across all corpora including `sermon`).
 
+### Ingesting the Bible corpus (uses the project's OWN bundled text)
+
+The `bible` corpus is built from the same vendored translations the Bible reader serves
+(`workers/data/*.json`) — no external source. `workers/tools/export_bible.py` reuses
+`bible_api` (the single source of truth) and emits **one document per verse** to
+`storage/app/knowledge/bible_<lang>.json`, then `knowledge:ingest` indexes them:
+
+```bash
+# 1. Export one or more translations (default = every bundled translation)
+python workers/tools/export_bible.py --langs en          # English (BSB) only
+python workers/tools/export_bible.py                      # all ~24 translations
+
+# 2. Ingest each language file into the shared 'bible' Qdrant collection
+cd backend
+php artisan knowledge:ingest bible storage/app/knowledge/bible_en.json --chunker=text
+```
+
+Use `--chunker=text`, **not** `--chunker=bible`: the verse chunker re-derives verse
+boundaries by splitting on digit prefixes, which corrupts translations whose verse text
+contains numerals (e.g. BSB "Methuselah lived 969 years"). One verse per document + the
+prose chunker keeps a single chunk per verse with an exact, pre-built reference. Verses are
+stamped with the translation's app code as `language`; retrieval filters on the conversation
+language, so ingest the codes that are real chat languages (a translation-only code like
+`kjv` will index but never be retrieved). Embedding runs on the local worker (~66 verses/s →
+~8 min per translation); `bible` outranks `sermon` via `source_priority`.
+
 ### Learner vocabulary (multilingual, AI-generated)
 
 Separate from the curated Zolai/Chin reference dictionary (`vocabularies` table — left

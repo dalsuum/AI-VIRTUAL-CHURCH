@@ -79,8 +79,9 @@ workers/
   tasks/__init__.py           REPLACES — threads language through the pipeline
   strategies/__init__.py      REPLACES — get_strategy(source, language)
   strategies/_suno_custom.py  NEW — shared "sing these exact verses" helper
-  strategies/hymn_my_strategy.py  NEW — Burmese hymn sung via Suno, cached
-  strategies/tedim_hymn_strategy.py NEW — YouTube embed → Suno → instrumental
+  strategies/sung_hymn_strategy.py  unified sung hymn (en|my|td localized verses)
+  strategies/hymn_youtube_strategy.py hymn as a YouTube vocal performance (no download)
+  strategies/instrumental_hymn_strategy.py MIDI-rendered instrumental hymn (localized verses)
 backend/
   database/migrations/2026_06_12_000001_add_language_to_service_sessions.php
   app/Jobs/DispatchServiceJob.php   REPLACES — adds 'language' to the Redis payload

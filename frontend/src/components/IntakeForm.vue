@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { api } from "../composables/useApi";
-import { normalizeLanguage } from "../i18n";
+import { getRegistry, normalizeLanguage } from "../i18n";
 
 const localTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 const emit = defineEmits(["started", "intercepted", "session-expired"]);
@@ -24,6 +24,16 @@ const enabledLangs = ref(["en"]); // filled from config; English is always the f
 const language = computed(() => {
   const appLang = normalizeLanguage(locale.value);
   return enabledLangs.value.includes(appLang) ? appLang : (enabledLangs.value[0] || "en");
+});
+// Whether the service backend can actually produce the current UI language. When
+// it cannot, we refuse to generate (rather than silently fall back to English and
+// still charge) — the worshipper is told to switch to a supported language.
+const languageSupported = computed(() =>
+  enabledLangs.value.includes(normalizeLanguage(locale.value)),
+);
+const selectedLanguageName = computed(() => {
+  const code = normalizeLanguage(locale.value);
+  return getRegistry()[code]?.native_name || code;
 });
 const usesMyanmarFont = computed(() => ["my", "td"].includes(language.value));
 
@@ -132,6 +142,13 @@ const email = ref("");
 
 async function begin() {
   error.value = "";
+
+  // Refuse to generate in a language the backend cannot produce; otherwise the
+  // service would silently come back in English (and still be charged).
+  if (!languageSupported.value) {
+    error.value = t("intake.errors.languageUnavailable", { lang: selectedLanguageName.value });
+    return;
+  }
 
   // When scheduling, require a future time and send it as ISO so the backend holds
   // the service until then.
@@ -398,9 +415,13 @@ async function begin() {
       </template>
     </div>
 
+    <p v-if="!languageSupported" class="lang-unavailable" dir="auto">
+      {{ t("intake.errors.languageUnavailable", { lang: selectedLanguageName }) }}
+    </p>
+
     <p v-if="error" class="error">{{ error }}</p>
 
-    <button class="begin" :disabled="loading" @click="begin">
+    <button class="begin" :disabled="loading || !languageSupported" @click="begin">
       {{ loading ? t("intake.preparing") : (when === "later" ? t("intake.schedule") : t("intake.begin")) }}
     </button>
 
@@ -475,6 +496,14 @@ textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 
 .begin:hover:not(:disabled) { background: var(--primary-hover); }
 .begin:disabled { opacity: 0.6; cursor: default; }
 .error { color: var(--danger); font-size: 0.85rem; }
+.lang-unavailable {
+  color: var(--danger);
+  font-size: 0.85rem;
+  padding: 0.6rem 0.75rem;
+  background: var(--primary-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
 
 .customize-toggle {
   width: 100%;

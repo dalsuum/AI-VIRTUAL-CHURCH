@@ -12,6 +12,20 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class VocabEntry extends Model
 {
+    /**
+     * Interface locales that are NOT offered for AI vocabulary generation. Hebrew is a
+     * Bible/reference locale only: the current model returns English for every Hebrew
+     * concept (validated in Phase B), so showing it in the learner UI would mislead.
+     * Re-enable by removing it here once a Hebrew-capable model/path exists.
+     */
+    public const NON_LEARNER_LANGUAGES = ['he'];
+
+    /** Locales offered for learner generation: the interface registry minus the above. */
+    public static function learnerLanguages(): array
+    {
+        return array_values(array_diff(\App\Models\Setting::LANGUAGES, self::NON_LEARNER_LANGUAGES));
+    }
+
     protected $fillable = ['vocabulary_id', 'language', 'word', 'difficulty', 'payload'];
 
     protected $casts = ['payload' => 'array'];

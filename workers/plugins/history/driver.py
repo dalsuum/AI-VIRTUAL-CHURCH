@@ -212,24 +212,29 @@ def _run_vocab_generate(job: dict, llm: OpenRouterLLM) -> None:
     """
     lang = _LANG_NAME.get(job.get("language", "en"), "English")
     concept = (job.get("concept") or "").strip()
-    zolai = (job.get("zolai") or "").strip()
     system = (
         "You are a bilingual lexicographer building a language-learning dictionary "
-        f"entry. LANGUAGE LAW: write EVERY field's value in {lang} ONLY (the 'word' "
-        f"field is the headword in {lang}). Do not use English anywhere except inside "
-        "the optional bible_verse 'ref' (e.g. 'John 3:16'). Return STRICT JSON with "
-        'keys: "word", "pronunciation", "part_of_speech", "meaning", "definition", '
-        '"example", "synonyms" (array), "antonyms" (array), "related" (array), '
-        '"bible_verse" (object {ref, text} or null), "difficulty" '
-        '("beginner"|"intermediate"|"advanced"). JSON only, no prose outside it.'
+        f"entry. LANGUAGE LAW: first TRANSLATE the concept into {lang}, then write "
+        f"EVERY field's value in {lang} ONLY. The 'word' field MUST be the {lang} "
+        f"word for the concept — never English and never any other language. Do not "
+        "use English anywhere except inside the optional bible_verse 'ref' (e.g. "
+        "'John 3:16'). Return STRICT JSON with keys: \"word\", \"pronunciation\", "
+        '"part_of_speech", "meaning", "definition", "example", "synonyms" (array), '
+        '"antonyms" (array), "related" (array), "bible_verse" (object {ref, text} or '
+        'null), "difficulty". The "difficulty" value is the ONE EXCEPTION to the '
+        'language law: it MUST be exactly one of the English tokens "beginner", '
+        '"intermediate" or "advanced". JSON only, no prose outside it.'
     )
-    prompt = f"Concept (English): {concept}"
-    if zolai:
-        prompt += f"\nZolai/Tedim gloss: {zolai}"
+    # The concept (in English) is the sole seed; we deliberately do NOT pass the Zolai
+    # gloss — feeding a Chin word biases the model into echoing it for languages it is
+    # less fluent in, instead of translating the concept (observed for he/ta/hi/th).
+    prompt = f"Concept to render into {lang}: {concept}"
     text, usage = llm.complete(
         system=system,
         messages=[{"role": "user", "content": prompt}],
-        temperature=0.4, max_tokens=700, role="vocab",
+        # Token-dense scripts (Burmese, Thai, …) need headroom or the JSON truncates
+        # mid-field and fails to parse — 700 was too low (observed for my).
+        temperature=0.4, max_tokens=1200, role="vocab",
     )
 
     payload, word, difficulty = None, None, None
@@ -251,6 +256,32 @@ def _run_vocab_generate(job: dict, llm: OpenRouterLLM) -> None:
         "word": word,
         "difficulty": difficulty,
         "payload": payload,
+        "token_usage": int((usage or {}).get("total_tokens", 0) or 0),
+    })
+
+
+def _run_vocab_explain(job: dict, llm: OpenRouterLLM) -> None:
+    """A warm teaching explanation of a concept — meaning, usage, grammar, pronunciation,
+    example sentences — entirely in the learner's language. Cached per (concept, language)."""
+    lang = _LANG_NAME.get(job.get("language", "en"), "English")
+    concept = (job.get("concept") or "").strip()
+    system = (
+        "You are a friendly language teacher for a Christian learner. LANGUAGE LAW: write "
+        f"your ENTIRE explanation in {lang} ONLY, even if the concept is given in English. "
+        f"Explain the {lang} word for the concept: its meaning, how and when it is used, any "
+        "grammar notes, how to pronounce it, and 1-2 natural example sentences. Keep it warm, "
+        "concise (under ~180 words), and plain text (no JSON, no markdown headings)."
+    )
+    text, usage = llm.complete(
+        system=system,
+        messages=[{"role": "user", "content": f"Concept to explain in {lang}: {concept}"}],
+        temperature=0.5, max_tokens=900, role="vocab_explain",
+    )
+    _signed_post(_HISTORY_WEBHOOK, {
+        "mode": "vocab_explanation",
+        "vocabulary_id": job.get("vocabulary_id"),
+        "language": job.get("language"),
+        "explanation": (text or "").strip() or None,
         "token_usage": int((usage or {}).get("total_tokens", 0) or 0),
     })
 
@@ -344,5 +375,7 @@ def run(job: dict) -> None:
         _run_journal(job, llm)
     elif mode == "vocab_generate":
         _run_vocab_generate(job, llm)
+    elif mode == "vocab_explain":
+        _run_vocab_explain(job, llm)
     else:
         print(f"[history] unknown mode {mode!r}, ignoring", flush=True)

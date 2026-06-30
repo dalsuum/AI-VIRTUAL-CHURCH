@@ -2,12 +2,13 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Setting;
+use App\Models\UserVocabulary;
 use App\Models\VocabEntry;
 use App\Models\Vocabulary;
 use App\Services\PermissionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Validation\Rule;
 
@@ -54,8 +55,10 @@ class VocabularyController extends Controller
     public function learn(Request $request, Vocabulary $vocabulary): JsonResponse
     {
         $lang = $request->validate([
-            'lang' => ['required', 'string', Rule::in(Setting::LANGUAGES)],
+            'lang' => ['required', 'string', Rule::in(VocabEntry::learnerLanguages())],
         ])['lang'];
+
+        $this->recordViewed($request, $vocabulary);
 
         $entry = VocabEntry::firstOrCreate(
             ['vocabulary_id' => $vocabulary->id, 'language' => $lang],
@@ -65,15 +68,103 @@ class VocabularyController extends Controller
             return response()->json(['status' => 'ready', 'entry' => $entry]);
         }
 
-        Redis::rpush('ai:history', json_encode([
-            'mode'          => 'vocab_generate',
-            'vocabulary_id' => $vocabulary->id,
-            'language'      => $lang,
-            'concept'       => $vocabulary->english,
-            'zolai'         => $vocabulary->zolai,
-        ]));
+        // Enqueue at most once per 45s per entry: polling re-hits this route, and without
+        // the lock each poll would spawn a duplicate generation job (a self-inflicted
+        // rate-limit storm). After 45s a retry is allowed, so a genuinely stuck entry recovers.
+        if (Cache::add("vocab:gen:{$entry->id}", 1, now()->addSeconds(45))) {
+            Redis::rpush('ai:history', json_encode([
+                'mode'          => 'vocab_generate',
+                'vocabulary_id' => $vocabulary->id,
+                'language'      => $lang,
+                'concept'       => $vocabulary->english,
+            ]));
+        }
 
         return response()->json(['status' => 'generating', 'entry' => $entry], 202);
+    }
+
+    /**
+     * AI "Explain": a cached teaching explanation per (concept, language). Returns the
+     * cached text when present, else enqueues generation and replies 202. Auth-gated to
+     * bound generation cost (registered or guest session).
+     */
+    public function explain(Request $request, Vocabulary $vocabulary): JsonResponse
+    {
+        $lang = $request->validate([
+            'lang' => ['required', 'string', Rule::in(VocabEntry::learnerLanguages())],
+        ])['lang'];
+
+        $entry = VocabEntry::firstOrCreate(['vocabulary_id' => $vocabulary->id, 'language' => $lang]);
+
+        if ($entry->explanation !== null) {
+            return response()->json(['status' => 'ready', 'explanation' => $entry->explanation]);
+        }
+
+        // Same poll-storm guard as learn(), on an independent lock key.
+        if (Cache::add("vocab:explain:{$entry->id}", 1, now()->addSeconds(45))) {
+            Redis::rpush('ai:history', json_encode([
+                'mode'          => 'vocab_explain',
+                'vocabulary_id' => $vocabulary->id,
+                'language'      => $lang,
+                'concept'       => $vocabulary->english,
+            ]));
+        }
+
+        return response()->json(['status' => 'generating'], 202);
+    }
+
+    /** Save a concept to the worshipper's favorites (idempotent). */
+    public function favorite(Request $request, Vocabulary $vocabulary): JsonResponse
+    {
+        UserVocabulary::firstOrCreate([
+            'user_id'       => $request->user()->id,
+            'vocabulary_id' => $vocabulary->id,
+            'kind'          => UserVocabulary::KIND_FAVORITE,
+        ]);
+
+        return response()->json(['ok' => true]);
+    }
+
+    /** Remove a concept from favorites. */
+    public function unfavorite(Request $request, Vocabulary $vocabulary): JsonResponse
+    {
+        UserVocabulary::where([
+            'user_id'       => $request->user()->id,
+            'vocabulary_id' => $vocabulary->id,
+            'kind'          => UserVocabulary::KIND_FAVORITE,
+        ])->delete();
+
+        return response()->json(['ok' => true]);
+    }
+
+    /** List the worshipper's favorites or viewed history, newest first, with the concept. */
+    public function mine(Request $request): JsonResponse
+    {
+        $kind = $request->validate([
+            'kind' => ['required', Rule::in([UserVocabulary::KIND_FAVORITE, UserVocabulary::KIND_VIEWED])],
+        ])['kind'];
+
+        $rows = UserVocabulary::where('user_id', $request->user()->id)
+            ->where('kind', $kind)
+            ->with('vocabulary:id,english,zolai,category')
+            ->orderByDesc('updated_at')
+            ->limit(200)
+            ->get(['vocabulary_id', 'kind', 'updated_at']);
+
+        return response()->json(['items' => $rows]);
+    }
+
+    /** Record a 'viewed' history row (recency-bumped) for a registered worshipper. */
+    private function recordViewed(Request $request, Vocabulary $vocabulary): void
+    {
+        $user = $request->user();
+        if (! $user || $user->isGuestAccount()) {
+            return;
+        }
+        UserVocabulary::updateOrCreate(
+            ['user_id' => $user->id, 'vocabulary_id' => $vocabulary->id, 'kind' => UserVocabulary::KIND_VIEWED],
+            ['updated_at' => now()],
+        );
     }
 
     public function store(Request $request): JsonResponse

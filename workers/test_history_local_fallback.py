@@ -113,3 +113,22 @@ def test_vocab_generate_posts_entry_in_selected_language(monkeypatch):
     assert body["vocabulary_id"] == 7 and body["language"] == "ja"
     assert body["word"] == "恵み" and body["difficulty"] == "beginner"
     assert body["payload"]["meaning"] == "神の恵み"
+
+
+def test_vocab_explain_posts_explanation_with_language_law(monkeypatch):
+    seen = {}
+
+    class _LLM:
+        def complete(self, *, system, messages, **k):
+            seen["system"] = system
+            return "恵みとは、神からの一方的な愛のことです。", {"total_tokens": 9}
+
+    posts = []
+    monkeypatch.setattr(driver, "_signed_post", lambda url, body: posts.append(body))
+    driver._run_vocab_explain({"vocabulary_id": 7, "language": "ja", "concept": "grace"}, _LLM())
+
+    assert "Japanese ONLY" in seen["system"]
+    body = posts[0]
+    assert body["mode"] == "vocab_explanation"
+    assert body["vocabulary_id"] == 7 and body["language"] == "ja"
+    assert body["explanation"].startswith("恵み")

@@ -79,7 +79,7 @@ class TestAgentOrchestrator(unittest.TestCase):
             "scripture_ref": "John 3:16", 
             "preaching_query": "specific fallback query"
         }
-        mock_find_video.return_value = {"video_id": "vid123", "title": "Test Title"}
+        mock_find_video.return_value = {"found": True, "video_id": "vid123", "title": "Test Title"}
 
         # Mock the LLM returning a find_sermon_video tool call with empty arguments
         mock_call_llm.return_value = {
@@ -105,6 +105,45 @@ class TestAgentOrchestrator(unittest.TestCase):
         mock_find_video.assert_called_once_with(
             mood="Hopeful", query="specific fallback query", language="en", excluded_ids=[]
         )
+
+    @patch("agent_orchestrator._find_sermon_video")
+    @patch("agent_orchestrator.llm_engine.build_intake_plan")
+    @patch("agent_orchestrator._celery_app.send_task")
+    @patch("agent_orchestrator._call_llm")
+    @patch("agent_orchestrator._post_asset")
+    def test_find_sermon_video_english_fallback(
+        self, mock_post_asset, mock_call_llm, mock_send_task, mock_build_plan, mock_find_video
+    ):
+        """No native (ko) sermon -> orchestrator retries in English before giving up."""
+        mock_build_plan.return_value = {"scripture_ref": "John 3:16", "preaching_query": "hope"}
+        # First (native ko) call finds nothing; the English retry finds a video.
+        mock_find_video.side_effect = [
+            {"found": False, "reason": "no_match"},
+            {"found": True, "video_id": "en123", "title": "English Sermon"},
+        ]
+        mock_call_llm.return_value = {
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5},
+            "choices": [{
+                "finish_reason": "tool_calls",
+                "message": {
+                    "role": "assistant", "content": "",
+                    "tool_calls": [
+                        {"id": "c1", "type": "function", "function": {"name": "find_and_post_sermon_video", "arguments": "{}"}},
+                        {"id": "c2", "type": "function", "function": {"name": "finish_service", "arguments": "{}"}},
+                    ],
+                },
+            }],
+        }
+
+        job = {"session_token": "t", "language": "ko", "mood": "Hopeful", "music_source": "youtube"}
+        agent_orchestrator.run_agent(job)
+
+        # Native ko attempt, then a generic English retry (empty query, language="en").
+        self.assertEqual(mock_find_video.call_count, 2)
+        self.assertEqual(mock_find_video.call_args_list[0].kwargs["language"], "ko")
+        en_call = mock_find_video.call_args_list[1].kwargs
+        self.assertEqual(en_call["language"], "en")
+        self.assertEqual(en_call["query"], "")
 
 if __name__ == "__main__":
     unittest.main()

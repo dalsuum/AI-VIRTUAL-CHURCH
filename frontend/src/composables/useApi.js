@@ -363,6 +363,12 @@ export const api = {
   // Learner view: AI-generated entry for one concept in one language. Body carries
   // {status: 'ready'|'generating', entry}; poll while 'generating'.
   learnVocab: (id, lang) => request(`/vocabulary/${id}/learn?lang=${encodeURIComponent(lang)}`),
+  // AI "Explain": cached teaching explanation; body {status, explanation?}. Poll while generating.
+  explainVocab: (id, lang) => request(`/vocabulary/${id}/explain?lang=${encodeURIComponent(lang)}`, { method: "POST" }),
+  // Per-user favorites + viewed history (auth required).
+  favoriteVocab: (id) => request(`/vocabulary/${id}/favorite`, { method: "POST" }),
+  unfavoriteVocab: (id) => request(`/vocabulary/${id}/favorite`, { method: "DELETE" }),
+  myVocabulary: (kind) => request(`/me/vocabulary?kind=${encodeURIComponent(kind)}`),
   // Admin CRUD (vocabulary.manage).
   adminCreateVocabulary: (payload) =>
     request("/admin/vocabulary", { method: "POST", body: payload }),

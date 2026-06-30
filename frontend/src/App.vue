@@ -6,7 +6,6 @@ import ServicePlayer from "./components/ServicePlayer.vue";
 import AdminConsole from "./components/AdminConsole.vue";
 import PasswordReset from "./components/PasswordReset.vue";
 import AppLayout from "./components/layout/AppLayout.vue";
-import ZolaiVocabulary from "./components/ZolaiVocabulary.vue";
 import VocabularyLearn from "./components/VocabularyLearn.vue";
 import MyanmarLyrics from "./components/MyanmarLyrics.vue";
 import FathersDay from "./components/FathersDay.vue";
@@ -44,7 +43,6 @@ function closeJourney() {
 // The admin console lives at #admin so it never collides with the worship flow.
 const isAdminRoute  = ref(window.location.hash === "#admin");
 const isVocabRoute  = ref(window.location.hash === "#vocabulary");
-const isLearnRoute  = ref(window.location.hash === "#learn");
 const isLyricsRoute = ref(window.location.hash === "#lyrics");
 const isBibleRoute  = ref(window.location.hash === "#bible");
 // Bible Study + Worship Radio carry an optional ?session=/?mood= suffix when
@@ -82,7 +80,6 @@ window.addEventListener("hashchange", () => {
   currentHash.value = window.location.hash;
   isAdminRoute.value  = window.location.hash === "#admin";
   isVocabRoute.value  = window.location.hash === "#vocabulary";
-  isLearnRoute.value  = window.location.hash === "#learn";
   isLyricsRoute.value = window.location.hash === "#lyrics";
   isBibleRoute.value  = window.location.hash === "#bible";
   isStudyRoute.value  = window.location.hash.split("?")[0] === "#bible-study";
@@ -397,8 +394,7 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
   >
       <!-- Route views — rendered full-width inside the global layout. -->
       <AdminConsole v-if="isAdminRoute" />
-      <ZolaiVocabulary v-else-if="isVocabRoute" />
-      <VocabularyLearn v-else-if="isLearnRoute" />
+      <VocabularyLearn v-else-if="isVocabRoute" :authed="isAuthed" />
       <MyanmarLyrics v-else-if="isLyricsRoute" />
       <FathersDay v-else-if="isFathersDayRoute" />
       <LiveSticker v-else-if="isStickerRoute" />

@@ -306,7 +306,7 @@ class WebhookController extends Controller
         $this->verifySignature($request);
 
         $data = $request->validate([
-            'mode'             => ['required', 'in:pastor_reply,title_summary,journal,vocab_entry'],
+            'mode'             => ['required', 'in:pastor_reply,title_summary,journal,vocab_entry,vocab_explanation'],
             'session_id'       => ['nullable', 'string'],
             'journal_entry_id' => ['nullable', 'integer'],
             'vocabulary_id'    => ['nullable', 'integer'],
@@ -314,6 +314,7 @@ class WebhookController extends Controller
             'word'             => ['nullable', 'string', 'max:255'],
             'difficulty'       => ['nullable', 'in:beginner,intermediate,advanced'],
             'payload'          => ['nullable', 'array'],
+            'explanation'      => ['nullable', 'string'],
             'reply'            => ['nullable', 'string'],
             'title'            => ['nullable', 'string', 'max:200'],
             'summary'          => ['nullable', 'string'],
@@ -339,6 +340,16 @@ class WebhookController extends Controller
         // Vocab fills a cached learner entry by (vocabulary_id, language).
         if ($data['mode'] === 'vocab_entry') {
             return $this->fillVocabEntry($data);
+        }
+
+        // Cached AI "Explain" text for a learner entry.
+        if ($data['mode'] === 'vocab_explanation') {
+            $n = \App\Models\VocabEntry::where('vocabulary_id', $data['vocabulary_id'] ?? 0)
+                ->where('language', $data['language'] ?? '')
+                ->whereNotNull('payload')                 // entry must exist first
+                ->update(['explanation' => $data['explanation'] ?? null]);
+
+            return response()->json(['ok' => $n > 0], $n > 0 ? 200 : 404);
         }
 
         $session = \App\Models\ChatSession::find($data['session_id']);

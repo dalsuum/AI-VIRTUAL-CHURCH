@@ -42,6 +42,19 @@ class VocabLearnTest extends TestCase
         ]);
     }
 
+    public function test_polling_does_not_re_enqueue_while_generation_is_in_flight(): void
+    {
+        // The UI polls this same route; without the in-flight lock each poll would spawn a
+        // duplicate job (the stuck-"Generating…" rate-limit storm). Two calls → ONE enqueue.
+        Redis::shouldReceive('rpush')->once();
+        $word = $this->seedWord();
+
+        $this->getJson("/api/vocabulary/{$word->id}/learn?lang=ja")->assertStatus(202);
+        $this->getJson("/api/vocabulary/{$word->id}/learn?lang=ja")->assertStatus(202);
+
+        $this->assertDatabaseCount('vocab_entries', 1);
+    }
+
     public function test_unsupported_language_is_rejected(): void
     {
         $word = $this->seedWord();

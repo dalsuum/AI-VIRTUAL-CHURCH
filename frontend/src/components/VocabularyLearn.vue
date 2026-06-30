@@ -1,13 +1,14 @@
 <script setup>
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { api } from "../composables/useApi.js";
 import { getRegistry, normalizeLanguage, isRtlLocale } from "../i18n";
 
-// Learner vocabulary: the curated concept list (108 words) is the seed; the AI
-// renders each concept into the worshipper's language on demand and the result is
-// cached server-side. Designed for PARALLEL viewing — a concept fans out across
-// languages, so the detail panel can show several side by side without a redesign.
+// The single Vocabulary surface. One curated concept list (108 words) is the seed.
+// A single language selector spans BOTH sources, so the worshipper never sees the
+// seam: curated languages render straight from the concept's column (instant,
+// canonical), while AI languages are generated into vocab_entries on demand and
+// cached server-side. Favourites, history and AI "Explain" sit on top.
 const { t, locale } = useI18n();
 const props = defineProps({ authed: { type: Boolean, default: false } });
 
@@ -21,22 +22,74 @@ const activeCategory = ref("All");
 const viewMode = ref("browse");        // 'browse' | 'favorite' | 'viewed'
 const myItems = ref([]);               // rows for favorite/viewed views
 const favoriteIds = ref(new Set());    // concept ids the user has starred
-const explanation = ref(null);         // { status, text } for the open concept
+const explanation = ref(null);         // { status, text } for the open concept+lang
 
-// Detail state. `selected` is a concept row; `entries` caches one generated entry
-// per language code we have loaded for it (the parallel set).
+// Detail state. `selected` is a concept row; `entries` caches AI entries by language
+// code (curated languages need no fetch — the word is already on the concept row).
 const selected = ref(null);
-const entries = ref({});            // { [lang]: { status, payload, word, ... } }
+const entries = ref({});            // { [aiCode]: { status, payload, word, ... } }
 const pollTimers = ref({});
 
-const uiLang = computed(() => normalizeLanguage(locale.value));
+// Unified language list. Curated descriptors carry the `column` to read off the
+// concept row; `code` is the learner code where one exists — present for every AI
+// language and for the three curated columns that double as learner locales (Tedim,
+// Burmese, English). Its presence gates AI "Explain" (the backend rejects langs
+// outside VocabEntry::learnerLanguages — i.e. the Chin-only columns + Hebrew).
+const CURATED = [
+  { key: "zolai",   column: "zolai",   label: "Zolai (Tedim)", code: "td" },
+  { key: "falam",   column: "falam",   label: "Falam" },
+  { key: "hakha",   column: "hakha",   label: "Hakha" },
+  { key: "matu",    column: "matu",    label: "Matu" },
+  { key: "mizo",    column: "mizo",    label: "Mizo" },
+  { key: "paite",   column: "paite",   label: "Paite" },
+  { key: "sizang",  column: "sizang",  label: "Sizang" },
+  { key: "burmese", column: "burmese", label: "Burmese", code: "my" },
+  { key: "hebrew",  column: "hebrew",  label: "Hebrew", rtl: true },
+  { key: "english", column: "english", label: "English", code: "en" },
+];
+// AI-only languages: registry learner locales with no curated column.
+const AI_CODES = ["fr", "de", "es", "ja", "zh-CN", "ko", "hi", "ta", "th", "ar"];
+
+const languages = computed(() => {
+  const reg = getRegistry();
+  const ai = AI_CODES
+    .filter((code) => reg[code]) // only offer AI langs the backend registry knows
+    .map((code) => ({ key: code, code, label: reg[code]?.native_name || code, source: "ai" }));
+  return [...CURATED.map((c) => ({ ...c, source: "curated" })), ...ai];
+});
+
+// Default selection: the worshipper's locale mapped to its curated column when it is
+// one (en→english, my→burmese, td→zolai), else the matching AI code, else English.
+const LOCALE_TO_CURATED = { en: "english", my: "burmese", td: "zolai" };
+const uiNorm = normalizeLanguage(locale.value);
+const selectedLang = ref(
+  LOCALE_TO_CURATED[uiNorm] || (AI_CODES.includes(uiNorm) ? uiNorm : "english"),
+);
+
+const currentLang = computed(
+  () => languages.value.find((l) => l.key === selectedLang.value) || languages.value[0],
+);
+const canExplain = computed(() => Boolean(currentLang.value?.code));
+const currentRtl = computed(() =>
+  currentLang.value.source === "curated" ? Boolean(currentLang.value.rtl) : isRtlLocale(currentLang.value.code),
+);
+
+// The entry rendered for the open concept in the selected language.
+const currentEntry = computed(() => {
+  if (!selected.value) return null;
+  const lang = currentLang.value;
+  if (lang.source === "curated") {
+    return { source: "curated", word: selected.value[lang.column] || "" };
+  }
+  return { source: "ai", ...(entries.value[lang.code] || { status: "generating" }) };
+});
 
 onMounted(async () => {
   try {
     const data = await api.getVocabulary();
     concepts.value = data.vocabulary || [];
   } catch {
-    loadError.value = t("learn.loadError");
+    loadError.value = t("vocabulary.loadError");
   } finally {
     loading.value = false;
   }
@@ -78,15 +131,20 @@ async function toggleFavorite(concept) {
   }
 }
 
-// Cached AI explanation for the open concept in the UI language. Polls while generating.
+// Cached AI explanation for the open concept in the selected language. Polls while
+// generating (capped — see MAX_POLLS); only callable when the language has a learner
+// code (see canExplain).
 async function requestExplain(attempt = 0) {
-  if (!selected.value) return;
-  const lang = NON_LEARNER.includes(uiLang.value) ? "en" : uiLang.value;
+  if (!selected.value || !canExplain.value) return;
   try {
-    const res = await api.explainVocab(selected.value.id, lang);
+    const res = await api.explainVocab(selected.value.id, currentLang.value.code);
+    if (res.status === "generating" && attempt >= MAX_POLLS) {
+      explanation.value = { status: "timeout", text: "" };
+      return;
+    }
     explanation.value = { status: res.status, text: res.explanation || "" };
-    if (res.status === "generating" && attempt < 8) {
-      setTimeout(() => requestExplain(attempt + 1), 3500);
+    if (res.status === "generating") {
+      setTimeout(() => requestExplain(attempt + 1), 3800);
     }
   } catch {
     explanation.value = { status: "error", text: "" };
@@ -122,18 +180,44 @@ const filtered = computed(() => {
     .map(([, c]) => c);
 });
 
-// Hebrew is a Bible/reference locale only, not a learner target (the backend rejects
-// it); mirror that boundary so it never appears as a chip. See VocabEntry::NON_LEARNER_LANGUAGES.
-const NON_LEARNER = ["he"];
+// Concept-card gloss: the selected curated word when browsing a Chin/Zo tongue,
+// otherwise the Zolai seed (AI words aren't loaded until a concept is opened).
+function conceptGloss(concept) {
+  const lang = currentLang.value;
+  if (lang.source === "curated" && lang.key !== "english") {
+    return concept[lang.column] || concept.zolai || "";
+  }
+  return concept.zolai || "";
+}
 
-// Other languages offered for parallel viewing (registry minus already-loaded/excluded).
-const otherLangs = computed(() => {
-  const reg = getRegistry();
-  return Object.keys(reg).filter((code) => !(code in entries.value) && !NON_LEARNER.includes(code));
-});
+// Fetch (and, while generating, poll) one AI language entry for the open concept.
+// ~45s of polling (token-dense scripts are slow); if it never lands, surface a clear
+// 'timeout' state with a Retry rather than spinning forever.
+const MAX_POLLS = 12;
+async function loadLanguage(code, attempt = 0) {
+  if (!selected.value) return;
+  const id = selected.value.id;
+  try {
+    const res = await api.learnVocab(id, code);
+    if (res.status === "generating" && attempt >= MAX_POLLS) {
+      entries.value = { ...entries.value, [code]: { status: "timeout" } };
+      return;
+    }
+    entries.value = { ...entries.value, [code]: { status: res.status, ...res.entry } };
+    if (res.status === "generating") {
+      pollTimers.value[code] = setTimeout(() => loadLanguage(code, attempt + 1), 3800);
+    }
+  } catch {
+    entries.value = { ...entries.value, [code]: { status: "error" } };
+  }
+}
 
-function langName(code) {
-  return getRegistry()[code]?.native_name || code;
+// Ensure the selected AI language is loaded for the open concept (curated needs none).
+function syncLanguage() {
+  const lang = currentLang.value;
+  if (selected.value && lang.source === "ai" && !(lang.code in entries.value)) {
+    loadLanguage(lang.code);
+  }
 }
 
 function openConcept(concept) {
@@ -142,9 +226,7 @@ function openConcept(concept) {
   explanation.value = null;
   Object.values(pollTimers.value).forEach(clearTimeout);
   pollTimers.value = {};
-  // Start with the worshipper's language, unless it is a reference-only locale (e.g.
-  // Hebrew) that has no learner generation — then fall back to English.
-  loadLanguage(NON_LEARNER.includes(uiLang.value) ? "en" : uiLang.value);
+  syncLanguage();
 }
 
 function closeDetail() {
@@ -153,95 +235,88 @@ function closeDetail() {
   selected.value = null;
 }
 
-// Fetch (and, while generating, poll) one language entry for the selected concept.
-async function loadLanguage(lang, attempt = 0) {
-  if (!selected.value) return;
-  const id = selected.value.id;
-  try {
-    const res = await api.learnVocab(id, lang);
-    entries.value = { ...entries.value, [lang]: { status: res.status, ...res.entry } };
-    if (res.status === "generating" && attempt < 8) {
-      pollTimers.value[lang] = setTimeout(() => loadLanguage(lang, attempt + 1), 3500);
-    }
-  } catch {
-    entries.value = { ...entries.value, [lang]: { status: "error" } };
-  }
-}
-
-function addLanguage(code) {
-  if (!(code in entries.value)) loadLanguage(code);
-}
+// Switching the language re-resets the (per-language) explanation and loads on demand.
+watch(selectedLang, () => {
+  explanation.value = null;
+  syncLanguage();
+});
 </script>
 
 <template>
   <div class="learn-page">
     <header class="learn-header">
-      <h1 class="learn-title">{{ t("learn.title") }}</h1>
-      <p class="learn-sub">{{ t("learn.subtitle") }}</p>
+      <div class="header-row">
+        <div>
+          <h1 class="learn-title">{{ t("vocabulary.title") }}</h1>
+          <p class="learn-sub">{{ t("vocabulary.subtitle") }}</p>
+        </div>
+        <label class="lang-picker">
+          <span class="lang-picker-label">{{ t("vocabulary.languageLabel") }}</span>
+          <select v-model="selectedLang" class="lang-select" :aria-label="t('vocabulary.chooseDisplay')">
+            <option v-for="l in languages" :key="l.key" :value="l.key">{{ l.label }}</option>
+          </select>
+        </label>
+      </div>
     </header>
 
-    <nav v-if="authed" class="view-tabs" :aria-label="t('learn.views')">
-      <button class="view-tab" :class="{ active: viewMode === 'browse' }" :aria-pressed="viewMode === 'browse'" @click="setView('browse')">{{ t("learn.browse") }}</button>
-      <button class="view-tab" :class="{ active: viewMode === 'favorite' }" :aria-pressed="viewMode === 'favorite'" @click="setView('favorite')">⭐ {{ t("learn.favorites") }}</button>
-      <button class="view-tab" :class="{ active: viewMode === 'viewed' }" :aria-pressed="viewMode === 'viewed'" @click="setView('viewed')">🕘 {{ t("learn.history") }}</button>
+    <nav v-if="authed" class="view-tabs" :aria-label="t('vocabulary.views')">
+      <button class="view-tab" :class="{ active: viewMode === 'browse' }" :aria-pressed="viewMode === 'browse'" @click="setView('browse')">{{ t("vocabulary.browse") }}</button>
+      <button class="view-tab" :class="{ active: viewMode === 'favorite' }" :aria-pressed="viewMode === 'favorite'" @click="setView('favorite')">⭐ {{ t("vocabulary.favorites") }}</button>
+      <button class="view-tab" :class="{ active: viewMode === 'viewed' }" :aria-pressed="viewMode === 'viewed'" @click="setView('viewed')">🕘 {{ t("vocabulary.history") }}</button>
     </nav>
 
-    <!-- Detail (parallel multilingual view) -->
-    <section v-if="selected" class="detail" :aria-label="t('learn.detailAria')">
-      <button class="back-btn" @click="closeDetail">← {{ t("learn.back") }}</button>
+    <!-- Detail (selected language) -->
+    <section v-if="selected" class="detail" :aria-label="t('vocabulary.detailAria')">
+      <button class="back-btn" @click="closeDetail">← {{ t("vocabulary.back") }}</button>
       <div class="detail-head">
         <h2 class="concept-name">{{ selected.english }}</h2>
         <button
           v-if="authed"
           class="fav-btn"
           :aria-pressed="favoriteIds.has(selected.id)"
-          :aria-label="t('learn.favorite')"
+          :aria-label="t('vocabulary.favorite')"
           @click="toggleFavorite(selected)"
         >{{ favoriteIds.has(selected.id) ? "⭐" : "☆" }}</button>
       </div>
 
-      <div class="explain-row">
-        <button v-if="!explanation" class="explain-btn" @click="requestExplain()">🤖 {{ t("learn.explain") }}</button>
-        <p v-else-if="explanation.status === 'generating'" class="muted">{{ t("learn.generating") }}</p>
-        <p v-else-if="explanation.status === 'error'" class="muted">{{ t("learn.entryError") }}</p>
-        <p v-else class="explanation" :dir="isRtlLocale(uiLang) ? 'rtl' : 'ltr'">{{ explanation.text }}</p>
+      <div v-if="canExplain" class="explain-row">
+        <button v-if="!explanation" class="explain-btn" @click="requestExplain()">🤖 {{ t("vocabulary.explain") }}</button>
+        <p v-else-if="explanation.status === 'generating'" class="muted">{{ t("vocabulary.generating") }}</p>
+        <div v-else-if="explanation.status === 'timeout' || explanation.status === 'error'" class="retry-row">
+          <span class="muted">{{ t("vocabulary.tookTooLong") }}</span>
+          <button class="explain-btn" @click="requestExplain()">↻ {{ t("vocabulary.retry") }}</button>
+        </div>
+        <p v-else class="explanation" :dir="currentRtl ? 'rtl' : 'ltr'">{{ explanation.text }}</p>
       </div>
 
-      <div class="parallel">
-        <article
-          v-for="(entry, lang) in entries"
-          :key="lang"
-          class="lang-card"
-          :dir="isRtlLocale(lang) ? 'rtl' : 'ltr'"
-          :lang="lang"
-        >
-          <h3 class="lang-card-title">{{ langName(lang) }}</h3>
-          <p v-if="entry.status === 'generating'" class="muted">{{ t("learn.generating") }}</p>
-          <p v-else-if="entry.status === 'error'" class="muted">{{ t("learn.entryError") }}</p>
-          <dl v-else-if="entry.payload" class="fields">
-            <dt>{{ t("learn.word") }}</dt>
-            <dd class="word">{{ entry.payload.word }} <span class="pron">{{ entry.payload.pronunciation }}</span></dd>
-            <dt>{{ t("learn.meaning") }}</dt><dd>{{ entry.payload.meaning }}</dd>
-            <dt>{{ t("learn.example") }}</dt><dd>{{ entry.payload.example }}</dd>
-            <dt v-if="entry.payload.synonyms?.length">{{ t("learn.synonyms") }}</dt>
-            <dd v-if="entry.payload.synonyms?.length">{{ entry.payload.synonyms.join("、") }}</dd>
-            <dt v-if="entry.payload.bible_verse">{{ t("learn.verse") }}</dt>
-            <dd v-if="entry.payload.bible_verse">
-              <em>{{ entry.payload.bible_verse.ref }}</em> — {{ entry.payload.bible_verse.text }}
+      <article class="lang-card" :dir="currentRtl ? 'rtl' : 'ltr'" :lang="currentLang.code || null">
+        <h3 class="lang-card-title">{{ currentLang.label }}</h3>
+
+        <template v-if="currentEntry.source === 'curated'">
+          <p v-if="currentEntry.word" class="word">{{ currentEntry.word }}</p>
+          <p v-else class="muted">{{ t("vocabulary.noWord") }}</p>
+        </template>
+
+        <template v-else>
+          <p v-if="currentEntry.status === 'generating'" class="muted">{{ t("vocabulary.generating") }}</p>
+          <div v-else-if="!currentEntry.payload" class="retry-row">
+            <span class="muted">{{ t("vocabulary.tookTooLong") }}</span>
+            <button class="explain-btn" @click="loadLanguage(currentLang.code, 0)">↻ {{ t("vocabulary.retry") }}</button>
+          </div>
+          <dl v-else class="fields">
+            <dt>{{ t("vocabulary.word") }}</dt>
+            <dd class="word">{{ currentEntry.payload.word }} <span class="pron">{{ currentEntry.payload.pronunciation }}</span></dd>
+            <dt>{{ t("vocabulary.meaning") }}</dt><dd>{{ currentEntry.payload.meaning }}</dd>
+            <dt>{{ t("vocabulary.example") }}</dt><dd>{{ currentEntry.payload.example }}</dd>
+            <dt v-if="currentEntry.payload.synonyms?.length">{{ t("vocabulary.synonyms") }}</dt>
+            <dd v-if="currentEntry.payload.synonyms?.length">{{ currentEntry.payload.synonyms.join("、") }}</dd>
+            <dt v-if="currentEntry.payload.bible_verse">{{ t("vocabulary.verse") }}</dt>
+            <dd v-if="currentEntry.payload.bible_verse">
+              <em>{{ currentEntry.payload.bible_verse.ref }}</em> — {{ currentEntry.payload.bible_verse.text }}
             </dd>
           </dl>
-        </article>
-      </div>
-
-      <div class="add-langs" role="group" :aria-label="t('learn.addLanguage')">
-        <span class="add-label">{{ t("learn.addLanguage") }}</span>
-        <button
-          v-for="code in otherLangs"
-          :key="code"
-          class="lang-chip"
-          @click="addLanguage(code)"
-        >+ {{ langName(code) }}</button>
-      </div>
+        </template>
+      </article>
     </section>
 
     <!-- Home (concept browser) -->
@@ -251,10 +326,10 @@ function addLanguage(code) {
           v-model="search"
           class="search-input"
           type="search"
-          :placeholder="t('learn.searchPlaceholder')"
-          :aria-label="t('learn.searchAria')"
+          :placeholder="t('vocabulary.searchPlaceholder')"
+          :aria-label="t('vocabulary.searchAria')"
         />
-        <div class="cat-filters" role="group" :aria-label="t('learn.filterByCategory')">
+        <div class="cat-filters" role="group" :aria-label="t('vocabulary.filterByCategory')">
           <button
             v-for="cat in categories"
             :key="cat"
@@ -262,21 +337,21 @@ function addLanguage(code) {
             :class="{ active: activeCategory === cat }"
             :aria-pressed="activeCategory === cat"
             @click="activeCategory = cat"
-          >{{ cat === "All" ? t("learn.all") : cat }}</button>
+          >{{ cat === "All" ? t("vocabulary.all") : cat }}</button>
         </div>
       </div>
 
-      <p v-if="loading" class="empty">{{ t("learn.loading") }}</p>
+      <p v-if="loading" class="empty">{{ t("vocabulary.loading") }}</p>
       <p v-else-if="loadError" class="empty">{{ loadError }}</p>
       <p v-else-if="shownConcepts.length === 0" class="empty">
-        {{ viewMode === "browse" ? t("learn.noMatches") : t("learn.empty") }}
+        {{ viewMode === "browse" ? t("vocabulary.noMatches") : t("vocabulary.empty") }}
       </p>
 
       <ul v-else class="concept-grid">
         <li v-for="c in shownConcepts" :key="c.id">
           <button class="concept-card" @click="openConcept(c)">
             <span class="concept-en">{{ c.english }}</span>
-            <span v-if="c.zolai" class="concept-zo">{{ c.zolai }}</span>
+            <span v-if="conceptGloss(c)" class="concept-zo">{{ conceptGloss(c) }}</span>
             <span v-if="c.category" class="concept-cat">{{ c.category }}</span>
           </button>
         </li>
@@ -287,8 +362,16 @@ function addLanguage(code) {
 
 <style scoped>
 .learn-page { max-width: 960px; margin: 0 auto; padding: 1rem; }
+.header-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
 .learn-title { font-size: 1.5rem; margin: 0; }
 .learn-sub { color: var(--text-muted); margin: .25rem 0 1rem; }
+.lang-picker { display: flex; flex-direction: column; gap: .25rem; }
+.lang-picker-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
+.lang-select {
+  padding: .5rem .85rem; border: 1px solid var(--border, #ccc); border-radius: .6rem;
+  background: var(--surface, #fff); color: var(--text); font-size: .9rem; cursor: pointer;
+}
+.lang-select:focus { border-color: var(--primary, #4338ca); outline: none; }
 .controls { display: flex; flex-direction: column; gap: .75rem; margin-bottom: 1rem; }
 .search-input {
   width: 100%; padding: .65rem .85rem; border: 1px solid var(--border, #ccc);
@@ -324,8 +407,8 @@ function addLanguage(code) {
 .explain-row { margin-bottom: 1rem; }
 .explain-btn { border: 1px solid var(--primary, #4338ca); color: var(--primary, #4338ca); background: transparent; border-radius: .6rem; padding: .4rem .9rem; cursor: pointer; font-size: .9rem; }
 .explanation { white-space: pre-wrap; line-height: 1.6; background: var(--surface, #f7f7fb); border-radius: .6rem; padding: .8rem; }
-.parallel { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
-.lang-card { border: 1px solid var(--border, #ddd); border-radius: .7rem; padding: .9rem; background: var(--surface, #fff); }
+.retry-row { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.lang-card { border: 1px solid var(--border, #ddd); border-radius: .7rem; padding: .9rem; background: var(--surface, #fff); max-width: 420px; }
 .lang-card-title { margin: 0 0 .5rem; font-size: 1rem; color: var(--primary, #4338ca); }
 .fields { margin: 0; }
 .fields dt { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); margin-top: .6rem; }
@@ -333,11 +416,4 @@ function addLanguage(code) {
 .word { font-size: 1.2rem; font-weight: 700; }
 .pron { font-size: .85rem; font-weight: 400; color: var(--text-muted); }
 .muted { color: var(--text-muted); }
-.add-langs { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; margin-top: 1.25rem; }
-.add-label { font-size: .8rem; color: var(--text-muted); }
-.lang-chip { border: 1px dashed var(--border, #bbb); background: transparent; border-radius: 1rem; padding: .25rem .7rem; cursor: pointer; font-size: .8rem; }
-.lang-chip:hover, .lang-chip:focus-visible { border-style: solid; border-color: var(--primary, #4338ca); }
-@media (max-width: 480px) {
-  .parallel { grid-template-columns: 1fr; }
-}
 </style>

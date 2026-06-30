@@ -213,16 +213,19 @@ examples, synonyms/antonyms/related, optional Bible verse) under the same author
 mode) caches it in `vocab_entries`. No new authored content and no per-language schema — the
 existing dictionary is the seed concept list. Deploy step: `php artisan migrate`.
 
-The learner UI lives at `#learn` (`VocabularyLearn.vue`): a searchable concept browser
-(exact→prefix→fuzzy ranking) and a Word Detail panel built for **parallel viewing** — a
-concept fans out across languages, so entries render side by side and more languages can be
-added on demand (`+ language` chips) without a redesign. All chrome is vue-i18n; the page is
-responsive and keyboard-accessible. Frontend deploy: `npm run build` in `frontend/`.
+The learner UI lives at `#vocabulary` (`VocabularyLearn.vue`): a searchable concept browser
+(exact→prefix→fuzzy ranking) with a **single language selector spanning both sources** — the
+curated Chin/Zo, Burmese and Hebrew columns render straight off the concept row (instant,
+canonical), while the AI languages are generated into `vocab_entries` on demand and cached.
+The worshipper never sees the seam. All chrome is vue-i18n; the page is responsive,
+RTL-aware and keyboard-accessible. Frontend deploy: `npm run build` in `frontend/`.
 
-Learner languages are the interface registry minus `VocabEntry::NON_LEARNER_LANGUAGES`
-(currently `he`): Hebrew stays a Bible/reference locale but is **not** offered for AI
-vocabulary generation, because the current model returns English for Hebrew concepts. The
-`learn` endpoint rejects excluded locales (422) and the UI hides their chips.
+AI generation/Explain is offered only for languages with a learner code —
+`VocabEntry::learnerLanguages()` (the interface registry minus
+`VocabEntry::NON_LEARNER_LANGUAGES`, currently `he`). Hebrew stays a Bible/reference locale,
+shown from its curated column but **not** AI-generated (the current model returns English for
+Hebrew); the Chin-only columns (Falam/Hakha/Matu/Mizo/Paite/Sizang) likewise render from the
+curated reference. The `learn`/`explain` endpoints reject non-learner locales (422).
 
 Per-user features (Phase C) are the **only** stored user state: `user_vocabulary` holds
 favorites and viewed history (`POST/DELETE /api/vocabulary/{id}/favorite`,
@@ -231,6 +234,11 @@ users). AI **Explain** (`POST /api/vocabulary/{id}/explain?lang=`) is a teaching
 generated under the same LANGUAGE LAW and **cached** on `vocab_entries.explanation` per
 (concept, language) — never stored per user. Bible-verse examples and pronunciation already
 ship inside the generated entry payload.
+
+Generation is **deduped**: while an entry is in flight a 45s `Cache::add` lock means the UI's
+polling can't spawn duplicate jobs (which otherwise self-inflicted a provider rate-limit storm
+and left cards stuck on "Generating…"). After 45s a retry is allowed, and the UI surfaces a
+Retry button instead of spinning forever if generation never lands.
 
 Pastor Chat replies in the worshipper's selected interface language (`_pastor_system` in
 `workers/plugins/history/driver.py`). The reply-language instruction is authoritative — the

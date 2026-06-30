@@ -8,6 +8,7 @@ use App\Models\Vocabulary;
 use App\Services\PermissionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Validation\Rule;
 
@@ -67,12 +68,17 @@ class VocabularyController extends Controller
             return response()->json(['status' => 'ready', 'entry' => $entry]);
         }
 
-        Redis::rpush('ai:history', json_encode([
-            'mode'          => 'vocab_generate',
-            'vocabulary_id' => $vocabulary->id,
-            'language'      => $lang,
-            'concept'       => $vocabulary->english,
-        ]));
+        // Enqueue at most once per 45s per entry: polling re-hits this route, and without
+        // the lock each poll would spawn a duplicate generation job (a self-inflicted
+        // rate-limit storm). After 45s a retry is allowed, so a genuinely stuck entry recovers.
+        if (Cache::add("vocab:gen:{$entry->id}", 1, now()->addSeconds(45))) {
+            Redis::rpush('ai:history', json_encode([
+                'mode'          => 'vocab_generate',
+                'vocabulary_id' => $vocabulary->id,
+                'language'      => $lang,
+                'concept'       => $vocabulary->english,
+            ]));
+        }
 
         return response()->json(['status' => 'generating', 'entry' => $entry], 202);
     }
@@ -94,12 +100,15 @@ class VocabularyController extends Controller
             return response()->json(['status' => 'ready', 'explanation' => $entry->explanation]);
         }
 
-        Redis::rpush('ai:history', json_encode([
-            'mode'          => 'vocab_explain',
-            'vocabulary_id' => $vocabulary->id,
-            'language'      => $lang,
-            'concept'       => $vocabulary->english,
-        ]));
+        // Same poll-storm guard as learn(), on an independent lock key.
+        if (Cache::add("vocab:explain:{$entry->id}", 1, now()->addSeconds(45))) {
+            Redis::rpush('ai:history', json_encode([
+                'mode'          => 'vocab_explain',
+                'vocabulary_id' => $vocabulary->id,
+                'language'      => $lang,
+                'concept'       => $vocabulary->english,
+            ]));
+        }
 
         return response()->json(['status' => 'generating'], 202);
     }

@@ -5,6 +5,7 @@ namespace App\Services\Knowledge\Retrieval;
 use App\Services\Knowledge\Contracts\CorpusRetriever;
 use App\Services\Knowledge\Contracts\EmbeddingService;
 use App\Services\Knowledge\Contracts\KeywordIndex;
+use App\Services\Knowledge\Contracts\ManagesCollections;
 use App\Services\Knowledge\Contracts\VectorStore;
 use App\Services\Knowledge\Data\CorpusResult;
 
@@ -32,6 +33,14 @@ final class HybridCorpusRetriever implements CorpusRetriever
 
     public function retrieve(string $query, int $k, array $filters = []): CorpusResult
     {
+        // Skip corpora whose backing collection isn't provisioned yet: no embedding, keyword or
+        // vector calls, and no false "degraded" flag from a guaranteed 404. New collections light
+        // up automatically once ingested (existence is cached briefly). Only stores that own their
+        // collections (Qdrant) report this; in-memory/test stores always retrieve.
+        if ($this->vectors instanceof ManagesCollections && ! $this->vectors->hasCollection($this->corpus)) {
+            return new CorpusResult([]);
+        }
+
         // Each branch is isolated: a vector outage must not take down the keyword path, and
         // vice-versa. Errors are recorded as flags, never thrown — this is the invariant
         // "vector failure must never become chat failure".

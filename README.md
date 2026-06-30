@@ -122,10 +122,19 @@ Controller → ChatOrchestrator
 - **Hybrid retrieval** — keyword + vector fused by Reciprocal Rank Fusion, then reranked
   and budget-bounded into a `KnowledgeContext`. Vector store abstracted (`VectorStore`):
   in-memory/FAISS-via-worker now, **Qdrant** for scale — swap by binding.
+- **Per-capability RAG** — each `ChatCapability` declares `usesKnowledge()`. Bible Study is
+  reference-heavy (always on); Pastor Chat is relational and config-gated by
+  `knowledge.capabilities.pastor_uses_knowledge` (env `KNOWLEDGE_PASTOR_RAG`, default on) so it
+  can be grounded in the sermon/KB corpus or returned to purely conversational without a code change.
 - **Failure contract** — retrieval degrades, never cascades: a vector/embedding outage
   falls back to keyword; total outage yields `EMPTY_DUE_TO_FAILURE` (distinct from a
   clean `EMPTY_DUE_TO_NO_MATCH`); corrupt chunks are dropped before they reach the prompt.
   *Vector failure never becomes chat failure.*
+- **Lazy corpora** — a configured corpus whose Qdrant collection isn't provisioned yet is
+  skipped (no embedding/keyword/vector call, no false `degraded`), via a cached
+  `ManagesCollections::hasCollection()`. Newly-ingested collections light up automatically
+  within the cache TTL. Fails open: if the collection listing can't be fetched, retrieval
+  still runs so a genuine outage surfaces as `degraded`/`failed`, not a clean no-match.
 - **Guardrails** — composable chain with per-capability enable/disable and policy in
   `config/guardrails.php` (not in guard code). Output guards thread/sanitise text;
   validators short-circuit. Knowledge-backed surfaces can fail closed when retrieval is
@@ -200,6 +209,32 @@ php artisan knowledge:ingest sermon storage/app/knowledge/sermons_my.json --chun
 
 After ingest, sermon retrieval is automatically combined with Bible retrieval in Pastor Chat
 (the `RetrievalOrchestrator` fans out across all corpora including `sermon`).
+
+### Ingesting the Bible corpus (uses the project's OWN bundled text)
+
+The `bible` corpus is built from the same vendored translations the Bible reader serves
+(`workers/data/*.json`) — no external source. `workers/tools/export_bible.py` reuses
+`bible_api` (the single source of truth) and emits **one document per verse** to
+`storage/app/knowledge/bible_<lang>.json`, then `knowledge:ingest` indexes them:
+
+```bash
+# 1. Export one or more translations (default = every bundled translation)
+python workers/tools/export_bible.py --langs en          # English (BSB) only
+python workers/tools/export_bible.py                      # all ~24 translations
+
+# 2. Ingest each language file into the shared 'bible' Qdrant collection
+cd backend
+php artisan knowledge:ingest bible storage/app/knowledge/bible_en.json --chunker=text
+```
+
+Use `--chunker=text`, **not** `--chunker=bible`: the verse chunker re-derives verse
+boundaries by splitting on digit prefixes, which corrupts translations whose verse text
+contains numerals (e.g. BSB "Methuselah lived 969 years"). One verse per document + the
+prose chunker keeps a single chunk per verse with an exact, pre-built reference. Verses are
+stamped with the translation's app code as `language`; retrieval filters on the conversation
+language, so ingest the codes that are real chat languages (a translation-only code like
+`kjv` will index but never be retrieved). Embedding runs on the local worker (~66 verses/s →
+~8 min per translation); `bible` outranks `sermon` via `source_priority`.
 
 ### Learner vocabulary (multilingual, AI-generated)
 
@@ -284,6 +319,10 @@ KNOWLEDGE_EMBEDDING_DIMS=384                  # MUST match the embed model's out
    (`MEMBER_MONTHLY_TOKENS`, default 100). Login is blocked until the account is active.
    Never-activated accounts are pruned hourly by `users:cleanup-pending`. See
    [AccountActivationService.php](backend/app/Services/AccountActivationService.php).
+   If a **registered** session goes stale mid-flow (idle past the session lifetime, or
+   rotated by a password/email change → 401 from `EnsureAccountIsUsable`), the intake flow
+   routes the worshipper to sign in again rather than silently downgrading them to a guest
+   (which would re-run the service anonymously and trip the one-free-use guest quota).
 2. **Start a session.** `POST /service/start` creates a `service_sessions` row and
    **locks the music source** (`hymn_sung` | `hymn` | `suno` | `youtube`) from the
    user's saved preference, so the choice can't drift mid-service.

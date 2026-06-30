@@ -16,6 +16,14 @@
 return [
     'enabled' => (bool) env('KNOWLEDGE_ENABLED', false),
 
+    // Per-capability RAG toggles. Pastor Chat is relational by default, but with the sermon/KB
+    // corpus indexed it can be grounded in the same retrieval pipeline as Bible Study. Flip via
+    // env without a code change; only takes effect when `enabled` is true, so dev/test stay
+    // ungrounded. Set KNOWLEDGE_PASTOR_RAG=false to restore the old conversational behaviour.
+    'capabilities' => [
+        'pastor_uses_knowledge' => (bool) env('KNOWLEDGE_PASTOR_RAG', true),
+    ],
+
     'embedding' => [
         'driver'     => env('KNOWLEDGE_EMBEDDING', 'hash'),
         'dimensions' => (int) env('KNOWLEDGE_EMBEDDING_DIMS', 256),

@@ -288,6 +288,10 @@ KNOWLEDGE_EMBEDDING_DIMS=384                  # MUST match the embed model's out
    (`MEMBER_MONTHLY_TOKENS`, default 100). Login is blocked until the account is active.
    Never-activated accounts are pruned hourly by `users:cleanup-pending`. See
    [AccountActivationService.php](backend/app/Services/AccountActivationService.php).
+   If a **registered** session goes stale mid-flow (idle past the session lifetime, or
+   rotated by a password/email change → 401 from `EnsureAccountIsUsable`), the intake flow
+   routes the worshipper to sign in again rather than silently downgrading them to a guest
+   (which would re-run the service anonymously and trip the one-free-use guest quota).
 2. **Start a session.** `POST /service/start` creates a `service_sessions` row and
    **locks the music source** (`hymn_sung` | `hymn` | `suno` | `youtube`) from the
    user's saved preference, so the choice can't drift mid-service.

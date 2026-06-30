@@ -149,6 +149,16 @@ async function logout() {
   window.location.hash = "";
 }
 
+// A registered user's session expired mid-flow (e.g. idle past the session lifetime,
+// or rotated by a password/email change). Re-probe identity so the header reflects the
+// lost session, then route to sign-in instead of letting the intake flow downgrade them
+// to an anonymous guest.
+async function onSessionExpired() {
+  api.clearSession();
+  await loadMe();
+  window.location.hash = "#login";
+}
+
 // Resolve identity once on load so nav + guards reflect the real session.
 loadMe();
 
@@ -439,8 +449,10 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
 
         <IntakeForm
           v-if="view === 'intake'"
+          :is-authed="isAuthed"
           @started="onStarted"
           @intercepted="onIntercepted"
+          @session-expired="onSessionExpired"
         />
 
         <!-- Scheduled service: nothing is generated until its time arrives. -->

@@ -5,7 +5,12 @@ import { api } from "../composables/useApi";
 import { normalizeLanguage } from "../i18n";
 
 const localTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-const emit = defineEmits(["started", "intercepted"]);
+const emit = defineEmits(["started", "intercepted", "session-expired"]);
+// Whether App.vue currently holds a registered (non-guest) session. Used to keep an
+// expired registered session from being silently downgraded to a guest (see begin()).
+const props = defineProps({
+  isAuthed: { type: Boolean, default: false },
+});
 
 const { t, te, locale } = useI18n();
 
@@ -198,8 +203,16 @@ async function begin() {
   try {
     await submitOnce();
   } catch (e) {
-    // Stale/expired token in localStorage can throw 401 here for returning guests.
-    // Reset guest auth once and retry automatically so the worshipper is not blocked.
+    // A 401 means the server session no longer authenticates. For a registered user
+    // that means their session expired or was rotated — do NOT silently reprovision a
+    // guest (which would re-run the service anonymously and trip the one-free-use guest
+    // quota, surfacing as a misleading "please register"). Send them to sign in again.
+    if (e?.status === 401 && props.isAuthed) {
+      emit("session-expired");
+      return;
+    }
+    // Anonymous/returning guest with a stale token: reset guest auth once and retry
+    // automatically so the walk-up worshipper is not blocked.
     if (e?.status === 401) {
       try {
         api.clearSession();

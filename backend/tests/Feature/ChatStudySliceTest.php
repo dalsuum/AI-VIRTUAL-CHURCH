@@ -104,4 +104,15 @@ class ChatStudySliceTest extends TestCase
     {
         $this->postJson('/api/v1/chat/study', ['message' => 'hi'])->assertStatus(401);
     }
+
+    public function test_pastor_chat_knowledge_use_follows_config_flag(): void
+    {
+        $pastor = new \App\Services\Chat\Capabilities\PastorChatCapability();
+
+        config(['knowledge.capabilities.pastor_uses_knowledge' => true]);
+        $this->assertTrue($pastor->usesKnowledge(), 'Pastor Chat should retrieve when the flag is on.');
+
+        config(['knowledge.capabilities.pastor_uses_knowledge' => false]);
+        $this->assertFalse($pastor->usesKnowledge(), 'Pastor Chat should stay relational when the flag is off.');
+    }
 }

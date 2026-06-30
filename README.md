@@ -122,6 +122,10 @@ Controller → ChatOrchestrator
 - **Hybrid retrieval** — keyword + vector fused by Reciprocal Rank Fusion, then reranked
   and budget-bounded into a `KnowledgeContext`. Vector store abstracted (`VectorStore`):
   in-memory/FAISS-via-worker now, **Qdrant** for scale — swap by binding.
+- **Per-capability RAG** — each `ChatCapability` declares `usesKnowledge()`. Bible Study is
+  reference-heavy (always on); Pastor Chat is relational and config-gated by
+  `knowledge.capabilities.pastor_uses_knowledge` (env `KNOWLEDGE_PASTOR_RAG`, default on) so it
+  can be grounded in the sermon/KB corpus or returned to purely conversational without a code change.
 - **Failure contract** — retrieval degrades, never cascades: a vector/embedding outage
   falls back to keyword; total outage yields `EMPTY_DUE_TO_FAILURE` (distinct from a
   clean `EMPTY_DUE_TO_NO_MATCH`); corrupt chunks are dropped before they reach the prompt.

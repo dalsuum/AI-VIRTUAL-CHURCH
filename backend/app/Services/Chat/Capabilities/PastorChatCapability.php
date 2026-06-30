@@ -6,15 +6,27 @@ use App\Services\Chat\Data\ChatContext;
 use Illuminate\Container\Container;
 
 /**
- * AI Pastor: a warm, pastoral one-to-one conversation. Does not retrieve KB context by
- * default (it is relational, not reference-heavy). Honours the no-username policy by
- * never asking the prompt to address the worshipper by name.
+ * AI Pastor: a warm, pastoral one-to-one conversation. Relational, not reference-heavy, so
+ * KB retrieval is config-gated (knowledge.capabilities.pastor_uses_knowledge): on by default
+ * to ground replies in the sermon/KB corpus, but switchable off without code to restore the
+ * purely conversational behaviour. Honours the no-username policy by never asking the prompt
+ * to address the worshipper by name.
  */
 final class PastorChatCapability extends AbstractCapability
 {
     public function key(): string
     {
         return 'pastor';
+    }
+
+    public function usesKnowledge(): bool
+    {
+        // Read via the bound-config guard (mirrors languageName) so the capability stays usable
+        // in pure unit tests without a booted app, where it falls back to the relational default.
+        $container = Container::getInstance();
+
+        return $container->bound('config')
+            && (bool) $container->make('config')->get('knowledge.capabilities.pastor_uses_knowledge', true);
     }
 
     public function systemPrompt(ChatContext $context): string

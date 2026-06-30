@@ -56,6 +56,12 @@ CHURCH_API_URL = os.getenv("CHURCH_API_URL", "https://api.aivirtual.church/api")
 _ADMIN_FILTER_TTL = 300  # seconds; matches the "changes take effect within 5 minutes" promise
 _admin_filter_cache: dict[str, tuple[float, list[str]]] = {}
 
+# Phase 2b.1: how strongly to PREFER captioned sermons. Added on top of the
+# relevance score — large enough to float a captioned result into the top-5 pick
+# over similar-relevance uncaptioned ones, small enough that a clearly more relevant
+# uncaptioned sermon can still win. A preference, never a hard filter.
+_CAPTION_SCORE_BONUS = 5.0
+
 
 def is_enabled() -> bool:
     return bool(YOUTUBE_API_KEY)
@@ -687,6 +693,32 @@ class YouTubeStrategy(MusicStrategy):
 
 # ── public sermon lookup ───────────────────────────────────────────────────────
 
+def _videos_with_captions(video_ids: list[str]) -> set[str]:
+    """Phase 2b.1 — return the subset of `video_ids` that carry a caption track
+    (`contentDetails.caption == "true"`). One cheap `videos.list` call (1 quota unit
+    for up to 50 ids). Fails OPEN (returns empty set) so caption-aware ranking can
+    only ever *prefer* captioned videos — it never blocks, filters, or drops a result.
+    """
+    ids = [v for v in dict.fromkeys(video_ids) if v]
+    if not ids or not is_enabled():
+        return set()
+    try:
+        resp = requests.get(
+            "https://www.googleapis.com/youtube/v3/videos",
+            params={"key": YOUTUBE_API_KEY, "part": "contentDetails", "id": ",".join(ids[:50])},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        return {
+            item.get("id")
+            for item in resp.json().get("items", [])
+            if (item.get("contentDetails") or {}).get("caption") == "true"
+        }
+    except Exception as exc:  # noqa: BLE001 — fail open; ranking degrades to 2a behavior
+        print(f"[sermon] caption lookup failed: {exc}", flush=True)
+        return set()
+
+
 def find_sermon_video(
     mood: str,
     query: str,
@@ -835,7 +867,17 @@ def find_sermon_video(
             candidates.append((score, item))
         
         if candidates:
-            # Randomize among the top 5 highly-scored sermons to add variety 
+            # Phase 2b.1 — PREFER sermons that carry a caption track (a translatable
+            # transcript for the future subtitle step). This is a score bonus, NOT a
+            # filter: uncaptioned sermons still qualify, so the native-first behavior
+            # validated in 2a never regresses. Fails open if the lookup is unavailable.
+            captioned = _videos_with_captions([it["id"]["videoId"] for _, it in candidates])
+            if captioned:
+                candidates = [
+                    (score + (_CAPTION_SCORE_BONUS if it["id"]["videoId"] in captioned else 0.0), it)
+                    for score, it in candidates
+                ]
+            # Randomize among the top 5 highly-scored sermons to add variety
             # across different users with the same mood.
             candidates.sort(key=lambda x: x[0], reverse=True)
             best_video = random.choice(candidates[:5])[1]

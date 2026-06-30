@@ -25,8 +25,8 @@
       <form @submit.prevent="saveProfile" class="acct-form col">
         <label class="acct-label">{{ t("account.favLanguage") }}
           <select v-model="profile.fav_language" class="acct-input">
-            <option value="">—</option><option value="en">English</option>
-            <option value="my">Burmese</option><option value="td">Tedim (Zolai)</option>
+            <option value="">—</option>
+            <option v-for="(meta, code) in registry" :key="code" :value="code">{{ meta.native_name }}</option>
           </select>
         </label>
         <label class="acct-label">{{ t("account.favBibleVersion") }}
@@ -34,8 +34,8 @@
         </label>
         <label class="acct-label">{{ t("account.favWorshipLanguage") }}
           <select v-model="profile.fav_worship_language" class="acct-input">
-            <option value="">—</option><option value="en">English</option>
-            <option value="my">Burmese</option><option value="td">Tedim (Zolai)</option>
+            <option value="">—</option>
+            <option v-for="(meta, code) in registry" :key="code" :value="code">{{ meta.native_name }}</option>
           </select>
         </label>
         <label class="acct-label">{{ t("account.spiritualGoals") }}
@@ -132,8 +132,13 @@
 import { ref, computed, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { api } from "../composables/useApi";
+import { getRegistry } from "../i18n";
 
 const { t, te } = useI18n();
+
+// Enabled-locale registry (loaded from GET /api/languages at startup) — the single
+// source for every language selector, so this dropdown stays in sync with the app.
+const registry = getRegistry();
 
 const emit = defineEmits(["close", "nameChanged"]);
 

@@ -236,6 +236,22 @@ language, so ingest the codes that are real chat languages (a translation-only c
 `kjv` will index but never be retrieved). Embedding runs on the local worker (~66 verses/s →
 ~8 min per translation); `bible` outranks `sermon` via `source_priority`.
 
+### RAG acceptance / regression eval
+
+`knowledge:eval` is the "unit tests for retrieval" — it runs real queries through the live
+`RetrievalOrchestrator` and asserts retrieval **accuracy**, **citation** correctness and
+**language** correctness, exiting non-zero on any regression so a deploy can gate on it:
+
+```bash
+php artisan knowledge:eval            # all conversation languages with data present
+php artisan knowledge:eval --lang=my  # one language;  --k=10 to widen the window
+```
+
+Two case kinds: near-verbatim **English semantic** questions (expected book+chapter must
+surface), and per-language **anchor roundtrip** — the verse's own text (read from the exported
+`bible_<lang>.json`, never transcribed) must return that exact reference with no
+cross-language leakage. Languages without ingested data are skipped, not failed.
+
 ### Learner vocabulary (multilingual, AI-generated)
 
 Separate from the curated Zolai/Chin reference dictionary (`vocabularies` table — left

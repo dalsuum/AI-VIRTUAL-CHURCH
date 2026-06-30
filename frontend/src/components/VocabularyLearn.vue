@@ -181,10 +181,13 @@ const filtered = computed(() => {
 });
 
 // Concept-card gloss: the selected curated word when browsing a Chin/Zo tongue,
-// otherwise the Zolai seed (AI words aren't loaded until a concept is opened).
+// the Zolai seed for English. AI languages get no grid gloss — their word is
+// generated only when a concept is opened, so showing the Zolai seed here would
+// misleadingly look like the language selector is stuck on Tedim.
 function conceptGloss(concept) {
   const lang = currentLang.value;
-  if (lang.source === "curated" && lang.key !== "english") {
+  if (lang.source === "ai") return "";
+  if (lang.key !== "english") {
     return concept[lang.column] || concept.zolai || "";
   }
   return concept.zolai || "";

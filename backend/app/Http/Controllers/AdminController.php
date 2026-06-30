@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Jobs\DispatchServiceJob;
+use App\Models\AiUsageLedger;
 use App\Models\ChatSession;
 use App\Models\CrisisIntercept;
 use App\Models\FinancialLedger;
@@ -12,6 +13,7 @@ use App\Models\ServiceSession;
 use App\Models\ServiceSessionMeta;
 use App\Models\Setting;
 use App\Models\Testimony;
+use App\Models\UsageLog;
 use App\Models\User;
 use App\Http\Requests\UpdateSettingsRequest;
 use App\Enums\LedgerType;
@@ -94,6 +96,77 @@ class AdminController extends Controller
             // Removable special-day features (MV + Live Sticker): surface their
             // visitor render traffic, but only while the admin has them enabled.
             'features' => $this->featureUsage(),
+        ]);
+    }
+
+    /**
+     * Live AI-usage monitor (month-to-date). Two read-only views:
+     *  - `modules`  : token-metered LLM usage from ai_usage_ledger, with an estimated
+     *                 USD cost (tokens × config/inference.php list price). Estimate only.
+     *  - `activity` : per-service operational counts from usage_logs (calls, today,
+     *                 failures, avg latency). No dollar claim — these are request logs.
+     * Media APIs (Suno/RunPod/D-ID) aren't token-metered here, so they don't appear.
+     */
+    public function aiUsage(): JsonResponse
+    {
+        PermissionService::require(request()->user(), 'dashboard.view');
+
+        $monthStart = now()->startOfMonth();
+        $todayStart = now()->startOfDay();
+        $pricing    = config('inference.pricing', ['models' => [], 'modules' => []]);
+
+        $modules   = [];
+        $totalCost = 0.0;
+        $ledger = AiUsageLedger::where('created_at', '>=', $monthStart)
+            ->selectRaw('module, COUNT(*) calls,
+                COALESCE(SUM(prompt_tokens), 0) prompt_tokens,
+                COALESCE(SUM(completion_tokens), 0) completion_tokens')
+            ->groupBy('module')->get();
+        foreach ($ledger as $row) {
+            $model = $pricing['modules'][$row->module] ?? null;
+            $price = $model ? ($pricing['models'][$model] ?? null) : null;
+            $cost  = $price
+                ? ($row->prompt_tokens / 1e6 * $price['in']) + ($row->completion_tokens / 1e6 * $price['out'])
+                : null;
+            if ($cost !== null) {
+                $totalCost += $cost;
+            }
+            $modules[] = [
+                'module'            => $row->module,
+                'model'             => $model,
+                'calls'             => (int) $row->calls,
+                'prompt_tokens'     => (int) $row->prompt_tokens,
+                'completion_tokens' => (int) $row->completion_tokens,
+                'est_cost_usd'      => $cost !== null ? round($cost, 4) : null,
+            ];
+        }
+
+        $activity = UsageLog::where('created_at', '>=', $monthStart)
+            ->selectRaw("service, COUNT(*) calls,
+                SUM(created_at >= ?) today,
+                SUM(status <> 'ok') failures,
+                ROUND(AVG(latency_ms)) avg_latency_ms", [$todayStart])
+            ->groupBy('service')->orderByDesc('calls')->get()
+            ->map(fn ($r) => [
+                'service'        => $r->service,
+                'calls'          => (int) $r->calls,
+                'today'          => (int) $r->today,
+                'failures'       => (int) $r->failures,
+                'avg_latency_ms' => $r->avg_latency_ms !== null ? (int) $r->avg_latency_ms : null,
+            ]);
+
+        return response()->json([
+            'period'   => ['from' => $monthStart->toDateString(), 'to' => now()->toDateString()],
+            'modules'  => $modules,
+            'activity' => $activity,
+            'totals'   => [
+                'est_cost_usd'      => round($totalCost, 2),
+                'prompt_tokens'     => (int) array_sum(array_column($modules, 'prompt_tokens')),
+                'completion_tokens' => (int) array_sum(array_column($modules, 'completion_tokens')),
+                'calls'             => (int) $activity->sum('calls'),
+                'failures'          => (int) $activity->sum('failures'),
+            ],
+            'note' => 'Estimated from token counts × list prices; authoritative bills live on each provider dashboard. Media APIs (Suno/RunPod/D-ID) are not metered here.',
         ]);
     }
 

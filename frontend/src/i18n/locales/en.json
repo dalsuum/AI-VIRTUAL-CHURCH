@@ -650,6 +650,7 @@
       "chooseTime": "Please choose a date and time for your service.",
       "futureTime": "Please choose a time in the future.",
       "customMoodLetters": "Your custom feeling must be a single word using only letters.",
+      "languageUnavailable": "Services aren't available in {lang} yet. Please switch to a supported language to continue.",
       "generic": "Something went wrong. Please try again."
     }
   }

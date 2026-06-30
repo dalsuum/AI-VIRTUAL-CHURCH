@@ -59,6 +59,7 @@ const TABS = [
   { name: "grammar-review", label: "Language Review",  can: () => can("language_review.view"), load: () => { grData.value = null; loadGrammarReview(); } },
   { name: "system",         label: "System",           can: () => can("system.view"),          load: () => { loadUpdateStatus(); scheduleUpdatePoll(); loadVoiceboxStatus(); scheduleVoiceboxPoll(); } },
   { name: "freeze",         label: "Freeze Monitor",   can: () => isAdminUser.value,           load: () => { loadFreeze(); scheduleFreezePoll(); } },
+  { name: "ai-usage",       label: "AI Usage",         can: () => isAdminUser.value,           load: () => { loadAiUsage(); scheduleAiUsagePoll(); } },
   { name: "knowledge",      label: "Knowledge",         can: () => can("knowledge.view"),       load: () => { loadKnowledgeStatus(); loadKopJobs(); scheduleKopJobsPoll(); loadKnowledgeLibrary(); } },
 ];
 
@@ -421,6 +422,7 @@ function show(name) {
   if (name !== "system")         { clearInterval(updateTimer); clearInterval(vbTimer); }
   if (name !== "voice-training") { clearInterval(voiceTrainingTimer); }
   if (name !== "freeze")         { clearInterval(freezeTimer); }
+  if (name !== "ai-usage")       { clearInterval(aiUsageTimer); }
   tab.value    = name;
   notice.value = "";
   const t = TABS.find(t => t.name === name);
@@ -1239,6 +1241,18 @@ function scheduleFreezePoll() {
   freezeTimer = setInterval(loadFreeze, 10000);  // live refresh every 10s
 }
 
+const aiUsage      = ref(null);   // full /admin/ai-usage payload (month-to-date)
+const aiUsageError = ref("");
+let   aiUsageTimer = null;
+async function loadAiUsage() {
+  try { aiUsage.value = await api.adminAiUsage(); aiUsageError.value = ""; }
+  catch (e) { aiUsageError.value = e?.data?.message || "Could not load AI usage."; }
+}
+function scheduleAiUsagePoll() {
+  clearInterval(aiUsageTimer);
+  aiUsageTimer = setInterval(loadAiUsage, 20000);  // live refresh every 20s
+}
+
 // ─── Knowledge Operations Platform — dashboard ────────────────────────────────
 const knowledgeStatus = ref(null);   // /admin/knowledge/health payload
 const knowledgeError  = ref("");
@@ -1746,6 +1760,7 @@ onUnmounted(() => {
   clearInterval(vbTimer);
   clearInterval(voiceTrainingTimer);
   clearInterval(freezeTimer);
+  clearInterval(aiUsageTimer);
 });
 </script>
 
@@ -3778,6 +3793,67 @@ onUnmounted(() => {
           </div>
         </template>
         <p v-else-if="!freezeError" class="fz-loading">Loading freeze status…</p>
+      </section>
+
+      <!-- AI Usage + estimated cost monitor -->
+      <section v-else-if="tab === 'ai-usage' && isAdminUser" class="freeze-page">
+        <div class="fz-head">
+          <h2>AI Usage</h2>
+          <span class="fz-live"><span class="fz-dot on"></span> live · refreshes every 20s</span>
+        </div>
+        <p v-if="aiUsageError" class="fz-error">{{ aiUsageError }}</p>
+
+        <template v-if="aiUsage">
+          <p class="fz-loading" style="margin:0 0 .75rem">Month-to-date · {{ aiUsage.period.from }} → {{ aiUsage.period.to }}</p>
+
+          <!-- Totals -->
+          <div class="fz-cards">
+            <div class="fz-card"><span class="fz-k">Est. cost</span><span class="fz-v">{{ fmtMoney(aiUsage.totals.est_cost_usd, 'usd') }}</span><span class="fz-s">estimated, list price</span></div>
+            <div class="fz-card"><span class="fz-k">Calls</span><span class="fz-v">{{ aiUsage.totals.calls.toLocaleString() }}</span><span class="fz-s">logged this month</span></div>
+            <div class="fz-card"><span class="fz-k">Failures</span><span class="fz-v" :class="aiUsage.totals.failures ? 'bad' : 'ok'">{{ aiUsage.totals.failures }}</span><span class="fz-s">non-ok status</span></div>
+            <div class="fz-card"><span class="fz-k">Prompt tokens</span><span class="fz-v">{{ aiUsage.totals.prompt_tokens.toLocaleString() }}</span><span class="fz-s">metered LLM input</span></div>
+            <div class="fz-card"><span class="fz-k">Output tokens</span><span class="fz-v">{{ aiUsage.totals.completion_tokens.toLocaleString() }}</span><span class="fz-s">metered LLM output</span></div>
+          </div>
+
+          <div class="fz-tables">
+            <div class="fz-tbl">
+              <h3>Cost by module (estimated)</h3>
+              <table class="grid">
+                <thead><tr><th>Module</th><th>Model</th><th>Calls</th><th>Prompt</th><th>Output</th><th>Est. $</th></tr></thead>
+                <tbody>
+                  <tr v-for="m in aiUsage.modules" :key="m.module">
+                    <td>{{ m.module }}</td>
+                    <td><small>{{ m.model || '—' }}</small></td>
+                    <td>{{ m.calls.toLocaleString() }}</td>
+                    <td>{{ m.prompt_tokens.toLocaleString() }}</td>
+                    <td>{{ m.completion_tokens.toLocaleString() }}</td>
+                    <td>{{ m.est_cost_usd != null ? fmtMoney(m.est_cost_usd, 'usd') : '—' }}</td>
+                  </tr>
+                  <tr v-if="!aiUsage.modules.length"><td colspan="6" class="empty">No metered LLM usage this month.</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="fz-tbl">
+              <h3>Activity by service</h3>
+              <table class="grid">
+                <thead><tr><th>Service</th><th>Calls</th><th>Today</th><th>Fails</th><th>Avg latency</th></tr></thead>
+                <tbody>
+                  <tr v-for="a in aiUsage.activity" :key="a.service">
+                    <td>{{ a.service }}</td>
+                    <td>{{ a.calls.toLocaleString() }}</td>
+                    <td>{{ a.today }}</td>
+                    <td><span :class="a.failures ? 'fz-bad' : ''">{{ a.failures }}</span></td>
+                    <td>{{ a.avg_latency_ms != null ? a.avg_latency_ms + ' ms' : '—' }}</td>
+                  </tr>
+                  <tr v-if="!aiUsage.activity.length"><td colspan="5" class="empty">No request activity this month.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <p class="fz-loading" style="margin-top:.75rem">{{ aiUsage.note }}</p>
+        </template>
+        <p v-else-if="!aiUsageError" class="fz-loading">Loading AI usage…</p>
       </section>
 
       <!-- Knowledge Operations Platform — Dashboard -->

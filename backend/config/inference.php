@@ -58,4 +58,22 @@ return [
         'max'        => (int) env('INFERENCE_RETRY_MAX', 2),
         'backoff_ms' => (int) env('INFERENCE_RETRY_BACKOFF_MS', 250),
     ],
+
+    /*
+     * Estimated-cost pricing for the admin AI-usage monitor (GET /admin/ai-usage).
+     * `models`  — list price in USD per 1M tokens, [in => input, out => output].
+     * `modules` — maps an ai_usage_ledger.module to the model it runs on.
+     * Estimates only: authoritative bills live on each provider's dashboard, and
+     * media APIs (Suno/RunPod/D-ID) are not token-metered here. Verify and extend
+     * `models` against each provider's pricing page when you add a module.
+     */
+    'pricing' => [
+        'models' => [
+            'anthropic/claude-sonnet-4-6' => ['in' => 3.0, 'out' => 15.0],
+            'openai/gpt-oss-120b:free'    => ['in' => 0.0, 'out' => 0.0],
+        ],
+        'modules' => [
+            'bible_study' => env('BIBLE_STUDY_LLM_MODEL', 'anthropic/claude-sonnet-4-6'),
+        ],
+    ],
 ];

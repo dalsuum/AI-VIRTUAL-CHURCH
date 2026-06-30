@@ -435,6 +435,8 @@ moderation, and the admin console.
 | **Myanmar** — local Ollama/FastAPI client used by legacy localization/admin paths | [BurmeseLlmService.php](backend/app/Services/BurmeseLlmService.php) |
 | **Myanmar/Tedim localization jobs** | Legacy compatibility only. New services generate directly in `my`/`td`; `WebhookController` no longer dispatches post-generation localization jobs. |
 
+**Admin Console → AI Usage (live monitor).** A read-only, admin-only tab that polls `GET /api/admin/ai-usage` every 20s and shows month-to-date AI activity at a glance: token-metered LLM usage per module from `ai_usage_ledger` (calls, prompt/output tokens) with an **estimated** USD cost, plus per-service operational counts from `usage_logs` (calls, today, failures, avg latency). Cost is estimated from token counts × per-model list price in [`config/inference.php`](backend/config/inference.php) (`pricing.models` + `pricing.modules`) — authoritative bills live on each provider's dashboard, and media APIs (Suno/RunPod/D-ID) are not token-metered here so they don't appear. [`AdminController::aiUsage`](backend/app/Http/Controllers/AdminController.php) + the `ai-usage` tab in [AdminConsole.vue](frontend/src/components/AdminConsole.vue).
+
 ### Workers (Python / Celery)
 
 A single Celery app with one Redis broker and **named queues that mirror the work**:

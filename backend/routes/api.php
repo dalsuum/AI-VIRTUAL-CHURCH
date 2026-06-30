@@ -404,6 +404,9 @@ Route::middleware(['auth:sanctum', 'account.usable'])->group(function () {
         // Read-only freeze-harness monitor for the admin console.
         Route::get('/freeze/status',                   [AdminController::class, 'freezeStatus']);
 
+        // Read-only live AI usage + estimated-cost monitor.
+        Route::get('/ai-usage',                        [AdminController::class, 'aiUsage']);
+
         // Knowledge Operations Platform — read-only health dashboard.
         Route::get('/knowledge/health',                [AdminController::class, 'knowledgeHealth']);
 

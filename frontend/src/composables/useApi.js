@@ -434,6 +434,7 @@ export const api = {
 
   // Admin console (requires an is_admin account).
   adminDashboard: () => request("/admin/dashboard"),
+  adminAiUsage: () => request("/admin/ai-usage"),
   adminFreezeStatus: () => request("/admin/freeze/status"),
   adminKnowledgeHealth: () => request("/admin/knowledge/health"),
   // Multipart upload — cannot use the JSON request() helper.

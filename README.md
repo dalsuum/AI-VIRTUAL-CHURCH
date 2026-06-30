@@ -130,6 +130,11 @@ Controller → ChatOrchestrator
   falls back to keyword; total outage yields `EMPTY_DUE_TO_FAILURE` (distinct from a
   clean `EMPTY_DUE_TO_NO_MATCH`); corrupt chunks are dropped before they reach the prompt.
   *Vector failure never becomes chat failure.*
+- **Lazy corpora** — a configured corpus whose Qdrant collection isn't provisioned yet is
+  skipped (no embedding/keyword/vector call, no false `degraded`), via a cached
+  `ManagesCollections::hasCollection()`. Newly-ingested collections light up automatically
+  within the cache TTL. Fails open: if the collection listing can't be fetched, retrieval
+  still runs so a genuine outage surfaces as `degraded`/`failed`, not a clean no-match.
 - **Guardrails** — composable chain with per-capability enable/disable and policy in
   `config/guardrails.php` (not in guard code). Output guards thread/sanitise text;
   validators short-circuit. Knowledge-backed surfaces can fail closed when retrieval is

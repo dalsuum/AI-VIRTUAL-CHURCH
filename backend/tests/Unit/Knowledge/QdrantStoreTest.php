@@ -80,4 +80,27 @@ class QdrantStoreTest extends TestCase
 
         $this->assertSame([], $hits, 'a keyword backend error degrades to empty, never throws');
     }
+
+    public function test_has_collection_reflects_live_listing(): void
+    {
+        $http = new Http();
+        $http->fake(['*/collections' => $http->response([
+            'result' => ['collections' => [['name' => 'sermon'], ['name' => 'bible']]],
+        ], 200)]);
+
+        $store = new QdrantVectorStore($http, 'http://qd:6333');
+
+        $this->assertTrue($store->hasCollection('sermon'));
+        $this->assertFalse($store->hasCollection('prayer'), 'an unprovisioned corpus is reported absent so retrieval can skip it');
+    }
+
+    public function test_has_collection_fails_open_when_listing_unavailable(): void
+    {
+        $http = new Http();
+        $http->fake(['*/collections' => $http->response('boom', 500)]);
+
+        // Listing failed → existence unknown → report present so retrieval still runs and a real
+        // outage surfaces as degraded/failed, not as a clean no-match that hides the problem.
+        $this->assertTrue((new QdrantVectorStore($http, 'http://qd:6333'))->hasCollection('sermon'));
+    }
 }

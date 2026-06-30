@@ -8,6 +8,7 @@ use App\Services\Knowledge\Data\Chunk;
 use App\Services\Knowledge\Data\ChunkMetadata;
 use App\Services\Knowledge\Data\RetrievedChunk;
 use Illuminate\Http\Client\Factory as Http;
+use Illuminate\Support\Facades\Cache;
 
 /**
  * Production vector backend (Phase 2). Stores each chunk as a Qdrant point: vector + a payload
@@ -19,6 +20,9 @@ use Illuminate\Http\Client\Factory as Http;
  */
 final class QdrantVectorStore implements VectorStore, ManagesCollections
 {
+    private const COLLECTIONS_CACHE_KEY = 'knowledge.qdrant.collections';
+    private const COLLECTIONS_CACHE_TTL = 60; // seconds — short, so newly-ingested corpora appear fast
+
     public function __construct(
         private readonly Http $http,
         private readonly string $baseUrl,
@@ -44,6 +48,53 @@ final class QdrantVectorStore implements VectorStore, ManagesCollections
             'field_name'   => 'text',
             'field_schema' => 'text',
         ]);
+
+        // A freshly-created corpus must light up immediately. Cache failure must never break ingest.
+        try {
+            Cache::forget(self::COLLECTIONS_CACHE_KEY);
+        } catch (\Throwable) { /* no cache context (e.g. unit test) → next read fetches live */ }
+    }
+
+    /**
+     * Whether the collection exists, cached briefly to bound the API calls (one GET /collections
+     * per TTL, not one per corpus per turn). Fails OPEN: if the listing can't be fetched we report
+     * "present" so retrieval runs and a real outage surfaces as degraded/failed, not a clean miss.
+     */
+    public function hasCollection(string $collection): bool
+    {
+        $live = $this->liveCollections();
+
+        return $live === null || in_array($collection, $live, true);
+    }
+
+    /** @return list<string>|null Existing collection names; null when the listing couldn't be fetched. */
+    private function liveCollections(): ?array
+    {
+        try {
+            $cached = Cache::get(self::COLLECTIONS_CACHE_KEY);
+            if (is_array($cached)) {
+                return $cached;
+            }
+        } catch (\Throwable) { /* no cache context → fall through to a live listing */ }
+
+        try {
+            $req = $this->http->timeout($this->timeout);
+            if ($this->apiKey) {
+                $req = $req->withHeaders(['api-key' => $this->apiKey]);
+            }
+            $collections = $req->get("{$this->baseUrl}/collections")->throw()->json('result.collections') ?? [];
+            $names = array_values(array_filter(array_map(
+                static fn ($c) => is_array($c) ? ($c['name'] ?? null) : null,
+                $collections,
+            )));
+            try {
+                Cache::put(self::COLLECTIONS_CACHE_KEY, $names, self::COLLECTIONS_CACHE_TTL);
+            } catch (\Throwable) { /* cache failure must never break retrieval */ }
+
+            return $names;
+        } catch (\Throwable) {
+            return null; // unknown — do NOT cache; callers fail open
+        }
     }
 
     private function exists(string $collection): bool

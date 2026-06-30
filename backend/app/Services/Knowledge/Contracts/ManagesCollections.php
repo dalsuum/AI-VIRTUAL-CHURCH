@@ -12,4 +12,12 @@ interface ManagesCollections
 {
     /** Idempotently create the collection (vector size = $dimensions) + a text payload index. */
     public function ensureCollection(string $collection, int $dimensions): void;
+
+    /**
+     * Whether the collection currently exists, so retrieval can skip not-yet-ingested corpora
+     * instead of issuing failing requests. Implementations SHOULD cache and MUST fail open
+     * (return true when existence can't be determined) so a backend outage still flows through
+     * the normal degraded/failed path rather than masquerading as a clean no-match.
+     */
+    public function hasCollection(string $collection): bool;
 }

@@ -154,4 +154,37 @@ class RetrievalTest extends TestCase
         $this->assertNotEmpty($ctx->snippets);
         $this->assertSame('John 3:16', $ctx->snippets[0]['source'], 'most relevant verse ranked first');
     }
+
+    public function test_absent_collection_is_skipped_without_any_backend_calls(): void
+    {
+        // A store that owns its collections and reports this corpus absent.
+        $vectors = new class implements \App\Services\Knowledge\Contracts\VectorStore, \App\Services\Knowledge\Contracts\ManagesCollections {
+            public function upsert(string $collection, array $chunks): void {}
+            public function search(string $collection, array $vector, int $k, array $filters = []): array
+            {
+                throw new \RuntimeException('vector search must not run for an absent collection');
+            }
+            public function delete(string $collection, array $ids): void {}
+            public function ensureCollection(string $collection, int $dimensions): void {}
+            public function hasCollection(string $collection): bool { return false; }
+        };
+        // Keyword + embeddings blow up if touched — proving the corpus is skipped before any call.
+        $keyword = new class implements \App\Services\Knowledge\Contracts\KeywordIndex {
+            public function search(string $collection, string $query, int $k, array $filters = []): array
+            {
+                throw new \RuntimeException('keyword search must not run for an absent collection');
+            }
+        };
+        $embeddings = new class implements \App\Services\Knowledge\Contracts\EmbeddingService {
+            public function embed(array $texts): array { throw new \RuntimeException('embedding must not run for an absent collection'); }
+            public function dimensions(): int { return 8; }
+            public function model(): string { return 'spy'; }
+        };
+
+        $result = (new HybridCorpusRetriever('prayer', $keyword, $vectors, $embeddings, new ResultMerger(60)))
+            ->retrieve('any query', 5, ['language' => 'en']);
+
+        $this->assertSame([], $result->chunks);
+        $this->assertFalse($result->degraded(), 'a not-yet-ingested corpus is a clean skip, not a degraded branch');
+    }
 }

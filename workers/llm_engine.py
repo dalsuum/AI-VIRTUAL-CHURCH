@@ -1722,6 +1722,47 @@ def build_intake_plan(*, user_name: str | None, mood: str, prayer_text: str | No
     return plan
 
 
+# World languages (those in _LANGUAGE_NAMES) generate prose directly on the cloud
+# chat model with a language-law prompt; unlike my/td they had no output guard, so a
+# weak/free model that drifted to the wrong language or returned an English refusal
+# had its output posted verbatim (issue #50). These guard that output. Non-Latin
+# ranges use \u escapes in NON-raw strings so Python resolves them to literal chars.
+_GUARD_SCRIPTS = {
+    "ja": "぀-ヿ㐀-鿿",   # kana + han
+    "ko": "가-힯",                # hangul
+    "zh-CN": "㐀-鿿",             # han
+    "hi": "ऀ-ॿ",                # devanagari
+    "ta": "஀-௿",                # tamil
+    "th": "฀-๿",                # thai
+    "ar": "؀-ۿ",                # arabic
+    "he": "֐-׿",                # hebrew
+}
+_REFUSAL_MARKERS = (
+    "i'm sorry", "i am sorry", "i cannot", "i can't", "i can not",
+    "i'm unable", "i am unable", "cannot fulfill", "can't fulfill",
+    "as an ai", "i won't", "i will not",
+)
+
+
+def _text_in_target_language(text: str, language: str) -> bool:
+    """Accept-or-reject guard for world-language LLM prose (issue #50).
+
+    Returns False for an obvious English refusal, or for a non-Latin language whose
+    own script is absent from the output (e.g. Spanish returned for Tamil). Languages
+    NOT in _LANGUAGE_NAMES — en/my/td — have their own paths and pass through (True),
+    so this never double-guards them. Callers serve their existing _fallback_* on False.
+    """
+    if language not in _LANGUAGE_NAMES:
+        return True
+    low = (text or "").lower()
+    if any(marker in low for marker in _REFUSAL_MARKERS):
+        return False
+    ranges = _GUARD_SCRIPTS.get(language)
+    if ranges and re.search("[" + ranges + "]", text or "") is None:
+        return False
+    return True
+
+
 def generate_welcome(*, user_name: str | None, mood: str, language: str = "en") -> str:
     """
     A short "welcome back" greeting shown on the countdown screen while the rest of
@@ -1743,6 +1784,9 @@ def generate_welcome(*, user_name: str | None, mood: str, language: str = "en") 
         result = _strip_formatting(_complete(system, user, max_tokens=180, language=language))
         if language == "my" and not _is_my_plausible(result, min_myanmar_chars=20):
             print(f"[llm] Burmese welcome too short/garbled ({len(result)} chars), using fallback", flush=True)
+            return _ensure_exact_name(_fallback_welcome(user_name, mood, language), user_name)
+        if not _text_in_target_language(result, language):
+            print(f"[llm] {language} welcome failed language/refusal guard, using fallback", flush=True)
             return _ensure_exact_name(_fallback_welcome(user_name, mood, language), user_name)
         return _ensure_exact_name(result, user_name)
     except Exception as exc:
@@ -1784,6 +1828,9 @@ def generate_opening_prayer(*, user_name: str | None, mood: str, prayer_text: st
         result = _strip_formatting(_complete(system, user, max_tokens=500, language=language))
         if language == "my" and not _is_my_plausible(result):
             print(f"[llm] Burmese opening prayer too short/garbled ({len(result)} chars), using corpus fallback", flush=True)
+            return _ensure_exact_name(_fallback_opening_prayer(user_name, mood, language), user_name)
+        if not _text_in_target_language(result, language):
+            print(f"[llm] {language} opening prayer failed language/refusal guard, using fallback", flush=True)
             return _ensure_exact_name(_fallback_opening_prayer(user_name, mood, language), user_name)
         return _ensure_exact_name(result, user_name)
     except Exception as exc:
@@ -1838,6 +1885,9 @@ def generate_sermon(*, user_name: str | None, mood: str, scripture_ref: str, tar
         if language == "my" and not _is_my_plausible(text, min_myanmar_chars=80):
             print(f"[llm] Burmese sermon too short/garbled ({len(text)} chars), using corpus fallback", flush=True)
             return _fallback_sermon(mood, scripture_ref, language)
+        if not _text_in_target_language(text, language):
+            print(f"[llm] {language} sermon failed language/refusal guard, using fallback", flush=True)
+            return _fallback_sermon(mood, scripture_ref, language)
     except Exception as exc:
         print(f"[llm] {language} sermon fallback: {exc}", flush=True)
         return _fallback_sermon(mood, scripture_ref, language)
@@ -1862,6 +1912,9 @@ def generate_benediction(*, user_name: str | None, mood: str, language: str = "e
         result = _strip_formatting(_complete(system, user, max_tokens=250, language=language))
         if language == "my" and not _is_my_plausible(result, min_myanmar_chars=30):
             print(f"[llm] Burmese benediction too short/garbled ({len(result)} chars), using corpus fallback", flush=True)
+            return _ensure_exact_name(_fallback_benediction(user_name, mood, language), user_name)
+        if not _text_in_target_language(result, language):
+            print(f"[llm] {language} benediction failed language/refusal guard, using fallback", flush=True)
             return _ensure_exact_name(_fallback_benediction(user_name, mood, language), user_name)
         return _ensure_exact_name(result, user_name)
     except Exception as exc:

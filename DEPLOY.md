@@ -414,6 +414,38 @@ sudo certbot --nginx -d example.com -d www.example.com -d api.example.com
 
 Certbot installs a renewal timer automatically; verify with `sudo certbot renew --dry-run`.
 
+### PHP-FPM pool sizing (SSE streams)
+
+The AI Bible Study and Pastor Chat **live streams are Server-Sent Events served by
+PHP-FPM**, so each open stream pins one FPM worker for the whole connection (up to
+`STUDY_STREAM_MAX_SECONDS`, default 600s) rather than the tens of milliseconds a normal
+request takes. The stock `pm.max_children = 5` is therefore far too small: a few
+concurrent discussions can hold every worker and starve *all* other requests
+site-wide (this presents as general slowness, and new streams can't get a worker →
+the client falls into a "Reconnecting…" loop). Each worker is ~40 MB, so a droplet
+with ≥2 GB RAM has ample room to raise the ceiling.
+
+Edit `/etc/php/8.3/fpm/pool.d/www.conf` (this file is **not** in the repo — it lives
+on the box):
+
+```ini
+pm = dynamic
+pm.max_children = 20        ; hard ceiling — main lever; ~20 × 40 MB ≈ 800 MB worst case
+pm.start_servers = 4
+pm.min_spare_servers = 3
+pm.max_spare_servers = 8
+```
+
+Apply with a **graceful** reload (finishes in-flight requests, drops nothing):
+
+```bash
+sudo systemctl reload php8.3-fpm
+```
+
+Tune `pm.max_children` to `min(RAM_for_php / 40 MB, expected concurrent streams +
+headroom for normal traffic)`; the per-user `STUDY_MAX_CONCURRENT` cap (default 2)
+already bounds how many streams any single worshipper can open.
+
 ---
 
 ## 11. systemd units

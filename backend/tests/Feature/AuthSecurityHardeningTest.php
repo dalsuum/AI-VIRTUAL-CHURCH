@@ -47,6 +47,18 @@ class AuthSecurityHardeningTest extends TestCase
         $this->assertDatabaseMissing('users', ['email' => 'real-person@example.com']);
     }
 
+    public function test_unauthenticated_non_json_request_gets_401_not_login_redirect(): void
+    {
+        // SSE clients (EventSource) send Accept: text/event-stream, not JSON. The
+        // framework's default redirects unauthenticated non-JSON requests to the
+        // `login` route, which doesn't exist here → 500, re-triggering the client's
+        // reconnect loop. It must be a clean 401 instead.
+        $this->assertGuest();
+
+        $this->get('/api/me', ['Accept' => 'text/event-stream'])
+            ->assertStatus(401);
+    }
+
     public function test_service_resume_token_is_scoped_and_does_not_log_in_owner(): void
     {
         $user = $this->makeUser();

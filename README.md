@@ -514,7 +514,7 @@ service one stage at a time.
 | [MusicPlayer.vue](frontend/src/components/MusicPlayer.vue) | Plays the worship track: stored audio, or an embedded YouTube `<iframe>`. **LRC synced lyrics:** when the `music_asset` carries a `timings` array, the hymn verses render line-by-line and the active line is highlighted + smooth-scrolled in time with the audio (binary-search on the native `timeupdate` event, no polling); without `timings` it shows the plain verse block. |
 | [OfferingForm.vue](frontend/src/components/OfferingForm.vue) | Stripe PaymentIntent confirmation. |
 | [TestimonyWall.vue](frontend/src/components/TestimonyWall.vue) | The approved testimony wall + submit-your-own. |
-| [AdminConsole.vue](frontend/src/components/AdminConsole.vue) | Permission-driven tab navigation (TABS registry — add one entry to wire a new tab's nav button, permission check, and data loader). Tabs: Dashboard, Services, Donors, Testimonies, Users, Prayer Requests, Settings, AI Music Pool, Voice Studio, Voice Training, Permissions, Language Review, System. Non-admin staff see only the tabs permitted by the Permissions matrix; settings are read-only for non-admins. |
+| [AdminConsole.vue](frontend/src/components/AdminConsole.vue) | Permission-driven tab navigation (TABS registry — add one entry to wire a new tab's nav button, permission check, and data loader). Tabs: Dashboard, Services, Donors, Testimonies, Users, Prayer Requests, Settings, AI Music Pool, Voice Studio, Voice Training, Permissions, Language Review, System. Non-admin staff see only the tabs permitted by the Permissions matrix; settings are read-only for non-admins. The console header carries only the **Admin Console** title — sign-out and the light/dark theme toggle come from the **global app header**, so the duplicate copies once rendered here were removed. |
 | [useApi.js](frontend/src/composables/useApi.js) / [useTheme.js](frontend/src/composables/useTheme.js) | API client + light/dark theme. Mutating requests auto-recover from a stale CSRF token: on a `419` the client refreshes the `XSRF-TOKEN` cookie and retries once, so admin writes (e.g. deleting an ad) don't fail after a session rotates in a long-open tab. |
 | [BottomNav.vue](frontend/src/components/layout/BottomNav.vue) | **Mobile-first primary navigation** — a fixed bottom tab bar shown only on phones (≤640px; `display:none` above that, where the topbar nav stays primary, so the two navigation systems never coexist — see [LAYOUT_CONTRACT.md](frontend/src/components/layout/LAYOUT_CONTRACT.md) rule 8). Four primary tabs (**Home / Songs / Bible / Study**) plus a **"More" bottom sheet** that surfaces every secondary, permission-gated destination (Worship Radio, Pastor Chat, Spiritual Journey, Vocabulary, Father's Day, Live Stickers, Account, Admin) and the auth actions (Login/Register or Logout). Rendered once by `AppLayout`; page content reserves `--bottom-nav-h` of bottom padding on phones so nothing hides behind the bar. The smoke suite asserts exactly one nav with five tabs at 390px and hidden at 1200px. |
 | [AppIcon.vue](frontend/src/components/AppIcon.vue) / [icons.js](frontend/src/icons.js) | **Iconify icon system — no emojis in the UI.** Every icon is a scalable SVG from the Material Design Icons (`mdi`) set, registered **offline** (no runtime Iconify-API calls) from [icons.data.json](frontend/src/icons.data.json) — a minimal subset of only the icons the app uses, regenerated with `npm run icons:gen` ([scripts/gen-icons.mjs](frontend/scripts/gen-icons.mjs)) so the bundle never carries the full ~7000-icon collection. Use as `<AppIcon name="mdi:home" />`. |
@@ -826,7 +826,16 @@ client dedupes/orders on `seq`, so reconnect replay is idempotent. The endpoint 
 Symfony `StreamedResponse`, so any global response-decorating middleware must be
 StreamedResponse-safe — e.g. `SetLocale` sets its cookie via `$response->headers->setCookie()`,
 **not** the `withCookie()` macro (which only exists on `Illuminate\Http\Response` and would
-500 every stream open, trapping the client in an endless "Reconnecting…" loop).
+500 every stream open, trapping the client in an endless "Reconnecting…" loop). **Unauthenticated
+API/SSE requests return a clean `401` JSON, never a login redirect.** [`bootstrap/app.php`](backend/bootstrap/app.php)
+overrides `redirectGuestsTo()` to return `null` for `api/*` (this API-only backend has no `login`
+route, so the framework default would throw *Route [login] not defined* → 500) and renders
+`AuthenticationException` as `401` JSON regardless of the `Accept` header — so an SSE reconnect on
+an expired session surfaces a clean auth failure instead of a mid-stream 500 that re-triggers the
+client's reconnect loop (EventSource sends `Accept: text/event-stream`, not JSON, so without this it
+took the non-JSON redirect path). Regression-covered by
+[`AuthSecurityHardeningTest`](backend/tests/Feature/AuthSecurityHardeningTest.php), which drives an
+unauthenticated `Accept: text/event-stream` request and asserts `401` (was 500).
 
 **Setup.** `php artisan migrate` then `php artisan db:seed --class=Database\Seeders\BibleStudySeeder`
 (idempotent: seeds the manifest, fictional personas + templates for all 7 languages, provider

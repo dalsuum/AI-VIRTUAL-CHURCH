@@ -43,6 +43,11 @@ class SetLocale
         $response = $next($request);
 
         // Remember the resolved locale for a year so guests keep their choice.
-        return $response->withCookie(cookie()->forever('locale', $locale));
+        // Set it on the header bag directly rather than via withCookie(): SSE
+        // endpoints return a Symfony StreamedResponse, which lacks Laravel's
+        // withCookie() macro and would otherwise 500 on every stream open.
+        $response->headers->setCookie(cookie()->forever('locale', $locale));
+
+        return $response;
     }
 }

@@ -822,7 +822,11 @@ text comes from the local corpus (`resolved=false` on gaps, never fabricated).
 
 **Streaming.** The worker publishes seq-stamped events to a durable, **size-capped + TTL'd**
 Redis log; the Laravel SSE endpoint polls it by `seq` (proxy-safe, heartbeated) and the Vue
-client dedupes/orders on `seq`, so reconnect replay is idempotent.
+client dedupes/orders on `seq`, so reconnect replay is idempotent. The endpoint returns a raw
+Symfony `StreamedResponse`, so any global response-decorating middleware must be
+StreamedResponse-safe — e.g. `SetLocale` sets its cookie via `$response->headers->setCookie()`,
+**not** the `withCookie()` macro (which only exists on `Illuminate\Http\Response` and would
+500 every stream open, trapping the client in an endless "Reconnecting…" loop).
 
 **Setup.** `php artisan migrate` then `php artisan db:seed --class=Database\Seeders\BibleStudySeeder`
 (idempotent: seeds the manifest, fictional personas + templates for all 7 languages, provider

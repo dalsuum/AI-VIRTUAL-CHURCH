@@ -4,7 +4,6 @@
 // retry, and CSV exports.
 import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { api } from "../composables/useApi";
-import ThemeToggle from "./ThemeToggle.vue";
 import VoiceStudio from "./VoiceStudio.vue";
 import PermissionsMatrix from "./PermissionsMatrix.vue";
 import AdsManager from "./AdsManager.vue";
@@ -369,18 +368,6 @@ async function enter() {
     loginError.value = e?.data?.message || "Could not authenticate.";
     authed.value = false;
   }
-}
-
-function logout() {
-  api.logout();
-  authed.value      = false;
-  currentUser.value = null;
-  stats.value       = null;
-  voiceTraining.value = null;
-  voiceTrainingError.value = "";
-  clearInterval(voiceTrainingTimer);
-  email.value       = "";
-  password.value    = "";
 }
 
 async function loadServices() {
@@ -1768,10 +1755,6 @@ onUnmounted(() => {
   <main class="admin-shell">
     <header class="admin-head">
       <h1>Admin Console</h1>
-      <div class="head-actions">
-        <button v-if="authed" class="ghost" @click="logout">Sign out</button>
-        <ThemeToggle />
-      </div>
     </header>
 
     <!-- Login -->
@@ -4586,7 +4569,6 @@ onUnmounted(() => {
 .admin-shell { max-width: 1000px; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
 .admin-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1.75rem; }
 .admin-head h1 { font-size: 1.5rem; margin: 0; letter-spacing: 0; }
-.head-actions { display: flex; align-items: center; gap: 0.6rem; }
 .ghost { border: 1px solid var(--border); background: var(--surface); color: var(--text-muted); border-radius: var(--radius-sm); padding: 0.5rem 0.8rem; cursor: pointer; }
 .ghost:hover { color: var(--text); border-color: var(--border-strong); }
 

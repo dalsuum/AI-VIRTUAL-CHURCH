@@ -1,8 +1,8 @@
 {
   "project": "aivirtual.church",
-  "current_phase": "Integration / Hardening",
-  "previous_phase": "MVP / Core Build",
-  "last_updated": "2026-06-25",
+  "current_phase": "Maintenance / Iteration",
+  "previous_phase": "Integration / Hardening",
+  "last_updated": "2026-07-09",
   "phases": [
     "Discovery",
     "Architecture / Design",
@@ -17,11 +17,11 @@
     "guardrails_complete": true,
     "orchestrator_stable": true,
     "ai_platform_kernel": true,
-    "rag_knowledge_ingestion": "in_progress",
+    "rag_knowledge_ingestion": "deferred",
     "billing_subscriptions": true,
-    "multi_tenant_isolation": "in_progress",
+    "multi_tenant_isolation": "deferred",
     "production_deploy": true
   },
-  "active_branch": "feat/ai-platform-kernel",
-  "notes": "Core SaaS shipped and deployed to prod (Laravel 12.62, 2026-06-25). Current work hardens the AI platform: layered kernel (inference/chat/guardrails/RAG/observability) plus knowledge ingestion (PDF sermons, Qdrant vector + keyword store)."
+  "active_branch": "main",
+  "notes": "v1 live in prod; maintenance mode — critical bug/security fixes only. Multilingual services platform merged via feature/multilingual-services (LRC lyric sync, admin cleanups, 401 JSON, SSE locale fix, sticker render-worker perms). Deferred roadmap items tracked in docs/PRODUCTION_READINESS_V1.md §9 and memory."
 }

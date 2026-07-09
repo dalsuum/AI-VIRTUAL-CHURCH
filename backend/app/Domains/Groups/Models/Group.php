@@ -35,4 +35,9 @@ class Group extends Model
                     ->withPivot(['role', 'status', 'joined_at'])
                     ->withTimestamps();
     }
+
+    public function readingSessions(): HasMany
+    {
+        return $this->hasMany(\App\Domains\Bible\Models\ReadingSession::class);
+    }
 }

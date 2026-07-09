@@ -211,6 +211,27 @@ Route::middleware(['auth:sanctum', 'account.usable'])->group(function () {
         ->middleware('throttle:20,1');
     Route::get('/groups/{group}/join-requests',  [\App\Http\Controllers\InvitationController::class, 'indexRequests']);
 
+    // ── Shared reading sessions (v1.3 Phase D) ─────────────────────────────────
+    // A session coordinates a group around an existing plan; it owns no progress —
+    // participants read through their own enrollments (ReadingPlanService).
+    // ReadingSessionService is the sole session mutator. {session} binds by UUID.
+    Route::post('/groups/{group}/reading-sessions', [\App\Http\Controllers\BibleReadingController::class, 'createSession'])
+        ->middleware('throttle:30,1');
+    Route::get('/groups/{group}/reading-sessions',  [\App\Http\Controllers\BibleReadingController::class, 'sessions']);
+    Route::get('/reading-sessions/{session}',           [\App\Http\Controllers\BibleReadingController::class, 'session']);
+    Route::post('/reading-sessions/{session}/join',     [\App\Http\Controllers\BibleReadingController::class, 'joinSession'])
+        ->middleware('throttle:30,1');
+    Route::post('/reading-sessions/{session}/start',    [\App\Http\Controllers\BibleReadingController::class, 'startSession'])
+        ->middleware('throttle:30,1');
+    Route::post('/reading-sessions/{session}/pause',    [\App\Http\Controllers\BibleReadingController::class, 'pauseSession'])
+        ->middleware('throttle:30,1');
+    Route::post('/reading-sessions/{session}/resume',   [\App\Http\Controllers\BibleReadingController::class, 'resumeSession'])
+        ->middleware('throttle:30,1');
+    Route::post('/reading-sessions/{session}/complete', [\App\Http\Controllers\BibleReadingController::class, 'completeSession'])
+        ->middleware('throttle:30,1');
+    Route::post('/reading-sessions/{session}/abandon',  [\App\Http\Controllers\BibleReadingController::class, 'abandonSession'])
+        ->middleware('throttle:30,1');
+
     // ── Privacy settings (own) ────────────────────────────────────────────────
     Route::get('/me/privacy',  [\App\Http\Controllers\PrivacyController::class, 'show']);
     Route::put('/me/privacy',  [\App\Http\Controllers\PrivacyController::class, 'update'])

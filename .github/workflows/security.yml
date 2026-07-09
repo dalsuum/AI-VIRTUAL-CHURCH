@@ -62,10 +62,15 @@ jobs:
         #   PYSEC-2025-217  transformers — no fixed release exists yet.
         #   CVE-2026-1839   transformers — only fixed in 5.x; we pin <5 to protect
         #                   the MMS-TTS narrator stack (torch/transformers 4.x).
+        #   CVE-2026-4372   transformers — config-injection RCE, fixed only in 5.3.0.
+        #                   Not exploitable here (2026-07-09): requires the `kernels`
+        #                   package (not installed) and loading untrusted Hub models;
+        #                   workers load only pinned official MMS-TTS weights.
         run: >-
           pip-audit -r requirements.txt
           --ignore-vuln PYSEC-2025-217
           --ignore-vuln CVE-2026-1839
+          --ignore-vuln CVE-2026-4372
 
   secret-scan:
     name: Secret scanning (gitleaks)

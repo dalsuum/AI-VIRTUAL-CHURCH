@@ -54,7 +54,6 @@
     "loading": "Loading…",
     "loadError": "Could not load the vocabulary list.",
     "noMatches": "No matches found.",
-    "category": "Category",
     "filterByCategory": "Filter by category",
     "all": "All"
   },

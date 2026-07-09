@@ -63,6 +63,13 @@ class AppServiceProvider extends ServiceProvider
             \App\Domains\Church\Policies\ChurchPolicy::class,
         );
 
+        // Group-scoped authorization (view/create/manage/delete). Group leaders manage
+        // their own group; church elders+ oversee all groups in their church.
+        Gate::policy(
+            \App\Domains\Groups\Models\Group::class,
+            \App\Domains\Groups\Policies\GroupPolicy::class,
+        );
+
         // Auth endpoints — keyed by login identifier + IP so users behind a shared
         // NAT don't lock each other out and an attacker can't drain one IP's budget
         // by spraying unrelated accounts. Falls back to IP-only when no email is sent.

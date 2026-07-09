@@ -2095,6 +2095,15 @@ Isolated from the worship pipeline so it can be removed cleanly.
   (reuses the existing `aivc-fathersday-render@` workers — no new service; job
   timeout 150s). Outputs/uploads live as plain files in
   `backend/storage/app/stickers/jobs/<id>/` — **no DB migration**.
+  **Cross-user perms**: the web request (`www-data`) writes the job files, but the
+  render worker runs as a **different user** in the `www-data` **group**, so it
+  reaches them via group access. Laravel's local-disk root
+  `storage/app/private` is created `0700` (owner-only), which would block the
+  worker from even traversing into the stickers tree — leaving the job stuck at
+  **"Queued"** (it can't read `input.json` nor write `status.json`). So
+  `StickerController::ensureBasePerms()` adds **group-traverse (`g+x`) to the
+  private root** (least privilege — no group read/write, `others` stays closed)
+  and sets the `stickers/` + `jobs/` dirs `02775` (setgid, group-inherited).
 
 **Dependencies** (worker venv, one-off):
 `workers/.venv/bin/pip install opencv-python-headless Pillow pyspellchecker

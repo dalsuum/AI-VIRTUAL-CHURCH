@@ -2097,13 +2097,22 @@ Isolated from the worship pipeline so it can be removed cleanly.
   `backend/storage/app/stickers/jobs/<id>/` — **no DB migration**.
   **Cross-user perms**: the web request (`www-data`) writes the job files, but the
   render worker runs as a **different user** in the `www-data` **group**, so it
-  reaches them via group access. Laravel's local-disk root
-  `storage/app/private` is created `0700` (owner-only), which would block the
-  worker from even traversing into the stickers tree — leaving the job stuck at
-  **"Queued"** (it can't read `input.json` nor write `status.json`). So
-  `StickerController::ensureBasePerms()` adds **group-traverse (`g+x`) to the
-  private root** (least privilege — no group read/write, `others` stays closed)
-  and sets the `stickers/` + `jobs/` dirs `02775` (setgid, group-inherited).
+  reaches them via group access. `StickerController::ensureBasePerms()` keeps the
+  `stickers/` + `jobs/` dirs `02775` (setgid, group-inherited) and adds
+  **group-traverse (`g+x`) to the disk root** if it's ever owner-only (least
+  privilege — no group read/write, `others` stays closed).
+  **Storage root is PINNED** (`backend/config/filesystems.php`): the Laravel 12
+  upgrade silently moved the framework-default local disk root from
+  `storage/app/` to `storage/app/private/` — a fresh `0700` dir that broke the
+  worker's group access (renders hung at **"Queued"**: the worker could neither
+  read `input.json` nor write `status.json`) and orphaned all pre-upgrade data
+  (Father's Day songs/config, existing sticker share links, usage counters).
+  The published config pins `disks.local.root` back to `storage_path('app')`
+  with `serve => false` (all storage is served through controllers only), and
+  `StickerPermissionsTest` guards both the pin and the perms so future
+  framework upgrades can't silently repeat this. **Any future change to the
+  disk root must migrate `fathersday/`, `stickers/` and `bible/` and preserve
+  group perms.**
   **Diagnose**: `namei -l backend/storage/app/private/stickers/jobs` — every
   directory in the chain needs `x` for the worker's user or group; jobs frozen
   at "Queued" with no error in the Laravel log are the telltale symptom.

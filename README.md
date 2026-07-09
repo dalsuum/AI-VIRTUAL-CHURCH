@@ -972,6 +972,30 @@ Endpoints: `GET /bible/plans`, `POST /bible/plans/{plan}/enroll`, `GET /bible/re
 > **Deploy note (PR 5).** Run `php artisan migrate` then seed the plan once:
 > `php artisan db:seed --class=Database\\Seeders\\ReadingPlansSeeder` (idempotent).
 
+### v1.3 — Ministry groups (Groups domain)
+
+Churches organize into **ministry groups** (Bible study, youth, children, women, men,
+choir, prayer, custom — `App\Enums\GroupType`, canonical ids, display names localized).
+`groups` belong to a church; `group_memberships` mirrors `church_memberships`: the
+contextual `App\Enums\GroupRole` (`member`/`leader`) lives on the membership row, so a
+user can lead the choir while merely attending Bible study.
+
+**Ministry titles are group leadership, not church roles.** "Worship leader" / "Bible
+study leader" / "choir leader" = `GroupRole::LEADER` on that specific group — never new
+`ChurchRole` cases — keeping the church hierarchy stable as ministries are added.
+`GroupPolicy` joins the two ladders: a group's own leader manages it (`manage`), church
+**elders+** oversee all groups in their church without a membership row in each, group
+**deletion** is church governance (elder+), group **creation** needs church leader+, and
+groups are **visible church-wide** only. Thresholds defer to `GroupRole::atLeast` /
+`ChurchRole::atLeast` — the enums own the ordering, policies never hard-code it.
+
+No HTTP layer yet by design: endpoints land with their first consumers (open invitation
+links, join requests, shared Bible reading sessions — the rest of v1.3). Covered by
+`tests/Feature/GroupAuthorizationTest.php`.
+
+> **Deploy note (v1.3 groups).** Additive only: `php artisan migrate` (creates `groups`,
+> `group_memberships`). No data step.
+
 ## Unified Conversation & Spiritual History
 
 Every registered worshipper gets a permanent, ChatGPT-style history of every

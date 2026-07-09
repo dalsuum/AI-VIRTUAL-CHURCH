@@ -130,6 +130,11 @@ class User extends Authenticatable
         return $this->hasMany(\App\Domains\Church\Models\ChurchMembership::class);
     }
 
+    public function groupMemberships(): HasMany
+    {
+        return $this->hasMany(\App\Domains\Groups\Models\GroupMembership::class);
+    }
+
     public function privacy(): HasOne
     {
         return $this->hasOne(\App\Domains\Accounts\Models\PrivacySetting::class);
@@ -170,6 +175,21 @@ class User extends Authenticatable
     public function hasChurchRole(int $churchId, \App\Enums\ChurchRole $min): bool
     {
         return (bool) $this->churchRole($churchId)?->atLeast($min);
+    }
+
+    /** The user's contextual role in a given group (by id), or null if not an active member. */
+    public function groupRole(int $groupId): ?\App\Enums\GroupRole
+    {
+        return $this->groupMemberships
+            ->firstWhere(fn ($m) => $m->group_id === $groupId
+                && $m->status === \App\Domains\Groups\Models\GroupMembership::STATUS_ACTIVE)
+            ?->role;
+    }
+
+    /** Does the user hold AT LEAST $min role in the group? Ordering is owned by the enum. */
+    public function hasGroupRole(int $groupId, \App\Enums\GroupRole $min): bool
+    {
+        return (bool) $this->groupRole($groupId)?->atLeast($min);
     }
 
     /** Anonymous walk-ups live as @guest.local accounts; their billing tier is always guest. */

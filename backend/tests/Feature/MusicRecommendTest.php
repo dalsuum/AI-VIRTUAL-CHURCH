@@ -139,6 +139,34 @@ class MusicRecommendTest extends TestCase
         $this->assertSame([], $playlist, 'no other-language tracks leak in when English is exhausted');
     }
 
+    public function test_repeated_same_mood_search_surfaces_fresh_songs(): void
+    {
+        // A mood with far more matches than one playlist must not replay an
+        // identical set every search: across a few repeated requests the radio
+        // should rotate through the catalogue, surfacing more distinct songs than
+        // a single playlist can hold.
+        foreach (range(1, 20) as $i) {
+            WorshipTrack::create([
+                'title'      => "en song {$i}",
+                'artist'     => "en artist {$i}",
+                'language'   => 'en',
+                'themes'     => ['peace', 'trust'],
+                'moods'      => ['anxiety', 'peace'],
+                'popularity' => 50,
+                'active'     => true,
+            ]);
+        }
+
+        $seen = [];
+        foreach (range(1, 5) as $ignore) {
+            foreach ($this->postJson('/api/music/recommend', ['language' => 'en', 'mood' => 'Anxiety'])->json('playlist') as $t) {
+                $seen[$t['id']] = true;
+            }
+        }
+
+        $this->assertGreaterThan(10, count($seen), 'repeated searches rotate through the catalogue instead of replaying one playlist');
+    }
+
     public function test_exclude_ids_are_not_returned(): void
     {
         $this->seedCatalog();

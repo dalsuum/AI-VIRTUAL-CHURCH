@@ -9,9 +9,11 @@ use App\Models\WorshipTrack;
  * Deterministic worship-song recommender — the "Music Recommendation Agent".
  *
  * No LLM in Phase 1: it expands the mood via MoodExpansionService, scores every
- * active track with the spec's weighted formula, applies the recent-track
- * no-repeat exclusion and artist diversity, then returns a 5–10 song playlist
- * plus a human-readable reason.
+ * active track with the spec's weighted formula, then returns a 5–10 song
+ * playlist plus a human-readable reason. Selection is score-weighted RANDOM
+ * (not strict top-N), so repeating a mood surfaces a fresh mix each time while
+ * stronger matches stay likelier; the recent-track no-repeat exclusion and
+ * best-effort artist diversity still apply.
  *
  * Score weights (sum = 1.0):
  *   language    0.40  (exact language match)
@@ -74,13 +76,14 @@ class MusicRecommendationService
         $sameLang = $candidates
             ->filter(fn (WorshipTrack $t) => $t->language === $language)
             ->map(fn (WorshipTrack $t) => [
-                'track' => $t,
-                'score' => $this->score($t, $language, $mood, $themes, $maxPopularity),
+                'track'    => $t,
+                'score'    => $this->score($t, $language, $mood, $themes, $maxPopularity),
+                'relevant' => $this->overlap((array) $t->moods, $themes) > 0
+                           || $this->overlap((array) $t->themes, $themes) > 0,
             ])
-            ->sortByDesc('score')
             ->values();
 
-        $playlist     = $this->pickWithDiversity($sameLang, $size);
+        $playlist     = $this->pickWithDiversity($this->orderForVariety($sameLang, $size), $size);
         $curatedCount = count($playlist);
 
         // 2. Live YouTube fallback — only to top up a short curated pool. Results
@@ -173,6 +176,35 @@ class MusicRecommendationService
         return $picked;
     }
 
+    /**
+     * Order the scored same-language pool for VARIETY, so a repeated mood does not
+     * replay an identical top-N. Tracks that actually match the mood are shuffled
+     * with a score-weighted random key (Efraimidis–Spirakis: key = u^(1/score),
+     * higher score ⇒ likelier near the top, but a fresh mix every request);
+     * language-only filler is appended in score order and ONLY when the matched
+     * pool alone can't fill the playlist. Downstream pickWithDiversity() still caps
+     * the result at $size and spreads artists.
+     */
+    private function orderForVariety($scored, int $size)
+    {
+        [$matched, $filler] = $scored->partition(fn (array $r) => $r['relevant']);
+
+        $ordered = $matched
+            ->map(function (array $row) {
+                $u = mt_rand(1, mt_getrandmax()) / (mt_getrandmax() + 1.0);
+                $row['key'] = $u ** (1.0 / max($row['score'], 1e-6));
+                return $row;
+            })
+            ->sortByDesc('key')
+            ->values();
+
+        if ($ordered->count() < $size) {
+            $ordered = $ordered->concat($filler->sortByDesc('score')->values());
+        }
+
+        return $ordered->values();
+    }
+
     /** Source-aware "I selected these because…" explanation. */
     private function reason(string $mood, string $language, array $themes, int $count, int $curatedCount): string
     {
@@ -215,7 +247,11 @@ class MusicRecommendationService
 
         $seen = array_map('strval', $usedUrls);
         $out  = [];
-        foreach ($this->searchLive($language, $mood, $themes) as $r) {
+        // Shuffle the cached pool per request (after the cache, so the YouTube
+        // quota is untouched) so a repeated mood picks a fresh set of live hits.
+        $pool = $this->searchLive($language, $mood, $themes);
+        shuffle($pool);
+        foreach ($pool as $r) {
             $url = (string) ($r['url'] ?? '');
             if ($url === '' || in_array($url, $seen, true)) {
                 continue;

@@ -4,7 +4,6 @@
 // retry, and CSV exports.
 import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { api } from "../composables/useApi";
-import ThemeToggle from "./ThemeToggle.vue";
 import VoiceStudio from "./VoiceStudio.vue";
 import PermissionsMatrix from "./PermissionsMatrix.vue";
 import AdsManager from "./AdsManager.vue";
@@ -60,7 +59,7 @@ const TABS = [
   { name: "system",         label: "System",           can: () => can("system.view"),          load: () => { loadUpdateStatus(); scheduleUpdatePoll(); loadVoiceboxStatus(); scheduleVoiceboxPoll(); } },
   { name: "freeze",         label: "Freeze Monitor",   can: () => isAdminUser.value,           load: () => { loadFreeze(); scheduleFreezePoll(); } },
   { name: "ai-usage",       label: "AI Usage",         can: () => isAdminUser.value,           load: () => { loadAiUsage(); scheduleAiUsagePoll(); } },
-  { name: "knowledge",      label: "Knowledge",         can: () => can("knowledge.view"),       load: () => { loadKnowledgeStatus(); loadKopJobs(); scheduleKopJobsPoll(); } },
+  { name: "knowledge",      label: "Knowledge",         can: () => can("knowledge.view"),       load: () => { loadKnowledgeStatus(); loadKopJobs(); scheduleKopJobsPoll(); loadKnowledgeLibrary(); } },
 ];
 
 function firstAllowedTab() {
@@ -369,18 +368,6 @@ async function enter() {
     loginError.value = e?.data?.message || "Could not authenticate.";
     authed.value = false;
   }
-}
-
-function logout() {
-  api.logout();
-  authed.value      = false;
-  currentUser.value = null;
-  stats.value       = null;
-  voiceTraining.value = null;
-  voiceTrainingError.value = "";
-  clearInterval(voiceTrainingTimer);
-  email.value       = "";
-  password.value    = "";
 }
 
 async function loadServices() {
@@ -1768,10 +1755,6 @@ onUnmounted(() => {
   <main class="admin-shell">
     <header class="admin-head">
       <h1>Admin Console</h1>
-      <div class="head-actions">
-        <button v-if="authed" class="ghost" @click="logout">Sign out</button>
-        <ThemeToggle />
-      </div>
     </header>
 
     <!-- Login -->
@@ -4375,6 +4358,121 @@ onUnmounted(() => {
 
           </div><!-- /accordion -->
         </template>
+
+        <!-- ── Knowledge Library ─────────────────────────────────────────── -->
+        <h3 class="kop-section-title" style="margin-top:2.5rem">Knowledge Library</h3>
+        <p class="kop-hint">Manage corpora: enable/disable, re-index, or wipe vectors. Re-index dispatches a fresh ingestion job for each previously-uploaded document.</p>
+
+        <p v-if="klError" class="kop-upload-error">{{ klError }}</p>
+
+        <template v-if="klLoading && !klLibrary">
+          <p class="dim">Loading library…</p>
+        </template>
+        <template v-else-if="klLibrary">
+          <table class="kop-table kl-table">
+            <thead>
+              <tr>
+                <th>Corpus</th>
+                <th class="num">Priority</th>
+                <th>Status</th>
+                <th class="num">Vectors</th>
+                <th class="num">Storage</th>
+                <th class="num">Last ingest</th>
+                <th class="num">Last query</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <template v-for="c in klLibrary.corpora" :key="c.corpus">
+                <tr :class="{ 'kl-disabled': !c.enabled, 'kl-expanded': klExpandedCorpus === c.corpus }">
+                  <td>
+                    <button class="link kl-corpus-name" @click="klExpandedCorpus = klExpandedCorpus === c.corpus ? '' : c.corpus">
+                      <code>{{ c.corpus }}</code>
+                    </button>
+                  </td>
+                  <td class="num dim">{{ c.source_priority }}</td>
+                  <td>
+                    <span v-if="!c.qdrant?.exists" class="badge danger">no collection</span>
+                    <span v-else-if="(c.qdrant?.vectors_count ?? 0) === 0" class="badge pending">empty</span>
+                    <span v-else class="badge" :class="klQdrantClass(c.corpus)">{{ c.qdrant.vectors_count }} vecs</span>
+                    <span v-if="!c.enabled" class="badge" style="margin-left:0.25rem">disabled</span>
+                  </td>
+                  <td class="num">{{ c.qdrant?.vectors_count ?? '—' }}</td>
+                  <td class="num">{{ klFileSizeLabel(c.total_size) }}</td>
+                  <td class="num dim">{{ c.last_ingest?.at ? shortDateTime(c.last_ingest.at) : '—' }}</td>
+                  <td class="num dim">{{ c.last_retrieval?.at ? shortDateTime(c.last_retrieval.at) : '—' }}</td>
+                  <td class="kl-actions">
+                    <button
+                      class="link"
+                      :disabled="klActionBusy === c.corpus + ':toggle'"
+                      @click="klToggle(c.corpus)"
+                    >{{ c.enabled ? 'Disable' : 'Enable' }}</button>
+                    <button
+                      class="link"
+                      :disabled="klActionBusy === c.corpus + ':reindex'"
+                      @click="klReindex(c.corpus)"
+                    >Re-index</button>
+                    <template v-if="klConfirmWipe === c.corpus">
+                      <span class="dim small">Confirm wipe?</span>
+                      <button class="link danger" @click="klDestroyConfirmed(c.corpus)">Yes, wipe</button>
+                      <button class="link" @click="klConfirmWipe = ''">Cancel</button>
+                    </template>
+                    <button
+                      v-else
+                      class="link danger"
+                      :disabled="klActionBusy === c.corpus + ':destroy'"
+                      @click="klConfirmWipe = c.corpus"
+                    >Wipe</button>
+                  </td>
+                </tr>
+                <!-- Expanded detail row -->
+                <tr v-if="klExpandedCorpus === c.corpus" class="kl-detail-row">
+                  <td colspan="8">
+                    <div class="kl-detail">
+                      <div class="kl-detail-grid">
+                        <div class="kl-detail-cell">
+                          <span class="kl-detail-label">Vector driver</span>
+                          <code>{{ klLibrary.vector_driver }}</code>
+                        </div>
+                        <div class="kl-detail-cell">
+                          <span class="kl-detail-label">Embedding driver</span>
+                          <code>{{ c.last_ingest?.embedding_driver ?? klLibrary.embedding_driver }}</code>
+                        </div>
+                        <div class="kl-detail-cell">
+                          <span class="kl-detail-label">Vector dimensions</span>
+                          <code>{{ c.qdrant?.vector_size ?? '—' }}</code>
+                        </div>
+                        <div class="kl-detail-cell">
+                          <span class="kl-detail-label">Distance metric</span>
+                          <code>{{ c.qdrant?.distance ?? '—' }}</code>
+                        </div>
+                        <div class="kl-detail-cell">
+                          <span class="kl-detail-label">Total docs ingested</span>
+                          <strong>{{ c.total_docs || '—' }}</strong>
+                        </div>
+                        <div class="kl-detail-cell">
+                          <span class="kl-detail-label">Last ingest duration</span>
+                          <strong>{{ c.last_ingest?.duration_ms != null ? (c.last_ingest.duration_ms / 1000).toFixed(1) + 's' : '—' }}</strong>
+                        </div>
+                        <div class="kl-detail-cell">
+                          <span class="kl-detail-label">Last retrieval hits</span>
+                          <strong v-if="c.last_retrieval">
+                            {{ c.last_retrieval.vector_hits }} vec / {{ c.last_retrieval.keyword_hits }} kw
+                          </strong>
+                          <strong v-else>—</strong>
+                        </div>
+                        <div class="kl-detail-cell">
+                          <span class="kl-detail-label">Collection status</span>
+                          <span class="badge" :class="klQdrantClass(c.corpus)">{{ c.qdrant?.status ?? 'n/a' }}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </template>
       </section>
       <section v-else-if="tab === 'grammar-review'" class="gr-section">
         <div class="gr-header">
@@ -4471,7 +4569,6 @@ onUnmounted(() => {
 .admin-shell { max-width: 1000px; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
 .admin-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1.75rem; }
 .admin-head h1 { font-size: 1.5rem; margin: 0; letter-spacing: 0; }
-.head-actions { display: flex; align-items: center; gap: 0.6rem; }
 .ghost { border: 1px solid var(--border); background: var(--surface); color: var(--text-muted); border-radius: var(--radius-sm); padding: 0.5rem 0.8rem; cursor: pointer; }
 .ghost:hover { color: var(--text); border-color: var(--border-strong); }
 
@@ -4943,6 +5040,20 @@ onUnmounted(() => {
 .decision-no { color: var(--danger, #ef4444); }
 .decision-icon { font-weight: 700; }
 .inspect-dropped { margin-top: 0.5rem; font-size: 0.82rem; color: var(--text-muted); border-top: 1px dashed var(--border); padding-top: 0.5rem; }
+/* Knowledge Library */
+.kl-table { width: 100%; }
+.kl-table td, .kl-table th { vertical-align: middle; }
+.kl-corpus-name { font-weight: 600; font-size: 0.88rem; padding: 0; }
+.kl-actions { white-space: nowrap; display: flex; gap: 0.4rem; align-items: center; }
+.kl-actions button:disabled { opacity: 0.45; cursor: not-allowed; }
+.kl-disabled td { opacity: 0.55; }
+.kl-expanded > td { background: var(--primary-soft, rgba(99,102,241,.04)); }
+.kl-detail-row > td { padding: 0; }
+.kl-detail { padding: 0.75rem 1rem; background: var(--bg); border-top: 1px solid var(--border); }
+.kl-detail-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.6rem 1rem; }
+.kl-detail-cell { display: flex; flex-direction: column; gap: 0.15rem; font-size: 0.82rem; }
+.kl-detail-label { color: var(--text-muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.03em; }
+@media (max-width: 960px) { .kl-detail-grid { grid-template-columns: repeat(2, 1fr); } }
 .inspect-snippet { margin-bottom: 0.8rem; padding-bottom: 0.8rem; border-bottom: 1px solid var(--border); }
 .inspect-snippet:last-child { border-bottom: none; margin-bottom: 0; }
 .inspect-snippet-header { display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.35rem; font-size: 0.82rem; }

@@ -211,6 +211,27 @@ Route::middleware(['auth:sanctum', 'account.usable'])->group(function () {
         ->middleware('throttle:20,1');
     Route::get('/groups/{group}/join-requests',  [\App\Http\Controllers\InvitationController::class, 'indexRequests']);
 
+    // ── Shared reading sessions (v1.3 Phase D) ─────────────────────────────────
+    // A session coordinates a group around an existing plan; it owns no progress —
+    // participants read through their own enrollments (ReadingPlanService).
+    // ReadingSessionService is the sole session mutator. {session} binds by UUID.
+    Route::post('/groups/{group}/reading-sessions', [\App\Http\Controllers\BibleReadingController::class, 'createSession'])
+        ->middleware('throttle:30,1');
+    Route::get('/groups/{group}/reading-sessions',  [\App\Http\Controllers\BibleReadingController::class, 'sessions']);
+    Route::get('/reading-sessions/{session}',           [\App\Http\Controllers\BibleReadingController::class, 'session']);
+    Route::post('/reading-sessions/{session}/join',     [\App\Http\Controllers\BibleReadingController::class, 'joinSession'])
+        ->middleware('throttle:30,1');
+    Route::post('/reading-sessions/{session}/start',    [\App\Http\Controllers\BibleReadingController::class, 'startSession'])
+        ->middleware('throttle:30,1');
+    Route::post('/reading-sessions/{session}/pause',    [\App\Http\Controllers\BibleReadingController::class, 'pauseSession'])
+        ->middleware('throttle:30,1');
+    Route::post('/reading-sessions/{session}/resume',   [\App\Http\Controllers\BibleReadingController::class, 'resumeSession'])
+        ->middleware('throttle:30,1');
+    Route::post('/reading-sessions/{session}/complete', [\App\Http\Controllers\BibleReadingController::class, 'completeSession'])
+        ->middleware('throttle:30,1');
+    Route::post('/reading-sessions/{session}/abandon',  [\App\Http\Controllers\BibleReadingController::class, 'abandonSession'])
+        ->middleware('throttle:30,1');
+
     // ── Privacy settings (own) ────────────────────────────────────────────────
     Route::get('/me/privacy',  [\App\Http\Controllers\PrivacyController::class, 'show']);
     Route::put('/me/privacy',  [\App\Http\Controllers\PrivacyController::class, 'update'])
@@ -224,9 +245,16 @@ Route::middleware(['auth:sanctum', 'account.usable'])->group(function () {
     Route::get('/presence/{user}',     [\App\Http\Controllers\PresenceController::class, 'show'])
         ->middleware('not.blocked');
 
-    // ── Churches (read-only Phase 1 surface; ChurchPolicy authorization) ───────
+    // ── Churches (ChurchPolicy authorization; profile admin = elders+) ─────────
     Route::get('/churches',                    [\App\Http\Controllers\ChurchController::class, 'index']);
+    Route::get('/churches/{church}',           [\App\Http\Controllers\ChurchController::class, 'show']);
     Route::get('/churches/{church}/members',   [\App\Http\Controllers\ChurchController::class, 'members']);
+    Route::put('/churches/{church}/profile',   [\App\Http\Controllers\ChurchController::class, 'updateProfile'])
+        ->middleware('throttle:30,1');
+    Route::post('/churches/{church}/logo',     [\App\Http\Controllers\ChurchController::class, 'uploadLogo'])
+        ->middleware('throttle:10,1');
+    Route::post('/churches/{church}/banner',   [\App\Http\Controllers\ChurchController::class, 'uploadBanner'])
+        ->middleware('throttle:10,1');
 
     // ── Bible reading plans & daily reminders (Phase 2 — PR 5) ────────────────
     // Progress is mutated only by ReadingPlanService. "Today" is the current plan day.

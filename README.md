@@ -1037,9 +1037,51 @@ user who can `view` the group), `GET /groups/{group}/join-requests` (managers);
 approve/decline/withdraw reuse the existing `/invitations/{id}/*` routes. Covered by
 `tests/Feature/GroupJoinRequestTest.php`.
 
-> **Deploy note (v1.3 groups + links + requests).** Additive only: `php artisan migrate`
-> (creates `groups`, `group_memberships`; extends `invitations` with `kind`/`token`/
-> `max_uses`/`use_count`/`responded_by` and makes `invitee_id` nullable). No data step.
+**Shared Bible reading (v1.3 Phase D).** A `reading_session` **coordinates a group
+around an existing reading plan — it owns no reading progress** (the PR-6 governing
+invariant: never a second reading model). Each `reading_participant` row references the
+member's own `user_reading_plans` enrollment, created through `ReadingPlanService` —
+so joining applies the **one-active-plan rule verbatim** (409 if you're mid-way through
+a different plan; joining the plan you already read reuses the enrollment), progress
+advances only via the existing `completeToday()`, and streaks/reminders/events keep
+working with zero changes. The shared roster simply projects each member's enrollment
+(`current_sequence`, `last_read_on`) — everyone reads at their own pace.
+`ReadingSessionService` is the sole session mutator: one **open session per group**,
+state machine `planned → active ⇄ paused → completed` (+`abandoned`) with the
+`InvitationService::transition()` discipline (row lock, idempotent same-state no-op,
+legality map, terminal 409). Going live emits `ReadingSessionStarted` — the session
+event reserved in the frozen reading ladder — carrying the session's correlation id.
+Authority reuses `GroupPolicy` end to end: `manage` creates/steers, group membership
+joins, `view` reads; church elders+ steer any group's session without a membership
+row. Endpoints: `POST|GET /groups/{group}/reading-sessions`,
+`GET /reading-sessions/{session}` (roster), `POST /reading-sessions/{session}/join` +
+`/start|pause|resume|complete|abandon`. Deferred from the PR-6 sketch: reactions and
+chat-spine linkage (additive later); friend-to-friend (non-group) sessions ride the
+DIRECT-invitation seam when needed. Covered by
+`tests/Feature/SharedReadingSessionTest.php`, including the end-to-end proof that
+`POST /bible/reading/today/complete` moves the shared roster.
+
+**Church profile (v1.3 Phase E).** Profile completion with **zero schema growth**: all
+profile fields — public `description`, freeform `address` (i18n-safe), `contact_email`/
+`contact_phone`, `website`, `socials` (allow-listed platforms: facebook/instagram/
+youtube/x/telegram/whatsapp), `languages` (validated against the platform registry
+`config('languages.list')`) — live under `settings['profile']` in the existing JSON
+column. Logo and banner are public-disk uploads (`churches/{id}/…`, jpg/png/webp,
+2 MB / 4 MB caps, old file deleted on replace — the AdController pattern) whose paths
+live in the same profile subtree and surface as `logo_url`/`banner_url`. Updates use
+**merge semantics**: only provided keys change, operational settings outside the
+profile subtree are untouched; `name`/`timezone` update too but the `slug` stays — it
+is a stable identifier. Authorization reuses `ChurchPolicy`: members `view` the
+profile, **elders+** (`manage`) edit it. Endpoints: `GET /churches/{church}`,
+`PUT /churches/{church}/profile`, `POST /churches/{church}/logo|banner`. Covered by
+`tests/Feature/ChurchProfileTest.php`.
+
+> **Deploy note (v1.3 groups + links + requests + shared reading + profile).** Additive
+> only: `php artisan migrate` (creates `groups`, `group_memberships`, `reading_sessions`,
+> `reading_participants`; extends `invitations` with `kind`/`token`/`max_uses`/
+> `use_count`/`responded_by` and makes `invitee_id` nullable). Phase E adds **no**
+> migration; church images need the standard `php artisan storage:link` (already present
+> on prod). No data step.
 
 ## Unified Conversation & Spiritual History
 

@@ -48,6 +48,9 @@ workers/data/grammar_review.json
 # Laravel storage symlink (regenerated via `php artisan storage:link`)
 backend/public/storage
 
+# Storage::fake() scratch space written by the test suite
+backend/storage/framework/testing/
+
 # Node
 node_modules/
 

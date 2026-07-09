@@ -1061,10 +1061,27 @@ DIRECT-invitation seam when needed. Covered by
 `tests/Feature/SharedReadingSessionTest.php`, including the end-to-end proof that
 `POST /bible/reading/today/complete` moves the shared roster.
 
-> **Deploy note (v1.3 groups + links + requests + shared reading).** Additive only:
-> `php artisan migrate` (creates `groups`, `group_memberships`, `reading_sessions`,
+**Church profile (v1.3 Phase E).** Profile completion with **zero schema growth**: all
+profile fields — public `description`, freeform `address` (i18n-safe), `contact_email`/
+`contact_phone`, `website`, `socials` (allow-listed platforms: facebook/instagram/
+youtube/x/telegram/whatsapp), `languages` (validated against the platform registry
+`config('languages.list')`) — live under `settings['profile']` in the existing JSON
+column. Logo and banner are public-disk uploads (`churches/{id}/…`, jpg/png/webp,
+2 MB / 4 MB caps, old file deleted on replace — the AdController pattern) whose paths
+live in the same profile subtree and surface as `logo_url`/`banner_url`. Updates use
+**merge semantics**: only provided keys change, operational settings outside the
+profile subtree are untouched; `name`/`timezone` update too but the `slug` stays — it
+is a stable identifier. Authorization reuses `ChurchPolicy`: members `view` the
+profile, **elders+** (`manage`) edit it. Endpoints: `GET /churches/{church}`,
+`PUT /churches/{church}/profile`, `POST /churches/{church}/logo|banner`. Covered by
+`tests/Feature/ChurchProfileTest.php`.
+
+> **Deploy note (v1.3 groups + links + requests + shared reading + profile).** Additive
+> only: `php artisan migrate` (creates `groups`, `group_memberships`, `reading_sessions`,
 > `reading_participants`; extends `invitations` with `kind`/`token`/`max_uses`/
-> `use_count`/`responded_by` and makes `invitee_id` nullable). No data step.
+> `use_count`/`responded_by` and makes `invitee_id` nullable). Phase E adds **no**
+> migration; church images need the standard `php artisan storage:link` (already present
+> on prod). No data step.
 
 ## Unified Conversation & Spiritual History
 

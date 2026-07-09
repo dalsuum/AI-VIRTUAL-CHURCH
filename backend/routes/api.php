@@ -245,9 +245,16 @@ Route::middleware(['auth:sanctum', 'account.usable'])->group(function () {
     Route::get('/presence/{user}',     [\App\Http\Controllers\PresenceController::class, 'show'])
         ->middleware('not.blocked');
 
-    // ── Churches (read-only Phase 1 surface; ChurchPolicy authorization) ───────
+    // ── Churches (ChurchPolicy authorization; profile admin = elders+) ─────────
     Route::get('/churches',                    [\App\Http\Controllers\ChurchController::class, 'index']);
+    Route::get('/churches/{church}',           [\App\Http\Controllers\ChurchController::class, 'show']);
     Route::get('/churches/{church}/members',   [\App\Http\Controllers\ChurchController::class, 'members']);
+    Route::put('/churches/{church}/profile',   [\App\Http\Controllers\ChurchController::class, 'updateProfile'])
+        ->middleware('throttle:30,1');
+    Route::post('/churches/{church}/logo',     [\App\Http\Controllers\ChurchController::class, 'uploadLogo'])
+        ->middleware('throttle:10,1');
+    Route::post('/churches/{church}/banner',   [\App\Http\Controllers\ChurchController::class, 'uploadBanner'])
+        ->middleware('throttle:10,1');
 
     // ── Bible reading plans & daily reminders (Phase 2 — PR 5) ────────────────
     // Progress is mutated only by ReadingPlanService. "Today" is the current plan day.

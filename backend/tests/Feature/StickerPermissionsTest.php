@@ -16,6 +16,20 @@ use Tests\TestCase;
  */
 class StickerPermissionsTest extends TestCase
 {
+    /**
+     * The Laravel 12 upgrade silently moved the framework-default local disk
+     * root to storage/app/private, orphaning all pre-upgrade feature data
+     * (Father's Day songs, sticker share links) and creating the 0700 root the
+     * test below guards against. config/filesystems.php pins the pre-upgrade
+     * root; this must survive future framework upgrades.
+     */
+    public function test_local_disk_root_is_pinned_to_storage_app(): void
+    {
+        $this->assertSame(storage_path('app'), config('filesystems.disks.local.root'));
+        // Nothing uses framework file-serving routes; storage stays controller-only.
+        $this->assertFalse(config('filesystems.disks.local.serve'));
+    }
+
     public function test_ensure_base_perms_grants_group_traverse_on_private_root(): void
     {
         Storage::fake();

@@ -16,10 +16,12 @@ use App\Models\User;
  */
 class GroupPolicy
 {
-    /** Groups are visible church-wide; outsiders see nothing. */
+    /** Groups are visible church-wide and to their own members (a link-joined guest
+     *  holds only ChurchRole::GUEST but must still see the group they joined). */
     public function view(User $user, Group $group): bool
     {
-        return $user->hasChurchRole($group->church_id, ChurchRole::MEMBER);
+        return $user->hasChurchRole($group->church_id, ChurchRole::MEMBER)
+            || $user->hasGroupRole($group->id, GroupRole::MEMBER);
     }
 
     /** Creating a group is a church capability: can('create', [Group::class, $church]). */

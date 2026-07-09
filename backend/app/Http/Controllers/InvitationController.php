@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Domains\Groups\Models\Group;
 use App\Domains\Invitations\Models\Invitation;
 use App\Domains\Invitations\Services\InvitationService;
 use App\Enums\InvitationActivity;
+use App\Enums\InvitationKind;
 use App\Enums\InvitationStatus;
 use App\Http\Requests\CreateInvitationRequest;
 use App\Models\User;
@@ -81,20 +83,124 @@ class InvitationController extends Controller
         return response()->json($this->present($this->invitations->cancel($request->user(), $invitation)));
     }
 
-    /** Stable API projection of an invitation. */
+    /** Mint a shareable LINK invitation into a group (group leader or church elder+). */
+    public function storeLink(Request $request, Group $group)
+    {
+        $this->authorize('manage', $group);
+
+        $data = $request->validate([
+            'max_uses'   => ['nullable', 'integer', 'min:1', 'max:10000'],
+            'expires_at' => ['nullable', 'date', 'after:now'],
+            'message'    => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $invitation = $this->invitations->sendLink(
+            inviter: $request->user(),
+            group: $group,
+            maxUses: $data['max_uses'] ?? null,
+            expiresAt: isset($data['expires_at']) ? Carbon::parse($data['expires_at']) : null,
+            message: $data['message'] ?? null,
+        );
+
+        return response()->json($this->present($invitation->load('invitable')), 201);
+    }
+
+    /** Preview a link before joining: what group, whose invitation, still usable? */
+    public function showLink(Request $request, string $token)
+    {
+        $i = Invitation::query()
+            ->where('kind', InvitationKind::LINK)->where('token', $token)
+            ->with(['invitable.church', 'inviter'])->firstOrFail();
+
+        return response()->json([
+            'group'      => ['id' => $i->invitable->id, 'name' => $i->invitable->name, 'type' => $i->invitable->type->value],
+            'church'     => ['id' => $i->invitable->church->id, 'name' => $i->invitable->church->name],
+            'inviter'    => ['id' => $i->inviter_id, 'name' => $i->inviter?->name],
+            'message'    => $i->message,
+            'expires_at' => optional($i->expires_at)->toIso8601String(),
+            'usable'     => $i->isPending() && ! $i->hasExpired() && $i->hasRemainingUses(),
+        ]);
+    }
+
+    /** Ask to join a group (kind=request). Idempotent: asking again returns the open request. */
+    public function storeRequest(Request $request, Group $group)
+    {
+        $this->authorize('view', $group);
+
+        $data = $request->validate([
+            'message' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $invitation = $this->invitations->requestToJoin($request->user(), $group, $data['message'] ?? null);
+
+        return response()->json($this->present($invitation->load('invitable')), 201);
+    }
+
+    /** Pending join requests for a group — its managers review and approve/decline
+     *  through the ordinary /invitations/{id}/accept|decline endpoints. */
+    public function indexRequests(Request $request, Group $group)
+    {
+        $this->authorize('manage', $group);
+
+        return response()->json(
+            Invitation::query()
+                ->where('kind', InvitationKind::REQUEST)
+                ->where('invitable_type', $group->getMorphClass())
+                ->where('invitable_id', $group->id)
+                ->where('status', InvitationStatus::PENDING)
+                ->with('inviter')->latest()->get()
+                ->map(fn ($i) => $this->present($i))->values(),
+        );
+    }
+
+    /** Join the group behind a link. Idempotent for an already-active member. */
+    public function redeem(Request $request, string $token)
+    {
+        $invitation = Invitation::query()
+            ->where('kind', InvitationKind::LINK)->where('token', $token)->firstOrFail();
+
+        $membership = $this->invitations->redeem($request->user(), $invitation);
+
+        return response()->json([
+            'group_id' => $membership->group_id,
+            'role'     => $membership->role->value,
+            'status'   => $membership->status,
+        ]);
+    }
+
+    /** Stable API projection of an invitation. LINK adds token/uses/group (links only
+     *  ever surface to their creator or group managers — never in a 'received' inbox). */
     private function present(Invitation $i): array
     {
-        return [
+        $base = [
             'id'           => $i->id,
+            'kind'         => $i->kind->value,
             'activity'     => $i->activity->value,
             'status'       => $i->status->value,
             'inviter'      => $i->relationLoaded('inviter') && $i->inviter
                 ? ['id' => $i->inviter->id, 'name' => $i->inviter->name] : ['id' => $i->inviter_id],
-            'invitee'      => $i->relationLoaded('invitee') && $i->invitee
-                ? ['id' => $i->invitee->id, 'name' => $i->invitee->name] : ['id' => $i->invitee_id],
+            'invitee'      => $i->invitee_id === null ? null
+                : ($i->relationLoaded('invitee') && $i->invitee
+                    ? ['id' => $i->invitee->id, 'name' => $i->invitee->name] : ['id' => $i->invitee_id]),
             'message'      => $i->message,
             'scheduled_at' => optional($i->scheduled_at)->toIso8601String(),
             'expires_at'   => optional($i->expires_at)->toIso8601String(),
         ];
+
+        if ($i->kind !== InvitationKind::DIRECT) {
+            $base['group'] = $i->relationLoaded('invitable') && $i->invitable
+                ? ['id' => $i->invitable->id, 'name' => $i->invitable->name] : null;
+        }
+
+        if ($i->kind === InvitationKind::LINK) {
+            $base += [
+                'token'     => $i->token,
+                'join_url'  => config('app.url').'/#join?token='.$i->token,   // QR renders this client-side
+                'max_uses'  => $i->max_uses,
+                'use_count' => $i->use_count,
+            ];
+        }
+
+        return $base;
     }
 }

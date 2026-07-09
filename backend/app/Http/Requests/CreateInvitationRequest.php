@@ -24,7 +24,10 @@ class CreateInvitationRequest extends FormRequest
     {
         return [
             'invitee_id'   => ['required', 'integer', Rule::exists('users', 'id'), Rule::notIn([$this->user()->id])],
-            'activity'     => ['required', new Enum(InvitationActivity::class)],
+            'activity'     => ['required', (new Enum(InvitationActivity::class))
+                // Joining a group is the LINK flow (POST /groups/{group}/invitations),
+                // never a person-to-person invitation.
+                ->except([InvitationActivity::GROUP_MEMBERSHIP])],
             'scheduled_at' => ['nullable', 'date', 'after:now'],
             'timezone'     => ['nullable', 'timezone'],
             'message'      => ['nullable', 'string', 'max:500'],

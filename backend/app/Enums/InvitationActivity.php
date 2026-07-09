@@ -15,4 +15,7 @@ enum InvitationActivity: string
     case PRAYER        = 'prayer';
     case PASTOR_CHAT   = 'pastor_chat';
     case RADIO         = 'radio';
+
+    /** LINK invitations only: joining a group, not a scheduled session. */
+    case GROUP_MEMBERSHIP = 'group_membership';
 }

@@ -30,6 +30,11 @@ class Church extends Model
         return $this->hasMany(ChurchMembership::class);
     }
 
+    public function groups(): HasMany
+    {
+        return $this->hasMany(\App\Domains\Groups\Models\Group::class);
+    }
+
     public function members(): BelongsToMany
     {
         return $this->belongsToMany(User::class, 'church_memberships')

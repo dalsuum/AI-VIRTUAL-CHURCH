@@ -485,6 +485,17 @@ class StickerController extends Controller
      */
     private function ensureBasePerms(): void
     {
+        // The Laravel local-disk root (storage/app/private) is created 0700 by the
+        // web user, which blocks the render worker (different user, www-data group)
+        // from even traversing INTO the stickers tree below — so it can't read
+        // input.json or write status.json and the job hangs at "Queued". Add group
+        // TRAVERSE (g+x) only, preserving every other bit (least privilege: the
+        // private root stays unreadable/unwritable to the group and closed to all).
+        $root = dirname(Storage::path(self::DIR));
+        if (is_dir($root)) {
+            @chmod($root, (fileperms($root) & 07777) | 0010);
+        }
+
         foreach ([self::DIR, self::DIR . '/jobs'] as $rel) {
             if (Storage::exists($rel)) {
                 @chmod(Storage::path($rel), 02775);

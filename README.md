@@ -2257,9 +2257,11 @@ every push and pull request. A separate **Security** workflow
 ([.github/workflows/security.yml](.github/workflows/security.yml)) audits all three
 dependency ecosystems (`composer audit`, `npm audit`, `pip-audit`) and scans for
 secrets with gitleaks. The Python audit pins `requests`, `fastapi`/`uvicorn` and an
-explicit `starlette==1.3.1` to patched releases, and `--ignore-vuln`s two
+explicit `starlette==1.3.1` to patched releases, and `--ignore-vuln`s three
 `transformers` advisories that have no fix compatible with the `<5` pin we keep to
-protect the MMS-TTS narrator stack.
+protect the MMS-TTS narrator stack (incl. CVE-2026-4372, triaged 2026-07-09: the
+config-injection RCE needs the `kernels` package — not installed — and untrusted
+Hub models; the workers load only pinned official MMS-TTS weights).
 
 ### Local gotchas worth knowing
 

@@ -989,12 +989,36 @@ study leader" / "choir leader" = `GroupRole::LEADER` on that specific group — 
 groups are **visible church-wide** only. Thresholds defer to `GroupRole::atLeast` /
 `ChurchRole::atLeast` — the enums own the ordering, policies never hard-code it.
 
-No HTTP layer yet by design: endpoints land with their first consumers (open invitation
-links, join requests, shared Bible reading sessions — the rest of v1.3). Covered by
+No groups HTTP layer yet by design: endpoints land with their first consumers (join
+requests, shared Bible reading sessions — the rest of v1.3). Covered by
 `tests/Feature/GroupAuthorizationTest.php`.
 
-> **Deploy note (v1.3 groups).** Additive only: `php artisan migrate` (creates `groups`,
-> `group_memberships`). No data step.
+**Link invitations (v1.3 Phase B).** The ONE invitation model gains an open, shareable
+kind — no second invitation system. `kind=link` rows have **no addressee** (`invitee_id`
+NULL), carry an unguessable 48-char `token` (unique index), an optional `max_uses` with a
+`use_count`, and the standard `expires_at`; `activity=group_membership` and the existing
+`invitable` morph points at the **Group being joined**. Everything reuses the existing
+lifecycle: **revocation is the ordinary `cancel` transition** (extended so anyone who can
+`manage` the target group shares revocation authority with the creator — a rogue link
+must not outlive its leader), the `invitations:expire` sweep expires stale links
+unchanged, and `InvitationService` stays the sole mutator via two new methods —
+`sendLink()` (minted by a group manager; no `InvitationSent`, the URL is shared out of
+band and QR codes render `join_url` client-side) and `redeem()` (row-locked, idempotent:
+an already-active member re-tapping the link costs no use; a rejoin **reactivates the
+canonical membership row as a plain member** — leadership does not survive; each join
+emits the additive `InvitationRedeemed` event carrying the redeeming `userId`, one per
+member, since a link stays PENDING until revoked/expired/exhausted). An outsider joining
+a group is auto-enrolled in its church as **`ChurchRole::GUEST`** (least privilege — full
+membership stays a pastoral decision), and `GroupPolicy::view` admits a group's own
+members alongside church members so a link-joined guest can see the group they joined.
+Endpoints (rate-limited): `POST /groups/{group}/invitations` (mint, needs `manage`),
+`GET /invitations/link/{token}` (preview: target group/church, usability),
+`POST /invitations/link/{token}/redeem` (join). Covered by
+`tests/Feature/GroupInvitationLinkTest.php`.
+
+> **Deploy note (v1.3 groups + links).** Additive only: `php artisan migrate` (creates
+> `groups`, `group_memberships`; extends `invitations` with `kind`/`token`/`max_uses`/
+> `use_count` and makes `invitee_id` nullable). No data step.
 
 ## Unified Conversation & Spiritual History
 

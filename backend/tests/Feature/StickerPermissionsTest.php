@@ -23,12 +23,14 @@ class StickerPermissionsTest extends TestCase
         // The disk root as the controller derives it: parent of the stickers dir.
         $root = dirname(Storage::path('stickers'));
         chmod($root, 0700);                     // reproduce the owner-only default
+        clearstatcache(true, $root);            // chmod() does not invalidate the stat cache
         $this->assertSame(0700, fileperms($root) & 07777);
 
         $m = new \ReflectionMethod(StickerController::class, 'ensureBasePerms');
         $m->setAccessible(true);
         $m->invoke(new StickerController());
 
+        clearstatcache(true, $root);
         $mode = fileperms($root) & 07777;
         $this->assertSame(0010, $mode & 0010, 'group-execute (traverse) must be set');
         $this->assertSame(0700, $mode & 0700, 'owner bits must be preserved');

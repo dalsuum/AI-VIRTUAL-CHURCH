@@ -493,6 +493,9 @@ class StickerController extends Controller
         // private root stays unreadable/unwritable to the group and closed to all).
         $root = dirname(Storage::path(self::DIR));
         if (is_dir($root)) {
+            // fileperms() reads PHP's per-process stat cache, which chmod() does
+            // not invalidate — stale in a long-lived php-fpm worker. Read fresh.
+            clearstatcache(true, $root);
             @chmod($root, (fileperms($root) & 07777) | 0010);
         }
 

@@ -2104,6 +2104,9 @@ Isolated from the worship pipeline so it can be removed cleanly.
   `StickerController::ensureBasePerms()` adds **group-traverse (`g+x`) to the
   private root** (least privilege — no group read/write, `others` stays closed)
   and sets the `stickers/` + `jobs/` dirs `02775` (setgid, group-inherited).
+  **Diagnose**: `namei -l backend/storage/app/private/stickers/jobs` — every
+  directory in the chain needs `x` for the worker's user or group; jobs frozen
+  at "Queued" with no error in the Laravel log are the telltale symptom.
 
 **Dependencies** (worker venv, one-off):
 `workers/.venv/bin/pip install opencv-python-headless Pillow pyspellchecker

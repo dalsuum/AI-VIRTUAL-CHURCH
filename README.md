@@ -1016,9 +1016,30 @@ Endpoints (rate-limited): `POST /groups/{group}/invitations` (mint, needs `manag
 `POST /invitations/link/{token}/redeem` (join). Covered by
 `tests/Feature/GroupInvitationLinkTest.php`.
 
-> **Deploy note (v1.3 groups + links).** Additive only: `php artisan migrate` (creates
-> `groups`, `group_memberships`; extends `invitations` with `kind`/`token`/`max_uses`/
-> `use_count` and makes `invitee_id` nullable). No data step.
+**Join requests (v1.3 Phase C).** A join request is the invitation flow with the roles
+reversed — `kind=request`, **the requester is the inviter/creator**, the invitee is
+nobody. That inversion buys the whole lifecycle for free: **withdrawal is the ordinary
+inviter-cancel**, approval/denial are the ordinary `accept`/`decline` transitions
+(authorized for whoever can `manage` the target group — group leader or church elder+;
+the requester can never approve themselves), the 30-day expiry rides the standard sweep,
+and the frozen events flow unchanged, so `NotifyInviterOfResponse` already tells the
+requester their request was approved or declined verbatim. Approval creates the
+membership **in the same transaction**, through the same `activateMembership()` path as
+link redemption (church-GUEST auto-enroll, canonical-row reactivation as plain member) —
+one way anyone becomes a group member. Requests are idempotent (asking again returns
+the open request) and approving after the requester already joined via a link is a
+no-op. `responded_by` (nullable FK) now records the human actor of every terminal
+transition — approver, decliner, or link revoker; NULL means the system sweep — the
+audit column complementing the event trail. New leaders are notified per request
+(`join_request_received`, routed by the existing send listener; leaderless groups rely
+on the managers' request list). Endpoints: `POST /groups/{group}/join-requests` (any
+user who can `view` the group), `GET /groups/{group}/join-requests` (managers);
+approve/decline/withdraw reuse the existing `/invitations/{id}/*` routes. Covered by
+`tests/Feature/GroupJoinRequestTest.php`.
+
+> **Deploy note (v1.3 groups + links + requests).** Additive only: `php artisan migrate`
+> (creates `groups`, `group_memberships`; extends `invitations` with `kind`/`token`/
+> `max_uses`/`use_count`/`responded_by` and makes `invitee_id` nullable). No data step.
 
 ## Unified Conversation & Spiritual History
 

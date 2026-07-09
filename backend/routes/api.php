@@ -205,6 +205,12 @@ Route::middleware(['auth:sanctum', 'account.usable'])->group(function () {
     Route::post('/invitations/link/{token}/redeem', [\App\Http\Controllers\InvitationController::class, 'redeem'])
         ->middleware('throttle:20,1');
 
+    // Join requests (kind=request): the requester is the inviter, so withdrawal is
+    // the ordinary cancel; managers approve/decline via /invitations/{id}/accept|decline.
+    Route::post('/groups/{group}/join-requests', [\App\Http\Controllers\InvitationController::class, 'storeRequest'])
+        ->middleware('throttle:20,1');
+    Route::get('/groups/{group}/join-requests',  [\App\Http\Controllers\InvitationController::class, 'indexRequests']);
+
     // ── Privacy settings (own) ────────────────────────────────────────────────
     Route::get('/me/privacy',  [\App\Http\Controllers\PrivacyController::class, 'show']);
     Route::put('/me/privacy',  [\App\Http\Controllers\PrivacyController::class, 'update'])

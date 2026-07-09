@@ -122,6 +122,37 @@ class InvitationController extends Controller
         ]);
     }
 
+    /** Ask to join a group (kind=request). Idempotent: asking again returns the open request. */
+    public function storeRequest(Request $request, Group $group)
+    {
+        $this->authorize('view', $group);
+
+        $data = $request->validate([
+            'message' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $invitation = $this->invitations->requestToJoin($request->user(), $group, $data['message'] ?? null);
+
+        return response()->json($this->present($invitation->load('invitable')), 201);
+    }
+
+    /** Pending join requests for a group — its managers review and approve/decline
+     *  through the ordinary /invitations/{id}/accept|decline endpoints. */
+    public function indexRequests(Request $request, Group $group)
+    {
+        $this->authorize('manage', $group);
+
+        return response()->json(
+            Invitation::query()
+                ->where('kind', InvitationKind::REQUEST)
+                ->where('invitable_type', $group->getMorphClass())
+                ->where('invitable_id', $group->id)
+                ->where('status', InvitationStatus::PENDING)
+                ->with('inviter')->latest()->get()
+                ->map(fn ($i) => $this->present($i))->values(),
+        );
+    }
+
     /** Join the group behind a link. Idempotent for an already-active member. */
     public function redeem(Request $request, string $token)
     {
@@ -156,14 +187,17 @@ class InvitationController extends Controller
             'expires_at'   => optional($i->expires_at)->toIso8601String(),
         ];
 
+        if ($i->kind !== InvitationKind::DIRECT) {
+            $base['group'] = $i->relationLoaded('invitable') && $i->invitable
+                ? ['id' => $i->invitable->id, 'name' => $i->invitable->name] : null;
+        }
+
         if ($i->kind === InvitationKind::LINK) {
             $base += [
                 'token'     => $i->token,
                 'join_url'  => config('app.url').'/#join?token='.$i->token,   // QR renders this client-side
                 'max_uses'  => $i->max_uses,
                 'use_count' => $i->use_count,
-                'group'     => $i->relationLoaded('invitable') && $i->invitable
-                    ? ['id' => $i->invitable->id, 'name' => $i->invitable->name] : null,
             ];
         }
 

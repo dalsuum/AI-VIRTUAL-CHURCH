@@ -18,6 +18,7 @@ import SpiritualJourney from "./components/SpiritualJourney.vue";
 import ChurchDashboard from "./components/ChurchDashboard.vue";
 import GroupPage from "./components/GroupPage.vue";
 import JoinInvitation from "./components/JoinInvitation.vue";
+import MemberDirectory from "./components/MemberDirectory.vue";
 import HistorySidebar from "./components/HistorySidebar.vue";
 import AuthPanel from "./components/AuthPanel.vue";
 import AccountSettings from "./components/AccountSettings.vue";
@@ -61,6 +62,8 @@ const isChurchRoute = ref(window.location.hash.split("?")[0] === "#church");
 const isGroupRoute = ref(window.location.hash.split("?")[0] === "#group");
 // Invitation landing (QR / shared join_url) — public preview, auth to join.
 const isJoinRoute = ref(window.location.hash.split("?")[0] === "#join");
+// Member directory — reached from the dashboard's members card.
+const isMembersRoute = ref(window.location.hash === "#members");
 // Account + auth entry points (hash-routed like the rest of the app).
 const isLoginRoute    = ref(window.location.hash === "#login");
 const isRegisterRoute = ref(window.location.hash === "#register");
@@ -98,6 +101,7 @@ window.addEventListener("hashchange", () => {
   isChurchRoute.value = window.location.hash.split("?")[0] === "#church";
   isGroupRoute.value = window.location.hash.split("?")[0] === "#group";
   isJoinRoute.value = window.location.hash.split("?")[0] === "#join";
+  isMembersRoute.value = window.location.hash === "#members";
   isFathersDayRoute.value = window.location.hash === "#fathers-day";
   isStickerRoute.value = window.location.hash === "#stickers";
   isLoginRoute.value    = window.location.hash === "#login";
@@ -139,7 +143,7 @@ async function loadMe() {
 //    form for the not-yet-authenticated case, so we don't bounce those away).
 function enforceGuards() {
   const hash = window.location.hash;
-  if ((hash === "#account" || ["#church", "#group"].includes(hash.split("?")[0])) && !isAuthed.value) {
+  if ((hash === "#account" || ["#church", "#group", "#members"].includes(hash.split("?")[0])) && !isAuthed.value) {
     // Remember what the user was trying to reach (join a group, open a page…)
     // so authentication returns them there instead of a generic landing page.
     // Any protected route added to the list above inherits this behavior.
@@ -441,6 +445,7 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
       <ChurchDashboard v-else-if="isChurchRoute && isAuthed" />
       <GroupPage v-else-if="isGroupRoute && isAuthed" :current-hash="currentHash" />
       <JoinInvitation v-else-if="isJoinRoute" :current-hash="currentHash" :is-authed="isAuthed" />
+      <MemberDirectory v-else-if="isMembersRoute && isAuthed" />
 
       <!-- Default intake / auth / account flow — constrained card width. -->
       <div v-else class="shell">

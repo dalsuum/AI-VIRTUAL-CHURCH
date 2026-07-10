@@ -1139,6 +1139,23 @@ mention the invitation; the stored destination does the work. The success screen
 bridge into collaboration: Go to the group / Start today's reading / Return to
 dashboard.
 
+**Member Directory + Church Activity Feed (v1.3 Phase F — final pieces).**
+[MemberDirectory.vue](frontend/src/components/MemberDirectory.vue) at `#members`
+(auth-guarded, linked from the dashboard's members card) is deliberately a
+**directory, not an admin console**: client-side search (name or group), a church-role
+filter, and per-member group badges — the roster payload now carries each member's
+`status`, `joined_at` and active group names so the page needs no follow-up calls.
+The dashboard gains its **Recent Activity** card, backed by
+`GET /churches/{church}/activity` — a **curated** church-wide projection (joins to the
+church and to groups, new groups, sessions going live, recent reading completions);
+link mints and request lifecycle are deliberately omitted as manager-only noise.
+Curation over completeness — and like the group feed, it's a projection over existing
+rows with a contract a persisted event-driven feed can assume later. Both the church
+feed and the group feed render **human sentences** ("Alice joined Choir"), never
+event names. Covered in `tests/Feature/ChurchAuthorizationTest.php`. This completes
+the Phase F collaboration UI: Dashboard → Group → Invite → Preview → Login (intent
+preserved) → Join → Group → Shared Reading → Activity.
+
 ## Unified Conversation & Spiritual History
 
 Every registered worshipper gets a permanent, ChatGPT-style history of every

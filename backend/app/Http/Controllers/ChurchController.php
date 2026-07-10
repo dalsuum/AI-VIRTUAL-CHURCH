@@ -39,18 +39,85 @@ class ChurchController extends Controller
         return response()->json(['churches' => $churches]);
     }
 
-    /** Member roster — visible to any member of the church (ChurchPolicy::view). */
+    /** Member directory — visible to any member of the church (ChurchPolicy::view).
+     *  Carries each member's group names so the directory needs no follow-up calls;
+     *  search/filtering happens client-side (church rosters are small). */
     public function members(Request $request, Church $church)
     {
         $this->authorize('view', $church);
 
-        $members = $church->memberships()->with('user')->get()->map(fn ($m) => [
-            'id'   => $m->user_id,
-            'name' => $m->user?->name,
-            'role' => $m->role->value,
+        $memberships  = $church->memberships()->with('user')->get();
+        $groupsByUser = GroupMembership::query()
+            ->whereIn('user_id', $memberships->pluck('user_id'))
+            ->where('status', GroupMembership::STATUS_ACTIVE)
+            ->whereHas('group', fn ($q) => $q->where('church_id', $church->id))
+            ->with('group')->get()->groupBy('user_id');
+
+        $members = $memberships->map(fn ($m) => [
+            'id'        => $m->user_id,
+            'name'      => $m->user?->name,
+            'role'      => $m->role->value,
+            'status'    => $m->status,
+            'joined_at' => optional($m->joined_at)->toIso8601String(),
+            'groups'    => ($groupsByUser[$m->user_id] ?? collect())
+                ->map(fn ($gm) => $gm->group?->name)->filter()->values(),
         ]);
 
         return response()->json(['members' => $members]);
+    }
+
+    /**
+     * Church-wide activity feed (v1.3 Phase F) — CURATED, not complete: joins,
+     * new groups, sessions going live, recent reading completions. Link mints and
+     * request lifecycle are deliberately omitted (manager-only context, noise at
+     * church scope). Like the group feed, this is a projection over existing rows;
+     * a persisted feed on the frozen events can replace it behind the same contract.
+     */
+    public function activity(Request $request, Church $church)
+    {
+        $this->authorize('view', $church);
+
+        $groupIds = $church->groups()->pluck('id');
+
+        $churchJoins = \App\Domains\Church\Models\ChurchMembership::query()
+            ->where('church_id', $church->id)->where('status', 'active')
+            ->whereNotNull('joined_at')->with('user')
+            ->latest('joined_at')->limit(15)->get()
+            ->map(fn ($m) => ['type' => 'member_joined_church', 'at' => $m->joined_at, 'actor' => $m->user?->name, 'subject' => null]);
+
+        $groupJoins = GroupMembership::query()
+            ->whereIn('group_id', $groupIds)->where('status', GroupMembership::STATUS_ACTIVE)
+            ->whereNotNull('joined_at')->with(['user', 'group'])
+            ->latest('joined_at')->limit(15)->get()
+            ->map(fn ($m) => ['type' => 'member_joined_group', 'at' => $m->joined_at, 'actor' => $m->user?->name, 'subject' => $m->group?->name]);
+
+        $newGroups = Group::query()->where('church_id', $church->id)
+            ->latest()->limit(10)->get()
+            ->map(fn ($g) => ['type' => 'group_created', 'at' => $g->created_at, 'actor' => null, 'subject' => $g->name]);
+
+        $sessions = ReadingSession::query()->whereIn('group_id', $groupIds)
+            ->whereNotNull('started_at')->with(['plan', 'group'])
+            ->latest('started_at')->limit(10)->get()
+            ->map(fn ($s) => ['type' => 'session_started', 'at' => $s->started_at, 'actor' => $s->group?->name, 'subject' => $s->plan?->title]);
+
+        $completions = \App\Domains\Bible\Models\ReadingParticipant::query()
+            ->whereHas('session', fn ($q) => $q->whereIn('group_id', $groupIds))
+            ->whereHas('enrollment', fn ($q) => $q->where('last_read_on', '>=', now()->subDays(2)->toDateString()))
+            ->with(['user', 'enrollment'])->limit(15)->get()
+            ->map(fn ($p) => [
+                'type'    => 'reading_completed',
+                'at'      => \Illuminate\Support\Carbon::parse($p->enrollment->last_read_on),
+                'actor'   => $p->user?->name,
+                'subject' => null,
+            ]);
+
+        $items = $churchJoins->concat($groupJoins)->concat($newGroups)
+            ->concat($sessions)->concat($completions)
+            ->filter(fn ($e) => $e['at'] !== null)
+            ->sortByDesc('at')->take(20)->values()
+            ->map(fn ($e) => [...$e, 'at' => $e['at']->toIso8601String()]);
+
+        return response()->json(['activity' => $items]);
     }
 
     /** A church's ministry groups with the viewer's own context (v1.3 Phase F —

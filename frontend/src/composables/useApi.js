@@ -321,6 +321,7 @@ export const api = {
   church: (id) => request(`/churches/${id}`),
   churchMembers: (id) => request(`/churches/${id}/members`),
   churchGroups: (id) => request(`/churches/${id}/groups`),
+  churchActivity: (id) => request(`/churches/${id}/activity`),
   createGroup: (id, payload) =>
     request(`/churches/${id}/groups`, { method: "POST", body: payload }),
   myInvitations: () => request("/invitations"),

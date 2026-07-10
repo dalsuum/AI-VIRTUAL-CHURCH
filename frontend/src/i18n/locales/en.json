@@ -35,6 +35,24 @@
     "inviteLinks": "Active invite links",
     "copyLink": "Copy link",
     "copied": "Copied!",
+    "viewAll": "View all →",
+    "directory": {
+      "title": "Member Directory",
+      "search": "Search members…",
+      "allRoles": "All roles",
+      "joined": "Joined {date}",
+      "empty": "No members match.",
+      "back": "← My Church"
+    },
+    "feed": {
+      "title": "Recent Activity",
+      "none": "No recent activity.",
+      "member_joined_church": "{actor} joined the church",
+      "member_joined_group": "{actor} joined {subject}",
+      "group_created": "New group created: {subject}",
+      "session_started": "{actor} started a shared reading: {subject}",
+      "reading_completed": "{actor} completed today's reading"
+    },
     "role": {
       "guest": "Guest",
       "member": "Member",

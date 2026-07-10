@@ -17,6 +17,7 @@ const profile = ref(null);
 const groups = ref([]);
 const members = ref([]);
 const inviteLinks = ref([]);
+const feed = ref([]);
 
 const myRole = computed(() => churches.value.find((c) => c.id === selectedId.value)?.role);
 // Thresholds mirror the backend policies (GroupPolicy::create = leader+); the
@@ -28,8 +29,9 @@ async function loadChurch(id) {
   selectedId.value = id;
   error.value = "";
   try {
-    const [p, g, m, inv] = await Promise.all([
-      api.church(id), api.churchGroups(id), api.churchMembers(id), api.myInvitations(),
+    const [p, g, m, inv, act] = await Promise.all([
+      api.church(id), api.churchGroups(id), api.churchMembers(id),
+      api.myInvitations(), api.churchActivity(id),
     ]);
     profile.value = p;
     groups.value = g.groups || [];
@@ -37,6 +39,7 @@ async function loadChurch(id) {
     inviteLinks.value = (inv.sent || []).filter(
       (i) => i.kind === "link" && i.status === "pending" && i.group,
     );
+    feed.value = act.activity || [];
   } catch (e) {
     error.value = e.message;
   }
@@ -195,9 +198,12 @@ const memberPreview = computed(() => members.value.slice(0, 8));
         </ul>
       </section>
 
-      <!-- Members preview -->
+      <!-- Members preview → full directory -->
       <section class="card">
-        <h2>{{ t("church.members") }} ({{ members.length }})</h2>
+        <div class="section-head">
+          <h2>{{ t("church.members") }} ({{ members.length }})</h2>
+          <a href="#members" class="muted">{{ t("church.viewAll") }}</a>
+        </div>
         <p class="church-meta">
           <span v-for="m in memberPreview" :key="m.id" class="badge">
             {{ m.name }} · {{ t(`church.role.${m.role}`) }}
@@ -206,6 +212,18 @@ const memberPreview = computed(() => members.value.slice(0, 8));
             +{{ members.length - memberPreview.length }}
           </span>
         </p>
+      </section>
+
+      <!-- Recent activity — curated human sentences over the domain events -->
+      <section class="card">
+        <h2>{{ t("church.feed.title") }}</h2>
+        <p v-if="!feed.length" class="muted">{{ t("church.feed.none") }}</p>
+        <ul v-else class="feed-list">
+          <li v-for="(a, i) in feed" :key="i">
+            <span class="muted feed-date">{{ new Date(a.at).toLocaleDateString() }}</span>
+            {{ t(`church.feed.${a.type}`, { actor: a.actor ?? "…", subject: a.subject ?? "…" }) }}
+          </li>
+        </ul>
       </section>
     </template>
   </div>
@@ -242,4 +260,6 @@ const memberPreview = computed(() => members.value.slice(0, 8));
 .invite-list { list-style: none; padding: 0; margin: 0.5rem 0 0; display: flex; flex-direction: column; gap: 0.5rem; }
 .invite-list li { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
 .invite-url { font-size: 0.75rem; overflow-wrap: anywhere; flex: 1 1 12rem; opacity: 0.8; }
+.feed-list { list-style: none; padding: 0; margin: 0.5rem 0 0; display: flex; flex-direction: column; gap: 0.4rem; }
+.feed-date { font-size: 0.75rem; margin-right: 0.4rem; }
 </style>

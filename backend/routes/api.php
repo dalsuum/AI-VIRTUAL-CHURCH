@@ -260,6 +260,7 @@ Route::middleware(['auth:sanctum', 'account.usable'])->group(function () {
     Route::get('/churches/{church}',           [\App\Http\Controllers\ChurchController::class, 'show']);
     Route::get('/churches/{church}/members',   [\App\Http\Controllers\ChurchController::class, 'members']);
     Route::get('/churches/{church}/groups',    [\App\Http\Controllers\ChurchController::class, 'groups']);
+    Route::get('/churches/{church}/activity',  [\App\Http\Controllers\ChurchController::class, 'activity']);
     Route::post('/churches/{church}/groups',   [\App\Http\Controllers\ChurchController::class, 'storeGroup'])
         ->middleware('throttle:30,1');
     Route::put('/churches/{church}/profile',   [\App\Http\Controllers\ChurchController::class, 'updateProfile'])

@@ -338,6 +338,9 @@ export const api = {
   groupReadingSessions: (id) => request(`/groups/${id}/reading-sessions`),
   createReadingSession: (id, planId) =>
     request(`/groups/${id}/reading-sessions`, { method: "POST", body: { reading_plan_id: planId } }),
+  previewInvitation: (token) => request(`/invitations/link/${token}`),
+  redeemInvitation: (token) =>
+    request(`/invitations/link/${token}/redeem`, { method: "POST" }),
   readingSession: (id) => request(`/reading-sessions/${id}`),
   joinReadingSession: (id) => request(`/reading-sessions/${id}/join`, { method: "POST" }),
   // action ∈ start|pause|resume|complete|abandon — the server validates the route.

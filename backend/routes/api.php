@@ -99,6 +99,12 @@ Route::post('/internal/history-callback', [WebhookController::class, 'historyCal
 Route::get('/shared/{token}', [\App\Http\Controllers\HistoryController::class, 'viewShared'])
     ->middleware('throttle:30,1');
 
+// Public invitation-link preview (v1.3): a QR scanner is usually not signed in, and
+// the flow is preview → authenticate → join. The 48-char token IS the credential;
+// unknown tokens 404. Redemption stays behind auth below.
+Route::get('/invitations/link/{token}', [\App\Http\Controllers\InvitationController::class, 'showLink'])
+    ->middleware('throttle:30,1');
+
 // Stripe offering webhook (Stripe-signature verified, no user auth)
 Route::post('/webhooks/stripe', [OfferingController::class, 'webhook']);
 
@@ -200,8 +206,6 @@ Route::middleware(['auth:sanctum', 'account.usable'])->group(function () {
     // tokens are 48-char random, so scanning is infeasible, but keep it boring.
     Route::post('/groups/{group}/invitations',      [\App\Http\Controllers\InvitationController::class, 'storeLink'])
         ->middleware('throttle:30,1');
-    Route::get('/invitations/link/{token}',         [\App\Http\Controllers\InvitationController::class, 'showLink'])
-        ->middleware('throttle:60,1');
     Route::post('/invitations/link/{token}/redeem', [\App\Http\Controllers\InvitationController::class, 'redeem'])
         ->middleware('throttle:20,1');
 

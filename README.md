@@ -1121,6 +1121,24 @@ response contract. Worktree development workflow (including the easy-to-forget
 `.env.testing` symlink) is documented in
 [docs/development/worktree.md](docs/development/worktree.md).
 
+**Invitation flow (v1.3 Phase F — where every `join_url`/QR lands).**
+[JoinInvitation.vue](frontend/src/components/JoinInvitation.vue) at `#join?token=…`:
+preview → authenticate (if needed) → join → success. The **preview endpoint is now
+public** (throttled; the 48-char token is the capability, unknown tokens 404) because a
+QR scanner is usually signed out — it shows group/ministry/member count/inviter/expiry
+and is **informational only**: `redeem()` remains the authoritative check for validity,
+expiry, revocation and permissions, and the component re-fetches the preview on every
+mount so it never assumes a link stayed valid across authentication. Redemption also
+now **refuses anonymous guest accounts** (`@guest.local`) — a membership on a
+credential-less account would be orphaned; the flow asks them to register. The auth
+hand-off is generic infrastructure, not a `#join` special case: guarded routes and
+workflow components store the intended hash under `sessionStorage["auth.intended"]`,
+and `navigateAfterAuth()` in App.vue — the one place that decides post-auth
+navigation — returns the user there (falling back to `#account`). Auth screens never
+mention the invitation; the stored destination does the work. The success screen is a
+bridge into collaboration: Go to the group / Start today's reading / Return to
+dashboard.
+
 ## Unified Conversation & Spiritual History
 
 Every registered worshipper gets a permanent, ChatGPT-style history of every

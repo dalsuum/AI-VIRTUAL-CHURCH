@@ -115,6 +115,24 @@
       "request_approved": "{actor}'s request to join was approved"
     }
   },
+  "join": {
+    "checking": "Checking your invitation…",
+    "invalid": "This invitation link is not valid. Ask your church for a new one.",
+    "notUsable": "This invitation link is no longer valid. Ask your church for a new one.",
+    "title": "You're invited!",
+    "toGroup": "Join {group} at {church}",
+    "invitedBy": "Invited by {name}",
+    "members": "{n} members",
+    "validUntil": "Valid until {date}",
+    "join": "Join the group",
+    "signIn": "Sign in to join",
+    "createAccount": "Create an account",
+    "welcome": "✓ Welcome!",
+    "joined": "You've joined {group}",
+    "goToGroup": "Go to the group",
+    "startReading": "Start today's reading",
+    "toDashboard": "Return to dashboard"
+  },
   "auth": {
     "login": "Login",
     "register": "Register",

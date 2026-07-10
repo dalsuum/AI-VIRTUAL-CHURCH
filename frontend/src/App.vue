@@ -17,6 +17,7 @@ import PastorChat from "./components/PastorChat.vue";
 import SpiritualJourney from "./components/SpiritualJourney.vue";
 import ChurchDashboard from "./components/ChurchDashboard.vue";
 import GroupPage from "./components/GroupPage.vue";
+import JoinInvitation from "./components/JoinInvitation.vue";
 import HistorySidebar from "./components/HistorySidebar.vue";
 import AuthPanel from "./components/AuthPanel.vue";
 import AccountSettings from "./components/AccountSettings.vue";
@@ -58,6 +59,8 @@ const isJourneyRoute = ref(window.location.hash.startsWith("#journey"));
 const isChurchRoute = ref(window.location.hash.split("?")[0] === "#church");
 // Group Page (collaboration workspace) — carries ?id=, match the base.
 const isGroupRoute = ref(window.location.hash.split("?")[0] === "#group");
+// Invitation landing (QR / shared join_url) — public preview, auth to join.
+const isJoinRoute = ref(window.location.hash.split("?")[0] === "#join");
 // Account + auth entry points (hash-routed like the rest of the app).
 const isLoginRoute    = ref(window.location.hash === "#login");
 const isRegisterRoute = ref(window.location.hash === "#register");
@@ -94,6 +97,7 @@ window.addEventListener("hashchange", () => {
   isJourneyRoute.value = window.location.hash.startsWith("#journey");
   isChurchRoute.value = window.location.hash.split("?")[0] === "#church";
   isGroupRoute.value = window.location.hash.split("?")[0] === "#group";
+  isJoinRoute.value = window.location.hash.split("?")[0] === "#join";
   isFathersDayRoute.value = window.location.hash === "#fathers-day";
   isStickerRoute.value = window.location.hash === "#stickers";
   isLoginRoute.value    = window.location.hash === "#login";
@@ -136,6 +140,10 @@ async function loadMe() {
 function enforceGuards() {
   const hash = window.location.hash;
   if ((hash === "#account" || ["#church", "#group"].includes(hash.split("?")[0])) && !isAuthed.value) {
+    // Remember what the user was trying to reach (join a group, open a page…)
+    // so authentication returns them there instead of a generic landing page.
+    // Any protected route added to the list above inherits this behavior.
+    sessionStorage.setItem("auth.intended", hash);
     window.location.hash = "#login";
   } else if ((hash === "#login" || hash === "#register") && isAuthed.value) {
     window.location.hash = "#account";
@@ -146,9 +154,18 @@ function enforceGuards() {
 
 // Called by AuthPanel after a successful login/register: refresh identity, then
 // send the user into the app (account page for the freshly registered).
+// The ONE place that decides where a user lands after authenticating:
+// 1. the destination they were trying to reach (guards and workflow components
+//    store it under auth.intended), else 2. the account dashboard.
+function navigateAfterAuth() {
+  const intended = sessionStorage.getItem("auth.intended");
+  sessionStorage.removeItem("auth.intended");
+  window.location.hash = intended || "#account";
+}
+
 async function onAuthed() {
   await loadMe();
-  window.location.hash = "#account";
+  navigateAfterAuth();
 }
 
 async function logout() {
@@ -423,6 +440,7 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
       <SpiritualJourney v-else-if="isJourneyRoute" />
       <ChurchDashboard v-else-if="isChurchRoute && isAuthed" />
       <GroupPage v-else-if="isGroupRoute && isAuthed" :current-hash="currentHash" />
+      <JoinInvitation v-else-if="isJoinRoute" :current-hash="currentHash" :is-authed="isAuthed" />
 
       <!-- Default intake / auth / account flow — constrained card width. -->
       <div v-else class="shell">

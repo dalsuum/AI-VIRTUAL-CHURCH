@@ -922,9 +922,14 @@ visibility-filtered through `PrivacyGate::canViewPresence` (honoring incognito +
 a hidden member returns 404, not 403). The **Privacy API** (`/api/me/privacy`) exposes the
 stable Phase 1 settings (profile/activity/presence visibility, friend-only mode, incognito);
 notification-channel preferences are left for the later reminder/notification work.
-**Church authorization** runs through `ChurchPolicy`, whose abilities (view/createSession/
-moderate/manage) declare a minimum role and defer the comparison to `ChurchRole::atLeast` —
-**the enum owns the hierarchy**, no policy hard-codes role order. A default-church backfill
+**Church authorization** runs through `ChurchPolicy`, whose abilities (view/viewDirectory/
+createSession/moderate/manage) declare a minimum role and defer the comparison to
+`ChurchRole::atLeast` — **the enum owns the hierarchy**, no policy hard-codes role order.
+`view` (profile + ministry-group catalog) admits **guests** — someone who entered through
+a group invitation link has been invited into the community and may see what it is —
+while `viewDirectory` (member roster, church-wide activity feed) stays member+: member
+names remain member-visible, since guests hold participation, not pastoral recognition
+(v1.3 acceptance finding, owner decision). A default-church backfill
 (`php artisan community:backfill-default-church`) is idempotent, transactional and
 resumable: it creates the church once and only the missing memberships, safe to rerun.
 Because promotion is itself elder+-gated (and the backfill assigns `member`), first

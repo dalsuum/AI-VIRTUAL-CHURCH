@@ -39,12 +39,12 @@ class ChurchController extends Controller
         return response()->json(['churches' => $churches]);
     }
 
-    /** Member directory — visible to any member of the church (ChurchPolicy::view).
-     *  Carries each member's group names so the directory needs no follow-up calls;
-     *  search/filtering happens client-side (church rosters are small). */
+    /** Member directory — members and above (ChurchPolicy::viewDirectory; guests
+     *  don't enumerate the roster). Carries each member's group names so the
+     *  directory needs no follow-up calls; search/filtering happens client-side. */
     public function members(Request $request, Church $church)
     {
-        $this->authorize('view', $church);
+        $this->authorize('viewDirectory', $church);
 
         $memberships  = $church->memberships()->with('user')->get();
         $groupsByUser = GroupMembership::query()
@@ -75,7 +75,7 @@ class ChurchController extends Controller
      */
     public function activity(Request $request, Church $church)
     {
-        $this->authorize('view', $church);
+        $this->authorize('viewDirectory', $church);   // feed names members; guests don't see it
 
         $groupIds = $church->groups()->pluck('id');
 

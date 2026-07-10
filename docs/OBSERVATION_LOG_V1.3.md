@@ -53,6 +53,19 @@ implementation — as an extension of an existing domain.
 ## Collaboration
 <!-- groups: creation, discovery, leadership, membership, directory -->
 
+- 2026-07-10 — owner (acceptance run, Part 2) — **FIXED:** after joining via
+  invitation, the newcomer opened *My Church* and got a raw "This action is
+  unauthorized" — link-joiners are church **guests** by design (least
+  privilege), but the whole dashboard was gated at member+. *Observation:*
+  guests were shown a door they couldn't open. *Pattern:* a guest belongs to
+  the community they entered and needs to see its public face. *Principle
+  (owner decision):* guests see the church profile and the ministry-group
+  catalog; the member directory and church-wide feed stay member+ — member
+  names remain member-visible; deeper access comes with membership, a pastoral
+  decision. *Implementation:* `ChurchPolicy::view` floor lowered to GUEST, new
+  `viewDirectory` (member+) for roster + feed; dashboard hides those sections
+  for guests instead of erroring.
+
 ## Reading
 <!-- shared sessions, individual plans, completions, streaks, reminders -->
 

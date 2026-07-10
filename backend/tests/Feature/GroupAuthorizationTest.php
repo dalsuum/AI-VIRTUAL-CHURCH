@@ -216,6 +216,55 @@ class GroupAuthorizationTest extends TestCase
         $this->assertSame('member_joined', $items[1]['type']);
     }
 
+    public function test_group_service_share_and_member_playback(): void
+    {
+        $church = $this->church();
+        $choir  = Group::create(['church_id' => $church->id, 'name' => 'Choir', 'type' => GroupType::CHOIR]);
+        $leader = $this->makeUser();
+        $member = $this->makeUser();
+        $this->churchMember($leader, $church, ChurchRole::MEMBER);
+        $this->churchMember($member, $church, ChurchRole::MEMBER);
+        $this->groupMember($leader, $choir, GroupRole::LEADER);
+        $this->groupMember($member, $choir, GroupRole::MEMBER);
+
+        $service = \App\Models\ServiceSession::create([
+            'user_id' => $leader->id, 'session_token' => str_repeat('a', 64),
+            'status' => 'completed', 'language' => 'en', 'music_source' => 'suno',
+        ]);
+
+        // Members cannot share; a manager can share only THEIR OWN service.
+        $this->actingAs($member, 'sanctum')
+            ->postJson("/api/groups/{$choir->id}/service", ['session_token' => $service->session_token])
+            ->assertForbidden();
+        $other = $this->makeUser();
+        $this->churchMember($other, $church, ChurchRole::ELDER);
+        $this->actingAs($other, 'sanctum')
+            ->postJson("/api/groups/{$choir->id}/service", ['session_token' => $service->session_token])
+            ->assertNotFound();   // elder may manage, but it isn't their service
+
+        $this->actingAs($leader, 'sanctum')
+            ->postJson("/api/groups/{$choir->id}/service", ['session_token' => $service->session_token])
+            ->assertOk()->assertJsonPath('service.shared_by', $leader->name);
+
+        // Group members see the card and can OPEN the service by membership alone.
+        $this->actingAs($member, 'sanctum')->getJson("/api/groups/{$choir->id}/service")
+            ->assertOk()->assertJsonPath('service.session_token', $service->session_token);
+        $this->actingAs($member, 'sanctum')->getJson("/api/service/{$service->session_token}")
+            ->assertOk();
+
+        // Outsiders get a 404, not a leak.
+        $outsider = $this->makeUser();
+        $this->actingAs($outsider, 'sanctum')
+            ->getJson("/api/service/{$service->session_token}")->assertNotFound();
+
+        // Unshare: card empties and member playback closes.
+        $this->actingAs($leader, 'sanctum')->deleteJson("/api/groups/{$choir->id}/service")->assertOk();
+        $this->actingAs($member, 'sanctum')->getJson("/api/groups/{$choir->id}/service")
+            ->assertOk()->assertJsonPath('service', null);
+        $this->actingAs($member, 'sanctum')
+            ->getJson("/api/service/{$service->session_token}")->assertNotFound();
+    }
+
     public function test_church_leaders_create_groups_over_http(): void
     {
         $church = $this->church();

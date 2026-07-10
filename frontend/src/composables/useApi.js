@@ -332,6 +332,11 @@ export const api = {
     request(`/groups/${id}/invitations`, { method: "POST", body: payload }),
   emailGroupInvite: (id, payload) =>
     request(`/groups/${id}/invitations/email`, { method: "POST", body: payload }),
+  myServices: () => request("/me/services"),
+  groupService: (id) => request(`/groups/${id}/service`),
+  shareGroupService: (id, token) =>
+    request(`/groups/${id}/service`, { method: "POST", body: { session_token: token } }),
+  unshareGroupService: (id) => request(`/groups/${id}/service`, { method: "DELETE" }),
   groupJoinRequests: (id) => request(`/groups/${id}/join-requests`),
   requestToJoin: (id) => request(`/groups/${id}/join-requests`, { method: "POST" }),
   invitationAccept: (id) => request(`/invitations/${id}/accept`, { method: "POST" }),

@@ -103,6 +103,15 @@
       "completedToday": "read today",
       "state": { "planned": "Planned", "active": "Active", "paused": "Paused" }
     },
+    "service": {
+      "title": "Group Service",
+      "none": "No shared service yet.",
+      "sharedBy": "Service shared by {name}",
+      "open": "Open the service",
+      "share": "Share with the group",
+      "unshare": "Stop sharing",
+      "pick": "Choose one of your services"
+    },
     "members": { "title": "Members" },
     "invites": {
       "title": "Invitations",

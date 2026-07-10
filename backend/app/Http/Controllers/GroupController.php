@@ -140,4 +140,54 @@ class GroupController extends Controller
 
         return response()->json(['activity' => $items]);
     }
+
+    // ── Group service (v1.4): share one generated service with the group ───────
+
+    /** The group's current shared service (latest), for the Group Page card. */
+    public function service(Request $request, Group $group)
+    {
+        $this->authorize('view', $group);
+
+        $s = \App\Models\ServiceSession::query()
+            ->where('group_id', $group->id)->latest()->with('user')->first();
+
+        return response()->json(['service' => $s ? [
+            'session_token' => $s->session_token,
+            'status'        => $s->status,
+            'language'      => $s->language,
+            'shared_by'     => $s->user?->name,
+            'created_at'    => optional($s->created_at)->toIso8601String(),
+        ] : null]);
+    }
+
+    /** Share one of YOUR OWN services with the group (managers). The pipeline is
+     *  untouched — sharing is an ownership flag; playback authorizes members. */
+    public function shareService(Request $request, Group $group)
+    {
+        $this->authorize('manage', $group);
+
+        $data = $request->validate([
+            'session_token' => ['required', 'string', 'max:128'],
+        ]);
+
+        $service = \App\Models\ServiceSession::query()
+            ->where('session_token', $data['session_token'])
+            ->where('user_id', $request->user()->id)
+            ->firstOrFail();
+
+        $service->forceFill(['group_id' => $group->id])->save();
+
+        return $this->service($request, $group);
+    }
+
+    /** Stop sharing (managers). The service itself remains the owner's. */
+    public function unshareService(Request $request, Group $group)
+    {
+        $this->authorize('manage', $group);
+
+        \App\Models\ServiceSession::query()
+            ->where('group_id', $group->id)->update(['group_id' => null]);
+
+        return response()->json(['service' => null]);
+    }
 }

@@ -108,6 +108,12 @@ window.addEventListener("hashchange", () => {
   isRegisterRoute.value = window.location.hash === "#register";
   isAccountRoute.value  = window.location.hash === "#account";
   enforceGuards();
+  // Group service (v1.4): #service?token=SESSION_TOKEN opens a shared service —
+  // membership (cookie auth) is the credential, no resume token involved.
+  if (window.location.hash.split("?")[0] === "#service") {
+    const tok = new URLSearchParams(window.location.hash.split("?")[1] || "").get("token");
+    if (tok && tok !== sessionToken.value) openSharedService(tok);
+  }
   // Scroll restoration: start a new page at the top, but ignore same-page hash
   // changes (e.g. #pastor → #pastor?session=… or the guard redirects) so we
   // don't yank the user up while staying on one view.
@@ -143,7 +149,7 @@ async function loadMe() {
 //    form for the not-yet-authenticated case, so we don't bounce those away).
 function enforceGuards() {
   const hash = window.location.hash;
-  if ((hash === "#account" || ["#church", "#group", "#members"].includes(hash.split("?")[0])) && !isAuthed.value) {
+  if ((hash === "#account" || ["#church", "#group", "#members", "#service"].includes(hash.split("?")[0])) && !isAuthed.value) {
     // Remember what the user was trying to reach (join a group, open a page…)
     // so authentication returns them there instead of a generic landing page.
     // Any protected route added to the list above inherits this behavior.
@@ -378,9 +384,35 @@ function onIntercepted(res) {
   view.value = "intercepted";
 }
 
+// Open a service SHARED TO A GROUP (v1.4) by its session token: the viewer's
+// group membership authorizes the poll (ServiceController::show); same
+// preparing/player state machine as the owner's own flow.
+async function openSharedService(token) {
+  sessionToken.value = token;
+  displayName.value  = api.rememberedName() || "";
+  mediaGracePolls    = 0;
+  openWaitPolls      = 0;
+  totalPolls         = 0;
+  view.value = "preparing";
+  try {
+    await poll();
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(poll, 4000);
+  } catch {
+    resumeError.value = "This group service is not available.";
+    view.value = "intake";
+  }
+}
+
 // If the user arrived via an email link (?session=TOKEN), restore their session
 // automatically — even on a different device or after browser storage was cleared.
 onMounted(async () => {
+  // Direct load on a shared-service link (#service?token=…).
+  if (window.location.hash.split("?")[0] === "#service") {
+    const tok = new URLSearchParams(window.location.hash.split("?")[1] || "").get("token");
+    if (tok) openSharedService(tok);
+  }
+
   const params = new URLSearchParams(window.location.search);
   const token  = params.get("session");
   if (!token) return;

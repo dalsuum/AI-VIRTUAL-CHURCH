@@ -47,6 +47,7 @@ async function load() {
     const jobs = [
       api.groupMembers(groupId.value).then((r) => (members.value = r.members || [])),
       api.groupActivity(groupId.value).then((r) => (activity.value = r.activity || [])),
+      api.groupService(groupId.value).then((r) => (gService.value = r.service)),
       api.me().then((r) => (myUserId.value = r.user?.id ?? r.id ?? null)).catch(() => {}),
     ];
     if (group.value.open_session) {
@@ -57,6 +58,7 @@ async function load() {
     if (group.value.can_manage) {
       jobs.push(api.groupJoinRequests(groupId.value).then((r) => (requests.value = r || [])));
       jobs.push(api.readingPlans().then((r) => (plans.value = r.plans || [])));
+      jobs.push(api.myServices().then((r) => (myServices.value = r.services || [])).catch(() => {}));
     }
     await Promise.all(jobs);
   } catch (e) {
@@ -68,6 +70,10 @@ async function load() {
 }
 onMounted(load);
 watch(groupId, load);
+
+const gService = ref(null);     // the group's shared service (v1.4)
+const myServices = ref([]);     // manager's own services for the share-picker
+const shareToken = ref(null);
 
 const busy = ref(false);
 const actionError = ref("");
@@ -120,6 +126,10 @@ async function copyLink(l) {
     setTimeout(() => { if (copiedId.value === l.id) copiedId.value = null; }, 2000);
   } catch { /* URL stays visible for manual copy */ }
 }
+
+// ── Group service (v1.4): share one of MY generated services with the group ──
+const shareService = () => run(() => api.shareGroupService(groupId.value, shareToken.value));
+const unshareService = () => run(() => api.unshareGroupService(groupId.value));
 
 // ── Join requests (manager side) ─────────────────────────────────────────────
 const approve = (id) => run(() => api.invitationAccept(id));
@@ -217,6 +227,37 @@ const fmtDate = (iso) => (iso ? new Date(iso).toLocaleDateString() : "");
               <option v-for="p in plans" :key="p.id" :value="p.id">{{ p.title }} ({{ p.day_count }}d)</option>
             </select>
             <button class="btn" type="submit" :disabled="busy || !newPlanId">{{ t("group.reading.createBtn") }}</button>
+          </form>
+        </template>
+      </section>
+
+      <!-- Group Service (v1.4): one shared generated service, opened by everyone -->
+      <section class="card">
+        <h2>{{ t("group.service.title") }}</h2>
+
+        <template v-if="gService">
+          <p class="gp-meta">
+            <span class="badge live">🙏 {{ t("group.service.sharedBy", { name: gService.shared_by ?? "…" }) }}</span>
+            <span class="muted small">{{ fmtDate(gService.created_at) }} · {{ (gService.language || "").toUpperCase() }}</span>
+          </p>
+          <p class="gp-controls">
+            <a class="btn" :href="`#service?token=${gService.session_token}`">{{ t("group.service.open") }}</a>
+            <button v-if="canManage" class="btn ghost" :disabled="busy" @click="unshareService">
+              {{ t("group.service.unshare") }}
+            </button>
+          </p>
+        </template>
+
+        <template v-else>
+          <p class="muted">{{ t("group.service.none") }}</p>
+          <form v-if="canManage && myServices.length" class="gp-mint" @submit.prevent="shareService">
+            <select v-model="shareToken" required>
+              <option :value="null" disabled>{{ t("group.service.pick") }}</option>
+              <option v-for="s in myServices" :key="s.session_token" :value="s.session_token">
+                {{ fmtDate(s.created_at) }} · {{ (s.language || "").toUpperCase() }} · {{ s.status }}
+              </option>
+            </select>
+            <button class="btn" type="submit" :disabled="busy || !shareToken">{{ t("group.service.share") }}</button>
           </form>
         </template>
       </section>

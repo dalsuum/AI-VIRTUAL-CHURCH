@@ -205,6 +205,12 @@ Route::middleware(['auth:sanctum', 'account.usable'])->group(function () {
     Route::post('/invitations/link/{token}/redeem', [\App\Http\Controllers\InvitationController::class, 'redeem'])
         ->middleware('throttle:20,1');
 
+    // Group Page read surface (v1.3 Phase F): header/status, roster, and a minimal
+    // activity projection. Mutations stay with their domain owners' routes below.
+    Route::get('/groups/{group}',          [\App\Http\Controllers\GroupController::class, 'show']);
+    Route::get('/groups/{group}/members',  [\App\Http\Controllers\GroupController::class, 'members']);
+    Route::get('/groups/{group}/activity', [\App\Http\Controllers\GroupController::class, 'activity']);
+
     // Join requests (kind=request): the requester is the inviter, so withdrawal is
     // the ordinary cancel; managers approve/decline via /invitations/{id}/accept|decline.
     Route::post('/groups/{group}/join-requests', [\App\Http\Controllers\InvitationController::class, 'storeRequest'])

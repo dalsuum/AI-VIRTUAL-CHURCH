@@ -324,6 +324,25 @@ export const api = {
   createGroup: (id, payload) =>
     request(`/churches/${id}/groups`, { method: "POST", body: payload }),
   myInvitations: () => request("/invitations"),
+  group: (id) => request(`/groups/${id}`),
+  groupMembers: (id) => request(`/groups/${id}/members`),
+  groupActivity: (id) => request(`/groups/${id}/activity`),
+  mintGroupLink: (id, payload = {}) =>
+    request(`/groups/${id}/invitations`, { method: "POST", body: payload }),
+  groupJoinRequests: (id) => request(`/groups/${id}/join-requests`),
+  requestToJoin: (id) => request(`/groups/${id}/join-requests`, { method: "POST" }),
+  invitationAccept: (id) => request(`/invitations/${id}/accept`, { method: "POST" }),
+  invitationDecline: (id) => request(`/invitations/${id}/decline`, { method: "POST" }),
+  invitationCancel: (id) => request(`/invitations/${id}/cancel`, { method: "POST" }),
+  readingPlans: () => request("/bible/plans"),
+  groupReadingSessions: (id) => request(`/groups/${id}/reading-sessions`),
+  createReadingSession: (id, planId) =>
+    request(`/groups/${id}/reading-sessions`, { method: "POST", body: { reading_plan_id: planId } }),
+  readingSession: (id) => request(`/reading-sessions/${id}`),
+  joinReadingSession: (id) => request(`/reading-sessions/${id}/join`, { method: "POST" }),
+  // action ∈ start|pause|resume|complete|abandon — the server validates the route.
+  readingSessionAction: (id, action) =>
+    request(`/reading-sessions/${id}/${action}`, { method: "POST" }),
 
   // ── Spiritual Journal ────────────────────────────────────────────────────
   journalGenerate: (sessionId) =>

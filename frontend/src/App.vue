@@ -16,6 +16,7 @@ import WorshipRadio from "./components/WorshipRadio.vue";
 import PastorChat from "./components/PastorChat.vue";
 import SpiritualJourney from "./components/SpiritualJourney.vue";
 import ChurchDashboard from "./components/ChurchDashboard.vue";
+import GroupPage from "./components/GroupPage.vue";
 import HistorySidebar from "./components/HistorySidebar.vue";
 import AuthPanel from "./components/AuthPanel.vue";
 import AccountSettings from "./components/AccountSettings.vue";
@@ -55,6 +56,8 @@ const isPastorRoute = ref(window.location.hash.startsWith("#pastor"));
 const isJourneyRoute = ref(window.location.hash.startsWith("#journey"));
 // Church Dashboard (v1.3 collaboration home) — future ?church= suffix, match the base.
 const isChurchRoute = ref(window.location.hash.split("?")[0] === "#church");
+// Group Page (collaboration workspace) — carries ?id=, match the base.
+const isGroupRoute = ref(window.location.hash.split("?")[0] === "#group");
 // Account + auth entry points (hash-routed like the rest of the app).
 const isLoginRoute    = ref(window.location.hash === "#login");
 const isRegisterRoute = ref(window.location.hash === "#register");
@@ -90,6 +93,7 @@ window.addEventListener("hashchange", () => {
   isPastorRoute.value = window.location.hash.startsWith("#pastor");
   isJourneyRoute.value = window.location.hash.startsWith("#journey");
   isChurchRoute.value = window.location.hash.split("?")[0] === "#church";
+  isGroupRoute.value = window.location.hash.split("?")[0] === "#group";
   isFathersDayRoute.value = window.location.hash === "#fathers-day";
   isStickerRoute.value = window.location.hash === "#stickers";
   isLoginRoute.value    = window.location.hash === "#login";
@@ -131,7 +135,7 @@ async function loadMe() {
 //    form for the not-yet-authenticated case, so we don't bounce those away).
 function enforceGuards() {
   const hash = window.location.hash;
-  if ((hash === "#account" || hash.split("?")[0] === "#church") && !isAuthed.value) {
+  if ((hash === "#account" || ["#church", "#group"].includes(hash.split("?")[0])) && !isAuthed.value) {
     window.location.hash = "#login";
   } else if ((hash === "#login" || hash === "#register") && isAuthed.value) {
     window.location.hash = "#account";
@@ -418,6 +422,7 @@ onUnmounted(() => pollTimer && clearInterval(pollTimer));
       <PastorChat v-else-if="isPastorRoute" />
       <SpiritualJourney v-else-if="isJourneyRoute" />
       <ChurchDashboard v-else-if="isChurchRoute && isAuthed" />
+      <GroupPage v-else-if="isGroupRoute && isAuthed" :current-hash="currentHash" />
 
       <!-- Default intake / auth / account flow — constrained card width. -->
       <div v-else class="shell">

@@ -55,6 +55,66 @@
       "custom": "Group"
     }
   },
+  "group": {
+    "loading": "Loading…",
+    "notFound": "This group could not be loaded.",
+    "leaders": "Leaders",
+    "status": {
+      "title": "Today's Status",
+      "sessionActive": "Reading session active",
+      "noSession": "No reading session",
+      "members": "{n} members",
+      "completedToday": "{n} completed today's reading",
+      "pendingRequests": "{n} pending join requests",
+      "activeLinks": "{n} active invitation links"
+    },
+    "reading": {
+      "title": "Today's Reading",
+      "none": "No reading session yet.",
+      "start": "Start",
+      "pause": "Pause",
+      "resume": "Resume",
+      "complete": "Finish plan",
+      "join": "Join the reading",
+      "joined": "You are reading along",
+      "participants": "{n} reading along",
+      "create": "Start a reading session",
+      "choosePlan": "Choose a plan",
+      "createBtn": "Create session",
+      "day": "Day {n}",
+      "completedToday": "read today",
+      "state": { "planned": "Planned", "active": "Active", "paused": "Paused" }
+    },
+    "members": { "title": "Members" },
+    "invites": {
+      "title": "Invitations",
+      "mint": "New invitation link",
+      "maxUses": "Max uses (optional)",
+      "expiresDays": "Expires in (days)",
+      "mintBtn": "Create link",
+      "revoke": "Revoke",
+      "none": "No active links.",
+      "uses": "{used}/{max} used",
+      "unlimited": "{used} used"
+    },
+    "requests": {
+      "title": "Join Requests",
+      "none": "No pending requests.",
+      "approve": "Approve",
+      "decline": "Decline",
+      "ask": "Request to join",
+      "pending": "Your request is pending",
+      "withdraw": "Withdraw"
+    },
+    "activity": {
+      "title": "Recent Activity",
+      "none": "Nothing yet — invite some members!",
+      "member_joined": "{actor} joined the group",
+      "session_started": "Shared reading started: {subject}",
+      "link_created": "{actor} opened an invitation link",
+      "request_approved": "{actor}'s request to join was approved"
+    }
+  },
   "auth": {
     "login": "Login",
     "register": "Register",

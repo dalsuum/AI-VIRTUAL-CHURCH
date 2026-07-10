@@ -1100,6 +1100,27 @@ on the existing `ChurchController`. UI strings live under `church.*` in
 reviewed); the bottom-nav icon rides the offline Iconify bundle (`npm run icons:gen`).
 HTTP surface covered in `tests/Feature/GroupAuthorizationTest.php`.
 
+**Group Page (v1.3 Phase F — collaboration workspace).** Reached from the dashboard's
+group cards at `#group?id=…` (auth-guarded):
+[GroupPage.vue](frontend/src/components/GroupPage.vue) is organized around workflows,
+**participation before administration** — header (type/church/leaders/role, with
+request-to-join / withdraw for non-members) → **Today's Status** panel (session
+active?, members, completed today, pending requests + active links for managers) →
+**Today's Reading** (join the session, per-member roster with ✓ read-today ticks,
+leader start/pause/resume/complete controls, create-session form from `/bible/plans`)
+→ Members → **Invitations** (mint links with max-uses/expiry, copy `join_url`, revoke)
+→ **Join Requests** (approve/decline) → **Recent Activity**. The feed renders human
+sentences ("Alice joined the group"), never event names. Backing it is a thin
+read-only [GroupController](backend/app/Http/Controllers/GroupController.php)
+(`GET /groups/{group}` header+status with manager-only extras, `/members`,
+`/activity`) — mutations stay with their domain owners' existing routes. The activity
+endpoint is deliberately a **projection over existing rows** (memberships' `joined_at`,
+sessions' `started_at`, link/request invitations) — no event store, no new tables; a
+persisted feed built on the frozen domain events can replace it without changing the
+response contract. Worktree development workflow (including the easy-to-forget
+`.env.testing` symlink) is documented in
+[docs/development/worktree.md](docs/development/worktree.md).
+
 ## Unified Conversation & Spiritual History
 
 Every registered worshipper gets a permanent, ChatGPT-style history of every

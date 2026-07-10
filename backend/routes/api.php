@@ -224,6 +224,16 @@ Route::middleware(['auth:sanctum', 'account.usable'])->group(function () {
         ->middleware('throttle:20,1');
     Route::get('/groups/{group}/join-requests',  [\App\Http\Controllers\InvitationController::class, 'indexRequests']);
 
+    // ── Group service (v1.4): one shared generated service per group ───────────
+    // Managers share ONE OF THEIR OWN services; members open the same service
+    // (playback authorizes by group membership in ServiceController::show).
+    Route::get('/me/services',              [ServiceController::class, 'mine']);
+    Route::get('/groups/{group}/service',   [\App\Http\Controllers\GroupController::class, 'service']);
+    Route::post('/groups/{group}/service',  [\App\Http\Controllers\GroupController::class, 'shareService'])
+        ->middleware('throttle:30,1');
+    Route::delete('/groups/{group}/service', [\App\Http\Controllers\GroupController::class, 'unshareService'])
+        ->middleware('throttle:30,1');
+
     // ── Shared reading sessions (v1.3 Phase D) ─────────────────────────────────
     // A session coordinates a group around an existing plan; it owns no progress —
     // participants read through their own enrollments (ReadingPlanService).

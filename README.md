@@ -1177,6 +1177,18 @@ event names. Covered in `tests/Feature/ChurchAuthorizationTest.php`. This comple
 the Phase F collaboration UI: Dashboard → Group → Invite → Preview → Login (intent
 preserved) → Join → Group → Shared Reading → Activity.
 
+**Group Service (v1.4 — worship together, first slice).** A group manager shares **one
+of their own generated services** with the group (share-picker on the Group Page →
+`POST /groups/{group}/service`); every group member sees the card and opens **the same
+service** — prayers, sermon, hymns — each at their own pace, via `#service?token=…`
+(guarded, intent-preserving). The service pipeline is untouched: sharing sets one
+nullable `group_id` on the leader's `service_sessions` row, and playback
+(`ServiceController::show`) authorizes group members by membership — no resume token,
+membership is the credential. Unsharing closes member playback immediately. One shared
+service per group (latest wins); `GET /me/services` feeds the picker. Generation
+*targeted at* a group (an intake checkbox) and synchronized watch-together are
+deliberately deferred until observation asks for them.
+
 ## Unified Conversation & Spiritual History
 
 Every registered worshipper gets a permanent, ChatGPT-style history of every

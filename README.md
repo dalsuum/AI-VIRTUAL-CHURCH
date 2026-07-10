@@ -927,6 +927,12 @@ moderate/manage) declare a minimum role and defer the comparison to `ChurchRole:
 **the enum owns the hierarchy**, no policy hard-codes role order. A default-church backfill
 (`php artisan community:backfill-default-church`) is idempotent, transactional and
 resumable: it creates the church once and only the missing memberships, safe to rerun.
+Because promotion is itself elder+-gated (and the backfill assigns `member`), first
+leadership is appointed with the break-glass bootstrap
+`php artisan church:assign-role <email> <role>` — it edits the **church** role
+(`church_memberships.role`), never the Admin Console's platform `users.role`; the two
+role systems are deliberately distinct. A church-run Members governance UI is the
+durable replacement, deferred to evidence-driven work (see the observation log).
 
 Covered by `tests/Unit/PrivacyGateTest.php` and the feature suite (`FriendshipTest`,
 `InvitationTest`, `EventReplaySafetyTest`, `PresencePrivacyTest`, `ChurchAuthorizationTest`,

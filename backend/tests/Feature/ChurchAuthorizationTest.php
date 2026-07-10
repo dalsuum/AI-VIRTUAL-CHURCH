@@ -94,4 +94,27 @@ class ChurchAuthorizationTest extends TestCase
         $outsider = $this->makeUser();
         $this->actingAs($outsider, 'sanctum')->getJson("/api/churches/{$church->id}/activity")->assertForbidden();
     }
+
+    public function test_guests_see_profile_and_groups_but_not_directory_or_feed(): void
+    {
+        // The link-joined guest boundary (acceptance finding, owner decision):
+        // profile + ministry catalog = yes; member names (roster, feed) = no.
+        $church = Church::create(['name' => 'Grace', 'slug' => 'grace']);
+        Group::create(['church_id' => $church->id, 'name' => 'Choir', 'type' => GroupType::CHOIR]);
+        $guest = $this->makeUser();
+        $this->member($guest, $church, ChurchRole::GUEST);
+
+        $this->actingAs($guest, 'sanctum')->getJson("/api/churches/{$church->id}")
+            ->assertOk()->assertJsonFragment(['name' => 'Grace']);
+        $this->actingAs($guest, 'sanctum')->getJson("/api/churches/{$church->id}/groups")
+            ->assertOk()->assertJsonCount(1, 'groups');
+
+        $this->actingAs($guest, 'sanctum')->getJson("/api/churches/{$church->id}/members")->assertForbidden();
+        $this->actingAs($guest, 'sanctum')->getJson("/api/churches/{$church->id}/activity")->assertForbidden();
+
+        // Outsiders (no membership row at all) still see nothing.
+        $outsider = $this->makeUser();
+        $this->actingAs($outsider, 'sanctum')->getJson("/api/churches/{$church->id}")->assertForbidden();
+        $this->actingAs($outsider, 'sanctum')->getJson("/api/churches/{$church->id}/groups")->assertForbidden();
+    }
 }

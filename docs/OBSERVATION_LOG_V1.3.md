@@ -33,12 +33,17 @@ implementation — as an extension of an existing domain.
 ## Invitations
 <!-- links, QR codes, previews, auth-return flow, revocations, join requests -->
 
-- 2026-07-10 — owner (acceptance run, Part 2) — **BUG, fixed:** minted `join_url`
-  pointed at the API host (`api.aivirtual.church/#join?…` → plain 404) because
-  two builders used `config('app.url')` instead of the existing
+- 2026-07-10 — owner (acceptance run, Part 2) — **BUG, fixed (PR #80):** minted
+  `join_url` pointed at the API host (`api.aivirtual.church/#join?…` → plain
+  404) because two builders used `config('app.url')` instead of the existing
   `config('church.frontend_url')` that mail links already use. Fixed same day;
-  test now pins the host. Lesson: any URL destined for a browser must be built
-  from `church.frontend_url`, never `APP_URL`.
+  test now pins the full URL. The full progression, as a worked example:
+  *Observation:* invitation links carried the API hostname in production.
+  *Pattern:* browser-facing URLs must come from frontend configuration, never
+  API configuration. *Principle:* server endpoints and user navigation belong
+  to different deployment surfaces with separate configuration sources.
+  *Implementation:* all browser-bound URLs standardize on `church.frontend_url`;
+  `APP_URL` is reserved for server concerns; regression tests pin full URLs.
 - 2026-07-10 — owner (acceptance run) — **Enhancement candidate:** invitation
   delivery is copy/paste-only; churches expect "enter an email address → send
   invitation" (mail with church/group/leader + Join button, QR optional).

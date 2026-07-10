@@ -8,6 +8,12 @@ account yet. Uses production email activation, so have the newcomer's inbox open
 Deploy first (main checkout): `git pull` → `npm run build` in `frontend/` →
 `php artisan optimize:clear`. No migrations for Phase F.
 
+> **Smoke-testing note:** use the **API host** (`api.aivirtual.church`) for API
+> checks — the SPA host intentionally serves `index.html` for every path
+> (hash-router fallback), so it answers 200 even for unknown API routes.
+> Expected signatures on the API host: gated routes → 401 unauthenticated,
+> unknown invitation token → 404 (the preview is public), unknown route → 404.
+
 ## Part 1 — Leader sets the table
 
 - [ ] Log in; the header/bottom nav shows **My Church**.

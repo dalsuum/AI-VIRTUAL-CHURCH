@@ -49,6 +49,9 @@ implementation — as an extension of an existing domain.
   invitation" (mail with church/group/leader + Join button, QR optional).
   Direct in-app invitations already email existing users; what's missing is
   emailing a join link to someone with no account. v1.4 candidate.
+  **→ SHIPPED 2026-07-10 as the v1.4 opener (owner-directed):** email field on
+  the Group Page mints a single-use 14-day link and mails it via an on-demand
+  notification — email as delivery channel, one invitation system.
 
 ## Collaboration
 <!-- groups: creation, discovery, leadership, membership, directory -->

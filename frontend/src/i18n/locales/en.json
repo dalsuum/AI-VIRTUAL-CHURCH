@@ -113,7 +113,10 @@
       "revoke": "Revoke",
       "none": "No active links.",
       "uses": "{used}/{max} used",
-      "unlimited": "{used} used"
+      "unlimited": "{used} used",
+      "emailPlaceholder": "Email address",
+      "sendEmail": "Send by email",
+      "sent": "Invitation sent to {email}"
     },
     "requests": {
       "title": "Join Requests",

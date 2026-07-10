@@ -18,6 +18,13 @@ from the roadmap):
 **Entry format:** `- YYYY-MM-DD — who (role) — what happened / what they said`
 Add entries under the closest category; don't agonize over placement.
 
+**When reading this log, don't skip steps:**
+`Observation → Pattern → Principle → Implementation`.
+One request is an observation; three churches asking is a pattern; deciding
+where the capability *belongs* (e.g. membership administration is church
+governance, not the invitation system) is a principle; only then design the
+implementation — as an extension of an existing domain.
+
 ---
 
 ## Onboarding

@@ -1083,6 +1083,23 @@ profile, **elders+** (`manage`) edit it. Endpoints: `GET /churches/{church}`,
 > migration; church images need the standard `php artisan storage:link` (already present
 > on prod). No data step.
 
+**Church Dashboard (v1.3 Phase F — collaboration UI).** The collaboration home at
+`#church` (auth-guarded, in the header/bottom nav for signed-in users):
+[ChurchDashboard.vue](frontend/src/components/ChurchDashboard.vue) composes the v1.3
+backend into one page — church profile card (logo, description, contact, languages),
+**ministry groups grid** with the viewer's own role and any open reading session badge
+(each card links to the Group Page at `#group?id=…`), an inline **New group** form
+shown to church leaders+ (server-authorized by `GroupPolicy::create`), the viewer's
+**active invite links** with copy-to-clipboard `join_url`, and a member-roster preview.
+The role thresholds in the UI only decide what to *offer* — the backend policies remain
+the authority. Two thin endpoints complete the Groups HTTP surface for this first
+consumer: `GET /churches/{church}/groups` (per-group `member_count`, viewer's `my_role`,
+`open_session`) and `POST /churches/{church}/groups` (leader+, duplicate names are 422)
+on the existing `ChurchController`. UI strings live under `church.*` in
+`frontend/src/i18n/locales/en.json` (13 other locales fall back to English until
+reviewed); the bottom-nav icon rides the offline Iconify bundle (`npm run icons:gen`).
+HTTP surface covered in `tests/Feature/GroupAuthorizationTest.php`.
+
 ## Unified Conversation & Spiritual History
 
 Every registered worshipper gets a permanent, ChatGPT-style history of every

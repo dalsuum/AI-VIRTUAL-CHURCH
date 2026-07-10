@@ -32,6 +32,7 @@ const navItems = computed(() =>
     { href: "#lyrics", label: `🎵 ${t("nav.lyrics")}` },
     { href: "#vocabulary", label: `📖 ${t("nav.vocabulary")}` },
     { href: "#journey", label: `📊 ${t("nav.journey")}`, prefix: true, show: props.isAuthed },
+    { href: "#church", label: `⛪ ${t("nav.church")}`, prefix: true, show: props.isAuthed },
     {
       href: "#fathers-day", icon: "💙", labelFull: props.fdTitle, labelShort: "MV",
       responsive: true, show: props.fathersDayEnabled,

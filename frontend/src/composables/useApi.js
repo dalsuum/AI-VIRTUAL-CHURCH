@@ -316,6 +316,15 @@ export const api = {
   sharedView: (token, password) =>
     request(`/shared/${token}${password ? `?password=${encodeURIComponent(password)}` : ""}`),
 
+  // ── Church collaboration (v1.3): churches, groups, invitations, reading ──
+  myChurches: () => request("/churches"),
+  church: (id) => request(`/churches/${id}`),
+  churchMembers: (id) => request(`/churches/${id}/members`),
+  churchGroups: (id) => request(`/churches/${id}/groups`),
+  createGroup: (id, payload) =>
+    request(`/churches/${id}/groups`, { method: "POST", body: payload }),
+  myInvitations: () => request("/invitations"),
+
   // ── Spiritual Journal ────────────────────────────────────────────────────
   journalGenerate: (sessionId) =>
     request(`/history/${sessionId}/journal`, { method: "POST" }),

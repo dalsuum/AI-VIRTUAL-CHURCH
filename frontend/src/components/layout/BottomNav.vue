@@ -40,6 +40,7 @@ const moreItems = computed(() =>
     { href: "#bible-study", labelKey: "nav.bibleStudy", icon: "mdi:book-open-page-variant" },
     { href: "#lyrics", labelKey: "nav.lyrics", icon: "mdi:music-note" },
     { href: "#journey", labelKey: "nav.journey", icon: "mdi:chart-line", prefix: true, show: props.isAuthed },
+    { href: "#church", labelKey: "nav.church", icon: "mdi:church", prefix: true, show: props.isAuthed },
     { href: "#vocabulary", labelKey: "nav.vocabulary", icon: "mdi:translate" },
     { href: "#fathers-day", label: props.fdTitle, icon: "mdi:heart", show: props.fathersDayEnabled },
     { href: "#stickers", labelKey: "nav.stickers", icon: "mdi:sticker-emoji", show: props.stickersEnabled },

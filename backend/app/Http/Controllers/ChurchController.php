@@ -2,10 +2,15 @@
 
 namespace App\Http\Controllers;
 
+use App\Domains\Bible\Models\ReadingSession;
 use App\Domains\Church\Models\Church;
+use App\Domains\Groups\Models\Group;
+use App\Domains\Groups\Models\GroupMembership;
+use App\Enums\GroupType;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Enum;
 
 /**
  * Church surface: the churches I belong to, a church's roster and public profile
@@ -46,6 +51,56 @@ class ChurchController extends Controller
         ]);
 
         return response()->json(['members' => $members]);
+    }
+
+    /** A church's ministry groups with the viewer's own context (v1.3 Phase F —
+     *  first consumer of the Groups domain over HTTP). Visible to any member. */
+    public function groups(Request $request, Church $church)
+    {
+        $this->authorize('view', $church);
+
+        $groups = $church->groups()
+            ->withCount(['memberships as member_count' => fn ($q) => $q->where('status', GroupMembership::STATUS_ACTIVE)])
+            ->with(['readingSessions' => fn ($q) => $q->whereNotIn('status', ReadingSession::TERMINAL)->with('plan')])
+            ->orderBy('name')->get()
+            ->map(fn (Group $g) => [
+                'id'           => $g->id,
+                'name'         => $g->name,
+                'type'         => $g->type->value,
+                'description'  => $g->description,
+                'member_count' => $g->member_count,
+                'my_role'      => $request->user()->groupRole($g->id)?->value,
+                'open_session' => ($s = $g->readingSessions->first()) ? [
+                    'id' => $s->id, 'status' => $s->status, 'plan_title' => $s->plan?->title,
+                ] : null,
+            ]);
+
+        return response()->json(['groups' => $groups]);
+    }
+
+    /** Create a group (GroupPolicy::create — church leaders and above). */
+    public function storeGroup(Request $request, Church $church)
+    {
+        $this->authorize('create', [Group::class, $church]);
+
+        $data = $request->validate([
+            'name'        => ['required', 'string', 'min:2', 'max:120',
+                Rule::unique('groups', 'name')->where('church_id', $church->id)],
+            'type'        => ['required', new Enum(GroupType::class)],
+            'description' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $group = $church->groups()->create($data);
+
+        return response()->json([
+            'id'           => $group->id,
+            'name'         => $group->name,
+            'type'         => $group->type->value,
+            'description'  => $group->description,
+            'member_count' => 0,
+            'my_role'      => null,
+            'open_session' => null,
+        ], 201);
     }
 
     /** The church profile (v1.3 Phase E) — visible to any member. */

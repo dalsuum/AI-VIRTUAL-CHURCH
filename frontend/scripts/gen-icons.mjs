@@ -16,6 +16,8 @@ const ICON_NAMES = [
   "radio", "chat", "chart-line", "translate", "heart", "sticker-emoji",
   "wrench", "account", "login", "logout", "account-plus", "close",
   "magnify", "cog",
+  // Church collaboration (v1.3)
+  "church",
   // Worship Radio
   "play", "pause", "skip-next", "stop",
   "flash", "emoticon-happy-outline", "target", "leaf", "heart-broken",

@@ -65,7 +65,12 @@ class GroupInvitationLinkTest extends TestCase
         $this->assertNull($res['invitee']);
         $this->assertSame(10, $res['max_uses']);
         $this->assertNotEmpty($res['token']);
-        $this->assertStringContainsString($res['token'], $res['join_url']);
+        // join_url must point at the SPA (church.frontend_url) — the API host has
+        // no Vue app and 404s. Found by the v1.3 acceptance run.
+        $this->assertSame(
+            rtrim((string) config('church.frontend_url'), '/').'/#join?token='.$res['token'],
+            $res['join_url'],
+        );
 
         $member = $this->makeUser();
         $this->churchMember($member, ChurchRole::MEMBER);

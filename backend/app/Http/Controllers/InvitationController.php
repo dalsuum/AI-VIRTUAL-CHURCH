@@ -203,7 +203,7 @@ class InvitationController extends Controller
         if ($i->kind === InvitationKind::LINK) {
             $base += [
                 'token'     => $i->token,
-                'join_url'  => config('app.url').'/#join?token='.$i->token,   // QR renders this client-side
+                'join_url'  => rtrim((string) config('church.frontend_url'), '/').'/#join?token='.$i->token,   // QR renders this client-side
                 'max_uses'  => $i->max_uses,
                 'use_count' => $i->use_count,
             ];

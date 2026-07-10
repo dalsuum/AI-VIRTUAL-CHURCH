@@ -1,8 +1,10 @@
 <script setup>
 // Member Directory (v1.3 Phase F) — deliberately lightweight: search, role
 // filter, group badges. Rosters are small, so filtering is client-side over
-// the single directory payload. This is a directory, not an admin console —
-// role changes and removals stay with future administration work.
+// the single directory payload. v1.4 adds CHURCH ROLE GOVERNANCE for elders+:
+// an explicit change-role flow (choose role → optional reason → confirm), with
+// strict-dominance rules enforced server-side — the UI only offers what the
+// backend would allow (roles strictly below your own; never yourself/owner).
 import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { api } from "../composables/useApi";
@@ -17,6 +19,35 @@ const search = ref("");
 const roleFilter = ref("");
 
 const ROLES = ["guest", "member", "leader", "deacon", "elder", "pastor", "owner"];
+const LEVEL = Object.fromEntries(ROLES.map((r, i) => [r, i]));
+
+// Governance context (mirrors the server rules; the server stays authoritative).
+const churchId = ref(null);
+const myRole = ref("");
+const myId = ref(null);
+const canGovern = computed(() => LEVEL[myRole.value] >= LEVEL.elder);
+const assignable = computed(() =>
+  ROLES.filter((r) => r !== "owner" && LEVEL[r] < LEVEL[myRole.value]));
+const canEdit = (m) => canGovern.value && m.id !== myId.value && LEVEL[m.role] < LEVEL[myRole.value];
+
+const editing = ref(null);   // { id, role, reason }
+const busy = ref(false);
+async function confirmRole() {
+  busy.value = true;
+  error.value = "";
+  try {
+    await api.setChurchMemberRole(churchId.value, editing.value.id, {
+      role: editing.value.role, reason: editing.value.reason || null,
+    });
+    const res = await api.churchMembers(churchId.value);
+    members.value = res.members || [];
+    editing.value = null;
+  } catch (e) {
+    error.value = e.message;
+  } finally {
+    busy.value = false;
+  }
+}
 
 const filtered = computed(() => {
   const q = search.value.trim().toLowerCase();
@@ -30,7 +61,10 @@ onMounted(async () => {
   try {
     const { churches } = await api.myChurches();
     if (!churches?.length) return;
+    churchId.value = churches[0].id;
     churchName.value = churches[0].name;
+    myRole.value = churches[0].role || "";
+    api.me().then((r) => (myId.value = r.user?.id ?? r.id ?? null)).catch(() => {});
     const res = await api.churchMembers(churches[0].id);
     members.value = res.members || [];
   } catch (e) {
@@ -68,12 +102,27 @@ const fmtDate = (iso) => (iso ? new Date(iso).toLocaleDateString() : "");
               <strong>{{ m.name }}</strong>
               <span class="badge role">{{ t(`church.role.${m.role}`) }}</span>
               <span v-if="m.status !== 'active'" class="badge">{{ m.status }}</span>
+              <button
+                v-if="canEdit(m) && editing?.id !== m.id"
+                class="btn-small ghost" @click="editing = { id: m.id, role: m.role, reason: '' }"
+              >{{ t("church.directory.changeRole") }}</button>
             </div>
             <div class="dir-meta">
               <span v-for="g in m.groups" :key="g" class="badge">{{ g }}</span>
               <span v-if="m.joined_at" class="muted small">
                 {{ t("church.directory.joined", { date: fmtDate(m.joined_at) }) }}
               </span>
+            </div>
+            <!-- Explicit governance flow: choose role → optional reason → confirm. -->
+            <div v-if="editing?.id === m.id" class="dir-govern">
+              <select v-model="editing.role">
+                <option v-for="r in assignable" :key="r" :value="r">{{ t(`church.role.${r}`) }}</option>
+              </select>
+              <input v-model.trim="editing.reason" :placeholder="t('church.directory.reason')" maxlength="300" />
+              <button class="btn-small" :disabled="busy || editing.role === m.role" @click="confirmRole">
+                {{ t("church.directory.confirm") }}
+              </button>
+              <button class="btn-small ghost" @click="editing = null">{{ t("church.cancel") }}</button>
             </div>
           </li>
         </ul>
@@ -96,4 +145,10 @@ const fmtDate = (iso) => (iso ? new Date(iso).toLocaleDateString() : "");
 .dir-meta { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; margin-top: 0.3rem; }
 .badge { font-size: 0.75rem; padding: 0.15rem 0.6rem; border-radius: 999px; background: var(--surface-2, rgba(128,128,128,.15)); }
 .badge.role { background: var(--accent, #3b82f6); color: #fff; }
+.btn-small { padding: 0.2rem 0.7rem; border-radius: 8px; border: 1px solid var(--border, #ccc); background: var(--accent, #3b82f6); color: #fff; cursor: pointer; font-size: 0.8rem; }
+.btn-small.ghost { background: transparent; color: inherit; }
+.btn-small:disabled { opacity: 0.6; cursor: default; }
+.dir-govern { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; margin-top: 0.5rem; }
+.dir-govern select, .dir-govern input { padding: 0.35rem 0.5rem; border-radius: 8px; border: 1px solid var(--border, #ccc); background: transparent; color: inherit; }
+.dir-govern input { flex: 1 1 10rem; }
 </style>

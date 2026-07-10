@@ -217,6 +217,9 @@ Route::middleware(['auth:sanctum', 'account.usable'])->group(function () {
     Route::get('/groups/{group}',          [\App\Http\Controllers\GroupController::class, 'show']);
     Route::get('/groups/{group}/members',  [\App\Http\Controllers\GroupController::class, 'members']);
     Route::get('/groups/{group}/activity', [\App\Http\Controllers\GroupController::class, 'activity']);
+    // Group leadership is an appointment (v1.4 governance) — joins always enter as member.
+    Route::put('/groups/{group}/members/{user}/role', [\App\Http\Controllers\GroupController::class, 'updateMemberRole'])
+        ->middleware('throttle:30,1');
 
     // Join requests (kind=request): the requester is the inviter, so withdrawal is
     // the ordinary cancel; managers approve/decline via /invitations/{id}/accept|decline.
@@ -274,6 +277,9 @@ Route::middleware(['auth:sanctum', 'account.usable'])->group(function () {
     Route::get('/churches/{church}/members',   [\App\Http\Controllers\ChurchController::class, 'members']);
     Route::get('/churches/{church}/groups',    [\App\Http\Controllers\ChurchController::class, 'groups']);
     Route::get('/churches/{church}/activity',  [\App\Http\Controllers\ChurchController::class, 'activity']);
+    // Church role governance (v1.4): explicit strict-dominance rules in the controller.
+    Route::put('/churches/{church}/members/{user}/role', [\App\Http\Controllers\ChurchController::class, 'updateMemberRole'])
+        ->middleware('throttle:30,1');
     Route::post('/churches/{church}/groups',   [\App\Http\Controllers\ChurchController::class, 'storeGroup'])
         ->middleware('throttle:30,1');
     Route::put('/churches/{church}/profile',   [\App\Http\Controllers\ChurchController::class, 'updateProfile'])

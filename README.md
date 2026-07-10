@@ -1189,6 +1189,21 @@ service per group (latest wins); `GET /me/services` feeds the picker. Generation
 *targeted at* a group (an intake checkbox) and synchronized watch-together are
 deliberately deferred until observation asks for them.
 
+**Member role governance (v1.4).** Twice-observed gap, now closed. **Church roles**:
+elders+ change a member's role from the Member Directory through an **explicit flow**
+(Change role → choose role → optional reason → confirm) under **strict dominance**,
+enforced server-side by `ChurchRole::atLeast`: you manage only roles *strictly below*
+your own (both the target's current role and the new one), never your own role, and
+**owner is never assignable** through the UI — so an elder can't mint elders, a pastor
+can't demote the owner, and only the owner appoints pastors. Ownership transfer stays a
+deliberate future flow; the break-glass `church:assign-role` command remains for
+bootstrap. **Group roles**: leadership is an **appointment** — every join path enters
+people as plain members; a group's leader or church elder+ appoints/demotes co-leaders
+from the Group Page members list (confirm dialog; never yourself). Every change writes
+a structured audit log entry (actor, target, from → to, optional reason); an audit
+*table* waits for real reporting needs. `PUT /churches/{church}/members/{user}/role`,
+`PUT /groups/{group}/members/{user}/role` — every escalation rule is pinned by tests.
+
 ## Unified Conversation & Spiritual History
 
 Every registered worshipper gets a permanent, ChatGPT-style history of every

@@ -322,6 +322,10 @@ export const api = {
   churchMembers: (id) => request(`/churches/${id}/members`),
   churchGroups: (id) => request(`/churches/${id}/groups`),
   churchActivity: (id) => request(`/churches/${id}/activity`),
+  setChurchMemberRole: (churchId, userId, payload) =>
+    request(`/churches/${churchId}/members/${userId}/role`, { method: "PUT", body: payload }),
+  setGroupMemberRole: (groupId, userId, role) =>
+    request(`/groups/${groupId}/members/${userId}/role`, { method: "PUT", body: { role } }),
   createGroup: (id, payload) =>
     request(`/churches/${id}/groups`, { method: "POST", body: payload }),
   myInvitations: () => request("/invitations"),

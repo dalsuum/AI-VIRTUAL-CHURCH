@@ -90,6 +90,10 @@ implementation — as an extension of an existing domain.
   `php artisan church:assign-role` command. **Pattern candidate:** a church-run
   Members governance page (role assignment with explicit escalation rules —
   who may assign PASTOR, no self-promotion) extending Church/ChurchPolicy.
+  **→ SHIPPED 2026-07-10** (owner asked a second time — pattern confirmed):
+  church roles via the Member Directory's explicit change-role flow under
+  strict dominance (manage only strictly-below roles; never self; owner never
+  assignable via UI); group leadership via appoint/demote on the Group Page.
 
 ## Surprises
 <!-- anything nobody anticipated — often the most valuable section -->

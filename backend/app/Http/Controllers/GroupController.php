@@ -101,6 +101,40 @@ class GroupController extends Controller
     }
 
     /**
+     * Change a member's GROUP role (member ⇄ leader) — v1.4 governance. Group
+     * leadership is an APPOINTMENT: every join path (links, requests, email)
+     * deliberately enters people as plain members; this is the one way someone
+     * becomes a worship/study/choir leader. Manage-gated (the group's own leader
+     * or church elder+); never your own role.
+     */
+    public function updateMemberRole(Request $request, Group $group, \App\Models\User $user)
+    {
+        $this->authorize('manage', $group);
+
+        $data = $request->validate([
+            'role' => ['required', \Illuminate\Validation\Rule::in(['member', 'leader'])],
+        ]);
+
+        if ($request->user()->id === $user->id) {
+            abort(403, 'You cannot change your own role.');
+        }
+
+        $membership = GroupMembership::query()
+            ->where('group_id', $group->id)->where('user_id', $user->id)
+            ->where('status', GroupMembership::STATUS_ACTIVE)->firstOrFail();
+
+        $before = $membership->role->value;
+        $membership->forceFill(['role' => GroupRole::from($data['role'])])->save();
+
+        logger()->info('group role changed', [
+            'group_id' => $group->id, 'target_id' => $user->id,
+            'actor_id' => $request->user()->id, 'from' => $before, 'to' => $data['role'],
+        ]);
+
+        return response()->json(['id' => $user->id, 'role' => $data['role']]);
+    }
+
+    /**
      * Minimal group activity feed: a PROJECTION over existing rows (memberships,
      * sessions, invitations) — no event store, no new tables. A persisted feed
      * built on the frozen domain events can replace this without changing the

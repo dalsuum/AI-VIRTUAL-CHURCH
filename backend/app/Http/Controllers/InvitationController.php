@@ -105,7 +105,9 @@ class InvitationController extends Controller
         return response()->json($this->present($invitation->load('invitable')), 201);
     }
 
-    /** Preview a link before joining: what group, whose invitation, still usable? */
+    /** Preview a link before joining: what group, whose invitation, still usable?
+     *  PUBLIC (token = capability) and informational only — redeem() remains the
+     *  authoritative check for validity, expiry, revocation and permissions. */
     public function showLink(Request $request, string $token)
     {
         $i = Invitation::query()
@@ -113,7 +115,13 @@ class InvitationController extends Controller
             ->with(['invitable.church', 'inviter'])->firstOrFail();
 
         return response()->json([
-            'group'      => ['id' => $i->invitable->id, 'name' => $i->invitable->name, 'type' => $i->invitable->type->value],
+            'group'      => [
+                'id'           => $i->invitable->id,
+                'name'         => $i->invitable->name,
+                'type'         => $i->invitable->type->value,
+                'member_count' => $i->invitable->memberships()
+                    ->where('status', \App\Domains\Groups\Models\GroupMembership::STATUS_ACTIVE)->count(),
+            ],
             'church'     => ['id' => $i->invitable->church->id, 'name' => $i->invitable->church->name],
             'inviter'    => ['id' => $i->inviter_id, 'name' => $i->inviter?->name],
             'message'    => $i->message,

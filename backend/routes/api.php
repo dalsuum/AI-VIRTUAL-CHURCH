@@ -99,6 +99,12 @@ Route::post('/internal/history-callback', [WebhookController::class, 'historyCal
 Route::get('/shared/{token}', [\App\Http\Controllers\HistoryController::class, 'viewShared'])
     ->middleware('throttle:30,1');
 
+// Public invitation-link preview (v1.3): a QR scanner is usually not signed in, and
+// the flow is preview → authenticate → join. The 48-char token IS the credential;
+// unknown tokens 404. Redemption stays behind auth below.
+Route::get('/invitations/link/{token}', [\App\Http\Controllers\InvitationController::class, 'showLink'])
+    ->middleware('throttle:30,1');
+
 // Stripe offering webhook (Stripe-signature verified, no user auth)
 Route::post('/webhooks/stripe', [OfferingController::class, 'webhook']);
 
@@ -200,10 +206,14 @@ Route::middleware(['auth:sanctum', 'account.usable'])->group(function () {
     // tokens are 48-char random, so scanning is infeasible, but keep it boring.
     Route::post('/groups/{group}/invitations',      [\App\Http\Controllers\InvitationController::class, 'storeLink'])
         ->middleware('throttle:30,1');
-    Route::get('/invitations/link/{token}',         [\App\Http\Controllers\InvitationController::class, 'showLink'])
-        ->middleware('throttle:60,1');
     Route::post('/invitations/link/{token}/redeem', [\App\Http\Controllers\InvitationController::class, 'redeem'])
         ->middleware('throttle:20,1');
+
+    // Group Page read surface (v1.3 Phase F): header/status, roster, and a minimal
+    // activity projection. Mutations stay with their domain owners' routes below.
+    Route::get('/groups/{group}',          [\App\Http\Controllers\GroupController::class, 'show']);
+    Route::get('/groups/{group}/members',  [\App\Http\Controllers\GroupController::class, 'members']);
+    Route::get('/groups/{group}/activity', [\App\Http\Controllers\GroupController::class, 'activity']);
 
     // Join requests (kind=request): the requester is the inviter, so withdrawal is
     // the ordinary cancel; managers approve/decline via /invitations/{id}/accept|decline.
@@ -249,6 +259,10 @@ Route::middleware(['auth:sanctum', 'account.usable'])->group(function () {
     Route::get('/churches',                    [\App\Http\Controllers\ChurchController::class, 'index']);
     Route::get('/churches/{church}',           [\App\Http\Controllers\ChurchController::class, 'show']);
     Route::get('/churches/{church}/members',   [\App\Http\Controllers\ChurchController::class, 'members']);
+    Route::get('/churches/{church}/groups',    [\App\Http\Controllers\ChurchController::class, 'groups']);
+    Route::get('/churches/{church}/activity',  [\App\Http\Controllers\ChurchController::class, 'activity']);
+    Route::post('/churches/{church}/groups',   [\App\Http\Controllers\ChurchController::class, 'storeGroup'])
+        ->middleware('throttle:30,1');
     Route::put('/churches/{church}/profile',   [\App\Http\Controllers\ChurchController::class, 'updateProfile'])
         ->middleware('throttle:30,1');
     Route::post('/churches/{church}/logo',     [\App\Http\Controllers\ChurchController::class, 'uploadLogo'])

@@ -4,7 +4,11 @@ namespace Tests\Feature;
 
 use App\Domains\Church\Models\Church;
 use App\Domains\Church\Models\ChurchMembership;
+use App\Domains\Groups\Models\Group;
+use App\Domains\Groups\Models\GroupMembership;
 use App\Enums\ChurchRole;
+use App\Enums\GroupRole;
+use App\Enums\GroupType;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -55,5 +59,39 @@ class ChurchAuthorizationTest extends TestCase
 
         $this->actingAs($u, 'sanctum')->getJson('/api/churches')->assertOk()
             ->assertJsonFragment(['id' => $church->id, 'name' => 'Grace', 'role' => 'pastor']);
+    }
+
+    public function test_directory_carries_groups_and_activity_is_curated(): void
+    {
+        $church = Church::create(['name' => 'Grace', 'slug' => 'grace']);
+        $choir  = Group::create(['church_id' => $church->id, 'name' => 'Choir', 'type' => GroupType::CHOIR]);
+        $alice  = $this->makeUser();
+        $this->member($alice, $church, ChurchRole::MEMBER);
+        GroupMembership::create([
+            'group_id' => $choir->id, 'user_id' => $alice->id, 'role' => GroupRole::MEMBER,
+            'status' => GroupMembership::STATUS_ACTIVE, 'joined_at' => now()->addMinute(),
+        ]);
+
+        // Directory: each member row carries their group names — no follow-up calls.
+        $members = $this->actingAs($alice, 'sanctum')->getJson("/api/churches/{$church->id}/members")
+            ->assertOk()->json('members');
+        $mine = collect($members)->firstWhere('id', $alice->id);
+        $this->assertSame(['Choir'], $mine['groups']);
+        $this->assertSame('active', $mine['status']);
+        $this->assertNotNull($mine['joined_at']);
+
+        // Feed: curated types only, newest first; the group join outranks the church join.
+        $items = $this->actingAs($alice, 'sanctum')->getJson("/api/churches/{$church->id}/activity")
+            ->assertOk()->json('activity');
+        $types = array_column($items, 'type');
+        $this->assertContains('member_joined_group', $types);
+        $this->assertContains('member_joined_church', $types);
+        $this->assertContains('group_created', $types);
+        $this->assertSame('member_joined_group', $items[0]['type']);
+        $this->assertSame($alice->name, $items[0]['actor']);
+        $this->assertSame('Choir', $items[0]['subject']);
+
+        $outsider = $this->makeUser();
+        $this->actingAs($outsider, 'sanctum')->getJson("/api/churches/{$church->id}/activity")->assertForbidden();
     }
 }

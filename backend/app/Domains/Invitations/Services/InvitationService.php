@@ -161,6 +161,12 @@ class InvitationService
      */
     public function redeem(User $actor, Invitation $invitation): GroupMembership
     {
+        // Anonymous walk-up accounts have no credentials to return with — a
+        // membership on one would be orphaned. Joining requires a real account.
+        if ($actor->isGuestAccount()) {
+            throw InvitationException::forbidden('Create an account to join a group.');
+        }
+
         return DB::transaction(function () use ($actor, $invitation) {
             /** @var Invitation $fresh */
             $fresh = Invitation::query()->lockForUpdate()->findOrFail($invitation->id);

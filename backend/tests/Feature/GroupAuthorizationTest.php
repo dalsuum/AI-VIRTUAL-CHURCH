@@ -132,4 +132,109 @@ class GroupAuthorizationTest extends TestCase
         $this->expectException(\Illuminate\Database\QueryException::class);
         $this->groupMember($u, $choir, GroupRole::LEADER);
     }
+
+    public function test_members_list_church_groups_with_their_own_context(): void
+    {
+        $church = $this->church();
+        $choir  = Group::create(['church_id' => $church->id, 'name' => 'Choir', 'type' => GroupType::CHOIR]);
+        Group::create(['church_id' => $church->id, 'name' => 'Youth', 'type' => GroupType::YOUTH]);
+
+        $member = $this->makeUser();
+        $this->churchMember($member, $church, ChurchRole::MEMBER);
+        $this->groupMember($member, $choir, GroupRole::LEADER);
+
+        $res = $this->actingAs($member, 'sanctum')->getJson("/api/churches/{$church->id}/groups")
+            ->assertOk()->json('groups');
+
+        $this->assertCount(2, $res);
+        $mine = collect($res)->firstWhere('name', 'Choir');
+        $this->assertSame(1, $mine['member_count']);
+        $this->assertSame('leader', $mine['my_role']);
+        $this->assertNull($mine['open_session']);
+        $this->assertNull(collect($res)->firstWhere('name', 'Youth')['my_role']);
+
+        $outsider = $this->makeUser();
+        $this->actingAs($outsider, 'sanctum')->getJson("/api/churches/{$church->id}/groups")->assertForbidden();
+    }
+
+    public function test_group_page_show_gates_manager_extras(): void
+    {
+        $church = $this->church();
+        $choir  = Group::create(['church_id' => $church->id, 'name' => 'Choir', 'type' => GroupType::CHOIR]);
+
+        $leader = $this->makeUser();
+        $member = $this->makeUser();
+        $this->churchMember($leader, $church, ChurchRole::MEMBER);
+        $this->churchMember($member, $church, ChurchRole::MEMBER);
+        $this->groupMember($leader, $choir, GroupRole::LEADER);
+        $this->groupMember($member, $choir, GroupRole::MEMBER);
+
+        // Managers see counts + links; the payload names the leaders.
+        $res = $this->actingAs($leader, 'sanctum')->getJson("/api/groups/{$choir->id}")
+            ->assertOk()->json();
+        $this->assertTrue($res['can_manage']);
+        $this->assertSame(2, $res['member_count']);
+        $this->assertContains($leader->name, $res['leaders']);
+        $this->assertArrayHasKey('pending_request_count', $res);
+        $this->assertArrayHasKey('links', $res);
+
+        // Plain members get the header/status data but no manager extras.
+        $res = $this->actingAs($member, 'sanctum')->getJson("/api/groups/{$choir->id}")
+            ->assertOk()->json();
+        $this->assertFalse($res['can_manage']);
+        $this->assertSame('member', $res['my_role']);
+        $this->assertArrayNotHasKey('pending_request_count', $res);
+        $this->assertArrayNotHasKey('links', $res);
+
+        // Outsiders see nothing at all.
+        $outsider = $this->makeUser();
+        $this->actingAs($outsider, 'sanctum')->getJson("/api/groups/{$choir->id}")->assertForbidden();
+        $this->actingAs($outsider, 'sanctum')->getJson("/api/groups/{$choir->id}/members")->assertForbidden();
+        $this->actingAs($outsider, 'sanctum')->getJson("/api/groups/{$choir->id}/activity")->assertForbidden();
+    }
+
+    public function test_group_activity_projects_existing_rows_newest_first(): void
+    {
+        $church = $this->church();
+        $choir  = Group::create(['church_id' => $church->id, 'name' => 'Choir', 'type' => GroupType::CHOIR]);
+
+        $leader = $this->makeUser();
+        $this->churchMember($leader, $church, ChurchRole::MEMBER);
+        GroupMembership::create([
+            'group_id' => $choir->id, 'user_id' => $leader->id, 'role' => GroupRole::LEADER,
+            'status' => GroupMembership::STATUS_ACTIVE, 'joined_at' => now()->subDay(),
+        ]);
+        // A link minted later than the join must sort first.
+        $this->actingAs($leader, 'sanctum')
+            ->postJson("/api/groups/{$choir->id}/invitations")->assertCreated();
+
+        $items = $this->actingAs($leader, 'sanctum')->getJson("/api/groups/{$choir->id}/activity")
+            ->assertOk()->json('activity');
+
+        $this->assertSame('link_created', $items[0]['type']);
+        $this->assertSame($leader->name, $items[0]['actor']);
+        $this->assertSame('member_joined', $items[1]['type']);
+    }
+
+    public function test_church_leaders_create_groups_over_http(): void
+    {
+        $church = $this->church();
+        $leader = $this->makeUser();
+        $member = $this->makeUser();
+        $this->churchMember($leader, $church, ChurchRole::LEADER);
+        $this->churchMember($member, $church, ChurchRole::MEMBER);
+
+        $this->actingAs($leader, 'sanctum')
+            ->postJson("/api/churches/{$church->id}/groups", ['name' => 'Prayer Warriors', 'type' => 'prayer'])
+            ->assertCreated()->assertJsonFragment(['name' => 'Prayer Warriors', 'type' => 'prayer']);
+
+        // Duplicate name within the church is a validation error, not a 500.
+        $this->actingAs($leader, 'sanctum')
+            ->postJson("/api/churches/{$church->id}/groups", ['name' => 'Prayer Warriors', 'type' => 'prayer'])
+            ->assertStatus(422);
+
+        $this->actingAs($member, 'sanctum')
+            ->postJson("/api/churches/{$church->id}/groups", ['name' => 'Another', 'type' => 'custom'])
+            ->assertForbidden();
+    }
 }

@@ -2,10 +2,15 @@
 
 namespace App\Http\Controllers;
 
+use App\Domains\Bible\Models\ReadingSession;
 use App\Domains\Church\Models\Church;
+use App\Domains\Groups\Models\Group;
+use App\Domains\Groups\Models\GroupMembership;
+use App\Enums\GroupType;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Enum;
 
 /**
  * Church surface: the churches I belong to, a church's roster and public profile
@@ -34,18 +39,135 @@ class ChurchController extends Controller
         return response()->json(['churches' => $churches]);
     }
 
-    /** Member roster — visible to any member of the church (ChurchPolicy::view). */
+    /** Member directory — visible to any member of the church (ChurchPolicy::view).
+     *  Carries each member's group names so the directory needs no follow-up calls;
+     *  search/filtering happens client-side (church rosters are small). */
     public function members(Request $request, Church $church)
     {
         $this->authorize('view', $church);
 
-        $members = $church->memberships()->with('user')->get()->map(fn ($m) => [
-            'id'   => $m->user_id,
-            'name' => $m->user?->name,
-            'role' => $m->role->value,
+        $memberships  = $church->memberships()->with('user')->get();
+        $groupsByUser = GroupMembership::query()
+            ->whereIn('user_id', $memberships->pluck('user_id'))
+            ->where('status', GroupMembership::STATUS_ACTIVE)
+            ->whereHas('group', fn ($q) => $q->where('church_id', $church->id))
+            ->with('group')->get()->groupBy('user_id');
+
+        $members = $memberships->map(fn ($m) => [
+            'id'        => $m->user_id,
+            'name'      => $m->user?->name,
+            'role'      => $m->role->value,
+            'status'    => $m->status,
+            'joined_at' => optional($m->joined_at)->toIso8601String(),
+            'groups'    => ($groupsByUser[$m->user_id] ?? collect())
+                ->map(fn ($gm) => $gm->group?->name)->filter()->values(),
         ]);
 
         return response()->json(['members' => $members]);
+    }
+
+    /**
+     * Church-wide activity feed (v1.3 Phase F) — CURATED, not complete: joins,
+     * new groups, sessions going live, recent reading completions. Link mints and
+     * request lifecycle are deliberately omitted (manager-only context, noise at
+     * church scope). Like the group feed, this is a projection over existing rows;
+     * a persisted feed on the frozen events can replace it behind the same contract.
+     */
+    public function activity(Request $request, Church $church)
+    {
+        $this->authorize('view', $church);
+
+        $groupIds = $church->groups()->pluck('id');
+
+        $churchJoins = \App\Domains\Church\Models\ChurchMembership::query()
+            ->where('church_id', $church->id)->where('status', 'active')
+            ->whereNotNull('joined_at')->with('user')
+            ->latest('joined_at')->limit(15)->get()
+            ->map(fn ($m) => ['type' => 'member_joined_church', 'at' => $m->joined_at, 'actor' => $m->user?->name, 'subject' => null]);
+
+        $groupJoins = GroupMembership::query()
+            ->whereIn('group_id', $groupIds)->where('status', GroupMembership::STATUS_ACTIVE)
+            ->whereNotNull('joined_at')->with(['user', 'group'])
+            ->latest('joined_at')->limit(15)->get()
+            ->map(fn ($m) => ['type' => 'member_joined_group', 'at' => $m->joined_at, 'actor' => $m->user?->name, 'subject' => $m->group?->name]);
+
+        $newGroups = Group::query()->where('church_id', $church->id)
+            ->latest()->limit(10)->get()
+            ->map(fn ($g) => ['type' => 'group_created', 'at' => $g->created_at, 'actor' => null, 'subject' => $g->name]);
+
+        $sessions = ReadingSession::query()->whereIn('group_id', $groupIds)
+            ->whereNotNull('started_at')->with(['plan', 'group'])
+            ->latest('started_at')->limit(10)->get()
+            ->map(fn ($s) => ['type' => 'session_started', 'at' => $s->started_at, 'actor' => $s->group?->name, 'subject' => $s->plan?->title]);
+
+        $completions = \App\Domains\Bible\Models\ReadingParticipant::query()
+            ->whereHas('session', fn ($q) => $q->whereIn('group_id', $groupIds))
+            ->whereHas('enrollment', fn ($q) => $q->where('last_read_on', '>=', now()->subDays(2)->toDateString()))
+            ->with(['user', 'enrollment'])->limit(15)->get()
+            ->map(fn ($p) => [
+                'type'    => 'reading_completed',
+                'at'      => \Illuminate\Support\Carbon::parse($p->enrollment->last_read_on),
+                'actor'   => $p->user?->name,
+                'subject' => null,
+            ]);
+
+        $items = $churchJoins->concat($groupJoins)->concat($newGroups)
+            ->concat($sessions)->concat($completions)
+            ->filter(fn ($e) => $e['at'] !== null)
+            ->sortByDesc('at')->take(20)->values()
+            ->map(fn ($e) => [...$e, 'at' => $e['at']->toIso8601String()]);
+
+        return response()->json(['activity' => $items]);
+    }
+
+    /** A church's ministry groups with the viewer's own context (v1.3 Phase F —
+     *  first consumer of the Groups domain over HTTP). Visible to any member. */
+    public function groups(Request $request, Church $church)
+    {
+        $this->authorize('view', $church);
+
+        $groups = $church->groups()
+            ->withCount(['memberships as member_count' => fn ($q) => $q->where('status', GroupMembership::STATUS_ACTIVE)])
+            ->with(['readingSessions' => fn ($q) => $q->whereNotIn('status', ReadingSession::TERMINAL)->with('plan')])
+            ->orderBy('name')->get()
+            ->map(fn (Group $g) => [
+                'id'           => $g->id,
+                'name'         => $g->name,
+                'type'         => $g->type->value,
+                'description'  => $g->description,
+                'member_count' => $g->member_count,
+                'my_role'      => $request->user()->groupRole($g->id)?->value,
+                'open_session' => ($s = $g->readingSessions->first()) ? [
+                    'id' => $s->id, 'status' => $s->status, 'plan_title' => $s->plan?->title,
+                ] : null,
+            ]);
+
+        return response()->json(['groups' => $groups]);
+    }
+
+    /** Create a group (GroupPolicy::create — church leaders and above). */
+    public function storeGroup(Request $request, Church $church)
+    {
+        $this->authorize('create', [Group::class, $church]);
+
+        $data = $request->validate([
+            'name'        => ['required', 'string', 'min:2', 'max:120',
+                Rule::unique('groups', 'name')->where('church_id', $church->id)],
+            'type'        => ['required', new Enum(GroupType::class)],
+            'description' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $group = $church->groups()->create($data);
+
+        return response()->json([
+            'id'           => $group->id,
+            'name'         => $group->name,
+            'type'         => $group->type->value,
+            'description'  => $group->description,
+            'member_count' => 0,
+            'my_role'      => null,
+            'open_session' => null,
+        ], 201);
     }
 
     /** The church profile (v1.3 Phase E) — visible to any member. */

@@ -1083,6 +1083,79 @@ profile, **elders+** (`manage`) edit it. Endpoints: `GET /churches/{church}`,
 > migration; church images need the standard `php artisan storage:link` (already present
 > on prod). No data step.
 
+**Church Dashboard (v1.3 Phase F — collaboration UI).** The collaboration home at
+`#church` (auth-guarded, in the header/bottom nav for signed-in users):
+[ChurchDashboard.vue](frontend/src/components/ChurchDashboard.vue) composes the v1.3
+backend into one page — church profile card (logo, description, contact, languages),
+**ministry groups grid** with the viewer's own role and any open reading session badge
+(each card links to the Group Page at `#group?id=…`), an inline **New group** form
+shown to church leaders+ (server-authorized by `GroupPolicy::create`), the viewer's
+**active invite links** with copy-to-clipboard `join_url`, and a member-roster preview.
+The role thresholds in the UI only decide what to *offer* — the backend policies remain
+the authority. Two thin endpoints complete the Groups HTTP surface for this first
+consumer: `GET /churches/{church}/groups` (per-group `member_count`, viewer's `my_role`,
+`open_session`) and `POST /churches/{church}/groups` (leader+, duplicate names are 422)
+on the existing `ChurchController`. UI strings live under `church.*` in
+`frontend/src/i18n/locales/en.json` (13 other locales fall back to English until
+reviewed); the bottom-nav icon rides the offline Iconify bundle (`npm run icons:gen`).
+HTTP surface covered in `tests/Feature/GroupAuthorizationTest.php`.
+
+**Group Page (v1.3 Phase F — collaboration workspace).** Reached from the dashboard's
+group cards at `#group?id=…` (auth-guarded):
+[GroupPage.vue](frontend/src/components/GroupPage.vue) is organized around workflows,
+**participation before administration** — header (type/church/leaders/role, with
+request-to-join / withdraw for non-members) → **Today's Status** panel (session
+active?, members, completed today, pending requests + active links for managers) →
+**Today's Reading** (join the session, per-member roster with ✓ read-today ticks,
+leader start/pause/resume/complete controls, create-session form from `/bible/plans`)
+→ Members → **Invitations** (mint links with max-uses/expiry, copy `join_url`, revoke)
+→ **Join Requests** (approve/decline) → **Recent Activity**. The feed renders human
+sentences ("Alice joined the group"), never event names. Backing it is a thin
+read-only [GroupController](backend/app/Http/Controllers/GroupController.php)
+(`GET /groups/{group}` header+status with manager-only extras, `/members`,
+`/activity`) — mutations stay with their domain owners' existing routes. The activity
+endpoint is deliberately a **projection over existing rows** (memberships' `joined_at`,
+sessions' `started_at`, link/request invitations) — no event store, no new tables; a
+persisted feed built on the frozen domain events can replace it without changing the
+response contract. Worktree development workflow (including the easy-to-forget
+`.env.testing` symlink) is documented in
+[docs/development/worktree.md](docs/development/worktree.md).
+
+**Invitation flow (v1.3 Phase F — where every `join_url`/QR lands).**
+[JoinInvitation.vue](frontend/src/components/JoinInvitation.vue) at `#join?token=…`:
+preview → authenticate (if needed) → join → success. The **preview endpoint is now
+public** (throttled; the 48-char token is the capability, unknown tokens 404) because a
+QR scanner is usually signed out — it shows group/ministry/member count/inviter/expiry
+and is **informational only**: `redeem()` remains the authoritative check for validity,
+expiry, revocation and permissions, and the component re-fetches the preview on every
+mount so it never assumes a link stayed valid across authentication. Redemption also
+now **refuses anonymous guest accounts** (`@guest.local`) — a membership on a
+credential-less account would be orphaned; the flow asks them to register. The auth
+hand-off is generic infrastructure, not a `#join` special case: guarded routes and
+workflow components store the intended hash under `sessionStorage["auth.intended"]`,
+and `navigateAfterAuth()` in App.vue — the one place that decides post-auth
+navigation — returns the user there (falling back to `#account`). Auth screens never
+mention the invitation; the stored destination does the work. The success screen is a
+bridge into collaboration: Go to the group / Start today's reading / Return to
+dashboard.
+
+**Member Directory + Church Activity Feed (v1.3 Phase F — final pieces).**
+[MemberDirectory.vue](frontend/src/components/MemberDirectory.vue) at `#members`
+(auth-guarded, linked from the dashboard's members card) is deliberately a
+**directory, not an admin console**: client-side search (name or group), a church-role
+filter, and per-member group badges — the roster payload now carries each member's
+`status`, `joined_at` and active group names so the page needs no follow-up calls.
+The dashboard gains its **Recent Activity** card, backed by
+`GET /churches/{church}/activity` — a **curated** church-wide projection (joins to the
+church and to groups, new groups, sessions going live, recent reading completions);
+link mints and request lifecycle are deliberately omitted as manager-only noise.
+Curation over completeness — and like the group feed, it's a projection over existing
+rows with a contract a persisted event-driven feed can assume later. Both the church
+feed and the group feed render **human sentences** ("Alice joined Choir"), never
+event names. Covered in `tests/Feature/ChurchAuthorizationTest.php`. This completes
+the Phase F collaboration UI: Dashboard → Group → Invite → Preview → Login (intent
+preserved) → Join → Group → Shared Reading → Activity.
+
 ## Unified Conversation & Spiritual History
 
 Every registered worshipper gets a permanent, ChatGPT-style history of every

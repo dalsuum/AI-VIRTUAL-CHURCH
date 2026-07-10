@@ -167,6 +167,23 @@ class GroupInvitationLinkTest extends TestCase
             ->assertNotFound();
     }
 
+    public function test_preview_is_public_but_redeeming_requires_a_real_account(): void
+    {
+        $link = $this->mintLink();
+
+        // A QR scanner is usually signed out: the preview must work unauthenticated…
+        $this->getJson("/api/invitations/link/{$link->token}")
+            ->assertOk()->assertJsonPath('group.name', 'Choir')->assertJsonFragment(['usable' => true]);
+        $this->getJson('/api/invitations/link/unknown-token')->assertNotFound();
+
+        // …but joining still needs auth, and an anonymous guest account is refused.
+        $this->postJson("/api/invitations/link/{$link->token}/redeem")->assertUnauthorized();
+        $guest = $this->makeUser(['email' => 'walkup-'.uniqid().'@guest.local']);
+        $this->actingAs($guest, 'sanctum')
+            ->postJson("/api/invitations/link/{$link->token}/redeem")->assertForbidden();
+        $this->assertDatabaseMissing('group_memberships', ['user_id' => $guest->id]);
+    }
+
     public function test_rejoin_reactivates_the_canonical_row_as_plain_member(): void
     {
         $link   = $this->mintLink();

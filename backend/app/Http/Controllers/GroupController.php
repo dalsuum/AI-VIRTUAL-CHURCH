@@ -73,7 +73,7 @@ class GroupController extends Controller
                 ->where('status', InvitationStatus::PENDING)
                 ->latest()->get()->map(fn ($i) => [
                     'id'         => $i->id,
-                    'join_url'   => config('app.url').'/#join?token='.$i->token,
+                    'join_url'   => rtrim((string) config('church.frontend_url'), '/').'/#join?token='.$i->token,
                     'max_uses'   => $i->max_uses,
                     'use_count'  => $i->use_count,
                     'expires_at' => optional($i->expires_at)->toIso8601String(),

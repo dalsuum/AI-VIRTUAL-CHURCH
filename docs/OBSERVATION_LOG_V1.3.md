@@ -48,5 +48,15 @@ implementation — as an extension of an existing domain.
 ## Administration
 <!-- what leaders tried to do and couldn't (e.g. remove members, edit roles) -->
 
+- 2026-07-10 — owner (pre-acceptance) — No UI exists for assigning **church**
+  roles: the Admin Console dropdown edits the platform role (`users.role`),
+  while collaboration checks `church_memberships.role`; the backfill left
+  everyone as `member`, and promotion is itself elder+-gated, so a fresh
+  deployment has no one able to appoint the first leadership (bootstrap
+  deadlock — blocked the acceptance run). Unblocked with the break-glass
+  `php artisan church:assign-role` command. **Pattern candidate:** a church-run
+  Members governance page (role assignment with explicit escalation rules —
+  who may assign PASTOR, no self-promotion) extending Church/ChurchPolicy.
+
 ## Surprises
 <!-- anything nobody anticipated — often the most valuable section -->

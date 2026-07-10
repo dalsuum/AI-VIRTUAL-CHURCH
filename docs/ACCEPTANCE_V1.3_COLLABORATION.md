@@ -14,6 +14,17 @@ Deploy first (main checkout): `git pull` → `npm run build` in `frontend/` →
 > Expected signatures on the API host: gated routes → 401 unauthenticated,
 > unknown invitation token → 404 (the preview is public), unknown route → 404.
 
+## Part 0 — Bootstrap the leadership (one-time, on the box)
+
+Fresh deployments have no church leaders (the backfill assigns `member`, and
+promotion is itself elder+-gated). Assign the Leader account's **church** role
+first — this is `church_memberships.role`, not the Admin Console's platform role:
+
+```bash
+cd /opt/ai-church/backend
+php artisan church:assign-role <leader-email> pastor
+```
+
 ## Part 1 — Leader sets the table
 
 - [ ] Log in; the header/bottom nav shows **My Church**.

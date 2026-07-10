@@ -1150,6 +1150,16 @@ mention the invitation; the stored destination does the work. The success screen
 bridge into collaboration: Go to the group / Start today's reading / Return to
 dashboard.
 
+**Email invitations (v1.4 opener — first observation-driven feature).** Group managers
+can send a personal invitation to **any email address** (`POST
+/groups/{group}/invitations/email`, tightly throttled): the mail — church + group +
+inviter + a Join button — delivers an ordinary **single-use, 14-day, revocable LINK**
+minted through the same `InvitationService::sendLink()`. Email is a delivery channel,
+never a second invitation system; the recipient may have no account, and the join page
+handles register → auto-return → join as usual. Delivery uses an on-demand mail-only
+notification (`GroupInviteEmail`, scalar payload — no database rows for people who
+aren't users yet).
+
 **Member Directory + Church Activity Feed (v1.3 Phase F — final pieces).**
 [MemberDirectory.vue](frontend/src/components/MemberDirectory.vue) at `#members`
 (auth-guarded, linked from the dashboard's members card) is deliberately a

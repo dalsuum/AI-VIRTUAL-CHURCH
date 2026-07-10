@@ -172,6 +172,36 @@ class GroupInvitationLinkTest extends TestCase
             ->assertNotFound();
     }
 
+    public function test_leader_emails_a_personal_single_use_invitation(): void
+    {
+        \Illuminate\Support\Facades\Notification::fake();
+
+        $res = $this->actingAs($this->leader, 'sanctum')
+            ->postJson("/api/groups/{$this->group->id}/invitations/email", [
+                'email' => 'friend@example.com', 'message' => 'Join us Wednesday!',
+            ])->assertCreated()->json();
+
+        // The mail delivers an ordinary LINK: single seat, 14 days, revocable.
+        $this->assertSame('link', $res['kind']);
+        $this->assertSame(1, $res['max_uses']);
+
+        \Illuminate\Support\Facades\Notification::assertSentOnDemand(
+            \App\Domains\Invitations\Notifications\GroupInviteEmail::class,
+            fn ($n, $channels, $notifiable) => $notifiable->routes['mail'] === 'friend@example.com'
+                && $n->token === $res['token'] && $n->groupName === 'Choir',
+        );
+
+        // Members cannot send; garbage addresses are rejected before any mail.
+        $member = $this->makeUser();
+        $this->churchMember($member, ChurchRole::MEMBER);
+        $this->actingAs($member, 'sanctum')
+            ->postJson("/api/groups/{$this->group->id}/invitations/email", ['email' => 'x@example.com'])
+            ->assertForbidden();
+        $this->actingAs($this->leader, 'sanctum')
+            ->postJson("/api/groups/{$this->group->id}/invitations/email", ['email' => 'not-an-address'])
+            ->assertStatus(422);
+    }
+
     public function test_preview_is_public_but_redeeming_requires_a_real_account(): void
     {
         $link = $this->mintLink();

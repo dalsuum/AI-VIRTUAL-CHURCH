@@ -206,6 +206,9 @@ Route::middleware(['auth:sanctum', 'account.usable'])->group(function () {
     // tokens are 48-char random, so scanning is infeasible, but keep it boring.
     Route::post('/groups/{group}/invitations',      [\App\Http\Controllers\InvitationController::class, 'storeLink'])
         ->middleware('throttle:30,1');
+    // Email delivery of a personal single-use link (tight throttle: outbound mail).
+    Route::post('/groups/{group}/invitations/email', [\App\Http\Controllers\InvitationController::class, 'storeEmailInvitation'])
+        ->middleware('throttle:10,1');
     Route::post('/invitations/link/{token}/redeem', [\App\Http\Controllers\InvitationController::class, 'redeem'])
         ->middleware('throttle:20,1');
 

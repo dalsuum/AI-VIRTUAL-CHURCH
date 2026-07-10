@@ -330,6 +330,8 @@ export const api = {
   groupActivity: (id) => request(`/groups/${id}/activity`),
   mintGroupLink: (id, payload = {}) =>
     request(`/groups/${id}/invitations`, { method: "POST", body: payload }),
+  emailGroupInvite: (id, payload) =>
+    request(`/groups/${id}/invitations/email`, { method: "POST", body: payload }),
   groupJoinRequests: (id) => request(`/groups/${id}/join-requests`),
   requestToJoin: (id) => request(`/groups/${id}/join-requests`, { method: "POST" }),
   invitationAccept: (id) => request(`/invitations/${id}/accept`, { method: "POST" }),

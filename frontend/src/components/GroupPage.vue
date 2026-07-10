@@ -102,6 +102,17 @@ const mintLink = () => run(() => api.mintGroupLink(groupId.value, {
   expires_at: new Date(Date.now() + mint.value.days * 864e5).toISOString(),
 }));
 const revokeLink = (id) => run(() => api.invitationCancel(id));
+const inviteEmail = ref("");
+const emailSentTo = ref("");
+async function emailInvite() {
+  const addr = inviteEmail.value;
+  await run(() => api.emailGroupInvite(groupId.value, { email: addr }));
+  if (!actionError.value) {
+    emailSentTo.value = addr;
+    inviteEmail.value = "";
+    setTimeout(() => { if (emailSentTo.value === addr) emailSentTo.value = ""; }, 4000);
+  }
+}
 async function copyLink(l) {
   try {
     await navigator.clipboard.writeText(l.join_url);
@@ -232,6 +243,13 @@ const fmtDate = (iso) => (iso ? new Date(iso).toLocaleDateString() : "");
             </select>
           </label>
           <button class="btn" type="submit" :disabled="busy">{{ t("group.invites.mintBtn") }}</button>
+        </form>
+        <!-- Personal email invitation: delivers a single-use link; the join page
+             handles register → auto-return → join for people with no account. -->
+        <form class="gp-mint" @submit.prevent="emailInvite">
+          <input v-model.trim="inviteEmail" type="email" :placeholder="t('group.invites.emailPlaceholder')" required />
+          <button class="btn" type="submit" :disabled="busy || !inviteEmail">{{ t("group.invites.sendEmail") }}</button>
+          <span v-if="emailSentTo" class="badge live">✓ {{ t("group.invites.sent", { email: emailSentTo }) }}</span>
         </form>
         <p v-if="!group.links?.length" class="muted">{{ t("group.invites.none") }}</p>
         <ul v-else class="gp-links">

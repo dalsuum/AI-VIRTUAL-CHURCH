@@ -187,7 +187,10 @@ class ChurchController extends Controller
         return response()->json(['groups' => $groups]);
     }
 
-    /** Create a group (GroupPolicy::create — church leaders and above). */
+    /** Create a group — SELF-ORGANIZATION: any church member (GroupPolicy::create),
+     *  and the creator becomes the group's LEADER so they can immediately invite
+     *  people (by email/link), share a service, open study and pastor rooms. A
+     *  couple is simply a two-person group made this way. */
     public function storeGroup(Request $request, Church $church)
     {
         $this->authorize('create', [Group::class, $church]);
@@ -201,13 +204,23 @@ class ChurchController extends Controller
 
         $group = $church->groups()->create($data);
 
+        // The creator leads what they create — previously they weren't even a
+        // member of their own group and couldn't invite anyone into it.
+        GroupMembership::create([
+            'group_id'  => $group->id,
+            'user_id'   => $request->user()->id,
+            'role'      => \App\Enums\GroupRole::LEADER,
+            'status'    => GroupMembership::STATUS_ACTIVE,
+            'joined_at' => now(),
+        ]);
+
         return response()->json([
             'id'           => $group->id,
             'name'         => $group->name,
             'type'         => $group->type->value,
             'description'  => $group->description,
-            'member_count' => 0,
-            'my_role'      => null,
+            'member_count' => 1,
+            'my_role'      => 'leader',
             'open_session' => null,
         ], 201);
     }

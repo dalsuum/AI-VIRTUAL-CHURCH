@@ -25,8 +25,9 @@ const myRole = computed(() => churches.value.find((c) => c.id === selectedId.val
 // Thresholds mirror the backend policies (GroupPolicy::create = leader+); the
 // server remains the authority — these only decide what UI to offer.
 const isGuest = computed(() => myRole.value === "guest");
-const canCreateGroup = computed(() =>
-  ["leader", "deacon", "elder", "pastor", "owner"].includes(myRole.value));
+// Self-organization: any member forms a group (a couple = a two-person group);
+// only guests cannot. The creator leads what they create.
+const canCreateGroup = computed(() => !!myRole.value && !isGuest.value);
 
 async function loadChurch(id) {
   selectedId.value = id;

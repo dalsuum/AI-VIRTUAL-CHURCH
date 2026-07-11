@@ -14,6 +14,29 @@ const props = defineProps({
 
 const { t, te, locale } = useI18n();
 
+// ---- Worship with (v1.4) -----------------------------------------------------
+// One remembered choice: "Just me" (private, default) or one of MY groups — the
+// service is then visible to that group from the moment it starts ("Happening
+// now → Join"), no separate share step. Consent lives in this choice; the
+// server re-checks membership.
+const myGroups = ref([]);
+const worshipWith = ref(localStorage.getItem("worship.with") || "");
+if (typeof window !== "undefined") {
+  // Load lazily and only for signed-in members; failures just hide the selector.
+  setTimeout(async () => {
+    if (!props.isAuthed) return;
+    try {
+      const { churches } = await api.myChurches();
+      if (!churches?.length) return;
+      const { groups } = await api.churchGroups(churches[0].id);
+      myGroups.value = (groups || []).filter((g) => g.my_role);
+      if (worshipWith.value && !myGroups.value.some((g) => String(g.id) === worshipWith.value)) {
+        worshipWith.value = "";
+      }
+    } catch { /* selector simply stays hidden */ }
+  }, 0);
+}
+
 // ---- Service language ------------------------------------------------------
 // Follows the one global language authority. There is no per-page picker and no
 // stored service_language: the service language is the global UI language,
@@ -194,7 +217,10 @@ async function begin() {
     }
 
     await api.updateMusicSource(musicSource.value);
-    const { session_token } = await api.startService();
+    localStorage.setItem("worship.with", worshipWith.value);
+    const { session_token } = await api.startService(
+      worshipWith.value ? { group_id: Number(worshipWith.value) } : {},
+    );
 
     const res = await api.submitIntake(session_token, {
       mood: selectedMood.value,
@@ -381,6 +407,16 @@ async function begin() {
           <span>{{ srcDesc(v) }}</span>
         </button>
       </div>
+
+      <template v-if="myGroups.length">
+        <label class="field-label">{{ t("intake.worshipWith") }}</label>
+        <div class="source-row">
+          <select v-model="worshipWith" class="field-input" style="max-width: 20rem;">
+            <option value="">{{ t("intake.justMe") }}</option>
+            <option v-for="g in myGroups" :key="g.id" :value="String(g.id)">👥 {{ g.name }}</option>
+          </select>
+        </div>
+      </template>
 
       <template v-if="schedulingEnabled">
         <label class="field-label">{{ t("intake.whenLabel") }}</label>

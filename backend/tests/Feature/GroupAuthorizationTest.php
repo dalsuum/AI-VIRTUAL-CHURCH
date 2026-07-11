@@ -344,6 +344,37 @@ class GroupAuthorizationTest extends TestCase
         $this->actingAs($member, 'sanctum')->getJson("/api/v1/study/sessions/{$study->id}")->assertForbidden();
     }
 
+    public function test_worship_with_group_attaches_the_service_at_creation(): void
+    {
+        $church = $this->church();
+        $family = Group::create(['church_id' => $church->id, 'name' => 'Family', 'type' => GroupType::CUSTOM]);
+        $dcs    = $this->makeUser();
+        $spouse = $this->makeUser();
+        $other  = $this->makeUser();
+        $this->churchMember($dcs, $church, ChurchRole::MEMBER);
+        $this->churchMember($spouse, $church, ChurchRole::MEMBER);
+        $this->churchMember($other, $church, ChurchRole::MEMBER);
+        $this->groupMember($dcs, $family, GroupRole::LEADER);
+        $this->groupMember($spouse, $family, GroupRole::MEMBER);
+
+        // Starting a service "with my group" makes it the group's service at once —
+        // no separate share step (the owner's four-times-repeated expectation).
+        $token = $this->actingAs($dcs, 'sanctum')
+            ->postJson('/api/service/start', ['group_id' => $family->id])
+            ->assertCreated()->json('session_token');
+        $this->actingAs($spouse, 'sanctum')->getJson("/api/groups/{$family->id}/service")
+            ->assertOk()->assertJsonPath('service.session_token', $token);
+        $this->actingAs($spouse, 'sanctum')->getJson("/api/service/{$token}")->assertOk();
+
+        // You can only worship with a group you belong to; no group = private.
+        $this->actingAs($other, 'sanctum')
+            ->postJson('/api/service/start', ['group_id' => $family->id])
+            ->assertForbidden();
+        $private = $this->actingAs($other, 'sanctum')
+            ->postJson('/api/service/start')->assertCreated()->json('session_token');
+        $this->actingAs($spouse, 'sanctum')->getJson("/api/service/{$private}")->assertNotFound();
+    }
+
     public function test_group_service_share_and_member_playback(): void
     {
         $church = $this->church();

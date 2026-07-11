@@ -804,6 +804,8 @@
     "shareMenuFailed": "Couldn't open the share menu — the image was downloaded instead."
   },
   "intake": {
+    "worshipWith": "Worship with",
+    "justMe": "Just me (private)",
     "studyCtaTitle": "AI Bible Study",
     "studyCtaDesc": "Discuss any Bible question with experienced pastors →",
     "welcome": "Welcome",

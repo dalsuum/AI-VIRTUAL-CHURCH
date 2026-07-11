@@ -411,10 +411,26 @@ async function begin() {
       <template v-if="myGroups.length">
         <label class="field-label">{{ t("intake.worshipWith") }}</label>
         <div class="source-row">
-          <select v-model="worshipWith" class="field-input" style="max-width: 20rem;">
-            <option value="">{{ t("intake.justMe") }}</option>
-            <option v-for="g in myGroups" :key="g.id" :value="String(g.id)">👥 {{ g.name }}</option>
-          </select>
+          <button
+            type="button"
+            class="source"
+            :class="{ active: worshipWith === '' }"
+            @click="worshipWith = ''"
+          >
+            <strong>{{ t("intake.justMe") }}</strong>
+            <span>{{ t("intake.justMeDesc") }}</span>
+          </button>
+          <button
+            v-for="g in myGroups"
+            :key="g.id"
+            type="button"
+            class="source"
+            :class="{ active: worshipWith === String(g.id) }"
+            @click="worshipWith = String(g.id)"
+          >
+            <strong>👥 {{ g.name }}</strong>
+            <span>{{ t("intake.withGroupDesc") }}</span>
+          </button>
         </div>
       </template>
 

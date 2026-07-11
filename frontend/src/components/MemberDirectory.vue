@@ -138,7 +138,8 @@ const fmtDate = (iso) => (iso ? new Date(iso).toLocaleDateString() : "");
 .dir-error { color: var(--danger, #c0392b); font-size: 0.9rem; }
 .dir-filters { display: flex; gap: 0.5rem; margin: 0.75rem 0; flex-wrap: wrap; }
 .dir-filters input { flex: 1 1 12rem; }
-.dir-filters input, .dir-filters select { padding: 0.45rem 0.6rem; border-radius: 8px; border: 1px solid var(--border, #ccc); background: transparent; color: inherit; }
+.dir-filters input, .dir-filters select { padding: 0.5rem 0.75rem; border-radius: var(--radius-sm, 8px); border: 1px solid var(--border, #ccc); background: var(--surface, transparent); color: var(--text, inherit); min-height: 2.5rem; font-size: 0.9rem; }
+.dir-filters input:focus-visible, .dir-filters select:focus-visible { outline: 2px solid var(--accent, #3b82f6); outline-offset: 1px; border-color: var(--accent, #3b82f6); }
 .dir-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.6rem; }
 .dir-list li { padding: 0.6rem 0; border-bottom: 1px solid var(--border, rgba(128,128,128,.2)); }
 .dir-name { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
@@ -149,6 +150,6 @@ const fmtDate = (iso) => (iso ? new Date(iso).toLocaleDateString() : "");
 .btn-small.ghost { background: transparent; color: inherit; }
 .btn-small:disabled { opacity: 0.6; cursor: default; }
 .dir-govern { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; margin-top: 0.5rem; }
-.dir-govern select, .dir-govern input { padding: 0.35rem 0.5rem; border-radius: 8px; border: 1px solid var(--border, #ccc); background: transparent; color: inherit; }
+.dir-govern select, .dir-govern input { padding: 0.45rem 0.65rem; border-radius: var(--radius-sm, 8px); border: 1px solid var(--border, #ccc); background: var(--surface, transparent); color: var(--text, inherit); font-size: 0.85rem; }
 .dir-govern input { flex: 1 1 10rem; }
 </style>

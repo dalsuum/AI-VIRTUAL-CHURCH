@@ -237,6 +237,14 @@ Route::middleware(['auth:sanctum', 'account.usable'])->group(function () {
     Route::delete('/groups/{group}/service', [\App\Http\Controllers\GroupController::class, 'unshareService'])
         ->middleware('throttle:30,1');
 
+    // ── Group study room (v1.4): study together — one shared AI study per group.
+    // Members read along + ask in the SAME conversation; rounds bill the owner.
+    Route::get('/groups/{group}/study',    [\App\Http\Controllers\GroupController::class, 'studyRoom']);
+    Route::post('/groups/{group}/study',   [\App\Http\Controllers\GroupController::class, 'attachStudy'])
+        ->middleware('throttle:30,1');
+    Route::delete('/groups/{group}/study', [\App\Http\Controllers\GroupController::class, 'detachStudy'])
+        ->middleware('throttle:30,1');
+
     // ── Shared reading sessions (v1.3 Phase D) ─────────────────────────────────
     // A session coordinates a group around an existing plan; it owns no progress —
     // participants read through their own enrollments (ReadingPlanService).
@@ -619,6 +627,7 @@ Route::middleware(['auth:sanctum', 'account.usable'])->prefix('v1/study')->group
         // Guests: one free study; members/premium: must hold a token. The handler
         // reserves/commits the token and records guest usage on success.
         ->middleware(['throttle:6,1', 'guest.limit:study', 'tokens:study']);
+    Route::get('/mine', [StudyController::class, 'mine']);
     Route::get('/sessions/{session}', [StudyController::class, 'show']);
     Route::post('/sessions/{session}/messages', [StudyController::class, 'postMessage'])
         ->middleware('throttle:20,1');

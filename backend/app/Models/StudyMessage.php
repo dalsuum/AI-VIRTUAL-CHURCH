@@ -18,7 +18,7 @@ class StudyMessage extends Model
     public $timestamps = false; // created_at only (set by DB default)
 
     protected $fillable = [
-        'session_id', 'turn', 'role', 'persona_id', 'content',
+        'session_id', 'turn', 'role', 'sender_id', 'persona_id', 'content',
         'scripture_refs', 'prompt_tokens', 'completion_tokens', 'safety_flag',
     ];
 
@@ -34,6 +34,12 @@ class StudyMessage extends Model
     public function session(): BelongsTo
     {
         return $this->belongsTo(StudySession::class, 'session_id');
+    }
+
+    /** Which human wrote a user-role message (group rooms, v1.4). */
+    public function sender(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'sender_id');
     }
 
     public function persona(): BelongsTo

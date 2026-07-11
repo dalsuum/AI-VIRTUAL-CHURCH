@@ -367,10 +367,13 @@ const fmtDate = (iso) => (iso ? new Date(iso).toLocaleDateString() : "");
         <template v-if="gService">
           <p class="gp-meta">
             <span class="badge live">🙏 {{ t("group.service.sharedBy", { name: gService.shared_by ?? "…" }) }}</span>
+            <span v-if="gService.status === 'active'" class="badge now">🔴 {{ t("group.service.liveNow") }}</span>
             <span class="muted small">{{ fmtDate(gService.created_at) }} · {{ (gService.language || "").toUpperCase() }}</span>
           </p>
           <p class="gp-controls">
-            <a class="btn" :href="`#service?token=${gService.session_token}`">{{ t("group.service.open") }}</a>
+            <a class="btn" :href="`#service?token=${gService.session_token}`">
+              {{ gService.status === 'active' ? t("group.service.joinNow") : t("group.service.open") }}
+            </a>
             <button v-if="canManage" class="btn ghost" :disabled="busy" @click="unshareService">
               {{ t("group.service.unshare") }}
             </button>
@@ -574,6 +577,7 @@ const fmtDate = (iso) => (iso ? new Date(iso).toLocaleDateString() : "");
 .badge { font-size: 0.75rem; padding: 0.15rem 0.6rem; border-radius: 999px; background: var(--surface-2, rgba(128,128,128,.15)); text-decoration: none; color: inherit; }
 .badge.role { background: var(--accent, #3b82f6); color: #fff; }
 .badge.live { background: var(--success, #16a34a); color: #fff; }
+.badge.now { background: var(--danger, #dc2626); color: #fff; }
 .btn { padding: 0.35rem 0.9rem; border-radius: 8px; border: 1px solid var(--border, #ccc); background: var(--accent, #3b82f6); color: #fff; cursor: pointer; }
 .btn.ghost { background: transparent; color: inherit; }
 .btn.small { padding: 0.2rem 0.6rem; font-size: 0.8rem; }

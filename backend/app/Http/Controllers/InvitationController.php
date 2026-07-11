@@ -9,9 +9,11 @@ use App\Enums\InvitationActivity;
 use App\Enums\InvitationKind;
 use App\Enums\InvitationStatus;
 use App\Http\Requests\CreateInvitationRequest;
+use App\Domains\Invitations\Notifications\GroupInviteEmail;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Notification;
 
 /**
  * Thin orchestration over InvitationService — the sole mutator of invitation state.
@@ -101,6 +103,38 @@ class InvitationController extends Controller
             expiresAt: isset($data['expires_at']) ? Carbon::parse($data['expires_at']) : null,
             message: $data['message'] ?? null,
         );
+
+        return response()->json($this->present($invitation->load('invitable')), 201);
+    }
+
+    /** Email a personal invitation to any address — the recipient may have no
+     *  account yet; the join page handles register → auto-return → join. The
+     *  mail delivers an ordinary LINK (single-use, 14 days, revocable): email
+     *  is a delivery channel, never a second invitation system. */
+    public function storeEmailInvitation(Request $request, Group $group)
+    {
+        $this->authorize('manage', $group);
+
+        $data = $request->validate([
+            'email'   => ['required', 'email', 'max:120'],
+            'message' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $invitation = $this->invitations->sendLink(
+            inviter: $request->user(),
+            group: $group,
+            maxUses: 1,
+            expiresAt: now()->addDays(14),
+            message: $data['message'] ?? null,
+        );
+
+        Notification::route('mail', $data['email'])->notify(new GroupInviteEmail(
+            inviterName: (string) $request->user()->name,
+            groupName: $group->name,
+            churchName: $group->church?->name,
+            token: (string) $invitation->token,
+            message: $invitation->message,
+        ));
 
         return response()->json($this->present($invitation->load('invitable')), 201);
     }

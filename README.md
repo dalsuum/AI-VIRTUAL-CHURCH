@@ -922,9 +922,14 @@ visibility-filtered through `PrivacyGate::canViewPresence` (honoring incognito +
 a hidden member returns 404, not 403). The **Privacy API** (`/api/me/privacy`) exposes the
 stable Phase 1 settings (profile/activity/presence visibility, friend-only mode, incognito);
 notification-channel preferences are left for the later reminder/notification work.
-**Church authorization** runs through `ChurchPolicy`, whose abilities (view/createSession/
-moderate/manage) declare a minimum role and defer the comparison to `ChurchRole::atLeast` —
-**the enum owns the hierarchy**, no policy hard-codes role order. A default-church backfill
+**Church authorization** runs through `ChurchPolicy`, whose abilities (view/viewDirectory/
+createSession/moderate/manage) declare a minimum role and defer the comparison to
+`ChurchRole::atLeast` — **the enum owns the hierarchy**, no policy hard-codes role order.
+`view` (profile + ministry-group catalog) admits **guests** — someone who entered through
+a group invitation link has been invited into the community and may see what it is —
+while `viewDirectory` (member roster, church-wide activity feed) stays member+: member
+names remain member-visible, since guests hold participation, not pastoral recognition
+(v1.3 acceptance finding, owner decision). A default-church backfill
 (`php artisan community:backfill-default-church`) is idempotent, transactional and
 resumable: it creates the church once and only the missing memberships, safe to rerun.
 Because promotion is itself elder+-gated (and the backfill assigns `member`), first
@@ -1145,6 +1150,16 @@ mention the invitation; the stored destination does the work. The success screen
 bridge into collaboration: Go to the group / Start today's reading / Return to
 dashboard.
 
+**Email invitations (v1.4 opener — first observation-driven feature).** Group managers
+can send a personal invitation to **any email address** (`POST
+/groups/{group}/invitations/email`, tightly throttled): the mail — church + group +
+inviter + a Join button — delivers an ordinary **single-use, 14-day, revocable LINK**
+minted through the same `InvitationService::sendLink()`. Email is a delivery channel,
+never a second invitation system; the recipient may have no account, and the join page
+handles register → auto-return → join as usual. Delivery uses an on-demand mail-only
+notification (`GroupInviteEmail`, scalar payload — no database rows for people who
+aren't users yet).
+
 **Member Directory + Church Activity Feed (v1.3 Phase F — final pieces).**
 [MemberDirectory.vue](frontend/src/components/MemberDirectory.vue) at `#members`
 (auth-guarded, linked from the dashboard's members card) is deliberately a
@@ -1161,6 +1176,33 @@ feed and the group feed render **human sentences** ("Alice joined Choir"), never
 event names. Covered in `tests/Feature/ChurchAuthorizationTest.php`. This completes
 the Phase F collaboration UI: Dashboard → Group → Invite → Preview → Login (intent
 preserved) → Join → Group → Shared Reading → Activity.
+
+**Group Service (v1.4 — worship together, first slice).** A group manager shares **one
+of their own generated services** with the group (share-picker on the Group Page →
+`POST /groups/{group}/service`); every group member sees the card and opens **the same
+service** — prayers, sermon, hymns — each at their own pace, via `#service?token=…`
+(guarded, intent-preserving). The service pipeline is untouched: sharing sets one
+nullable `group_id` on the leader's `service_sessions` row, and playback
+(`ServiceController::show`) authorizes group members by membership — no resume token,
+membership is the credential. Unsharing closes member playback immediately. One shared
+service per group (latest wins); `GET /me/services` feeds the picker. Generation
+*targeted at* a group (an intake checkbox) and synchronized watch-together are
+deliberately deferred until observation asks for them.
+
+**Member role governance (v1.4).** Twice-observed gap, now closed. **Church roles**:
+elders+ change a member's role from the Member Directory through an **explicit flow**
+(Change role → choose role → optional reason → confirm) under **strict dominance**,
+enforced server-side by `ChurchRole::atLeast`: you manage only roles *strictly below*
+your own (both the target's current role and the new one), never your own role, and
+**owner is never assignable** through the UI — so an elder can't mint elders, a pastor
+can't demote the owner, and only the owner appoints pastors. Ownership transfer stays a
+deliberate future flow; the break-glass `church:assign-role` command remains for
+bootstrap. **Group roles**: leadership is an **appointment** — every join path enters
+people as plain members; a group's leader or church elder+ appoints/demotes co-leaders
+from the Group Page members list (confirm dialog; never yourself). Every change writes
+a structured audit log entry (actor, target, from → to, optional reason); an audit
+*table* waits for real reporting needs. `PUT /churches/{church}/members/{user}/role`,
+`PUT /groups/{group}/members/{user}/role` — every escalation rule is pinned by tests.
 
 ## Unified Conversation & Spiritual History
 

@@ -42,7 +42,10 @@
       "allRoles": "All roles",
       "joined": "Joined {date}",
       "empty": "No members match.",
-      "back": "← My Church"
+      "back": "← My Church",
+      "changeRole": "Change role",
+      "reason": "Reason (optional)",
+      "confirm": "Confirm"
     },
     "feed": {
       "title": "Recent Activity",
@@ -103,7 +106,22 @@
       "completedToday": "read today",
       "state": { "planned": "Planned", "active": "Active", "paused": "Paused" }
     },
-    "members": { "title": "Members" },
+    "service": {
+      "title": "Group Service",
+      "none": "No shared service yet.",
+      "sharedBy": "Service shared by {name}",
+      "open": "Open the service",
+      "share": "Share with the group",
+      "unshare": "Stop sharing",
+      "pick": "Choose one of your services"
+    },
+    "members": {
+      "title": "Members",
+      "makeLeader": "Make leader",
+      "makeMember": "Make member",
+      "confirmLead": "Appoint {name} as a group leader?",
+      "confirmMember": "Change {name} back to member?"
+    },
     "invites": {
       "title": "Invitations",
       "mint": "New invitation link",
@@ -113,7 +131,10 @@
       "revoke": "Revoke",
       "none": "No active links.",
       "uses": "{used}/{max} used",
-      "unlimited": "{used} used"
+      "unlimited": "{used} used",
+      "emailPlaceholder": "Email address",
+      "sendEmail": "Send by email",
+      "sent": "Invitation sent to {email}"
     },
     "requests": {
       "title": "Join Requests",

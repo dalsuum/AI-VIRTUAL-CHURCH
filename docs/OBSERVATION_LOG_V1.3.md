@@ -49,9 +49,25 @@ implementation — as an extension of an existing domain.
   invitation" (mail with church/group/leader + Join button, QR optional).
   Direct in-app invitations already email existing users; what's missing is
   emailing a join link to someone with no account. v1.4 candidate.
+  **→ SHIPPED 2026-07-10 as the v1.4 opener (owner-directed):** email field on
+  the Group Page mints a single-use 14-day link and mails it via an on-demand
+  notification — email as delivery channel, one invitation system.
 
 ## Collaboration
 <!-- groups: creation, discovery, leadership, membership, directory -->
+
+- 2026-07-10 — owner (acceptance run, Part 2) — **FIXED:** after joining via
+  invitation, the newcomer opened *My Church* and got a raw "This action is
+  unauthorized" — link-joiners are church **guests** by design (least
+  privilege), but the whole dashboard was gated at member+. *Observation:*
+  guests were shown a door they couldn't open. *Pattern:* a guest belongs to
+  the community they entered and needs to see its public face. *Principle
+  (owner decision):* guests see the church profile and the ministry-group
+  catalog; the member directory and church-wide feed stay member+ — member
+  names remain member-visible; deeper access comes with membership, a pastoral
+  decision. *Implementation:* `ChurchPolicy::view` floor lowered to GUEST, new
+  `viewDirectory` (member+) for roster + feed; dashboard hides those sections
+  for guests instead of erroring.
 
 ## Reading
 <!-- shared sessions, individual plans, completions, streaks, reminders -->
@@ -74,6 +90,10 @@ implementation — as an extension of an existing domain.
   `php artisan church:assign-role` command. **Pattern candidate:** a church-run
   Members governance page (role assignment with explicit escalation rules —
   who may assign PASTOR, no self-promotion) extending Church/ChurchPolicy.
+  **→ SHIPPED 2026-07-10** (owner asked a second time — pattern confirmed):
+  church roles via the Member Directory's explicit change-role flow under
+  strict dominance (manage only strictly-below roles; never self; owner never
+  assignable via UI); group leadership via appoint/demote on the Group Page.
 
 ## Surprises
 <!-- anything nobody anticipated — often the most valuable section -->

@@ -206,6 +206,9 @@ Route::middleware(['auth:sanctum', 'account.usable'])->group(function () {
     // tokens are 48-char random, so scanning is infeasible, but keep it boring.
     Route::post('/groups/{group}/invitations',      [\App\Http\Controllers\InvitationController::class, 'storeLink'])
         ->middleware('throttle:30,1');
+    // Email delivery of a personal single-use link (tight throttle: outbound mail).
+    Route::post('/groups/{group}/invitations/email', [\App\Http\Controllers\InvitationController::class, 'storeEmailInvitation'])
+        ->middleware('throttle:10,1');
     Route::post('/invitations/link/{token}/redeem', [\App\Http\Controllers\InvitationController::class, 'redeem'])
         ->middleware('throttle:20,1');
 
@@ -214,12 +217,25 @@ Route::middleware(['auth:sanctum', 'account.usable'])->group(function () {
     Route::get('/groups/{group}',          [\App\Http\Controllers\GroupController::class, 'show']);
     Route::get('/groups/{group}/members',  [\App\Http\Controllers\GroupController::class, 'members']);
     Route::get('/groups/{group}/activity', [\App\Http\Controllers\GroupController::class, 'activity']);
+    // Group leadership is an appointment (v1.4 governance) — joins always enter as member.
+    Route::put('/groups/{group}/members/{user}/role', [\App\Http\Controllers\GroupController::class, 'updateMemberRole'])
+        ->middleware('throttle:30,1');
 
     // Join requests (kind=request): the requester is the inviter, so withdrawal is
     // the ordinary cancel; managers approve/decline via /invitations/{id}/accept|decline.
     Route::post('/groups/{group}/join-requests', [\App\Http\Controllers\InvitationController::class, 'storeRequest'])
         ->middleware('throttle:20,1');
     Route::get('/groups/{group}/join-requests',  [\App\Http\Controllers\InvitationController::class, 'indexRequests']);
+
+    // ── Group service (v1.4): one shared generated service per group ───────────
+    // Managers share ONE OF THEIR OWN services; members open the same service
+    // (playback authorizes by group membership in ServiceController::show).
+    Route::get('/me/services',              [ServiceController::class, 'mine']);
+    Route::get('/groups/{group}/service',   [\App\Http\Controllers\GroupController::class, 'service']);
+    Route::post('/groups/{group}/service',  [\App\Http\Controllers\GroupController::class, 'shareService'])
+        ->middleware('throttle:30,1');
+    Route::delete('/groups/{group}/service', [\App\Http\Controllers\GroupController::class, 'unshareService'])
+        ->middleware('throttle:30,1');
 
     // ── Shared reading sessions (v1.3 Phase D) ─────────────────────────────────
     // A session coordinates a group around an existing plan; it owns no progress —
@@ -261,6 +277,9 @@ Route::middleware(['auth:sanctum', 'account.usable'])->group(function () {
     Route::get('/churches/{church}/members',   [\App\Http\Controllers\ChurchController::class, 'members']);
     Route::get('/churches/{church}/groups',    [\App\Http\Controllers\ChurchController::class, 'groups']);
     Route::get('/churches/{church}/activity',  [\App\Http\Controllers\ChurchController::class, 'activity']);
+    // Church role governance (v1.4): explicit strict-dominance rules in the controller.
+    Route::put('/churches/{church}/members/{user}/role', [\App\Http\Controllers\ChurchController::class, 'updateMemberRole'])
+        ->middleware('throttle:30,1');
     Route::post('/churches/{church}/groups',   [\App\Http\Controllers\ChurchController::class, 'storeGroup'])
         ->middleware('throttle:30,1');
     Route::put('/churches/{church}/profile',   [\App\Http\Controllers\ChurchController::class, 'updateProfile'])

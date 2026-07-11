@@ -94,4 +94,60 @@ class ChurchAuthorizationTest extends TestCase
         $outsider = $this->makeUser();
         $this->actingAs($outsider, 'sanctum')->getJson("/api/churches/{$church->id}/activity")->assertForbidden();
     }
+
+    public function test_guests_see_profile_and_groups_but_not_directory_or_feed(): void
+    {
+        // The link-joined guest boundary (acceptance finding, owner decision):
+        // profile + ministry catalog = yes; member names (roster, feed) = no.
+        $church = Church::create(['name' => 'Grace', 'slug' => 'grace']);
+        Group::create(['church_id' => $church->id, 'name' => 'Choir', 'type' => GroupType::CHOIR]);
+        $guest = $this->makeUser();
+        $this->member($guest, $church, ChurchRole::GUEST);
+
+        $this->actingAs($guest, 'sanctum')->getJson("/api/churches/{$church->id}")
+            ->assertOk()->assertJsonFragment(['name' => 'Grace']);
+        $this->actingAs($guest, 'sanctum')->getJson("/api/churches/{$church->id}/groups")
+            ->assertOk()->assertJsonCount(1, 'groups');
+
+        $this->actingAs($guest, 'sanctum')->getJson("/api/churches/{$church->id}/members")->assertForbidden();
+        $this->actingAs($guest, 'sanctum')->getJson("/api/churches/{$church->id}/activity")->assertForbidden();
+
+        // Outsiders (no membership row at all) still see nothing.
+        $outsider = $this->makeUser();
+        $this->actingAs($outsider, 'sanctum')->getJson("/api/churches/{$church->id}")->assertForbidden();
+        $this->actingAs($outsider, 'sanctum')->getJson("/api/churches/{$church->id}/groups")->assertForbidden();
+    }
+
+    public function test_church_role_changes_follow_strict_dominance(): void
+    {
+        $church = Church::create(['name' => 'Grace', 'slug' => 'grace']);
+        $owner  = $this->makeUser();
+        $pastor = $this->makeUser();
+        $elder  = $this->makeUser();
+        $target = $this->makeUser();
+        $this->member($owner, $church, ChurchRole::OWNER);
+        $this->member($pastor, $church, ChurchRole::PASTOR);
+        $this->member($elder, $church, ChurchRole::ELDER);
+        $this->member($target, $church, ChurchRole::MEMBER);
+
+        $put = fn ($actor, $userId, $role) => $this->actingAs($actor, 'sanctum')
+            ->putJson("/api/churches/{$church->id}/members/{$userId}/role", ['role' => $role]);
+
+        // An elder manages strictly below: member → deacon works…
+        $put($elder, $target->id, 'deacon')->assertOk()->assertJsonFragment(['role' => 'deacon']);
+        // …but cannot mint an equal (elder) or a superior (pastor).
+        $put($elder, $target->id, 'elder')->assertForbidden();
+        $put($elder, $target->id, 'pastor')->assertForbidden();
+        // Targets at-or-above the actor are untouchable — a pastor cannot demote the owner.
+        $put($pastor, $owner->id, 'member')->assertForbidden();
+        // Nobody changes their own role; owner is never assignable through this flow.
+        $put($owner, $owner->id, 'pastor')->assertForbidden();
+        $put($owner, $target->id, 'owner')->assertStatus(422);
+        // Only the owner can appoint a pastor.
+        $put($owner, $target->id, 'pastor')->assertOk();
+        // Below the manage threshold you can't enter at all.
+        $deacon = $this->makeUser();
+        $this->member($deacon, $church, ChurchRole::DEACON);
+        $put($deacon, $elder->id, 'member')->assertForbidden();
+    }
 }

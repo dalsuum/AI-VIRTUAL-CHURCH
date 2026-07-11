@@ -322,6 +322,10 @@ export const api = {
   churchMembers: (id) => request(`/churches/${id}/members`),
   churchGroups: (id) => request(`/churches/${id}/groups`),
   churchActivity: (id) => request(`/churches/${id}/activity`),
+  setChurchMemberRole: (churchId, userId, payload) =>
+    request(`/churches/${churchId}/members/${userId}/role`, { method: "PUT", body: payload }),
+  setGroupMemberRole: (groupId, userId, role) =>
+    request(`/groups/${groupId}/members/${userId}/role`, { method: "PUT", body: { role } }),
   createGroup: (id, payload) =>
     request(`/churches/${id}/groups`, { method: "POST", body: payload }),
   myInvitations: () => request("/invitations"),
@@ -330,6 +334,13 @@ export const api = {
   groupActivity: (id) => request(`/groups/${id}/activity`),
   mintGroupLink: (id, payload = {}) =>
     request(`/groups/${id}/invitations`, { method: "POST", body: payload }),
+  emailGroupInvite: (id, payload) =>
+    request(`/groups/${id}/invitations/email`, { method: "POST", body: payload }),
+  myServices: () => request("/me/services"),
+  groupService: (id) => request(`/groups/${id}/service`),
+  shareGroupService: (id, token) =>
+    request(`/groups/${id}/service`, { method: "POST", body: { session_token: token } }),
+  unshareGroupService: (id) => request(`/groups/${id}/service`, { method: "DELETE" }),
   groupJoinRequests: (id) => request(`/groups/${id}/join-requests`),
   requestToJoin: (id) => request(`/groups/${id}/join-requests`, { method: "POST" }),
   invitationAccept: (id) => request(`/invitations/${id}/accept`, { method: "POST" }),

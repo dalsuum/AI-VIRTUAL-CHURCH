@@ -16,7 +16,19 @@ use App\Models\User;
  */
 class ChurchPolicy
 {
+    /** See the church's public face — profile and the ministry-group catalog.
+     *  Any active membership, GUESTS INCLUDED: someone who entered through a
+     *  group invitation link has been invited into the community and may see
+     *  what it is (v1.3 acceptance finding; owner decision 2026-07-10). */
     public function view(User $user, Church $church): bool
+    {
+        return $user->hasChurchRole($church->id, ChurchRole::GUEST);
+    }
+
+    /** See who belongs — the member directory/roster and the church-wide
+     *  activity feed. Member names stay member-visible: guests hold
+     *  participation, not pastoral recognition. */
+    public function viewDirectory(User $user, Church $church): bool
     {
         return $user->hasChurchRole($church->id, ChurchRole::MEMBER);
     }

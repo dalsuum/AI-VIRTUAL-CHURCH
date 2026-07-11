@@ -22,16 +22,22 @@ const feed = ref([]);
 const myRole = computed(() => churches.value.find((c) => c.id === selectedId.value)?.role);
 // Thresholds mirror the backend policies (GroupPolicy::create = leader+); the
 // server remains the authority — these only decide what UI to offer.
+const isGuest = computed(() => myRole.value === "guest");
 const canCreateGroup = computed(() =>
   ["leader", "deacon", "elder", "pastor", "owner"].includes(myRole.value));
 
 async function loadChurch(id) {
   selectedId.value = id;
   error.value = "";
+  // Guests see the church's public face (profile + ministry catalog); the
+  // directory and church-wide feed are member+ (ChurchPolicy::viewDirectory),
+  // so don't even request them — their sections hide below.
+  const guest = churches.value.find((c) => c.id === id)?.role === "guest";
   try {
-    const [p, g, m, inv, act] = await Promise.all([
-      api.church(id), api.churchGroups(id), api.churchMembers(id),
-      api.myInvitations(), api.churchActivity(id),
+    const [p, g, inv, m, act] = await Promise.all([
+      api.church(id), api.churchGroups(id), api.myInvitations(),
+      guest ? Promise.resolve({ members: [] }) : api.churchMembers(id),
+      guest ? Promise.resolve({ activity: [] }) : api.churchActivity(id),
     ]);
     profile.value = p;
     groups.value = g.groups || [];
@@ -121,7 +127,7 @@ const memberPreview = computed(() => members.value.slice(0, 8));
             <p v-if="profile.description" class="muted">{{ profile.description }}</p>
             <p class="church-meta">
               <span v-if="myRole" class="badge">{{ t("church.myRole") }}: {{ t(`church.role.${myRole}`) }}</span>
-              <span class="badge">{{ members.length }} {{ t("church.members") }}</span>
+              <span v-if="!isGuest" class="badge">{{ members.length }} {{ t("church.members") }}</span>
               <span class="badge">{{ groups.length }} {{ t("church.groups") }}</span>
             </p>
           </div>
@@ -198,8 +204,8 @@ const memberPreview = computed(() => members.value.slice(0, 8));
         </ul>
       </section>
 
-      <!-- Members preview → full directory -->
-      <section class="card">
+      <!-- Members preview → full directory (member+; guests don't see the roster) -->
+      <section v-if="!isGuest" class="card">
         <div class="section-head">
           <h2>{{ t("church.members") }} ({{ members.length }})</h2>
           <a href="#members" class="muted">{{ t("church.viewAll") }}</a>
@@ -214,8 +220,8 @@ const memberPreview = computed(() => members.value.slice(0, 8));
         </p>
       </section>
 
-      <!-- Recent activity — curated human sentences over the domain events -->
-      <section class="card">
+      <!-- Recent activity — curated human sentences over the domain events (member+) -->
+      <section v-if="!isGuest" class="card">
         <h2>{{ t("church.feed.title") }}</h2>
         <p v-if="!feed.length" class="muted">{{ t("church.feed.none") }}</p>
         <ul v-else class="feed-list">

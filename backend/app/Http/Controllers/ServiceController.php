@@ -281,6 +281,23 @@ class ServiceController extends Controller
         }
     }
 
+    /** The caller's recent services — feeds the Group Page share-picker (v1.4). */
+    public function mine(Request $request): JsonResponse
+    {
+        $services = ServiceSession::query()
+            ->where('user_id', $request->user()->id)
+            ->latest()->limit(10)->get()
+            ->map(fn ($s) => [
+                'session_token' => $s->session_token,
+                'status'        => $s->status,
+                'language'      => $s->language,
+                'group_id'      => $s->group_id,
+                'created_at'    => optional($s->created_at)->toIso8601String(),
+            ]);
+
+        return response()->json(['services' => $services]);
+    }
+
     private function authorizeServiceView(Request $request, ServiceSession $session): void
     {
         $this->authorizeServiceOwnerUsable($session);
@@ -291,6 +308,14 @@ class ServiceController extends Controller
 
         if ($request->hasSession()
             && (int) $request->session()->get(ServiceSession::RESUME_SESSION_ID_KEY) === (int) $session->id) {
+            return;
+        }
+
+        // Group service (v1.4): a service shared to a ministry group is viewable by
+        // the group's active members — the same generated service, each at their
+        // own pace. Membership is the credential; no resume token needed.
+        if ($session->group_id && $request->user()
+            && $request->user()->hasGroupRole((int) $session->group_id, \App\Enums\GroupRole::MEMBER)) {
             return;
         }
 

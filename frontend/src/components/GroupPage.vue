@@ -53,6 +53,11 @@ async function load() {
         if (r.study) startRoomPolling();
         else if (roomTimer) clearInterval(roomTimer);
       }),
+      api.groupPastor(groupId.value).then((r) => {
+        gPastor.value = r.pastor;
+        if (r.pastor) startPastorPolling();
+        else if (pastorTimer) clearInterval(pastorTimer);
+      }),
       api.me().then((r) => (myUserId.value = r.user?.id ?? r.id ?? null)).catch(() => {}),
     ];
     if (group.value.open_session) {
@@ -65,6 +70,7 @@ async function load() {
       jobs.push(api.readingPlans().then((r) => (plans.value = r.plans || [])));
       jobs.push(api.myServices().then((r) => (myServices.value = r.services || [])).catch(() => {}));
       jobs.push(api.myStudySessions().then((r) => (myStudies.value = (r.sessions || []).filter((s) => !s.group_id))).catch(() => {}));
+      jobs.push(api.myPastorSessions().then((r) => (myPastors.value = (r.sessions || []).filter((s) => !s.group_id))).catch(() => {}));
     }
     await Promise.all(jobs);
   } catch (e) {
@@ -184,6 +190,61 @@ async function askRoom() {
   } catch (e) {
     actionError.value = e.message;
     roomQuestion.value = q;
+  } finally {
+    busy.value = false;
+  }
+}
+
+// ── Pastor Together (v1.4): a live pastoral room inside the page ────────────
+// Same mechanics as Study Together, plus one boundary that matters here: every
+// member's message runs the crisis intercept INDIVIDUALLY — a triggered
+// response comes back privately to that sender and never enters the room.
+const gPastor = ref(null);
+const myPastors = ref([]);
+const pastorPick = ref(null);
+const pastorMsgs = ref([]);
+const pastorQuestion = ref("");
+const crisisNote = ref("");
+let pastorTimer = null;
+
+async function refreshPastor() {
+  if (!gPastor.value) return;
+  try {
+    const r = await api.pastorRoomMessages(gPastor.value.id);
+    pastorMsgs.value = (r.messages || []).map((m) => ({
+      role: m.sender,
+      name: m.sender === "user"
+        ? (m.sender_name || t("group.pastor.member"))
+        : t("group.pastor.aiPastor"),
+      text: m.content || "",
+    }));
+  } catch { /* room may have been closed — the next load() clears it */ }
+}
+function startPastorPolling() {
+  if (pastorTimer) clearInterval(pastorTimer);
+  refreshPastor();
+  pastorTimer = setInterval(refreshPastor, 6000);
+}
+onUnmounted(() => pastorTimer && clearInterval(pastorTimer));
+
+const openPastor = () => run(() => api.attachGroupPastor(groupId.value, pastorPick.value));
+const closePastor = () => run(() => api.detachGroupPastor(groupId.value));
+async function askPastor() {
+  const q = pastorQuestion.value;
+  pastorQuestion.value = "";
+  crisisNote.value = "";
+  busy.value = true;
+  actionError.value = "";
+  try {
+    const res = await api.pastorRoomPost(gPastor.value.id, q);
+    if (res.intercepted) {
+      crisisNote.value = res.resource;   // private to this sender, by design
+    } else {
+      await refreshPastor();
+    }
+  } catch (e) {
+    actionError.value = e.message;
+    pastorQuestion.value = q;
   } finally {
     busy.value = false;
   }
@@ -378,6 +439,46 @@ const fmtDate = (iso) => (iso ? new Date(iso).toLocaleDateString() : "");
         </template>
       </section>
 
+      <!-- Pastor Together (v1.4): shared pastoral room; crisis intercept per sender -->
+      <section class="card">
+        <h2>{{ t("group.pastor.title") }}</h2>
+
+        <template v-if="gPastor">
+          <p class="gp-meta">
+            <span class="badge live">🕊 {{ gPastor.title || t("group.pastor.title") }}</span>
+            <span class="muted small">{{ t("group.pastor.host", { name: gPastor.owner ?? "…" }) }}</span>
+            <button v-if="canManage" class="btn small ghost" :disabled="busy" @click="closePastor">
+              {{ t("group.pastor.close") }}
+            </button>
+          </p>
+          <ul class="gp-room">
+            <li v-for="(b, i) in pastorMsgs" :key="i" :class="{ ai: b.role !== 'user' }">
+              <strong>{{ b.name }}</strong> {{ b.text }}
+            </li>
+          </ul>
+          <p v-if="crisisNote" class="gp-crisis">{{ crisisNote }}</p>
+          <form v-if="isMember" class="gp-mint" @submit.prevent="askPastor">
+            <input v-model.trim="pastorQuestion" :placeholder="t('group.pastor.ask')" maxlength="4000" required />
+            <button class="btn" type="submit" :disabled="busy || !pastorQuestion">{{ t("group.pastor.send") }}</button>
+          </form>
+        </template>
+
+        <template v-else>
+          <p class="muted">{{ t("group.pastor.none") }}</p>
+          <p v-if="canManage && !myPastors.length" class="muted small">
+            {{ t("group.pastor.empty") }}
+            <a class="btn small" href="#pastor">{{ t("group.pastor.createFirst") }}</a>
+          </p>
+          <form v-if="canManage && myPastors.length" class="gp-mint" @submit.prevent="openPastor">
+            <select v-model="pastorPick" required>
+              <option :value="null" disabled>{{ t("group.pastor.pick") }}</option>
+              <option v-for="s in myPastors" :key="s.id" :value="s.id">{{ s.title || "…" }}</option>
+            </select>
+            <button class="btn" type="submit" :disabled="busy || !pastorPick">{{ t("group.pastor.share") }}</button>
+          </form>
+        </template>
+      </section>
+
       <!-- Members — leadership is an explicit appointment (v1.4 governance) -->
       <section class="card">
         <h2>{{ t("group.members.title") }} ({{ members.length }})</h2>
@@ -488,4 +589,5 @@ const fmtDate = (iso) => (iso ? new Date(iso).toLocaleDateString() : "");
 .gp-room { list-style: none; padding: 0.5rem; margin: 0.6rem 0; display: flex; flex-direction: column; gap: 0.5rem; max-height: 22rem; overflow-y: auto; border: 1px solid var(--border, rgba(128,128,128,.25)); border-radius: 10px; }
 .gp-room li { font-size: 0.9rem; }
 .gp-room li.ai { opacity: 0.9; padding-left: 0.75rem; border-left: 3px solid var(--accent, #3b82f6); }
+.gp-crisis { padding: 0.6rem 0.8rem; border-radius: 10px; border: 1px solid var(--warning, #d97706); background: rgba(217, 119, 6, 0.12); font-size: 0.9rem; }
 </style>

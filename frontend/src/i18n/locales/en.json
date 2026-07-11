@@ -137,6 +137,20 @@
       "empty": "You can share one of your own Bible studies here — start one first:",
       "createFirst": "Start a Bible study"
     },
+    "pastor": {
+      "title": "Pastor Together",
+      "none": "No pastor room open.",
+      "host": "hosted by {name}",
+      "pick": "Choose one of your pastor conversations",
+      "share": "Open as group room",
+      "close": "Close the room",
+      "ask": "Share with the pastor…",
+      "send": "Send",
+      "member": "A member",
+      "aiPastor": "AI pastor",
+      "empty": "You can open one of your own pastor conversations here — start one first:",
+      "createFirst": "Talk to the pastor"
+    },
     "service": {
       "title": "Group Service",
       "none": "No shared service yet.",

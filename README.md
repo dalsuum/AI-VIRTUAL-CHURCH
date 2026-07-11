@@ -1215,6 +1215,19 @@ exactly that invitee — pending invitations reveal no token and open nothing, d
 opens nothing, third parties 404. Ownership enforced at send (you attach only your own
 service). Zero migrations — the seams were built in v0.2.
 
+**Pastor Together (v1.4 — the last together-slice).** A group manager opens **one of
+their own AI Pastor conversations** as the group's room (`POST /groups/{group}/pastor`,
+picker fed by `GET /pastor/mine`); members read the same pastoral conversation live on
+the Group Page and speak into it, live or asynchronously — same mechanics as Study
+Together (attribution via node `metadata.sender_name`, 6s polling, creator-pays since
+replies ride the owner's session). **The boundary that matters here:** every member's
+message runs the **crisis intercept individually** — a triggered message returns the
+static, vetted resource **privately to that sender** and never enters the shared room
+or reaches the AI (`CrisisInterceptService`, previously wired only into worship
+intake). Closing the room re-privatizes the conversation. Additive migration:
+`chat_sessions.group_id` (a spine-wide "shared with a group" flag any future session
+type can use). Owner/creator controls unchanged; outsiders 404.
+
 **Member role governance (v1.4).** Twice-observed gap, now closed. **Church roles**:
 elders+ change a member's role from the Member Directory through an **explicit flow**
 (Change role → choose role → optional reason → confirm) under **strict dominance**,

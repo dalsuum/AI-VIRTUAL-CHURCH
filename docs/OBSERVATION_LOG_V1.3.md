@@ -97,3 +97,29 @@ implementation — as an extension of an existing domain.
 
 ## Surprises
 <!-- anything nobody anticipated — often the most valuable section -->
+
+- 2026-07-11 — owner (testing, two browsers) — One member started a service
+  and asked *"how can the other member join? there is no current service or
+  live."* — the expectation is **joining a live service in the moment**, not
+  a share step on another page. *Observation:* sharing lives on the Group
+  Page, away from the moment of worship; the running service IS in the share
+  picker but nobody discovers that. *Pattern (forming):* worshippers expect
+  presence — "X is worshipping now → Join." *Principle:* services are
+  personal (mood + private prayer request feed the sermon), so visibility
+  requires the worshipper's consent — but consent should be one tap at the
+  start, not tab-switching. *Candidates:* ✅ "Happening now / Join" badge on
+  the shared card (shipped); a share/invite affordance inside the service
+  player; a "for my group" checkbox at intake (consent at creation → group
+  sees it live immediately) — the previously deferred item, now argued for
+  by real use.
+- 2026-07-11 — owner (correcting the builder) — **The group model was wrong at
+  its root**: groups were leader-gated and the creator didn't even become a
+  member of the group they created, so ordinary members could never
+  self-organize — which silently broke the owner's core scenario (a couple =
+  their own two-person group where service/study/pastor all just work).
+  *Owner's model:* (1) ANY member creates groups and adds people by email;
+  (2) the group IS the couple/circle — no special couple features needed;
+  (3) the CHURCH level stays official: scheduled services, announcements,
+  news. *Fixed:* create opened to members (guests still excluded), creator
+  auto-leads. *Meta-lesson:* three rounds of building on assumptions instead
+  of asking one question first.

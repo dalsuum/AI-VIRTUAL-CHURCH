@@ -160,7 +160,9 @@
       "unshare": "Stop sharing",
       "pick": "Choose one of your services",
       "empty": "You can share one of your own services here — create one first:",
-      "createFirst": "Create a service"
+      "createFirst": "Create a service",
+      "liveNow": "Happening now",
+      "joinNow": "Join the service now"
     },
     "members": {
       "title": "Members",

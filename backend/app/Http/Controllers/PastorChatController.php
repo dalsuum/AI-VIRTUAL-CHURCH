@@ -47,6 +47,28 @@ class PastorChatController extends Controller
             ->firstOr(fn () => abort(Response::HTTP_NOT_FOUND));
     }
 
+    /** Owner — or, for a GROUP pastor room (v1.4), any active member of the group.
+     *  Members read along and speak into the same conversation; replies still ride
+     *  the owner's session (creator-pays, the owner decision from study rooms). */
+    private function findParticipant(Request $request, string $id): ChatSession
+    {
+        $session = ChatSession::query()
+            ->where('session_type', 'pastor')
+            ->whereKey($id)
+            ->firstOr(fn () => abort(Response::HTTP_NOT_FOUND));
+
+        $user = $request->user();
+        if ((int) $session->user_id === (int) $user->id) {
+            return $session;
+        }
+        if ($session->group_id
+            && $user->hasGroupRole((int) $session->group_id, \App\Enums\GroupRole::MEMBER)) {
+            return $session;
+        }
+
+        abort(Response::HTTP_NOT_FOUND);
+    }
+
     /**
      * Start a Pastor Chat: charge a token, post the first message, dispatch a reply.
      * The hard path (validate → create session → reserve → dispatch → commit/rollback)
@@ -57,34 +79,67 @@ class PastorChatController extends Controller
         return app(PastorChatPipeline::class)->handle($request);
     }
 
-    /** Post a follow-up message and dispatch a new reply. */
+    /** Post a follow-up message and dispatch a new reply. In a GROUP room every
+     *  member's message runs the crisis intercept INDIVIDUALLY — on a trigger the
+     *  static resource goes back privately to the sender and nothing enters the
+     *  shared conversation or reaches the AI (a safety boundary, per person). */
     public function postMessage(Request $request, string $id): JsonResponse
     {
-        $session = $this->findOwned($request, $id);
+        $session = $this->findParticipant($request, $id);
         $data = $request->validate(['message' => ['required', 'string', 'max:4000']]);
+        $text = trim($data['message']);
+        $isRoom = (bool) $session->group_id;
 
-        $this->history->recordMessage($session, 'user', trim($data['message']));
+        if ($isRoom) {
+            $crisis = app(\App\Services\CrisisInterceptService::class)->inspect($session->id, $text);
+            if ($crisis['intercepted']) {
+                return response()->json([
+                    'ok' => true, 'intercepted' => true, 'resource' => $crisis['resource'],
+                ]);
+            }
+        }
+
+        $this->history->recordMessage($session, 'user', $text, $isRoom ? [
+            // Attribution: in a shared room the AI pastor and the members should
+            // know who is speaking (this is conversation data, not service text).
+            'metadata' => [
+                'sender_id'   => $request->user()->id,
+                'sender_name' => $request->user()->name,
+            ],
+        ] : []);
         $this->replies->dispatch($session);
 
         return response()->json(['ok' => true]);
     }
 
-    /** Owner-scoped message history for hydration/resume. */
+    /** Message history for hydration/resume — owner or group-room member. */
     public function messages(Request $request, string $id): JsonResponse
     {
-        $session = $this->findOwned($request, $id);
+        $session = $this->findParticipant($request, $id);
 
         // Phase 4: messages live as message-type nodes in session_nodes (the legacy
         // chat_messages relation was dropped) — read them through the state store.
         $messages = app(\App\Services\SessionState\SessionStateStore::class)
             ->messageDtos($session)
             ->map(fn ($m) => [
-                'sender'     => $m['sender'],
-                'content'    => $m['content'],
-                'created_at' => $m['created_at'],
+                'sender'      => $m['sender'],
+                'sender_name' => $m['metadata']['sender_name'] ?? null,
+                'content'     => $m['content'],
+                'created_at'  => $m['created_at'],
             ])->values();
 
         return response()->json(['messages' => $messages]);
+    }
+
+    /** The caller's recent pastor conversations — feeds the Group Page room-picker. */
+    public function mine(Request $request): JsonResponse
+    {
+        $sessions = ChatSession::forUser((int) $request->user()->id)
+            ->where('session_type', 'pastor')
+            ->latest('last_activity_at')->limit(10)
+            ->get(['id', 'title', 'group_id', 'last_activity_at']);
+
+        return response()->json(['sessions' => $sessions]);
     }
 
     /** Live SSE — tails the Redis events list for this session. */

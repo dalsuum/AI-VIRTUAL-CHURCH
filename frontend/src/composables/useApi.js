@@ -349,6 +349,14 @@ export const api = {
   attachGroupStudy: (id, studyId) =>
     request(`/groups/${id}/study`, { method: "POST", body: { study_session_id: studyId } }),
   detachGroupStudy: (id) => request(`/groups/${id}/study`, { method: "DELETE" }),
+  groupPastor: (id) => request(`/groups/${id}/pastor`),
+  attachGroupPastor: (id, chatId) =>
+    request(`/groups/${id}/pastor`, { method: "POST", body: { chat_session_id: chatId } }),
+  detachGroupPastor: (id) => request(`/groups/${id}/pastor`, { method: "DELETE" }),
+  myPastorSessions: () => request("/pastor/mine"),
+  pastorRoomMessages: (id) => request(`/pastor/sessions/${id}/messages`),
+  pastorRoomPost: (id, message) =>
+    request(`/pastor/sessions/${id}/messages`, { method: "POST", body: { message } }),
   myStudySessions: () => request("/v1/study/mine"),
   groupJoinRequests: (id) => request(`/groups/${id}/join-requests`),
   requestToJoin: (id) => request(`/groups/${id}/join-requests`, { method: "POST" }),

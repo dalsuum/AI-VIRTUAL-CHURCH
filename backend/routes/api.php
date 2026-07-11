@@ -245,6 +245,14 @@ Route::middleware(['auth:sanctum', 'account.usable'])->group(function () {
     Route::delete('/groups/{group}/study', [\App\Http\Controllers\GroupController::class, 'detachStudy'])
         ->middleware('throttle:30,1');
 
+    // ── Group pastor room (v1.4): pastoral conversation together. Every member's
+    // message runs the crisis intercept INDIVIDUALLY — resources go back privately.
+    Route::get('/groups/{group}/pastor',    [\App\Http\Controllers\GroupController::class, 'pastorRoom']);
+    Route::post('/groups/{group}/pastor',   [\App\Http\Controllers\GroupController::class, 'attachPastor'])
+        ->middleware('throttle:30,1');
+    Route::delete('/groups/{group}/pastor', [\App\Http\Controllers\GroupController::class, 'detachPastor'])
+        ->middleware('throttle:30,1');
+
     // ── Shared reading sessions (v1.3 Phase D) ─────────────────────────────────
     // A session coordinates a group around an existing plan; it owns no progress —
     // participants read through their own enrollments (ReadingPlanService).
@@ -369,6 +377,7 @@ Route::middleware(['auth:sanctum', 'account.usable'])->group(function () {
         Route::post('/sessions/{id}/messages', [\App\Http\Controllers\PastorChatController::class, 'postMessage'])
             ->middleware('throttle:20,1');
         Route::get('/sessions/{id}/stream', [\App\Http\Controllers\PastorChatController::class, 'stream']);
+        Route::get('/mine', [\App\Http\Controllers\PastorChatController::class, 'mine']);
     });
 
     // Subscription self-service (Stripe checkout / cancel) + token wallet (read-only).

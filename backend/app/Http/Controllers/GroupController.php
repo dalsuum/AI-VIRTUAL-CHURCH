@@ -272,4 +272,53 @@ class GroupController extends Controller
 
         return response()->json(['study' => null]);
     }
+
+    // ── Group pastor room (v1.4): pastoral conversation together ───────────────
+
+    /** The group's current pastor room (latest), for the Group Page. */
+    public function pastorRoom(Request $request, Group $group)
+    {
+        $this->authorize('view', $group);
+
+        $s = \App\Models\ChatSession::query()
+            ->where('session_type', 'pastor')
+            ->where('group_id', $group->id)->latest('last_activity_at')->first();
+
+        return response()->json(['pastor' => $s ? [
+            'id'    => $s->id,
+            'title' => $s->title,
+            'owner' => \App\Models\User::find($s->user_id)?->name,
+        ] : null]);
+    }
+
+    /** Open one of YOUR OWN pastor conversations as the group's room (managers).
+     *  Members read along and speak into it; each member's message runs the crisis
+     *  intercept individually (PastorChatController::postMessage). */
+    public function attachPastor(Request $request, Group $group)
+    {
+        $this->authorize('manage', $group);
+
+        $data = $request->validate(['chat_session_id' => ['required', 'string', 'max:64']]);
+
+        $chat = \App\Models\ChatSession::forUser((int) $request->user()->id)
+            ->where('session_type', 'pastor')
+            ->whereKey($data['chat_session_id'])
+            ->firstOrFail();
+
+        $chat->forceFill(['group_id' => $group->id])->save();
+
+        return $this->pastorRoom($request, $group);
+    }
+
+    /** Close the pastor room (managers) — the conversation stays the owner's. */
+    public function detachPastor(Request $request, Group $group)
+    {
+        $this->authorize('manage', $group);
+
+        \App\Models\ChatSession::query()
+            ->where('session_type', 'pastor')
+            ->where('group_id', $group->id)->update(['group_id' => null]);
+
+        return response()->json(['pastor' => null]);
+    }
 }

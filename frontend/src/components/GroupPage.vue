@@ -318,6 +318,12 @@ const fmtDate = (iso) => (iso ? new Date(iso).toLocaleDateString() : "");
 
         <template v-else>
           <p class="muted">{{ t("group.service.none") }}</p>
+          <!-- A manager with nothing to share needs a path, not silence: you can
+               only share YOUR OWN services, so point at where one gets created. -->
+          <p v-if="canManage && !myServices.length" class="muted small">
+            {{ t("group.service.empty") }}
+            <a class="btn small" href="#">{{ t("group.service.createFirst") }}</a>
+          </p>
           <form v-if="canManage && myServices.length" class="gp-mint" @submit.prevent="shareService">
             <select v-model="shareToken" required>
               <option :value="null" disabled>{{ t("group.service.pick") }}</option>
@@ -356,6 +362,10 @@ const fmtDate = (iso) => (iso ? new Date(iso).toLocaleDateString() : "");
 
         <template v-else>
           <p class="muted">{{ t("group.study.none") }}</p>
+          <p v-if="canManage && !myStudies.length" class="muted small">
+            {{ t("group.study.empty") }}
+            <a class="btn small" href="#bible-study">{{ t("group.study.createFirst") }}</a>
+          </p>
           <form v-if="canManage && myStudies.length" class="gp-mint" @submit.prevent="openRoom">
             <select v-model="roomPick" required>
               <option :value="null" disabled>{{ t("group.study.pick") }}</option>

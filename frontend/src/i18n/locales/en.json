@@ -116,7 +116,9 @@
       "ask": "Ask a question…",
       "send": "Send",
       "member": "A member",
-      "aiTeacher": "AI teacher"
+      "aiTeacher": "AI teacher",
+      "empty": "You can share one of your own Bible studies here — start one first:",
+      "createFirst": "Start a Bible study"
     },
     "service": {
       "title": "Group Service",
@@ -125,7 +127,9 @@
       "open": "Open the service",
       "share": "Share with the group",
       "unshare": "Stop sharing",
-      "pick": "Choose one of your services"
+      "pick": "Choose one of your services",
+      "empty": "You can share one of your own services here — create one first:",
+      "createFirst": "Create a service"
     },
     "members": {
       "title": "Members",

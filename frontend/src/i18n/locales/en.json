@@ -805,7 +805,9 @@
   },
   "intake": {
     "worshipWith": "Worship with",
-    "justMe": "Just me (private)",
+    "justMe": "Just me",
+    "justMeDesc": "Private — only you",
+    "withGroupDesc": "Your group can see it and join",
     "studyCtaTitle": "AI Bible Study",
     "studyCtaDesc": "Discuss any Bible question with experienced pastors →",
     "welcome": "Welcome",

@@ -578,8 +578,9 @@ const fmtDate = (iso) => (iso ? new Date(iso).toLocaleDateString() : "");
 .badge.role { background: var(--accent, #3b82f6); color: #fff; }
 .badge.live { background: var(--success, #16a34a); color: #fff; }
 .badge.now { background: var(--danger, #dc2626); color: #fff; }
-.btn { padding: 0.35rem 0.9rem; border-radius: 8px; border: 1px solid var(--border, #ccc); background: var(--accent, #3b82f6); color: #fff; cursor: pointer; }
-.btn.ghost { background: transparent; color: inherit; }
+.btn { padding: 0.45rem 1rem; border-radius: var(--radius-sm, 8px); border: 1px solid transparent; background: var(--accent, #3b82f6); color: #fff; cursor: pointer; font-size: 0.9rem; transition: filter 0.12s ease; }
+.btn:hover:not(:disabled) { filter: brightness(1.1); }
+.btn.ghost { background: transparent; color: inherit; border-color: var(--border, #ccc); }
 .btn.small { padding: 0.2rem 0.6rem; font-size: 0.8rem; }
 .btn:disabled { opacity: 0.6; cursor: default; }
 .gp-status ul { list-style: none; padding: 0; margin: 0.5rem 0 0; display: flex; gap: 0.5rem 1.25rem; flex-wrap: wrap; }
@@ -587,7 +588,9 @@ const fmtDate = (iso) => (iso ? new Date(iso).toLocaleDateString() : "");
 .gp-roster .done { color: var(--success, #16a34a); font-weight: 700; }
 .gp-controls { display: flex; gap: 0.5rem; margin-top: 0.6rem; }
 .gp-mint { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin: 0.5rem 0; }
-.gp-mint input, .gp-mint select { padding: 0.4rem 0.6rem; border-radius: 8px; border: 1px solid var(--border, #ccc); background: transparent; color: inherit; }
+.gp-mint input, .gp-mint select { padding: 0.5rem 0.75rem; border-radius: var(--radius-sm, 8px); border: 1px solid var(--border, #ccc); background: var(--surface, transparent); color: var(--text, inherit); min-height: 2.5rem; font-size: 0.9rem; }
+.gp-mint select { min-width: 13rem; }
+.gp-mint input:focus-visible, .gp-mint select:focus-visible { outline: 2px solid var(--accent, #3b82f6); outline-offset: 1px; border-color: var(--accent, #3b82f6); }
 .gp-links li, .gp-requests li { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
 .gp-url { font-size: 0.75rem; overflow-wrap: anywhere; flex: 1 1 12rem; opacity: 0.8; }
 .gp-room { list-style: none; padding: 0.5rem; margin: 0.6rem 0; display: flex; flex-direction: column; gap: 0.5rem; max-height: 22rem; overflow-y: auto; border: 1px solid var(--border, rgba(128,128,128,.25)); border-radius: 10px; }

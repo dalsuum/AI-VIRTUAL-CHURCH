@@ -337,11 +337,13 @@ async function respond(id, accept) {
 .profile-facts { display: grid; grid-template-columns: auto 1fr; gap: 0.25rem 0.75rem; margin-top: 0.75rem; font-size: 0.9rem; }
 .profile-facts dt { opacity: 0.7; }
 .section-head { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
-.btn-small { padding: 0.3rem 0.8rem; border-radius: 8px; border: 1px solid var(--border, #ccc); background: var(--accent, #3b82f6); color: #fff; cursor: pointer; }
-.btn-small.ghost { background: transparent; color: inherit; }
+.btn-small { padding: 0.35rem 0.85rem; border-radius: var(--radius-sm, 8px); border: 1px solid transparent; background: var(--accent, #3b82f6); color: #fff; cursor: pointer; font-size: 0.85rem; transition: filter 0.12s ease; }
+.btn-small:hover:not(:disabled) { filter: brightness(1.1); }
+.btn-small.ghost { background: transparent; color: inherit; border-color: var(--border, #ccc); }
 .btn-small:disabled { opacity: 0.6; cursor: default; }
 .create-form { display: flex; flex-direction: column; gap: 0.5rem; margin: 0.75rem 0; }
-.create-form input, .create-form select { padding: 0.45rem 0.6rem; border-radius: 8px; border: 1px solid var(--border, #ccc); background: transparent; color: inherit; }
+.create-form input, .create-form select { padding: 0.5rem 0.75rem; border-radius: var(--radius-sm, 8px); border: 1px solid var(--border, #ccc); background: var(--surface, transparent); color: var(--text, inherit); min-height: 2.5rem; font-size: 0.9rem; }
+.create-form input:focus-visible, .create-form select:focus-visible { outline: 2px solid var(--accent, #3b82f6); outline-offset: 1px; border-color: var(--accent, #3b82f6); }
 .form-actions { display: flex; gap: 0.5rem; }
 .group-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 0.75rem; margin-top: 0.75rem; }
 .group-card { display: block; padding: 0.85rem; border: 1px solid var(--border, #ccc); border-radius: 12px; text-decoration: none; color: inherit; }

@@ -319,6 +319,18 @@ class ServiceController extends Controller
             return;
         }
 
+        // Couple worship (v1.4): an ACCEPTED direct invitation targeting this exact
+        // service admits the invitee — two people, one service, no group involved.
+        if ($request->user() && \App\Domains\Invitations\Models\Invitation::query()
+            ->where('kind', \App\Enums\InvitationKind::DIRECT)
+            ->where('invitee_id', $request->user()->id)
+            ->where('invitable_type', $session->getMorphClass())
+            ->where('invitable_id', $session->id)
+            ->where('status', \App\Enums\InvitationStatus::ACCEPTED)
+            ->exists()) {
+            return;
+        }
+
         abort(404);
     }
 

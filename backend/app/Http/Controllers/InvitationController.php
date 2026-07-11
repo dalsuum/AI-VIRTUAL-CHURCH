@@ -26,16 +26,19 @@ class InvitationController extends Controller
     {
     }
 
-    /** Invitations addressed to me (pending) and the ones I sent. */
+    /** Invitations addressed to me — pending ones to act on, plus recent ACCEPTED
+     *  ones (so an accepted couple-worship invitation stays reopenable) — and the
+     *  ones I sent. */
     public function index(Request $request)
     {
         $me = $request->user()->id;
 
         return response()->json([
-            'received' => Invitation::with('inviter')
-                ->where('invitee_id', $me)->where('status', InvitationStatus::PENDING)
-                ->latest()->get()->map(fn ($i) => $this->present($i)),
-            'sent' => Invitation::with('invitee')
+            'received' => Invitation::with(['inviter', 'invitable'])
+                ->where('invitee_id', $me)
+                ->whereIn('status', [InvitationStatus::PENDING, InvitationStatus::ACCEPTED])
+                ->latest()->limit(20)->get()->map(fn ($i) => $this->present($i)),
+            'sent' => Invitation::with(['invitee', 'invitable'])
                 ->where('inviter_id', $me)->latest()->limit(50)->get()->map(fn ($i) => $this->present($i)),
         ]);
     }
@@ -45,6 +48,16 @@ class InvitationController extends Controller
         $data    = $request->validated();
         $invitee = User::findOrFail($data['invitee_id']);
 
+        // Couple worship (v1.4): attach ONE OF YOUR OWN services so acceptance
+        // admits the invitee to exactly that service (ownership enforced here).
+        $invitable = null;
+        if (! empty($data['service_token'])) {
+            $invitable = \App\Models\ServiceSession::query()
+                ->where('session_token', $data['service_token'])
+                ->where('user_id', $request->user()->id)
+                ->firstOrFail();
+        }
+
         $invitation = $this->invitations->send(
             inviter: $request->user(),
             invitee: $invitee,
@@ -52,6 +65,7 @@ class InvitationController extends Controller
             scheduledAt: isset($data['scheduled_at']) ? Carbon::parse($data['scheduled_at']) : null,
             timezone: $data['timezone'] ?? null,
             message: $data['message'] ?? null,
+            invitable: $invitable,
         );
 
         return response()->json($this->present($invitation), 201);
@@ -232,6 +246,16 @@ class InvitationController extends Controller
         if ($i->kind !== InvitationKind::DIRECT) {
             $base['group'] = $i->relationLoaded('invitable') && $i->invitable
                 ? ['id' => $i->invitable->id, 'name' => $i->invitable->name] : null;
+        }
+
+        // Couple worship (v1.4): only an ACCEPTED invitation reveals the service
+        // token — before acceptance the token would be a capability leak (playback
+        // also re-checks acceptance server-side; belt and braces).
+        if ($i->kind === InvitationKind::DIRECT
+            && $i->status === InvitationStatus::ACCEPTED
+            && $i->relationLoaded('invitable')
+            && $i->invitable instanceof \App\Models\ServiceSession) {
+            $base['service_token'] = $i->invitable->session_token;
         }
 
         if ($i->kind === InvitationKind::LINK) {

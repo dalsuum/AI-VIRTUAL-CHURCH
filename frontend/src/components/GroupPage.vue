@@ -4,7 +4,7 @@
 // participation before administration: header → Today's Status → Today's
 // Reading → Members → Invitations → Join Requests → Recent Activity.
 // The UI only decides what to OFFER; every action is re-authorized server-side.
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { api } from "../composables/useApi";
 
@@ -48,6 +48,11 @@ async function load() {
       api.groupMembers(groupId.value).then((r) => (members.value = r.members || [])),
       api.groupActivity(groupId.value).then((r) => (activity.value = r.activity || [])),
       api.groupService(groupId.value).then((r) => (gService.value = r.service)),
+      api.groupStudy(groupId.value).then((r) => {
+        gStudy.value = r.study;
+        if (r.study) startRoomPolling();
+        else if (roomTimer) clearInterval(roomTimer);
+      }),
       api.me().then((r) => (myUserId.value = r.user?.id ?? r.id ?? null)).catch(() => {}),
     ];
     if (group.value.open_session) {
@@ -59,6 +64,7 @@ async function load() {
       jobs.push(api.groupJoinRequests(groupId.value).then((r) => (requests.value = r || [])));
       jobs.push(api.readingPlans().then((r) => (plans.value = r.plans || [])));
       jobs.push(api.myServices().then((r) => (myServices.value = r.services || [])).catch(() => {}));
+      jobs.push(api.myStudySessions().then((r) => (myStudies.value = (r.sessions || []).filter((s) => !s.group_id))).catch(() => {}));
     }
     await Promise.all(jobs);
   } catch (e) {
@@ -130,6 +136,58 @@ async function copyLink(l) {
 // ── Group service (v1.4): share one of MY generated services with the group ──
 const shareService = () => run(() => api.shareGroupService(groupId.value, shareToken.value));
 const unshareService = () => run(() => api.unshareGroupService(groupId.value));
+
+// ── Study Together (v1.4): a live AI study room inside the page ─────────────
+// Members read along and ask in the SAME conversation; polling (the app's
+// poll-first pattern) keeps everyone's view fresh. AI rounds bill the room's
+// OWNER — creator-pays, an owner decision — via the existing reserve pipeline.
+const gStudy = ref(null);
+const myStudies = ref([]);
+const roomPick = ref(null);
+const roomMsgs = ref([]);
+const roomQuestion = ref("");
+let roomTimer = null;
+
+async function refreshRoom() {
+  if (!gStudy.value) return;
+  try {
+    const full = await api.studyShow(gStudy.value.id);
+    gStudy.value = { ...gStudy.value, state: full.state, topic: full.topic };
+    roomMsgs.value = (full.messages || []).map((m) => ({
+      role: m.role,
+      name: m.role === "user"
+        ? (m.sender?.name || t("group.study.member"))
+        : t("group.study.aiTeacher"),
+      text: m.content || "",
+    }));
+  } catch { /* room may have been closed — the next load() clears it */ }
+}
+function startRoomPolling() {
+  if (roomTimer) clearInterval(roomTimer);
+  refreshRoom();
+  roomTimer = setInterval(refreshRoom, 6000);
+}
+onUnmounted(() => roomTimer && clearInterval(roomTimer));
+
+const openRoom = () => run(async () => {
+  await api.attachGroupStudy(groupId.value, roomPick.value);
+});
+const closeRoom = () => run(() => api.detachGroupStudy(groupId.value));
+async function askRoom() {
+  const q = roomQuestion.value;
+  roomQuestion.value = "";
+  busy.value = true;
+  actionError.value = "";
+  try {
+    await api.studyPostMessage(gStudy.value.id, q);
+    await refreshRoom();
+  } catch (e) {
+    actionError.value = e.message;
+    roomQuestion.value = q;
+  } finally {
+    busy.value = false;
+  }
+}
 
 // ── Member roles (v1.4 governance): leadership is an explicit appointment ────
 function setRole(m) {
@@ -272,6 +330,44 @@ const fmtDate = (iso) => (iso ? new Date(iso).toLocaleDateString() : "");
         </template>
       </section>
 
+      <!-- Study Together (v1.4): one shared AI study room, live in the page -->
+      <section class="card">
+        <h2>{{ t("group.study.title") }}</h2>
+
+        <template v-if="gStudy">
+          <p class="gp-meta">
+            <span class="badge live">💬 {{ gStudy.topic }}</span>
+            <span class="muted small">{{ t("group.study.host", { name: gStudy.owner ?? "…" }) }} · {{ gStudy.state }}</span>
+            <button v-if="canManage" class="btn small ghost" :disabled="busy" @click="closeRoom">
+              {{ t("group.study.close") }}
+            </button>
+          </p>
+          <ul class="gp-room">
+            <li v-for="(b, i) in roomMsgs" :key="i" :class="{ ai: b.role !== 'user' }">
+              <strong>{{ b.name }}</strong> {{ b.text }}
+            </li>
+          </ul>
+          <form v-if="isMember && gStudy.state !== 'summarized' && gStudy.state !== 'closed'"
+                class="gp-mint" @submit.prevent="askRoom">
+            <input v-model.trim="roomQuestion" :placeholder="t('group.study.ask')" maxlength="2000" required />
+            <button class="btn" type="submit" :disabled="busy || !roomQuestion">{{ t("group.study.send") }}</button>
+          </form>
+        </template>
+
+        <template v-else>
+          <p class="muted">{{ t("group.study.none") }}</p>
+          <form v-if="canManage && myStudies.length" class="gp-mint" @submit.prevent="openRoom">
+            <select v-model="roomPick" required>
+              <option :value="null" disabled>{{ t("group.study.pick") }}</option>
+              <option v-for="s in myStudies" :key="s.id" :value="s.id">
+                {{ s.topic || "…" }} · {{ s.state }}
+              </option>
+            </select>
+            <button class="btn" type="submit" :disabled="busy || !roomPick">{{ t("group.study.share") }}</button>
+          </form>
+        </template>
+      </section>
+
       <!-- Members — leadership is an explicit appointment (v1.4 governance) -->
       <section class="card">
         <h2>{{ t("group.members.title") }} ({{ members.length }})</h2>
@@ -379,4 +475,7 @@ const fmtDate = (iso) => (iso ? new Date(iso).toLocaleDateString() : "");
 .gp-mint input, .gp-mint select { padding: 0.4rem 0.6rem; border-radius: 8px; border: 1px solid var(--border, #ccc); background: transparent; color: inherit; }
 .gp-links li, .gp-requests li { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
 .gp-url { font-size: 0.75rem; overflow-wrap: anywhere; flex: 1 1 12rem; opacity: 0.8; }
+.gp-room { list-style: none; padding: 0.5rem; margin: 0.6rem 0; display: flex; flex-direction: column; gap: 0.5rem; max-height: 22rem; overflow-y: auto; border: 1px solid var(--border, rgba(128,128,128,.25)); border-radius: 10px; }
+.gp-room li { font-size: 0.9rem; }
+.gp-room li.ai { opacity: 0.9; padding-left: 0.75rem; border-left: 3px solid var(--accent, #3b82f6); }
 </style>

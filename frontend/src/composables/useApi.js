@@ -341,6 +341,11 @@ export const api = {
   shareGroupService: (id, token) =>
     request(`/groups/${id}/service`, { method: "POST", body: { session_token: token } }),
   unshareGroupService: (id) => request(`/groups/${id}/service`, { method: "DELETE" }),
+  groupStudy: (id) => request(`/groups/${id}/study`),
+  attachGroupStudy: (id, studyId) =>
+    request(`/groups/${id}/study`, { method: "POST", body: { study_session_id: studyId } }),
+  detachGroupStudy: (id) => request(`/groups/${id}/study`, { method: "DELETE" }),
+  myStudySessions: () => request("/v1/study/mine"),
   groupJoinRequests: (id) => request(`/groups/${id}/join-requests`),
   requestToJoin: (id) => request(`/groups/${id}/join-requests`, { method: "POST" }),
   invitationAccept: (id) => request(`/invitations/${id}/accept`, { method: "POST" }),

@@ -224,4 +224,52 @@ class GroupController extends Controller
 
         return response()->json(['service' => null]);
     }
+
+    // ── Group study room (v1.4): study together — same share pattern ───────────
+
+    /** The group's current study room (latest non-detached), for the Group Page. */
+    public function studyRoom(Request $request, Group $group)
+    {
+        $this->authorize('view', $group);
+
+        $s = \App\Models\StudySession::query()
+            ->where('group_id', $group->id)->latest()->first();
+
+        return response()->json(['study' => $s ? [
+            'id'    => $s->id,
+            'topic' => $s->topic,
+            'state' => $s->state,
+            'owner' => \App\Models\User::find($s->user_id)?->name,
+        ] : null]);
+    }
+
+    /** Open one of YOUR OWN study sessions as the group's room (managers). Every
+     *  member can then read along and ask; AI rounds bill the OWNER (creator-pays,
+     *  owner decision) since the reserve pipeline keys off session->user_id. */
+    public function attachStudy(Request $request, Group $group)
+    {
+        $this->authorize('manage', $group);
+
+        $data = $request->validate(['study_session_id' => ['required', 'integer']]);
+
+        $study = \App\Models\StudySession::query()
+            ->where('id', $data['study_session_id'])
+            ->where('user_id', $request->user()->id)
+            ->firstOrFail();
+
+        $study->forceFill(['group_id' => $group->id])->save();
+
+        return $this->studyRoom($request, $group);
+    }
+
+    /** Close the room (managers). The conversation remains the owner's session. */
+    public function detachStudy(Request $request, Group $group)
+    {
+        $this->authorize('manage', $group);
+
+        \App\Models\StudySession::query()
+            ->where('group_id', $group->id)->update(['group_id' => null]);
+
+        return response()->json(['study' => null]);
+    }
 }

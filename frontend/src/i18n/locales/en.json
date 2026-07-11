@@ -106,6 +106,18 @@
       "completedToday": "read today",
       "state": { "planned": "Planned", "active": "Active", "paused": "Paused" }
     },
+    "study": {
+      "title": "Study Together",
+      "none": "No study room open.",
+      "host": "hosted by {name}",
+      "pick": "Choose one of your studies",
+      "share": "Open as group room",
+      "close": "Close the room",
+      "ask": "Ask a question…",
+      "send": "Send",
+      "member": "A member",
+      "aiTeacher": "AI teacher"
+    },
     "service": {
       "title": "Group Service",
       "none": "No shared service yet.",

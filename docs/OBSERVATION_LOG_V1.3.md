@@ -112,3 +112,14 @@ implementation — as an extension of an existing domain.
   player; a "for my group" checkbox at intake (consent at creation → group
   sees it live immediately) — the previously deferred item, now argued for
   by real use.
+- 2026-07-11 — owner (correcting the builder) — **The group model was wrong at
+  its root**: groups were leader-gated and the creator didn't even become a
+  member of the group they created, so ordinary members could never
+  self-organize — which silently broke the owner's core scenario (a couple =
+  their own two-person group where service/study/pastor all just work).
+  *Owner's model:* (1) ANY member creates groups and adds people by email;
+  (2) the group IS the couple/circle — no special couple features needed;
+  (3) the CHURCH level stays official: scheduled services, announcements,
+  news. *Fixed:* create opened to members (guests still excluded), creator
+  auto-leads. *Meta-lesson:* three rounds of building on assumptions instead
+  of asking one question first.

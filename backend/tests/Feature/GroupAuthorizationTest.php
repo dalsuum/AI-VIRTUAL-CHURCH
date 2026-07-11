@@ -129,16 +129,18 @@ class GroupAuthorizationTest extends TestCase
         $this->assertTrue($elder->can('delete', $youth));
     }
 
-    public function test_creating_groups_requires_church_leader(): void
+    public function test_any_member_may_form_a_group_but_guests_may_not(): void
     {
+        // Self-organization (owner decision): a couple's two-person group, a few
+        // friends' circle — any member creates; guests still cannot.
         $church = $this->church();
         $member = $this->makeUser();
-        $leader = $this->makeUser();
+        $guest  = $this->makeUser();
         $this->churchMember($member, $church, ChurchRole::MEMBER);
-        $this->churchMember($leader, $church, ChurchRole::LEADER);
+        $this->churchMember($guest, $church, ChurchRole::GUEST);
 
-        $this->assertFalse($member->can('create', [Group::class, $church]));
-        $this->assertTrue($leader->can('create', [Group::class, $church]));
+        $this->assertTrue($member->can('create', [Group::class, $church]));
+        $this->assertFalse($guest->can('create', [Group::class, $church]));
     }
 
     public function test_inactive_membership_confers_no_group_role(): void
@@ -391,24 +393,36 @@ class GroupAuthorizationTest extends TestCase
             ->getJson("/api/service/{$service->session_token}")->assertNotFound();
     }
 
-    public function test_church_leaders_create_groups_over_http(): void
+    public function test_a_member_creates_a_group_and_leads_it_immediately(): void
     {
         $church = $this->church();
-        $leader = $this->makeUser();
         $member = $this->makeUser();
-        $this->churchMember($leader, $church, ChurchRole::LEADER);
+        $spouse = $this->makeUser();
+        $guest  = $this->makeUser();
         $this->churchMember($member, $church, ChurchRole::MEMBER);
+        $this->churchMember($spouse, $church, ChurchRole::MEMBER);
+        $this->churchMember($guest, $church, ChurchRole::GUEST);
 
-        $this->actingAs($leader, 'sanctum')
-            ->postJson("/api/churches/{$church->id}/groups", ['name' => 'Prayer Warriors', 'type' => 'prayer'])
-            ->assertCreated()->assertJsonFragment(['name' => 'Prayer Warriors', 'type' => 'prayer']);
+        // The couple scenario: an ordinary member creates a group…
+        $res = $this->actingAs($member, 'sanctum')
+            ->postJson("/api/churches/{$church->id}/groups", ['name' => 'Our Family', 'type' => 'custom'])
+            ->assertCreated()->json();
+        $this->assertSame('leader', $res['my_role']);
+        $this->assertSame(1, $res['member_count']);
+
+        // …and can IMMEDIATELY invite (mint a link — manage-gated), because the
+        // creator now leads the group they created.
+        $this->actingAs($member, 'sanctum')
+            ->postJson("/api/groups/{$res['id']}/invitations")
+            ->assertCreated();
 
         // Duplicate name within the church is a validation error, not a 500.
-        $this->actingAs($leader, 'sanctum')
-            ->postJson("/api/churches/{$church->id}/groups", ['name' => 'Prayer Warriors', 'type' => 'prayer'])
+        $this->actingAs($member, 'sanctum')
+            ->postJson("/api/churches/{$church->id}/groups", ['name' => 'Our Family', 'type' => 'custom'])
             ->assertStatus(422);
 
-        $this->actingAs($member, 'sanctum')
+        // Guests still cannot create groups.
+        $this->actingAs($guest, 'sanctum')
             ->postJson("/api/churches/{$church->id}/groups", ['name' => 'Another', 'type' => 'custom'])
             ->assertForbidden();
     }

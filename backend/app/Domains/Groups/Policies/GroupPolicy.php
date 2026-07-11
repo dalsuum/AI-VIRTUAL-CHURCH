@@ -24,10 +24,13 @@ class GroupPolicy
             || $user->hasGroupRole($group->id, GroupRole::MEMBER);
     }
 
-    /** Creating a group is a church capability: can('create', [Group::class, $church]). */
+    /** Groups are SELF-ORGANIZATION (owner decision 2026-07-11): ANY member may
+     *  form one — a couple's two-person group, a few friends' study circle — and
+     *  the creator becomes its leader (ChurchController::storeGroup). Guests still
+     *  cannot: full participation follows membership, a pastoral decision. */
     public function create(User $user, Church $church): bool
     {
-        return $user->hasChurchRole($church->id, ChurchRole::LEADER);
+        return $user->hasChurchRole($church->id, ChurchRole::MEMBER);
     }
 
     /** Group settings and memberships: the group's own leader, or church elders and above. */

@@ -131,6 +131,16 @@ async function copyLink(l) {
 const shareService = () => run(() => api.shareGroupService(groupId.value, shareToken.value));
 const unshareService = () => run(() => api.unshareGroupService(groupId.value));
 
+// ── Member roles (v1.4 governance): leadership is an explicit appointment ────
+function setRole(m) {
+  const toLeader = m.role !== "leader";
+  const msg = toLeader
+    ? t("group.members.confirmLead", { name: m.name })
+    : t("group.members.confirmMember", { name: m.name });
+  if (!window.confirm(msg)) return;
+  run(() => api.setGroupMemberRole(groupId.value, m.id, toLeader ? "leader" : "member"));
+}
+
 // ── Join requests (manager side) ─────────────────────────────────────────────
 const approve = (id) => run(() => api.invitationAccept(id));
 const decline = (id) => run(() => api.invitationDecline(id));
@@ -262,10 +272,20 @@ const fmtDate = (iso) => (iso ? new Date(iso).toLocaleDateString() : "");
         </template>
       </section>
 
-      <!-- Members -->
+      <!-- Members — leadership is an explicit appointment (v1.4 governance) -->
       <section class="card">
         <h2>{{ t("group.members.title") }} ({{ members.length }})</h2>
-        <p class="gp-meta">
+        <ul v-if="canManage" class="gp-roster">
+          <li v-for="m in members" :key="m.id">
+            {{ m.name }}
+            <span v-if="m.role !== 'member'" class="badge role">{{ t(`church.role.${m.role}`) }}</span>
+            <button
+              v-if="m.id !== myUserId" class="btn small ghost" :disabled="busy"
+              @click="setRole(m)"
+            >{{ m.role === 'leader' ? t("group.members.makeMember") : t("group.members.makeLeader") }}</button>
+          </li>
+        </ul>
+        <p v-else class="gp-meta">
           <span v-for="m in members" :key="m.id" class="badge">
             {{ m.name }}<template v-if="m.role !== 'member'"> · {{ t(`church.role.${m.role}`) }}</template>
           </span>

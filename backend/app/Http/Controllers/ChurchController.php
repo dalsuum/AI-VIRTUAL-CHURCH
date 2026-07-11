@@ -67,6 +67,48 @@ class ChurchController extends Controller
     }
 
     /**
+     * Change a member's CHURCH role (v1.4 governance). Explicit rules, enum-owned:
+     * the actor needs manage (elder+); never your own role; both the target's
+     * CURRENT role and the NEW role must be STRICTLY BELOW the actor's — so an
+     * elder cannot touch elders+, a pastor assigns up to elder, only the owner
+     * assigns pastor, and OWNER is never assignable here (ownership transfer is a
+     * deliberate future flow; the break-glass artisan command remains for that).
+     */
+    public function updateMemberRole(Request $request, Church $church, \App\Models\User $user)
+    {
+        $this->authorize('manage', $church);
+
+        $data = $request->validate([
+            'role'   => ['required', Rule::in(['guest', 'member', 'leader', 'deacon', 'elder', 'pastor'])],
+            'reason' => ['nullable', 'string', 'max:300'],
+        ]);
+
+        $actor = $request->user();
+        if ($actor->id === $user->id) {
+            abort(403, 'You cannot change your own role.');
+        }
+
+        $actorRole  = $actor->churchRole($church->id);
+        $new        = \App\Enums\ChurchRole::from($data['role']);
+        $membership = \App\Domains\Church\Models\ChurchMembership::query()
+            ->where('church_id', $church->id)->where('user_id', $user->id)->firstOrFail();
+
+        if ($membership->role->atLeast($actorRole) || $new->atLeast($actorRole)) {
+            abort(403, 'You can only manage roles below your own.');
+        }
+
+        $before = $membership->role->value;
+        $membership->forceFill(['role' => $new])->save();
+
+        logger()->info('church role changed', [
+            'church_id' => $church->id, 'target_id' => $user->id, 'actor_id' => $actor->id,
+            'from' => $before, 'to' => $new->value, 'reason' => $data['reason'] ?? null,
+        ]);
+
+        return response()->json(['id' => $user->id, 'role' => $new->value]);
+    }
+
+    /**
      * Church-wide activity feed (v1.3 Phase F) — CURATED, not complete: joins,
      * new groups, sessions going live, recent reading completions. Link mints and
      * request lifecycle are deliberately omitted (manager-only context, noise at

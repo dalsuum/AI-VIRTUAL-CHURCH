@@ -38,6 +38,38 @@ class GroupAuthorizationTest extends TestCase
         return Church::create(['name' => 'Grace', 'slug' => 'grace']);
     }
 
+    public function test_group_leadership_is_an_explicit_appointment(): void
+    {
+        $church = $this->church();
+        $choir  = Group::create(['church_id' => $church->id, 'name' => 'Choir', 'type' => GroupType::CHOIR]);
+        $leader = $this->makeUser();
+        $member = $this->makeUser();
+        $this->churchMember($leader, $church, ChurchRole::MEMBER);
+        $this->churchMember($member, $church, ChurchRole::MEMBER);
+        $this->groupMember($leader, $choir, GroupRole::LEADER);
+        $this->groupMember($member, $choir, GroupRole::MEMBER);
+
+        $put = fn ($actor, $userId, $role) => $this->actingAs($actor, 'sanctum')
+            ->putJson("/api/groups/{$choir->id}/members/{$userId}/role", ['role' => $role]);
+
+        // A plain member cannot appoint; the group's leader can (co-leader), and
+        // can demote them back. Nobody changes their own role. Church elders+
+        // can appoint without any group membership row.
+        $put($member, $member->id, 'leader')->assertForbidden();
+        $put($leader, $member->id, 'leader')->assertOk()->assertJsonFragment(['role' => 'leader']);
+        $put($leader, $member->id, 'member')->assertOk();
+        $put($leader, $leader->id, 'member')->assertForbidden();
+
+        $elder = $this->makeUser();
+        $this->churchMember($elder, $church, ChurchRole::ELDER);
+        $put($elder, $member->id, 'leader')->assertOk();
+
+        // Only active memberships can be appointed; unknown roles are rejected.
+        $outsider = $this->makeUser();
+        $put($elder, $outsider->id, 'leader')->assertNotFound();
+        $put($elder, $member->id, 'owner')->assertStatus(422);
+    }
+
     public function test_group_leadership_is_scoped_to_the_group(): void
     {
         // The design decision under test: "worship leader" = LEADER on the worship

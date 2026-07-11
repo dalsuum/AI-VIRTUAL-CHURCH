@@ -42,7 +42,10 @@
       "allRoles": "All roles",
       "joined": "Joined {date}",
       "empty": "No members match.",
-      "back": "← My Church"
+      "back": "← My Church",
+      "changeRole": "Change role",
+      "reason": "Reason (optional)",
+      "confirm": "Confirm"
     },
     "feed": {
       "title": "Recent Activity",
@@ -112,7 +115,13 @@
       "unshare": "Stop sharing",
       "pick": "Choose one of your services"
     },
-    "members": { "title": "Members" },
+    "members": {
+      "title": "Members",
+      "makeLeader": "Make leader",
+      "makeMember": "Make member",
+      "confirmLead": "Appoint {name} as a group leader?",
+      "confirmMember": "Change {name} back to member?"
+    },
     "invites": {
       "title": "Invitations",
       "mint": "New invitation link",

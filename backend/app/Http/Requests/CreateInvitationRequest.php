@@ -31,6 +31,10 @@ class CreateInvitationRequest extends FormRequest
             'scheduled_at' => ['nullable', 'date', 'after:now'],
             'timezone'     => ['nullable', 'timezone'],
             'message'      => ['nullable', 'string', 'max:500'],
+            // Couple worship (v1.4): attach ONE OF YOUR OWN services — acceptance
+            // admits the invitee to exactly that service. Ownership checked in the
+            // controller (the token alone must never be a capability here).
+            'service_token' => ['nullable', 'string', 'max:128'],
         ];
     }
 }

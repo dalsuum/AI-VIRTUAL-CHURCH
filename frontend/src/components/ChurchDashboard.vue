@@ -18,6 +18,8 @@ const groups = ref([]);
 const members = ref([]);
 const inviteLinks = ref([]);
 const feed = ref([]);
+const received = ref([]);      // direct invitations addressed to me
+const myServices = ref([]);    // my services, for couple-worship invites
 
 const myRole = computed(() => churches.value.find((c) => c.id === selectedId.value)?.role);
 // Thresholds mirror the backend policies (GroupPolicy::create = leader+); the
@@ -34,10 +36,11 @@ async function loadChurch(id) {
   // so don't even request them — their sections hide below.
   const guest = churches.value.find((c) => c.id === id)?.role === "guest";
   try {
-    const [p, g, inv, m, act] = await Promise.all([
+    const [p, g, inv, m, act, svc] = await Promise.all([
       api.church(id), api.churchGroups(id), api.myInvitations(),
       guest ? Promise.resolve({ members: [] }) : api.churchMembers(id),
       guest ? Promise.resolve({ activity: [] }) : api.churchActivity(id),
+      api.myServices().catch(() => ({ services: [] })),
     ]);
     profile.value = p;
     groups.value = g.groups || [];
@@ -45,6 +48,8 @@ async function loadChurch(id) {
     inviteLinks.value = (inv.sent || []).filter(
       (i) => i.kind === "link" && i.status === "pending" && i.group,
     );
+    received.value = (inv.received || []).filter((i) => i.kind === "direct");
+    myServices.value = svc.services || [];
     feed.value = act.activity || [];
   } catch (e) {
     error.value = e.message;
@@ -96,6 +101,40 @@ async function copyLink(link) {
 }
 
 const memberPreview = computed(() => members.value.slice(0, 8));
+
+// ── Couple worship (v1.4): invite ONE member to YOUR service ─────────────────
+// A direct invitation carrying the service; acceptance admits exactly that
+// person to exactly that service — private, no group involved.
+const worship = ref({ memberId: null, token: null });
+const worshipBusy = ref(false);
+const worshipSent = ref("");
+async function sendWorship() {
+  worshipBusy.value = true;
+  error.value = "";
+  try {
+    await api.sendWorshipInvite(worship.value.memberId, worship.value.token);
+    const name = members.value.find((m) => m.id === worship.value.memberId)?.name || "";
+    worshipSent.value = name;
+    worship.value = { memberId: null, token: null };
+    setTimeout(() => (worshipSent.value = ""), 4000);
+  } catch (e) {
+    error.value = e.message;
+  } finally {
+    worshipBusy.value = false;
+  }
+}
+async function respond(id, accept) {
+  worshipBusy.value = true;
+  try {
+    await (accept ? api.invitationAccept(id) : api.invitationDecline(id));
+    const inv = await api.myInvitations();
+    received.value = (inv.received || []).filter((i) => i.kind === "direct");
+  } catch (e) {
+    error.value = e.message;
+  } finally {
+    worshipBusy.value = false;
+  }
+}
 </script>
 
 <template>
@@ -187,6 +226,51 @@ const memberPreview = computed(() => members.value.slice(0, 8));
             </p>
           </a>
         </div>
+      </section>
+
+      <!-- Invitations for me: accept/decline; accepted worship opens the service -->
+      <section v-if="received.length" class="card">
+        <h2>{{ t("church.inbox.title") }}</h2>
+        <ul class="invite-list">
+          <li v-for="i in received" :key="i.id">
+            <span class="badge">{{ t("church.inbox.invitedYou", { name: i.inviter?.name || "…", activity: i.activity }) }}</span>
+            <span v-if="i.message" class="muted">“{{ i.message }}”</span>
+            <template v-if="i.status === 'pending'">
+              <button class="btn-small" :disabled="worshipBusy" @click="respond(i.id, true)">{{ t("church.inbox.accept") }}</button>
+              <button class="btn-small ghost" :disabled="worshipBusy" @click="respond(i.id, false)">{{ t("church.inbox.decline") }}</button>
+            </template>
+            <a v-else-if="i.service_token" class="btn-small" :href="`#service?token=${i.service_token}`">
+              {{ t("church.inbox.openService") }}
+            </a>
+          </li>
+        </ul>
+      </section>
+
+      <!-- Worship together (couple): invite one member to my service -->
+      <section v-if="!isGuest && members.length" class="card">
+        <h2>{{ t("church.worship.title") }}</h2>
+        <p class="muted">{{ t("church.worship.hint") }}</p>
+        <form v-if="myServices.length" class="create-form" @submit.prevent="sendWorship">
+          <select v-model="worship.memberId" required>
+            <option :value="null" disabled>{{ t("church.worship.pickMember") }}</option>
+            <option v-for="m in members" :key="m.id" :value="m.id">{{ m.name }}</option>
+          </select>
+          <select v-model="worship.token" required>
+            <option :value="null" disabled>{{ t("church.worship.pickService") }}</option>
+            <option v-for="s in myServices" :key="s.session_token" :value="s.session_token">
+              {{ new Date(s.created_at).toLocaleDateString() }} · {{ (s.language || "").toUpperCase() }} · {{ s.status }}
+            </option>
+          </select>
+          <div class="form-actions">
+            <button type="submit" class="btn-small" :disabled="worshipBusy || !worship.memberId || !worship.token">
+              {{ t("church.worship.send") }}
+            </button>
+            <span v-if="worshipSent" class="badge live">✓ {{ t("church.worship.sent", { name: worshipSent }) }}</span>
+          </div>
+        </form>
+        <p v-else class="muted small">
+          {{ t("church.worship.empty") }} <a class="btn-small" href="#">{{ t("church.worship.createFirst") }}</a>
+        </p>
       </section>
 
       <!-- My active invite links -->

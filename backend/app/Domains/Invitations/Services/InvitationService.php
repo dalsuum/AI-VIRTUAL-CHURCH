@@ -40,7 +40,10 @@ class InvitationService
     {
     }
 
-    /** Create a PENDING invitation and announce it. Default expiry is 7 days. */
+    /** Create a PENDING invitation and announce it. Default expiry is 7 days.
+     *  $invitable optionally targets the thing being invited INTO — first real
+     *  use (v1.4): couple worship, where it is the inviter's ServiceSession and
+     *  acceptance admits the invitee to that exact service. */
     public function send(
         User $inviter,
         User $invitee,
@@ -49,6 +52,7 @@ class InvitationService
         ?string $timezone = null,
         ?string $message = null,
         ?CarbonInterface $expiresAt = null,
+        ?\Illuminate\Database\Eloquent\Model $invitable = null,
     ): Invitation {
         if ($inviter->is($invitee)) {
             throw InvitationException::conflict('You cannot invite yourself.');
@@ -63,6 +67,8 @@ class InvitationService
             'invitee_id'     => $invitee->id,
             'kind'           => InvitationKind::DIRECT,
             'activity'       => $activity,
+            'invitable_type' => $invitable?->getMorphClass(),
+            'invitable_id'   => $invitable?->getKey(),
             'status'         => InvitationStatus::PENDING,
             'scheduled_at'   => $scheduledAt,
             'timezone'       => $timezone ?? $inviter->timezone,

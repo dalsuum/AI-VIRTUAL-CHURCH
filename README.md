@@ -1203,6 +1203,18 @@ app's poll-first pattern; per-viewer SSE tokens would need a token table — def
 Closing the room (`DELETE`) instantly returns the conversation to a private session.
 Additive migration: `study_sessions.group_id` + `study_messages.sender_id`.
 
+**Worship Together — couple worship (v1.4).** Two people, one service, **no group
+involved** — the DIRECT invitation kind doing its original job, with the `invitable`
+morph getting its first real target. On the Church Dashboard a member picks **one
+person** and **one of their own services** and sends a worship invitation (the
+existing lifecycle delivers it: high-priority in-app + email). The invitee sees it in
+the new **Invitations for me** card: accept → the payload reveals the `service_token`
+and **Open the service** plays the same service via `#service?token=…`. Playback
+authorization: an **ACCEPTED** invitation targeting exactly that service admits
+exactly that invitee — pending invitations reveal no token and open nothing, decline
+opens nothing, third parties 404. Ownership enforced at send (you attach only your own
+service). Zero migrations — the seams were built in v0.2.
+
 **Member role governance (v1.4).** Twice-observed gap, now closed. **Church roles**:
 elders+ change a member's role from the Member Directory through an **explicit flow**
 (Change role → choose role → optional reason → confirm) under **strict dominance**,

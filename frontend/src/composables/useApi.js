@@ -329,6 +329,10 @@ export const api = {
   createGroup: (id, payload) =>
     request(`/churches/${id}/groups`, { method: "POST", body: payload }),
   myInvitations: () => request("/invitations"),
+  sendWorshipInvite: (inviteeId, serviceToken, message = null) =>
+    request("/invitations", { method: "POST", body: {
+      invitee_id: inviteeId, activity: "worship", service_token: serviceToken, message,
+    } }),
   group: (id) => request(`/groups/${id}`),
   groupMembers: (id) => request(`/groups/${id}/members`),
   groupActivity: (id) => request(`/groups/${id}/activity`),

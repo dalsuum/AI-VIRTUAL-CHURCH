@@ -36,6 +36,23 @@
     "copyLink": "Copy link",
     "copied": "Copied!",
     "viewAll": "View all →",
+    "inbox": {
+      "title": "Invitations for me",
+      "invitedYou": "{name} invited you · {activity}",
+      "accept": "Accept",
+      "decline": "Decline",
+      "openService": "Open the service"
+    },
+    "worship": {
+      "title": "Worship Together",
+      "hint": "Invite one person to your service — just the two of you attend the same service.",
+      "pickMember": "Choose a member",
+      "pickService": "Choose your service",
+      "send": "Send invitation",
+      "sent": "Invitation sent to {name}",
+      "empty": "Create a service first, then invite someone to it:",
+      "createFirst": "Create a service"
+    },
     "directory": {
       "title": "Member Directory",
       "search": "Search members…",
@@ -116,7 +133,9 @@
       "ask": "Ask a question…",
       "send": "Send",
       "member": "A member",
-      "aiTeacher": "AI teacher"
+      "aiTeacher": "AI teacher",
+      "empty": "You can share one of your own Bible studies here — start one first:",
+      "createFirst": "Start a Bible study"
     },
     "service": {
       "title": "Group Service",
@@ -125,7 +144,9 @@
       "open": "Open the service",
       "share": "Share with the group",
       "unshare": "Stop sharing",
-      "pick": "Choose one of your services"
+      "pick": "Choose one of your services",
+      "empty": "You can share one of your own services here — create one first:",
+      "createFirst": "Create a service"
     },
     "members": {
       "title": "Members",

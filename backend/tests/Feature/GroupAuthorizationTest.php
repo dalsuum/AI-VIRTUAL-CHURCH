@@ -248,6 +248,44 @@ class GroupAuthorizationTest extends TestCase
         $this->assertSame('member_joined', $items[1]['type']);
     }
 
+    public function test_group_study_room_share_read_ask_and_owner_controls(): void
+    {
+        $church = $this->church();
+        $choir  = Group::create(['church_id' => $church->id, 'name' => 'Choir', 'type' => GroupType::CHOIR]);
+        $leader = $this->makeUser();
+        $member = $this->makeUser();
+        $this->churchMember($leader, $church, ChurchRole::MEMBER);
+        $this->churchMember($member, $church, ChurchRole::MEMBER);
+        $this->groupMember($leader, $choir, GroupRole::LEADER);
+        $this->groupMember($member, $choir, GroupRole::MEMBER);
+
+        $study = \App\Models\StudySession::create([
+            'user_id' => $leader->id, 'language' => 'en', 'translation' => 'kjv',
+            'style' => 'discussion', 'topic' => 'John 15',
+            'state' => 'discussing', 'agent_count' => 2,
+            'stream_token' => hash('sha256', 'test-token'),
+        ]);
+
+        // Only the owner-manager attaches; a member cannot.
+        $this->actingAs($member, 'sanctum')
+            ->postJson("/api/groups/{$choir->id}/study", ['study_session_id' => $study->id])
+            ->assertForbidden();
+        $this->actingAs($leader, 'sanctum')
+            ->postJson("/api/groups/{$choir->id}/study", ['study_session_id' => $study->id])
+            ->assertOk()->assertJsonPath('study.topic', 'John 15');
+
+        // A member reads the room and asks in it; the message records the sender.
+        $this->actingAs($member, 'sanctum')->getJson("/api/v1/study/sessions/{$study->id}")->assertOk();
+        // Outsiders see nothing; and creator-only controls stay closed to members.
+        $outsider = $this->makeUser();
+        $this->actingAs($outsider, 'sanctum')->getJson("/api/v1/study/sessions/{$study->id}")->assertForbidden();
+        $this->actingAs($member, 'sanctum')->postJson("/api/v1/study/sessions/{$study->id}/end")->assertForbidden();
+
+        // Detach closes the room for members again.
+        $this->actingAs($leader, 'sanctum')->deleteJson("/api/groups/{$choir->id}/study")->assertOk();
+        $this->actingAs($member, 'sanctum')->getJson("/api/v1/study/sessions/{$study->id}")->assertForbidden();
+    }
+
     public function test_group_service_share_and_member_playback(): void
     {
         $church = $this->church();

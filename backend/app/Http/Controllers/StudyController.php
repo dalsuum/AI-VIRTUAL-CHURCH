@@ -98,6 +98,8 @@ class StudyController extends Controller
             'session_id' => $session->id,
             'turn'       => $turn,
             'role'       => 'user',
+            // Group rooms (v1.4): record WHICH member asked, for attribution.
+            'sender_id'  => $request->user()->id,
             'content'    => $content,
         ]);
 
@@ -204,7 +206,7 @@ class StudyController extends Controller
     /** End the discussion and dispatch the summary generation. */
     public function endSession(Request $request, StudySession $session): JsonResponse
     {
-        $this->authorizeOwner($request, $session);
+        $this->authorizeOwnerOnly($request, $session);
 
         if (! in_array($session->state, ['summarized', 'closed'], true)) {
             $session->update(['state' => 'ending']);
@@ -217,7 +219,7 @@ class StudyController extends Controller
     /** Email the finished summary to the worshipper (owner-scoped). */
     public function emailSummary(Request $request, StudySession $session): JsonResponse
     {
-        $this->authorizeOwner($request, $session);
+        $this->authorizeOwnerOnly($request, $session);
         $session->load('summary');
         abort_unless($session->summary !== null, 422, 'Summary is not ready yet.');
 
@@ -239,16 +241,42 @@ class StudyController extends Controller
         return response()->json(['ok' => true]);
     }
 
+    /** The caller's recent study sessions — feeds the Group Page room-picker (v1.4). */
+    public function mine(Request $request): JsonResponse
+    {
+        $sessions = StudySession::query()
+            ->where('user_id', $request->user()->id)
+            ->latest()->limit(10)
+            ->get(['id', 'topic', 'state', 'group_id', 'created_at']);
+
+        return response()->json(['sessions' => $sessions]);
+    }
+
     /** Read a session with its messages + summary (owner-scoped). */
     public function show(Request $request, StudySession $session): JsonResponse
     {
         $this->authorizeOwner($request, $session);
-        $session->load(['messages' => fn ($q) => $q->orderBy('turn'), 'summary']);
+        $session->load(['messages' => fn ($q) => $q->orderBy('turn'), 'messages.sender:id,name', 'summary']);
 
         return response()->json($session);
     }
 
+    /** Owner — or, for a GROUP study room (v1.4), any active member of the group.
+     *  Members read along, stream, and ask; every AI round still bills the session
+     *  OWNER (creator-pays, owner decision) since the reserve/commit pipeline keys
+     *  off session->user_id. endSession/emailSummary stay owner-only below —
+     *  those remain the creator's controls. */
     private function authorizeOwner(Request $request, StudySession $session): void
+    {
+        $user = $request->user();
+        if ($session->group_id && $user
+            && $user->hasGroupRole((int) $session->group_id, \App\Enums\GroupRole::MEMBER)) {
+            return;
+        }
+        $this->authorizeOwnerOnly($request, $session);
+    }
+
+    private function authorizeOwnerOnly(Request $request, StudySession $session): void
     {
         abort_unless(
             $session->user_id !== null && (int) $session->user_id === (int) $request->user()->id,

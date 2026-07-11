@@ -1189,6 +1189,20 @@ service per group (latest wins); `GET /me/services` feeds the picker. Generation
 *targeted at* a group (an intake checkbox) and synchronized watch-together are
 deliberately deferred until observation asks for them.
 
+**Study Together (v1.4 — group Bible study room).** A group manager opens **one of
+their own AI study sessions** as the group's room (`POST /groups/{group}/study`, picker
+fed by `GET /v1/study/mine`); the room renders **live inside the Group Page** —
+members read the same multi-pastor conversation and **ask their own questions** into
+it, with each human message recording its `sender_id` for attribution ("Maria: what
+does *abide* mean?"). Authorization extends the study surface's owner check to active
+group members (`StudyController::authorizeOwner`), while **ending the session and
+emailing the summary stay creator-only** (`authorizeOwnerOnly`). **Billing is
+creator-pays by owner decision** — implemented for free, since the reserve/commit
+pipeline already keys off `session->user_id`. Members follow along by polling (the
+app's poll-first pattern; per-viewer SSE tokens would need a token table — deferred).
+Closing the room (`DELETE`) instantly returns the conversation to a private session.
+Additive migration: `study_sessions.group_id` + `study_messages.sender_id`.
+
 **Member role governance (v1.4).** Twice-observed gap, now closed. **Church roles**:
 elders+ change a member's role from the Member Directory through an **explicit flow**
 (Change role → choose role → optional reason → confirm) under **strict dominance**,

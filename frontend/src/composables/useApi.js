@@ -475,7 +475,8 @@ export const api = {
 
   getMyServices: () => request("/me/services"),
 
-  startService: () => request("/service/start", { method: "POST" }),
+  startService: (payload = {}) =>
+    request("/service/start", { method: "POST", body: payload }),
   submitIntake: (sessionToken, payload) =>
     request(`/service/${sessionToken}/intake`, { method: "POST", body: payload }),
   getService: (sessionToken) => request(`/service/${sessionToken}`),

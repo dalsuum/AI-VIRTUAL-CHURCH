@@ -30,13 +30,29 @@ class ServiceController extends Controller
         private \App\Services\HistoryService $history,
     ) {}
 
-    /** Create a session. The media source is locked from the user's preference now. */
+    /** Create a session. The media source is locked from the user's preference now.
+     *  Worship-with (v1.4, owner-directed): an optional group_id — YOUR OWN active
+     *  group — makes the service visible to that group from the moment it exists
+     *  (members see "Happening now → Join"); no separate share step. Consent is
+     *  this one choice on the start form; omitting it keeps the service private. */
     public function start(Request $request): JsonResponse
     {
         $user = $request->user();
 
+        $groupId = null;
+        if ($request->filled('group_id')) {
+            $gid = (int) $request->input('group_id');
+            abort_unless(
+                $user->hasGroupRole($gid, \App\Enums\GroupRole::MEMBER),
+                403,
+                'You can only worship with a group you belong to.'
+            );
+            $groupId = $gid;
+        }
+
         $session = ServiceSession::create([
             'user_id'          => $user->id,
+            'group_id'         => $groupId,
             'session_token'    => Str::random(64),
             'status'           => 'initializing',
             'music_source'     => $user->music_source,

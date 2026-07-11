@@ -14,7 +14,7 @@ class ServiceSession extends Model
     public const RESUME_SESSION_ID_KEY = 'service_resume_session_id';
 
     protected $fillable = [
-        'user_id', 'session_token', 'resume_token_hash', 'resume_token_expires_at',
+        'user_id', 'group_id', 'session_token', 'resume_token_hash', 'resume_token_expires_at',
         'resume_token_used_at', 'status', 'music_source', 'language', 'tedim_status',
         'burmese_status', 'presenter_gender', 'scheduled_at', 'contact_email',
         'started_at', 'ended_at',

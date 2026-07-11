@@ -150,4 +150,37 @@ class InvitationTest extends TestCase
         $this->assertSame(1, $b->fresh()->notifications()
             ->where('type', InvitationReceivedNotification::class)->count());
     }
+
+    public function test_couple_worship_admits_only_the_accepted_invitee(): void
+    {
+        $a = $this->makeUser();   // inviter, owns the service
+        $b = $this->makeUser();   // the spouse
+        $service = \App\Models\ServiceSession::create([
+            'user_id' => $a->id, 'session_token' => str_repeat('b', 64),
+            'status' => 'completed', 'language' => 'en', 'music_source' => 'suno',
+        ]);
+
+        // You can only attach YOUR OWN service.
+        $this->actingAs($b, 'sanctum')->postJson('/api/invitations', [
+            'invitee_id' => $a->id, 'activity' => 'worship', 'service_token' => $service->session_token,
+        ])->assertNotFound();
+
+        // A invites B to worship at A's service. Pending: token hidden, playback closed.
+        $res = $this->actingAs($a, 'sanctum')->postJson('/api/invitations', [
+            'invitee_id' => $b->id, 'activity' => 'worship', 'service_token' => $service->session_token,
+        ])->assertCreated()->json();
+        $this->assertArrayNotHasKey('service_token', $res);
+        $this->actingAs($b, 'sanctum')->getJson("/api/service/{$service->session_token}")->assertNotFound();
+
+        // Acceptance reveals the token and opens playback — two people, one service.
+        $this->actingAs($b, 'sanctum')->postJson("/api/invitations/{$res['id']}/accept")->assertOk();
+        $received = $this->actingAs($b, 'sanctum')->getJson('/api/invitations')->json('received');
+        $mine = collect($received)->firstWhere('id', $res['id']);
+        $this->assertSame($service->session_token, $mine['service_token']);
+        $this->actingAs($b, 'sanctum')->getJson("/api/service/{$service->session_token}")->assertOk();
+
+        // Anyone else stays out.
+        $c = $this->makeUser();
+        $this->actingAs($c, 'sanctum')->getJson("/api/service/{$service->session_token}")->assertNotFound();
+    }
 }

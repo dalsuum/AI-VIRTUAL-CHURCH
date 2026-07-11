@@ -36,6 +36,23 @@
     "copyLink": "Copy link",
     "copied": "Copied!",
     "viewAll": "View all →",
+    "inbox": {
+      "title": "Invitations for me",
+      "invitedYou": "{name} invited you · {activity}",
+      "accept": "Accept",
+      "decline": "Decline",
+      "openService": "Open the service"
+    },
+    "worship": {
+      "title": "Worship Together",
+      "hint": "Invite one person to your service — just the two of you attend the same service.",
+      "pickMember": "Choose a member",
+      "pickService": "Choose your service",
+      "send": "Send invitation",
+      "sent": "Invitation sent to {name}",
+      "empty": "Create a service first, then invite someone to it:",
+      "createFirst": "Create a service"
+    },
     "directory": {
       "title": "Member Directory",
       "search": "Search members…",

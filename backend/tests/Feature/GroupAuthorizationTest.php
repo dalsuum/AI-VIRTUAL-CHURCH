@@ -248,6 +248,62 @@ class GroupAuthorizationTest extends TestCase
         $this->assertSame('member_joined', $items[1]['type']);
     }
 
+    public function test_group_pastor_room_with_per_sender_crisis_intercept(): void
+    {
+        // The reply dispatcher pushes to the ai:history Redis queue; the test box
+        // has no phpredis, and the queue is out of scope here anyway.
+        \Illuminate\Support\Facades\Redis::shouldReceive('rpush')->zeroOrMoreTimes()->andReturn(1);
+
+        $church = $this->church();
+        $choir  = Group::create(['church_id' => $church->id, 'name' => 'Choir', 'type' => GroupType::CHOIR]);
+        $leader = $this->makeUser();
+        $member = $this->makeUser();
+        $this->churchMember($leader, $church, ChurchRole::MEMBER);
+        $this->churchMember($member, $church, ChurchRole::MEMBER);
+        $this->groupMember($leader, $choir, GroupRole::LEADER);
+        $this->groupMember($member, $choir, GroupRole::MEMBER);
+
+        $chat = \App\Models\ChatSession::create([
+            'user_id' => $leader->id, 'session_type' => 'pastor', 'title' => 'Evening prayer',
+            'language' => 'en', 'status' => 'active', 'stream_token' => hash('sha256', 't'),
+        ]);
+
+        // Members cannot attach; the owner-manager can (and only their own session).
+        $this->actingAs($member, 'sanctum')
+            ->postJson("/api/groups/{$choir->id}/pastor", ['chat_session_id' => $chat->id])
+            ->assertForbidden();
+        $this->actingAs($leader, 'sanctum')
+            ->postJson("/api/groups/{$choir->id}/pastor", ['chat_session_id' => $chat->id])
+            ->assertOk()->assertJsonPath('pastor.title', 'Evening prayer');
+
+        // A member reads and speaks; their message carries attribution.
+        $this->actingAs($member, 'sanctum')->getJson("/api/pastor/sessions/{$chat->id}/messages")->assertOk();
+        $this->actingAs($member, 'sanctum')
+            ->postJson("/api/pastor/sessions/{$chat->id}/messages", ['message' => 'Please pray for my family.'])
+            ->assertOk()->assertJson(['ok' => true]);
+        $messages = $this->actingAs($member, 'sanctum')
+            ->getJson("/api/pastor/sessions/{$chat->id}/messages")->json('messages');
+        $mine = collect($messages)->firstWhere('content', 'Please pray for my family.');
+        $this->assertSame($member->name, $mine['sender_name']);
+
+        // Crisis language: intercepted PRIVATELY — resource to the sender, nothing
+        // enters the shared room, the AI is never dispatched for it.
+        $res = $this->actingAs($member, 'sanctum')
+            ->postJson("/api/pastor/sessions/{$chat->id}/messages", ['message' => 'I want to die'])
+            ->assertOk()->json();
+        $this->assertTrue($res['intercepted']);
+        $this->assertNotEmpty($res['resource']);
+        $messages = $this->actingAs($leader, 'sanctum')
+            ->getJson("/api/pastor/sessions/{$chat->id}/messages")->json('messages');
+        $this->assertNull(collect($messages)->firstWhere('content', 'I want to die'));
+
+        // Outsiders never see the room; detach closes it for members.
+        $outsider = $this->makeUser();
+        $this->actingAs($outsider, 'sanctum')->getJson("/api/pastor/sessions/{$chat->id}/messages")->assertNotFound();
+        $this->actingAs($leader, 'sanctum')->deleteJson("/api/groups/{$choir->id}/pastor")->assertOk();
+        $this->actingAs($member, 'sanctum')->getJson("/api/pastor/sessions/{$chat->id}/messages")->assertNotFound();
+    }
+
     public function test_group_study_room_share_read_ask_and_owner_controls(): void
     {
         $church = $this->church();
